@@ -13,50 +13,84 @@ import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
 // TweetEmbed Component using official Twitter widgets SDK
 const TweetEmbed: React.FC<{ url: string }> = ({ url }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [sdkReady, setSdkReady] = useState(!!(window as any).twttr);
 
   useEffect(() => {
-    // Dynamic loading of Twitter SDK if not present
-    if (!(window as any).twttr) {
-      const script = document.createElement('script');
+    if ((window as any).twttr) {
+      setSdkReady(true);
+      return;
+    }
+
+    let script = document.querySelector('script[src="https://platform.twitter.com/widgets.js"]') as HTMLScriptElement;
+    if (!script) {
+      script = document.createElement('script');
       script.setAttribute('src', 'https://platform.twitter.com/widgets.js');
       script.setAttribute('charset', 'utf-8');
       script.setAttribute('async', 'true');
       document.head.appendChild(script);
     }
+
+    const handleLoad = () => setSdkReady(true);
+    script.addEventListener('load', handleLoad);
+    return () => {
+      script.removeEventListener('load', handleLoad);
+    };
   }, []);
 
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.innerHTML = '';
+    let active = true;
+    if (!containerRef.current) return;
+
+    containerRef.current.innerHTML = '';
+
+    if (sdkReady && (window as any).twttr) {
       const tweetId = url.split('/status/')[1]?.split('?')[0];
-      if (tweetId && (window as any).twttr) {
+      if (tweetId) {
         (window as any).twttr.widgets.createTweet(tweetId, containerRef.current, {
           theme: 'dark',
           align: 'center'
+        }).then((el: any) => {
+          if (!active && el) {
+            el.remove();
+          }
         }).catch((err: any) => {
           console.error('Failed to create tweet widget:', err);
         });
       } else {
-        // Fallback layout before SDK loads or for parsing failure
-        const blockquote = document.createElement('blockquote');
-        blockquote.className = 'twitter-tweet';
-        blockquote.setAttribute('data-theme', 'dark');
-        const link = document.createElement('a');
-        link.href = url;
-        link.textContent = 'Loading Tweet...';
-        blockquote.appendChild(link);
-        containerRef.current.appendChild(blockquote);
-
-        if ((window as any).twttr) {
-          try {
-            (window as any).twttr.widgets.load(containerRef.current);
-          } catch (e) {
-            console.error('Error invoking widgets load:', e);
-          }
-        }
+        renderFallback();
       }
+    } else {
+      renderFallback();
     }
-  }, [url]);
+
+    function renderFallback() {
+      if (!containerRef.current) return;
+      const placeholder = document.createElement('div');
+      placeholder.className = 'twitter-tweet-placeholder';
+      placeholder.style.padding = '16px';
+      placeholder.style.textAlign = 'center';
+      placeholder.style.color = 'var(--text-muted, #888)';
+      placeholder.style.fontSize = '12px';
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'View Tweet on X / Twitter';
+      link.style.color = 'var(--accent-cyan, #00f0ff)';
+      link.style.textDecoration = 'underline';
+      link.style.display = 'block';
+      link.style.marginTop = '4px';
+
+      placeholder.textContent = 'Loading Tweet...';
+      placeholder.appendChild(link);
+      containerRef.current.appendChild(placeholder);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [url, sdkReady]);
 
   return <div ref={containerRef} className="twitter-tweet-container" />;
 };
@@ -133,6 +167,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [customDropInput, setCustomDropInput] = useState('');
   const [useBossCustomDuration, setUseBossCustomDuration] = useState(false);
   const [bossCustomDurationVal, setBossCustomDurationVal] = useState<number | undefined>(undefined);
+  const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
+  const [popupWidth, setPopupWidth] = useState<number>(300);
+  const [popupOffset, setPopupOffset] = useState<Point>({ x: 0, y: -100 });
+  const [isDraggingPopup, setIsDraggingPopup] = useState(false);
+  const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
+  const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
+  const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
 
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
   const targetZoomRef = useRef<number>(2);
@@ -232,6 +273,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (focusTrigger) {
       const marker = markers.find(m => m.id === focusTrigger.id);
       if (marker) {
+        // Update current position indicator
+        setCurrentPosition({ x: marker.x, y: marker.y });
+
         if (marker.scrollConfig) {
           // If custom scrollConfig is registered, use it directly
           startSmoothScroll(
@@ -338,6 +382,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     );
     ctx.closePath();
     ctx.fill();
+  };
+
+  const handlePopupMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isEditMode) return;
+    setIsDraggingPopup(true);
+    setPopupDragStart({ x: e.clientX, y: e.clientY });
+    setPopupOffsetStart(popupOffset);
+  };
+
+  const getPopupStyle = (offset: Point, w: number, color: string): React.CSSProperties => {
+    return {
+      position: 'absolute',
+      left: `${offset.x}px`,
+      top: `${offset.y}px`,
+      width: `${w}px`,
+      transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+      transformOrigin: 'center center',
+      zIndex: 1000,
+      cursor: isEditMode ? 'move' : 'default',
+      ['--theme-color' as any]: color
+    } as React.CSSProperties;
   };
 
   const getDistanceToSegment = (p: Point, a: Point, b: Point) => {
@@ -470,6 +536,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (isDraggingPopup) {
+      const dx = (e.clientX - popupDragStart.x) / zoom;
+      const dy = (e.clientY - popupDragStart.y) / zoom;
+      setPopupOffset({
+        x: Math.round(popupOffsetStart.x + dx),
+        y: Math.round(popupOffsetStart.y + dy)
+      });
+      return;
+    }
+
     if (!isEditMode) return;
 
     if (draggingMarkerId) {
@@ -506,6 +582,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMouseUp = () => {
     setIsPanning(false);
     setDraggingMarkerId(null);
+    if (isDraggingPopup) {
+      setIsDraggingPopup(false);
+      return;
+    }
     if (isDrawing) {
       setIsDrawing(false);
       if (toolMode === 'draw' && currentPoints.length >= 2) {
@@ -590,6 +670,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (isLinkable && m.linkedWarpId) {
         const partner = markers.find(mk => mk.id === m.linkedWarpId);
         if (partner) {
+          // Set current position pointer to target warp/stairs
+          setCurrentPosition({ x: partner.x, y: partner.y });
+
           if (partner.scrollConfig) {
             // Partner has manually-set scroll target → use it
             startSmoothScroll(
@@ -632,6 +715,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const hasCustom = bossCustomDurations && bossCustomDurations[m.id] !== undefined;
     setUseBossCustomDuration(hasCustom);
     setBossCustomDurationVal(hasCustom ? bossCustomDurations[m.id] : m.bossDurationSeconds || 60);
+    setPopupDirection(m.popupDirection || 'top');
+    setPopupWidth(m.popupWidth || (m.type === 'boss' ? 280 : 300));
+    setPopupOffset(m.popupOffset || { x: 0, y: -100 });
   };
 
   const handleZoom = (factor: number) => {
@@ -653,7 +739,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       onMarkersChange(
         markers.map(m => {
           if (m.id === activeNoteMarkerId) {
-            const updated = { ...m, note: noteText };
+            const updated = { 
+              ...m, 
+              note: noteText,
+              popupDirection: popupDirection,
+              popupWidth: popupWidth,
+              popupOffset: popupOffset
+            };
             if (m.type === 'info') {
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
@@ -739,6 +831,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onDoubleClick={(e) => {
+        const coords = getCanvasCoords(e);
+        setCurrentPosition(coords);
+      }}
     >
       <div 
         className="canvas-container"
@@ -823,9 +919,51 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               );
             })
           }
+          {/* Guide lines from pins to their corresponding draggable popups */}
+          {markers
+            .filter(m => (m.type === 'info' || m.type === 'boss') && m.floor === floor)
+            .map(m => {
+              const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
+              if (!offset) return null;
+
+              const isVisible = (m.type === 'info' && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
+
+              if (!isVisible) return null;
+
+              const color = m.type === 'boss' ? '#ff0055' : '#4fc3f7';
+              return (
+                <line
+                  key={`popup-connector-${m.id}`}
+                  x1={m.x} y1={m.y}
+                  x2={m.x + offset.x} y2={m.y + offset.y}
+                  stroke={color}
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  opacity="0.8"
+                />
+              );
+            })
+          }
         </svg>
 
         <div className="markers-layer">
+          {/* Current Position Marker (▼) */}
+          {currentPosition && (
+            <div
+              className="current-position-marker"
+              style={{
+                left: `${currentPosition.x}px`,
+                top: `${currentPosition.y}px`,
+                transform: `translate(-50%, -100%) scale(${1 / Math.sqrt(zoom)})`,
+                transformOrigin: 'bottom center'
+              }}
+            >
+              <div className="current-position-arrow">▼</div>
+              <div className="current-position-pulse" />
+            </div>
+          )}
+
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
@@ -846,7 +984,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <div
                   key={m.id}
                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass}`}
-                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : '')}
+                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : '')}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
@@ -867,32 +1005,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                   )}
 
-                  {/* Details Popup in Presentation Mode */}
-                  {!isEditMode && m.type === 'info' && m.infoExpanded && (
+                  {/* Details Popup in Presentation Mode or Preview in Edit Mode */}
+                  {((!isEditMode && m.type === 'info' && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'info')) && (
                     <div 
                       className="info-marker-popup"
-                      style={{
-                        transform: `translate(-50%, -100%) scale(${1 / zoom})`,
-                        bottom: '10px',
-                        left: '50%',
-                        '--theme-color': meta.color
-                      } as React.CSSProperties}
+                      style={getPopupStyle(
+                        isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
+                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 300),
+                        meta.color
+                      )}
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <div className="info-popup-header">
-                        <span className="info-popup-title">ⓘ {meta.label}</span>
-                        <button 
-                          className="info-popup-close"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onMarkersChange(
-                              markers.map(mk => mk.id === m.id ? { ...mk, infoExpanded: false } : mk)
-                            );
-                          }}
-                        >
-                          ✕
-                        </button>
+                      <div 
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>ⓘ</span> {meta.label}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                        </span>
+                        {!isEditMode && (
+                          <button 
+                            className="info-popup-close"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, infoExpanded: false } : mk)
+                              );
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                       <div className="info-popup-content">
                         {m.note.trim() && (
@@ -917,32 +1062,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                   )}
 
-                  {/* Boss Details Popup in Presentation Mode */}
-                  {!isEditMode && m.type === 'boss' && m.bossExpanded && (
+                  {/* Boss Details Popup in Presentation Mode or Preview in Edit Mode */}
+                  {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'boss')) && (
                     <div 
                       className="boss-marker-popup"
-                      style={{
-                        transform: `translate(-50%, -100%) scale(${1 / zoom})`,
-                        bottom: '10px',
-                        left: '50%',
-                        '--theme-color': meta.color
-                      } as React.CSSProperties}
+                      style={getPopupStyle(
+                        isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
+                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        meta.color
+                      )}
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <div className="info-popup-header">
-                        <span className="info-popup-title">😈 {m.note.trim() ? m.note : 'BOSS STATUS'}</span>
-                        <button 
-                          className="info-popup-close"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onMarkersChange(
-                              markers.map(mk => mk.id === m.id ? { ...mk, bossExpanded: false } : mk)
-                            );
-                          }}
-                        >
-                          ✕
-                        </button>
+                      <div 
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>😈</span> {m.note.trim() ? m.note : 'BOSS STATUS'}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                        </span>
+                        {!isEditMode && (
+                          <button 
+                            className="info-popup-close"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, bossExpanded: false } : mk)
+                              );
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                       <div className="info-popup-content">
                         {/* Drops display */}
@@ -1321,6 +1473,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
           
+          {/* Appearance (Direction & Size) configuration for Info & Boss markers */}
+          {(activeNoteMarker.type === 'info' || activeNoteMarker.type === 'boss') && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ポップアップ表示設定 (APPEARANCE):</div>
+              
+              {/* Reset offset button */}
+              <button
+                type="button"
+                className="btn-cyber"
+                style={{ padding: '4px 8px', fontSize: '10px', width: '100%', clipPath: 'none' }}
+                onClick={() => setPopupOffset({ x: 0, y: -120 })}
+              >
+                表示位置をデフォルト（上部）にリセット
+              </button>
+
+              {/* Width slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                  <span>ポップアップの幅:</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="200"
+                  max="500"
+                  step="10"
+                  value={popupWidth}
+                  onChange={(e) => setPopupWidth(parseInt(e.target.value))}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="note-popover-buttons" style={{ marginTop: '8px' }}>
             <button className="btn-cyber danger" style={{ padding: '4px 8px', fontSize: '10px' }} onClick={() => setActiveNoteMarkerId(null)}>
               Cancel

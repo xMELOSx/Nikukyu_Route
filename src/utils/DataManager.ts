@@ -37,6 +37,9 @@ export interface HeistMarker {
   bossDrops?: string[];   // For boss markers: list of drop items
   bossDurationSeconds?: number; // For boss markers: duration in seconds
   bossExpanded?: boolean; // For boss markers: whether details are expanded in presentation mode
+  popupDirection?: 'top' | 'bottom' | 'left' | 'right'; // Direction of detail popup
+  popupWidth?: number;    // Width of detail popup in pixels
+  popupOffset?: { x: number; y: number }; // Offset position from pin center
 }
 
 export interface RouteData {
