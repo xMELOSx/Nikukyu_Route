@@ -41,6 +41,7 @@ export interface HeistMarker {
   battleExpanded?: boolean; // For battle markers: whether details are expanded in presentation mode
   popupDirection?: 'top' | 'bottom' | 'left' | 'right'; // Direction of detail popup
   popupWidth?: number;    // Width of detail popup in pixels
+  popupHeight?: number;   // Height of detail popup in pixels (0 or undefined = auto)
   popupOffset?: { x: number; y: number }; // Offset position from pin center
   pickingDurationSeconds?: number; // For picking markers: duration in seconds
   longPickingDurationSeconds?: number; // For long picking markers: duration in seconds

@@ -165,7 +165,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
 
   // Viewport State (Zoom & Pan)
-  const [zoom, setZoom] = useState(2);
+  const [zoom, setZoom] = useState(4);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
@@ -200,6 +200,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [longPickingCustomDurationVal, setLongPickingCustomDurationVal] = useState<number | undefined>(undefined);
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
+  const [popupHeight, setPopupHeight] = useState<number>(0);
   const [popupOffset, setPopupOffset] = useState<Point>({ x: 0, y: -100 });
   const [isDraggingPopup, setIsDraggingPopup] = useState(false);
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
@@ -207,7 +208,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
 
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
-  const targetZoomRef = useRef<number>(2);
+  const targetZoomRef = useRef<number>(4);
   const targetPanRef = useRef<Point>({ x: 0, y: 0 });
   const animFrameIdRef = useRef<number | null>(null);
   const animPanRef = useRef<Point>({ x: 0, y: 0 });
@@ -423,12 +424,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPopupOffsetStart(popupOffset);
   };
 
-  const getPopupStyle = (offset: Point, w: number, color: string): React.CSSProperties => {
+  const getPopupStyle = (offset: Point, w: number, h: number, color: string): React.CSSProperties => {
     return {
       position: 'absolute',
       left: `${offset.x}px`,
       top: `${offset.y}px`,
       width: `${w}px`,
+      ...(h > 0 ? { height: `${h}px`, overflowY: 'auto' as const } : {}),
       transform: `translate(-50%, -50%) scale(${1 / zoom})`,
       transformOrigin: 'center center',
       zIndex: 1000,
@@ -826,13 +828,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
+    setPopupHeight(m.popupHeight || 0);
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
   };
 
   const handleZoom = (factor: number) => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     setZoom(prev => {
-      const nz = Math.max(0.5, Math.min(4, prev * factor));
+      const nz = Math.max(0.5, Math.min(8, prev * factor));
       targetZoomRef.current = nz;
       return nz;
     });
@@ -840,7 +843,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const resetView = () => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-    startSmoothScroll({ x: 0, y: 0 }, 2);
+    startSmoothScroll({ x: 0, y: 0 }, 4);
   };
 
   const handleSaveNote = () => {
@@ -853,6 +856,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               note: noteText,
               popupDirection: popupDirection,
               popupWidth: popupWidth,
+              popupHeight: popupHeight,
               popupOffset: popupOffset
             };
             if (m.type === 'info') {
@@ -1167,6 +1171,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 300),
+                        isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
                       onClick={(e) => e.stopPropagation()}
@@ -1224,6 +1229,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
                       onClick={(e) => e.stopPropagation()}
@@ -1321,6 +1327,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
                       onClick={(e) => e.stopPropagation()}
@@ -1403,6 +1410,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
                       onClick={(e) => e.stopPropagation()}
@@ -2056,6 +2064,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                 />
               </div>
+
+              {/* Height slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                  <span>ポップアップの高さ:</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupHeight === 0 ? 'AUTO' : `${popupHeight}px`}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="500"
+                  step="10"
+                  value={popupHeight}
+                  onChange={(e) => setPopupHeight(parseInt(e.target.value))}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
             </div>
           )}
 
@@ -2095,7 +2120,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <button className="zoom-btn" onClick={() => handleZoom(0.8)} title="Zoom Out">
           <ZoomOut size={18} />
         </button>
-        <button className="zoom-btn" onClick={resetView} title="Reset View (2x)">
+        <button className="zoom-btn" onClick={resetView} title="Reset View (4x)">
           <Maximize2 size={18} />
         </button>
         {isEditMode && (
