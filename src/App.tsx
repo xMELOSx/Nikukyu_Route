@@ -1,25 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapCanvas } from './components/MapCanvas';
-import { 
-  type FloorType, 
-  type MarkerType, 
-  type DrawingStroke, 
-  type HeistMarker, 
-  type RouteData, 
-  DEFAULT_ROUTE, 
-  MARKER_META, 
-  DataManager 
+import {
+  type FloorType,
+  type MarkerType,
+  type DrawingStroke,
+  type HeistMarker,
+  type RouteData,
+  DEFAULT_ROUTE,
+  MARKER_META,
+  DataManager
 } from './utils/DataManager';
-import { 
-  Save, 
-  Download, 
-  Upload, 
-  Image as ImageIcon, 
-  Eraser, 
-  Paintbrush, 
+import {
+  Save,
+  Download,
+  Upload,
+  Image as ImageIcon,
+  Eraser,
+  Paintbrush,
   Move,
-  RotateCcw
+  RotateCcw,
+  Undo,
+  Redo
 } from 'lucide-react';
+
+interface HistoryState {
+  strokes: { [key in FloorType]: DrawingStroke[] };
+  individualMarkers: HeistMarker[];
+  globalMarkers: HeistMarker[];
+}
 
 export default function App() {
   // Global State: Current Active Heist Plan
@@ -36,6 +44,71 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
+  // Undo/Redo History States
+  const [pastHistory, setPastHistory] = useState<HistoryState[]>([]);
+  const [futureHistory, setFutureHistory] = useState<HistoryState[]>([]);
+  const dragStartSnapshotRef = useRef<HistoryState | null>(null);
+
+  const pushHistory = (
+    currStrokes: { [key in FloorType]: DrawingStroke[] },
+    currIndiv: HeistMarker[],
+    currGlobal: HeistMarker[]
+  ) => {
+    const snapshot: HistoryState = {
+      strokes: JSON.parse(JSON.stringify(currStrokes)),
+      individualMarkers: JSON.parse(JSON.stringify(currIndiv)),
+      globalMarkers: JSON.parse(JSON.stringify(currGlobal))
+    };
+    setPastHistory(prev => [...prev.slice(-49), snapshot]); // Limit to 50
+    setFutureHistory([]);
+  };
+
+  const undo = () => {
+    if (pastHistory.length === 0) return;
+    const previous = pastHistory[pastHistory.length - 1];
+    const nextPast = pastHistory.slice(0, pastHistory.length - 1);
+
+    const currentSnapshot: HistoryState = {
+      strokes: JSON.parse(JSON.stringify(route.strokes)),
+      individualMarkers: JSON.parse(JSON.stringify(route.markers)),
+      globalMarkers: JSON.parse(JSON.stringify(globalMarkers))
+    };
+
+    setPastHistory(nextPast);
+    setFutureHistory(prev => [...prev, currentSnapshot]);
+
+    setRoute(prev => ({
+      ...prev,
+      strokes: previous.strokes,
+      markers: previous.individualMarkers
+    }));
+    setGlobalMarkers(previous.globalMarkers);
+    localStorage.setItem('heist_global_markers', JSON.stringify(previous.globalMarkers));
+  };
+
+  const redo = () => {
+    if (futureHistory.length === 0) return;
+    const next = futureHistory[futureHistory.length - 1];
+    const nextFuture = futureHistory.slice(0, futureHistory.length - 1);
+
+    const currentSnapshot: HistoryState = {
+      strokes: JSON.parse(JSON.stringify(route.strokes)),
+      individualMarkers: JSON.parse(JSON.stringify(route.markers)),
+      globalMarkers: JSON.parse(JSON.stringify(globalMarkers))
+    };
+
+    setFutureHistory(nextFuture);
+    setPastHistory(prev => [...prev, currentSnapshot]);
+
+    setRoute(prev => ({
+      ...prev,
+      strokes: next.strokes,
+      markers: next.individualMarkers
+    }));
+    setGlobalMarkers(next.globalMarkers);
+    localStorage.setItem('heist_global_markers', JSON.stringify(next.globalMarkers));
+  };
+
   const handleBossCustomDurationChange = (markerId: string, duration: number | undefined) => {
     setRoute(prev => {
       const nextDurations = { ...(prev.bossCustomDurations || {}) };
@@ -51,14 +124,60 @@ export default function App() {
     });
   };
 
+  const handleBattleCustomDurationChange = (markerId: string, duration: number | undefined) => {
+    setRoute(prev => {
+      const nextDurations = { ...(prev.battleCustomDurations || {}) };
+      if (duration === undefined) {
+        delete nextDurations[markerId];
+      } else {
+        nextDurations[markerId] = duration;
+      }
+      return {
+        ...prev,
+        battleCustomDurations: nextDurations
+      };
+    });
+  };
+
+  const handlePickingCustomDurationChange = (markerId: string, duration: number | undefined) => {
+    setRoute(prev => {
+      const nextDurations = { ...(prev.pickingCustomDurations || {}) };
+      if (duration === undefined) {
+        delete nextDurations[markerId];
+      } else {
+        nextDurations[markerId] = duration;
+      }
+      return {
+        ...prev,
+        pickingCustomDurations: nextDurations
+      };
+    });
+  };
+
+  const handleLongPickingCustomDurationChange = (markerId: string, duration: number | undefined) => {
+    setRoute(prev => {
+      const nextDurations = { ...(prev.longPickingCustomDurations || {}) };
+      if (duration === undefined) {
+        delete nextDurations[markerId];
+      } else {
+        nextDurations[markerId] = duration;
+      }
+      return {
+        ...prev,
+        longPickingCustomDurations: nextDurations
+      };
+    });
+  };
+
   // Tool Configurations
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('draw');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('start');
-  
+
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
-  const [strokeWidth, setStrokeWidth] = useState(4);
+  const [strokeWidth, setStrokeWidth] = useState(3); // line default 3px
   const [strokeType, setStrokeType] = useState<'solid' | 'dashed' | 'arrow'>('arrow');
+  const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true); // default true
 
   // App UI lists
   const [saves, setSaves] = useState<{ id: string; title: string; updatedAt: number }[]>([]);
@@ -86,6 +205,23 @@ export default function App() {
             if (updated.bossDrops === undefined) updated.bossDrops = [];
             return updated;
           }
+          if (m.type === 'battle' || m.type === 'gbattle') {
+            const updated = { ...m };
+            if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+            return updated;
+          }
+          if (m.type === 'picking' || m.type === 'gpicking') {
+            const updated = { ...m };
+            if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+            return updated;
+          }
+          if (m.type === 'long_picking' || m.type === 'glong_picking') {
+            const updated = { ...m };
+            if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+            return updated;
+          }
           return m;
         });
         setGlobalMarkers(migrated);
@@ -95,10 +231,20 @@ export default function App() {
     }
   }, []);
 
-  // Keyboard shortcut listener for EDIT/VIEW toggling
+  // Keyboard shortcut listener for EDIT/VIEW toggling and Undo/Redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        redo();
         return;
       }
       if (e.key === 'p' || e.key === 'P' || e.key === 'v' || e.key === 'V') {
@@ -113,7 +259,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [pastHistory, futureHistory, route, globalMarkers]);
 
   const refreshSavesList = () => {
     setSaves(DataManager.getSavesList().sort((a, b) => b.updatedAt - a.updatedAt));
@@ -121,6 +267,7 @@ export default function App() {
 
   // State Sync wrappers
   const updateStrokes = (newStrokes: DrawingStroke[]) => {
+    pushHistory(route.strokes, route.markers, globalMarkers);
     setRoute(prev => ({
       ...prev,
       strokes: {
@@ -130,8 +277,11 @@ export default function App() {
     }));
   };
 
-  const updateMarkers = (newMarkers: HeistMarker[]) => {
-    const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'p4'].includes(type);
+  const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false) => {
+    if (shouldPushHistory) {
+      pushHistory(route.strokes, route.markers, globalMarkers);
+    }
+    const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
     const newGlobal = newMarkers.filter(m => !isIndiv(m.type));
     const newIndividual = newMarkers.filter(m => isIndiv(m.type));
 
@@ -144,17 +294,42 @@ export default function App() {
     }));
   };
 
-  // Clear current floor Canvas & Markers
-  const clearCurrentFloor = () => {
-    if (window.confirm(`Clear all drawings and markers?`)) {
-      setRoute(prev => ({
-        ...prev,
-        strokes: {
-          main: []
-        },
-        markers: []
-      }));
+  const handleMarkersDragStart = () => {
+    dragStartSnapshotRef.current = {
+      strokes: JSON.parse(JSON.stringify(route.strokes)),
+      individualMarkers: JSON.parse(JSON.stringify(route.markers)),
+      globalMarkers: JSON.parse(JSON.stringify(globalMarkers))
+    };
+  };
+
+  const handleMarkersDragEnd = () => {
+    if (dragStartSnapshotRef.current) {
+      setPastHistory(prev => [...prev.slice(-49), dragStartSnapshotRef.current!]);
+      setFutureHistory([]);
+      dragStartSnapshotRef.current = null;
     }
+  };
+
+  // Clear current floor Canvas & Markers (selective)
+  const clearCurrentFloor = () => {
+    const choice = window.prompt(
+      'リセット対象を選択してください:\n1: ラインのみ削除\n2: 個別ピンのみ削除\n3: 両方削除\n\nキャンセルで中止',
+      '3'
+    );
+    if (!choice) return;
+    const trimmed = choice.trim();
+    if (trimmed !== '1' && trimmed !== '2' && trimmed !== '3') {
+      alert('1, 2, 3 のいずれかを入力してください。');
+      return;
+    }
+    pushHistory(route.strokes, route.markers, globalMarkers);
+    setRoute(prev => ({
+      ...prev,
+      strokes: {
+        main: (trimmed === '1' || trimmed === '3') ? [] : prev.strokes.main
+      },
+      markers: (trimmed === '2' || trimmed === '3') ? [] : prev.markers
+    }));
   };
 
   // Local Storage actions
@@ -177,12 +352,23 @@ export default function App() {
         data.strokes = { main: merged };
       }
       if (data.markers) {
-        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'p4'].includes(type);
+        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
           if (updated.type === 'boss') {
             if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
             if (updated.bossDrops === undefined) updated.bossDrops = [];
+          }
+          if (updated.type === 'battle' || updated.type === 'gbattle') {
+            if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+          }
+          if (updated.type === 'picking' || updated.type === 'gpicking') {
+            if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+          }
+          if (updated.type === 'long_picking' || updated.type === 'glong_picking') {
+            if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
           }
           return updated;
         });
@@ -191,6 +377,17 @@ export default function App() {
           if (updated.type === 'boss') {
             if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
             if (updated.bossDrops === undefined) updated.bossDrops = [];
+          }
+          if (updated.type === 'battle' || updated.type === 'gbattle') {
+            if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+          }
+          if (updated.type === 'picking' || updated.type === 'gpicking') {
+            if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+          }
+          if (updated.type === 'long_picking' || updated.type === 'glong_picking') {
+            if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
           }
           return updated;
         });
@@ -215,6 +412,15 @@ export default function App() {
       }
       if (!data.bossCustomDurations) {
         data.bossCustomDurations = {};
+      }
+      if (!data.battleCustomDurations) {
+        data.battleCustomDurations = {};
+      }
+      if (!data.pickingCustomDurations) {
+        data.pickingCustomDurations = {};
+      }
+      if (!data.longPickingCustomDurations) {
+        data.longPickingCustomDurations = {};
       }
       setRoute(data);
       alert(`Loaded plan: ${data.title}`);
@@ -261,13 +467,24 @@ export default function App() {
             });
             importedData.strokes = { main: merged };
           }
-          
-          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'p4'].includes(type);
+
+          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
           const planIndiv = importedData.markers.filter(m => isIndiv(m.type)).map(m => {
             const updated = { ...m, floor: 'main' as FloorType };
             if (updated.type === 'boss') {
               if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
               if (updated.bossDrops === undefined) updated.bossDrops = [];
+            }
+            if (updated.type === 'battle' || updated.type === 'gbattle') {
+              if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+            }
+            if (updated.type === 'picking' || updated.type === 'gpicking') {
+              if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+            }
+            if (updated.type === 'long_picking' || updated.type === 'glong_picking') {
+              if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
             }
             return updated;
           });
@@ -276,6 +493,17 @@ export default function App() {
             if (updated.type === 'boss') {
               if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
               if (updated.bossDrops === undefined) updated.bossDrops = [];
+            }
+            if (updated.type === 'battle' || updated.type === 'gbattle') {
+              if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+            }
+            if (updated.type === 'picking' || updated.type === 'gpicking') {
+              if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+            }
+            if (updated.type === 'long_picking' || updated.type === 'glong_picking') {
+              if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
             }
             return updated;
           });
@@ -302,6 +530,15 @@ export default function App() {
           }
           if (!importedData.bossCustomDurations) {
             importedData.bossCustomDurations = {};
+          }
+          if (!importedData.battleCustomDurations) {
+            importedData.battleCustomDurations = {};
+          }
+          if (!importedData.pickingCustomDurations) {
+            importedData.pickingCustomDurations = {};
+          }
+          if (!importedData.longPickingCustomDurations) {
+            importedData.longPickingCustomDurations = {};
           }
           setRoute(importedData);
           alert(`Imported successfully: ${importedData.title}`);
@@ -381,13 +618,46 @@ export default function App() {
       {/* Top Application Header */}
       <header className="app-header glass-panel">
         <div className="app-title">
-          <span>🐾</span> NIKUKYU HEIST ROUTE PLANNER
+          <span>🐾</span> にくきゅう大強盗（大強奪）v1.1.8 ルートプランナー
         </div>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          {/* Undo / Redo Buttons */}
+          <button
+            className="btn-cyber"
+            onClick={undo}
+            disabled={pastHistory.length === 0}
+            title="Undo (Ctrl+Z)"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              opacity: pastHistory.length === 0 ? 0.4 : 1,
+              cursor: pastHistory.length === 0 ? 'not-allowed' : 'pointer',
+              clipPath: 'none'
+            }}
+          >
+            <Undo size={14} />
+          </button>
+          <button
+            className="btn-cyber"
+            onClick={redo}
+            disabled={futureHistory.length === 0}
+            title="Redo (Ctrl+Y)"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              opacity: futureHistory.length === 0 ? 0.4 : 1,
+              cursor: futureHistory.length === 0 ? 'not-allowed' : 'pointer',
+              clipPath: 'none',
+              marginRight: '10px'
+            }}
+          >
+            <Redo size={14} />
+          </button>
+
           {/* Label Visibility Toggle */}
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginRight: '5px' }}>
-            <input 
+            <input
               type="checkbox"
               checked={showMarkerLabels}
               onChange={(e) => {
@@ -400,8 +670,8 @@ export default function App() {
           </label>
 
           {/* Edit / View Presentation Toggle */}
-          <button 
-            className={`btn-cyber ${isEditMode ? 'active' : 'success'}`} 
+          <button
+            className={`btn-cyber ${isEditMode ? 'active' : 'success'}`}
             onClick={() => {
               setIsEditMode(!isEditMode);
               if (isEditMode) {
@@ -422,12 +692,12 @@ export default function App() {
           <button className="btn-cyber" onClick={() => jsonFileInputRef.current?.click()} title="Upload plan from JSON">
             <Upload size={16} /> Import JSON
           </button>
-          <input 
-            type="file" 
-            ref={jsonFileInputRef} 
-            onChange={handleImportJSON} 
-            accept=".json" 
-            style={{ display: 'none' }} 
+          <input
+            type="file"
+            ref={jsonFileInputRef}
+            onChange={handleImportJSON}
+            accept=".json"
+            style={{ display: 'none' }}
             id="json-file-input"
           />
           <button className="btn-cyber success" onClick={handleExportPNG} title="Save map drawing as PNG Image">
@@ -477,7 +747,7 @@ export default function App() {
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               Click to focus room. Set scroll targets on map.
             </div>
-            
+
             <div className="saves-list" style={{ maxHeight: '175px' }}>
               {globalMarkers.filter(m => m.type === 'room').length === 0 ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
@@ -505,200 +775,201 @@ export default function App() {
             </div>
           </div>
 
-          {/* Conditional panels based on Mode selection */}
-          {!isEditMode ? (
-            <div className="panel-section glass-panel-glow" style={{ padding: '15px', borderRadius: '4px', borderLeft: '3px solid var(--green-neon)', background: 'rgba(57, 255, 20, 0.03)' }}>
-              <div style={{ fontWeight: 700, color: 'var(--green-neon)', fontSize: '12px', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-                👁 PRESENTATION MODE
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.4' }}>
-                Blueprint drawings and markers are locked. Select registered rooms in the list above to pan and showcase route specifics.
-              </div>
+
+          {/* Tool Mode (Visible in both Edit & Presentation Modes) */}
+          <div className="panel-section">
+            <div className="panel-title">2. TOOL MODE</div>
+            <div className="tool-grid">
+              <button
+                className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
+                onClick={() => setToolMode('draw')}
+                id="tool-draw-btn"
+              >
+                <Paintbrush size={18} />
+                <span>Draw Line</span>
+              </button>
+              <button
+                className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
+                onClick={() => setToolMode('erase')}
+                id="tool-erase-btn"
+              >
+                <Eraser size={18} />
+                <span>Eraser</span>
+              </button>
+              <button
+                className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`}
+                onClick={() => setToolMode('pan')}
+                id="tool-pan-btn"
+              >
+                <Move size={18} />
+                <span>Pan Map</span>
+              </button>
+              <button
+                className="tool-btn"
+                onClick={clearCurrentFloor}
+                id="tool-reset-btn"
+              >
+                <RotateCcw size={18} />
+                <span>Reset Map</span>
+              </button>
             </div>
-          ) : (
-            <>
-              <div className="panel-section">
-                <div className="panel-title">2. TOOL MODE</div>
-                <div className="tool-grid">
-                  <button 
-                    className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
-                    onClick={() => setToolMode('draw')}
-                    id="tool-draw-btn"
-                  >
-                    <Paintbrush size={18} />
-                    <span>Draw Line</span>
-                  </button>
-                  <button 
-                    className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
-                    onClick={() => setToolMode('erase')}
-                    id="tool-erase-btn"
-                  >
-                    <Eraser size={18} />
-                    <span>Eraser</span>
-                  </button>
-                  <button 
-                    className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`}
-                    onClick={() => setToolMode('pan')}
-                    id="tool-pan-btn"
-                  >
-                    <Move size={18} />
-                    <span>Pan Map</span>
-                  </button>
-                  <button 
-                    className="tool-btn"
-                    onClick={clearCurrentFloor}
-                    id="tool-reset-btn"
-                  >
-                    <RotateCcw size={18} />
-                    <span>Reset Map</span>
-                  </button>
-                </div>
+          </div>
+
+          {toolMode === 'draw' && (
+            <div className="panel-section">
+              <div className="panel-title">3. BRUSH CONFIG</div>
+
+              {/* Presets */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '3px 6px', fontSize: '10px' }}
+                  onClick={() => setBrushPreset('#ffe600', 3, 'dashed')}
+                >
+                  Patrol Path
+                </button>
+                <button
+                  className="btn-cyber danger"
+                  style={{ padding: '3px 6px', fontSize: '10px' }}
+                  onClick={() => setBrushPreset('#ff0055', 3, 'arrow')}
+                >
+                  Heist Route
+                </button>
+                <button
+                  className="btn-cyber success"
+                  style={{ padding: '3px 6px', fontSize: '10px' }}
+                  onClick={() => setBrushPreset('#39ff14', 3, 'solid')}
+                >
+                  Safety Run
+                </button>
               </div>
 
-              {toolMode === 'draw' && (
-                <div className="panel-section">
-                  <div className="panel-title">3. BRUSH CONFIG</div>
-                  
-                  {/* Presets */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                    <button 
-                      className="btn-cyber" 
-                      style={{ padding: '3px 6px', fontSize: '10px' }} 
-                      onClick={() => setBrushPreset('#ffe600', 3, 'dashed')}
-                    >
-                      Patrol Path
-                    </button>
-                    <button 
-                      className="btn-cyber danger" 
-                      style={{ padding: '3px 6px', fontSize: '10px' }} 
-                      onClick={() => setBrushPreset('#ff0055', 4, 'arrow')}
-                    >
-                      Heist Route
-                    </button>
-                    <button 
-                      className="btn-cyber success" 
-                      style={{ padding: '3px 6px', fontSize: '10px' }} 
-                      onClick={() => setBrushPreset('#39ff14', 3, 'solid')}
-                    >
-                      Safety Run
-                    </button>
-                  </div>
-
-                  {/* Color dots */}
-                  <div className="color-picker">
-                    {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
-                      <div
-                        key={c}
-                        className={`color-dot ${strokeColor === c ? 'active' : ''}`}
-                        style={{ backgroundColor: c, color: c }}
-                        onClick={() => setStrokeColor(c)}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Line Type */}
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                    {(['solid', 'dashed', 'arrow'] as const).map(t => (
-                      <button
-                        key={t}
-                        className={`btn-cyber ${strokeType === t ? 'active' : ''}`}
-                        style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }}
-                        onClick={() => setStrokeType(t)}
-                      >
-                        {t.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Width Slider */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Brush Width: {strokeWidth}px</span>
-                    <input 
-                      type="range" 
-                      min="2" 
-                      max="12" 
-                      value={strokeWidth} 
-                      onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="panel-section">
-                <div className="panel-title">4. MAP MARKERS (GLOBAL)</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Shared across all plans.
-                </div>
-                
-                <div className="marker-list">
-                  {(['start', 'goal', 'camera', 'guard', 'vault', 'boss', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
-                    const meta = MARKER_META[t];
-                    return (
-                      <button
-                        key={t}
-                        className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
-                        onClick={() => {
-                          setToolMode('add-marker');
-                          setActiveMarkerType(t);
-                        }}
-                        style={{ '--theme-color': meta.color } as React.CSSProperties}
-                      >
-                        <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{meta.label.split(' ')[0]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Color dots */}
+              <div className="color-picker">
+                {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
+                  <div
+                    key={c}
+                    className={`color-dot ${strokeColor === c ? 'active' : ''}`}
+                    style={{ backgroundColor: c, color: c }}
+                    onClick={() => setStrokeColor(c)}
+                  />
+                ))}
               </div>
 
-              <div className="panel-section">
-                <div className="panel-title">5. MAP MARKERS (INDIVIDUAL)</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Saved only in this plan.
-                </div>
-                
-                <div className="marker-list">
-                  {(['p1', 'p2', 'p3', 'p4'] as MarkerType[]).map(t => {
-                    const meta = MARKER_META[t];
-                    return (
-                      <button
-                        key={t}
-                        className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
-                        onClick={() => {
-                          setToolMode('add-marker');
-                          setActiveMarkerType(t);
-                        }}
-                        style={{ '--theme-color': meta.color } as React.CSSProperties}
-                      >
-                        <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{meta.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Line Type */}
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                {(['solid', 'dashed', 'arrow'] as const).map(t => (
+                  <button
+                    key={t}
+                    className={`btn-cyber ${strokeType === t ? 'active' : ''}`}
+                    style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }}
+                    onClick={() => setStrokeType(t)}
+                  >
+                    {t.toUpperCase()}
+                  </button>
+                ))}
               </div>
-            </>
+
+              {/* Width Slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Brush Width: {strokeWidth}px</span>
+                <input
+                  type="range"
+                  min="2"
+                  max="12"
+                  value={strokeWidth}
+                  onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Disable Pins interference checkbox */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '8px', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={disablePinsDuringDraw}
+                  onChange={(e) => setDisablePinsDuringDraw(e.target.checked)}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                ライン描画時のピン干渉防止 (遮断)
+              </label>
+            </div>
           )}
 
-          {/* Escape Phone Controls - visible in both modes */}
+          {/* Global Markers: Only editable in Edit Mode */}
+          {isEditMode && (
+            <div className="panel-section">
+              <div className="panel-title">4. MAP MARKERS (GLOBAL)</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Shared across all plans.
+              </div>
+
+              <div className="marker-list">
+                {(['start', 'goal', 'camera', 'guard', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
+                  const meta = MARKER_META[t];
+                  return (
+                    <button
+                      key={t}
+                      className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
+                      onClick={() => {
+                        setToolMode('add-marker');
+                        setActiveMarkerType(t);
+                      }}
+                      style={{ '--theme-color': meta.color } as React.CSSProperties}
+                    >
+                      <span className="marker-icon-preview">{meta.emoji}</span>
+                      <span>{meta.label.split(' ')[0]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Individual Markers: Editable in both Edit and Presentation modes */}
+          <div className="panel-section">
+            <div className="panel-title">5. MAP MARKERS (INDIVIDUAL)</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Saved only in this plan.
+            </div>
+
+            <div className="marker-list">
+              {(['battle', 'picking', 'long_picking', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                const meta = MARKER_META[t];
+                return (
+                  <button
+                    key={t}
+                    className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
+                    onClick={() => {
+                      setToolMode('add-marker');
+                      setActiveMarkerType(t);
+                    }}
+                    style={{ '--theme-color': meta.color } as React.CSSProperties}
+                  >
+                    <span className="marker-icon-preview">{meta.emoji}</span>
+                    <span>{meta.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ReroRero電話ボックス Controls - visible in both modes */}
           {(() => {
             const allPhones = globalMarkers.filter(m => m.type === 'phone');
             const activeCount = allPhones.filter(m => m.phoneActive).length;
-            const lockedCount = allPhones.filter(m => m.phoneLocked).length;
             if (allPhones.length === 0) return null;
             return (
-              <div className="panel-section" style={{ borderTop: '1px solid rgba(255, 0, 255, 0.1)', paddingTop: '10px' }}>
-                <div className="panel-title">📞 ESCAPE PHONES</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  {activeCount}/{allPhones.length} active{lockedCount > 0 ? ` (${lockedCount} locked)` : ''}
+              <div className="panel-section" style={{ borderTop: '1px solid rgba(255, 0, 255, 0.1)', paddingTop: '6px' }}>
+                <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>📞 ReroRero電話ボックス</span>
+                  <span style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', fontWeight: 'bold' }}>{activeCount}/{allPhones.length}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     className="btn-cyber"
                     style={{ flex: 1, padding: '4px 6px', fontSize: '10px' }}
                     onClick={() => {
-                      // Reset: set all non-locked phones to inactive
                       const updated = globalMarkers.map(m =>
                         m.type === 'phone' && !m.phoneLocked
                           ? { ...m, phoneActive: false }
@@ -714,11 +985,9 @@ export default function App() {
                     className="btn-cyber success"
                     style={{ flex: 1, padding: '4px 6px', fontSize: '10px' }}
                     onClick={() => {
-                      // Random 5: activate 5 random non-locked phones
                       const unlocked = globalMarkers
                         .map((m, i) => ({ m, i }))
                         .filter(({ m }) => m.type === 'phone' && !m.phoneLocked);
-                      // Shuffle and pick up to 5
                       const shuffled = [...unlocked].sort(() => Math.random() - 0.5);
                       const toActivate = new Set(shuffled.slice(0, 5).map(({ i }) => i));
                       const updated = globalMarkers.map((m, i) => {
@@ -743,10 +1012,10 @@ export default function App() {
             const allInfos = globalMarkers.filter(m => m.type === 'info');
             if (allInfos.length === 0) return null;
             return (
-              <div className="panel-section" style={{ borderTop: '1px solid rgba(79, 195, 247, 0.15)', paddingTop: '10px' }}>
-                <div className="panel-title">ℹ️ INFO PINS</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  {allInfos.filter(m => m.infoExpanded).length}/{allInfos.length} open
+              <div className="panel-section" style={{ borderTop: '1px solid rgba(79, 195, 247, 0.15)', paddingTop: '6px' }}>
+                <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>ℹ️ INFO PINS</span>
+                  <span style={{ fontSize: '10px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold' }}>{allInfos.filter(m => m.infoExpanded).length}/{allInfos.length}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
@@ -810,6 +1079,15 @@ export default function App() {
             showMarkerLabels={showMarkerLabels}
             bossCustomDurations={route.bossCustomDurations}
             onBossCustomDurationChange={handleBossCustomDurationChange}
+            battleCustomDurations={route.battleCustomDurations}
+            onBattleCustomDurationChange={handleBattleCustomDurationChange}
+            pickingCustomDurations={route.pickingCustomDurations}
+            onPickingCustomDurationChange={handlePickingCustomDurationChange}
+            longPickingCustomDurations={route.longPickingCustomDurations}
+            onLongPickingCustomDurationChange={handleLongPickingCustomDurationChange}
+            disablePinsDuringDraw={disablePinsDuringDraw}
+            onMarkersDragStart={handleMarkersDragStart}
+            onMarkersDragEnd={handleMarkersDragEnd}
           />
         </section>
 
@@ -817,7 +1095,7 @@ export default function App() {
         <section className="sidebar-right glass-panel">
           <div className="panel-section">
             <div className="panel-title">ROUTE PROFILE</div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>PLAN NAME</label>
               <input
@@ -827,7 +1105,7 @@ export default function App() {
                 onChange={(e) => setRoute({ ...route, title: e.target.value.toUpperCase() })}
                 disabled={!isEditMode}
               />
-              
+
               <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>ESTIMATED CASH REWARD</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
@@ -859,28 +1137,28 @@ export default function App() {
                 </div>
                 <div>
                   <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>CUSTOM BG</label>
-                  <button 
-                    className="btn-cyber" 
+                  <button
+                    className="btn-cyber"
                     style={{ width: '100%', marginTop: '4px', padding: '6px' }}
                     onClick={() => bgFileInputRef.current?.click()}
                     disabled={!isEditMode}
                   >
                     <ImageIcon size={12} /> Upload Map
                   </button>
-                  <input 
-                    type="file" 
-                    ref={bgFileInputRef} 
-                    onChange={handleBgUpload} 
-                    accept="image/*" 
-                    style={{ display: 'none' }} 
+                  <input
+                    type="file"
+                    ref={bgFileInputRef}
+                    onChange={handleBgUpload}
+                    accept="image/*"
+                    style={{ display: 'none' }}
                     id="bg-file-input"
                   />
                 </div>
               </div>
 
               {route.customBg[currentFloor] && isEditMode && (
-                <button 
-                  className="btn-cyber danger" 
+                <button
+                  className="btn-cyber danger"
                   style={{ padding: '4px', fontSize: '10px', marginTop: '4px' }}
                   onClick={removeCustomBg}
                 >
@@ -911,9 +1189,9 @@ export default function App() {
                   .map(m => {
                     const meta = MARKER_META[m.type];
                     return (
-                      <div 
-                        key={m.id} 
-                        className="placed-note-item" 
+                      <div
+                        key={m.id}
+                        className="placed-note-item"
                         style={{ borderLeft: `3px solid ${meta.color}`, cursor: m.scrollConfig ? 'pointer' : 'default' }}
                         onClick={() => m.scrollConfig && setFocusTrigger({ id: m.id, timestamp: Date.now() })}
                       >
@@ -949,15 +1227,15 @@ export default function App() {
                 </div>
               ) : (
                 saves.map(s => (
-                  <div 
-                    key={s.id} 
+                  <div
+                    key={s.id}
                     className={`save-item ${route.id === s.id ? 'glass-panel-glow' : ''}`}
                     onClick={() => handleLoadFromLocal(s.id)}
                   >
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
                       <strong>{s.title}</strong>
                     </div>
-                    <button 
+                    <button
                       className="delete-btn"
                       onClick={(e) => handleDeleteFromLocal(e, s.id)}
                       disabled={!isEditMode}

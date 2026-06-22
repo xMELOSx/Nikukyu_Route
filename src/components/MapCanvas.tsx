@@ -106,7 +106,7 @@ interface MapCanvasProps {
   strokeWidth: number;
   strokeType: 'solid' | 'dashed' | 'arrow';
   onStrokesChange: (strokes: DrawingStroke[]) => void;
-  onMarkersChange: (markers: HeistMarker[]) => void;
+  onMarkersChange: (markers: HeistMarker[], shouldPushHistory?: boolean) => void;
   onSvgStringReady: (svgStr: string) => void;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   focusTrigger?: { id: string; timestamp: number } | null;
@@ -115,6 +115,15 @@ interface MapCanvasProps {
   showMarkerLabels?: boolean;
   bossCustomDurations?: { [markerId: string]: number };
   onBossCustomDurationChange?: (markerId: string, duration: number) => void;
+  battleCustomDurations?: { [markerId: string]: number };
+  onBattleCustomDurationChange?: (markerId: string, duration: number) => void;
+  pickingCustomDurations?: { [markerId: string]: number };
+  onPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
+  longPickingCustomDurations?: { [markerId: string]: number };
+  onLongPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
+  disablePinsDuringDraw?: boolean;
+  onMarkersDragStart?: () => void;
+  onMarkersDragEnd?: () => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -136,12 +145,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   isEditMode = true,
   showMarkerLabels = true,
   bossCustomDurations = {},
-  onBossCustomDurationChange
+  onBossCustomDurationChange,
+  battleCustomDurations = {},
+  onBattleCustomDurationChange,
+  pickingCustomDurations = {},
+  onPickingCustomDurationChange,
+  longPickingCustomDurations = {},
+  onLongPickingCustomDurationChange,
+  disablePinsDuringDraw = true,
+  onMarkersDragStart,
+  onMarkersDragEnd
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+
+  // Helper function to check if marker is individual
+  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
 
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(2);
@@ -164,9 +185,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
   const [bossDurationSeconds, setBossDurationSeconds] = useState(60);
+  const [battleDurationSeconds, setBattleDurationSeconds] = useState(20);
+  const [pickingDurationSeconds, setPickingDurationSeconds] = useState(5);
+  const [longPickingDurationSeconds, setLongPickingDurationSeconds] = useState(7);
+  const [pickingPicky, setPickingPicky] = useState(false);
   const [customDropInput, setCustomDropInput] = useState('');
   const [useBossCustomDuration, setUseBossCustomDuration] = useState(false);
   const [bossCustomDurationVal, setBossCustomDurationVal] = useState<number | undefined>(undefined);
+  const [useBattleCustomDuration, setUseBattleCustomDuration] = useState(false);
+  const [battleCustomDurationVal, setBattleCustomDurationVal] = useState<number | undefined>(undefined);
+  const [usePickingCustomDuration, setUsePickingCustomDuration] = useState(false);
+  const [pickingCustomDurationVal, setPickingCustomDurationVal] = useState<number | undefined>(undefined);
+  const [useLongPickingCustomDuration, setUseLongPickingCustomDuration] = useState(false);
+  const [longPickingCustomDurationVal, setLongPickingCustomDurationVal] = useState<number | undefined>(undefined);
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupOffset, setPopupOffset] = useState<Point>({ x: 0, y: -100 });
@@ -460,16 +491,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (!isEditMode && toolMode !== 'pan') return;
+    const isPanTool = toolMode === 'pan' || e.shiftKey;
+    const isLockedPresentation = !isEditMode && !isPanTool && (
+      toolMode !== 'draw' && toolMode !== 'erase' && (
+        toolMode !== 'add-marker' || !activeMarkerType || !isIndiv(activeMarkerType)
+      )
+    );
 
-    const coords = getCanvasCoords(e);
-
-    if (toolMode === 'pan' || e.shiftKey || !isEditMode) {
+    if (isPanTool || isLockedPresentation) {
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
     }
+
+    const coords = getCanvasCoords(e);
 
     if (toolMode === 'add-marker' && activeMarkerType) {
       const newMarker: HeistMarker = {
@@ -490,14 +526,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.bossDurationSeconds = 60;
         newMarker.bossExpanded = false;
       }
-      onMarkersChange([...markers, newMarker]);
+      if (activeMarkerType === 'battle' || activeMarkerType === 'gbattle') {
+        newMarker.battleDurationSeconds = 20;
+        newMarker.battleExpanded = false;
+      }
+      if (activeMarkerType === 'picking' || activeMarkerType === 'gpicking') {
+        newMarker.pickingDurationSeconds = 5;
+        newMarker.pickingPicky = false;
+        newMarker.pickingExpanded = false;
+      }
+      if (activeMarkerType === 'long_picking' || activeMarkerType === 'glong_picking') {
+        newMarker.longPickingDurationSeconds = 7;
+        newMarker.pickingPicky = false;
+        newMarker.pickingExpanded = false;
+      }
+      onMarkersChange([...markers, newMarker], true);
       setActiveNoteMarkerId(newMarker.id);
       setNoteText('');
       setInfoMediaUrl('');
       setInfoMediaType('image');
       setBossDrops([]);
       setBossDurationSeconds(60);
+      setBattleDurationSeconds(20);
+      setPickingDurationSeconds(5);
+      setLongPickingDurationSeconds(7);
+      setPickingPicky(false);
       setCustomDropInput('');
+      setUseBattleCustomDuration(false);
+      setBattleCustomDurationVal(20);
+      setUsePickingCustomDuration(false);
+      setPickingCustomDurationVal(5);
+      setUseLongPickingCustomDuration(false);
+      setLongPickingCustomDurationVal(7);
       return;
     }
 
@@ -546,21 +606,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (!isEditMode) return;
-
     if (draggingMarkerId) {
-      onMarkersChange(
-        markers.map(m => {
-          if (m.id === draggingMarkerId) {
-            const targetX = Math.max(0, Math.min(800, coords.x - dragStartOffset.x));
-            const targetY = Math.max(0, Math.min(2275, coords.y - dragStartOffset.y));
-            return { ...m, x: targetX, y: targetY };
-          }
-          return m;
-        })
-      );
+      const marker = markers.find(m => m.id === draggingMarkerId);
+      const canDrag = isEditMode || (marker && isIndiv(marker.type));
+      if (canDrag) {
+        onMarkersChange(
+          markers.map(m => {
+            if (m.id === draggingMarkerId) {
+              const targetX = Math.max(0, Math.min(800, coords.x - dragStartOffset.x));
+              const targetY = Math.max(0, Math.min(2275, coords.y - dragStartOffset.y));
+              return { ...m, x: targetX, y: targetY };
+            }
+            return m;
+          })
+        );
+      }
       return;
     }
+
+    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase');
+    if (!isEditMode && !isDrawingOrErasing) return;
 
     if (isDrawing && toolMode === 'draw') {
       const newPoints = [...currentPoints, coords];
@@ -581,7 +646,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMouseUp = () => {
     setIsPanning(false);
-    setDraggingMarkerId(null);
+    if (draggingMarkerId) {
+      if (onMarkersDragEnd) onMarkersDragEnd();
+      setDraggingMarkerId(null);
+    }
     if (isDraggingPopup) {
       setIsDraggingPopup(false);
       return;
@@ -614,7 +682,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMarkerMouseDown = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
-    if (!isEditMode) return;
+    
+    const canInteract = isEditMode || isIndiv(m.type);
+    if (!canInteract) return;
 
     if (toolMode === 'erase') {
       onMarkersChange(
@@ -626,7 +696,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return rest;
             }
             return item;
-          })
+          }),
+        true
       );
       if (activeNoteMarkerId === m.id) {
         setActiveNoteMarkerId(null);
@@ -635,13 +706,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     const coords = getCanvasCoords(e as React.MouseEvent<HTMLElement>);
+    if (onMarkersDragStart) onMarkersDragStart();
     setDraggingMarkerId(m.id);
     setDragStartOffset({ x: coords.x - m.x, y: coords.y - m.y });
   };
 
   const handleMarkerClick = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
-    if (!isEditMode) {
+    
+    const isPresenterModeForGlobal = !isEditMode && !isIndiv(m.type);
+    if (isPresenterModeForGlobal) {
       // Info toggle in presentation mode
       if (m.type === 'info') {
         onMarkersChange(
@@ -653,6 +727,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (m.type === 'boss') {
         onMarkersChange(
           markers.map(mk => mk.id === m.id ? { ...mk, bossExpanded: !mk.bossExpanded } : mk)
+        );
+        return;
+      }
+      // Battle global toggle in presentation mode
+      if (m.type === 'gbattle') {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, battleExpanded: !mk.battleExpanded } : mk)
+        );
+        return;
+      }
+      // Picking / Long Picking toggle in presentation mode
+      if (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, pickingExpanded: !mk.pickingExpanded } : mk)
         );
         return;
       }
@@ -699,6 +787,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       return;
     }
+
     // If popover is already open for a different marker, save that one first
     if (activeNoteMarkerId && activeNoteMarkerId !== m.id) {
       handleSaveNote();
@@ -709,14 +798,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setInfoMediaType(m.infoMediaType || 'image');
     setBossDrops(m.bossDrops || []);
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
+    setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
+    setPickingDurationSeconds(m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
+    setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7);
+    setPickingPicky(!!m.pickingPicky);
     setCustomDropInput('');
 
-    // Load custom durations if it exists
-    const hasCustom = bossCustomDurations && bossCustomDurations[m.id] !== undefined;
-    setUseBossCustomDuration(hasCustom);
-    setBossCustomDurationVal(hasCustom ? bossCustomDurations[m.id] : m.bossDurationSeconds || 60);
+    // Load custom durations if it exists for Boss
+    const hasBossCustom = bossCustomDurations && bossCustomDurations[m.id] !== undefined;
+    setUseBossCustomDuration(hasBossCustom);
+    setBossCustomDurationVal(hasBossCustom ? bossCustomDurations[m.id] : m.bossDurationSeconds || 60);
+
+    // Load custom durations if it exists for Battle
+    const hasBattleCustom = battleCustomDurations && battleCustomDurations[m.id] !== undefined;
+    setUseBattleCustomDuration(hasBattleCustom);
+    setBattleCustomDurationVal(hasBattleCustom ? battleCustomDurations[m.id] : m.battleDurationSeconds || 20);
+
+    // Load custom durations if it exists for Picking
+    const hasPickingCustom = pickingCustomDurations && pickingCustomDurations[m.id] !== undefined;
+    setUsePickingCustomDuration(hasPickingCustom);
+    setPickingCustomDurationVal(hasPickingCustom ? pickingCustomDurations[m.id] : m.pickingDurationSeconds || 5);
+
+    // Load custom durations if it exists for Long Picking
+    const hasLongPickingCustom = longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined;
+    setUseLongPickingCustomDuration(hasLongPickingCustom);
+    setLongPickingCustomDurationVal(hasLongPickingCustom ? longPickingCustomDurations[m.id] : m.longPickingDurationSeconds || 7);
+
     setPopupDirection(m.popupDirection || 'top');
-    setPopupWidth(m.popupWidth || (m.type === 'boss' ? 280 : 300));
+    setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
   };
 
@@ -754,19 +863,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.bossDrops = bossDrops;
               updated.bossDurationSeconds = bossDurationSeconds;
             }
+            if (m.type === 'battle' || m.type === 'gbattle') {
+              updated.battleDurationSeconds = battleDurationSeconds;
+            }
+            if (m.type === 'picking' || m.type === 'gpicking') {
+              updated.pickingDurationSeconds = pickingPicky ? 0 : pickingDurationSeconds;
+              updated.pickingPicky = pickingPicky;
+            }
+            if (m.type === 'long_picking' || m.type === 'glong_picking') {
+              updated.longPickingDurationSeconds = pickingPicky ? 0 : longPickingDurationSeconds;
+              updated.pickingPicky = pickingPicky;
+            }
             return updated;
           }
           return m;
-        })
+        }),
+        true
       );
 
-      // Save custom duration override
+      // Save custom duration override for Boss
       const marker = markers.find(m => m.id === activeNoteMarkerId);
       if (marker && marker.type === 'boss' && onBossCustomDurationChange) {
         if (useBossCustomDuration && bossCustomDurationVal !== undefined) {
           onBossCustomDurationChange(activeNoteMarkerId, bossCustomDurationVal);
         } else {
           onBossCustomDurationChange(activeNoteMarkerId, undefined as any);
+        }
+      }
+
+      // Save custom duration override for Battle
+      if (marker && (marker.type === 'battle' || marker.type === 'gbattle') && onBattleCustomDurationChange) {
+        if (useBattleCustomDuration && battleCustomDurationVal !== undefined) {
+          onBattleCustomDurationChange(activeNoteMarkerId, battleCustomDurationVal);
+        } else {
+          onBattleCustomDurationChange(activeNoteMarkerId, undefined as any);
+        }
+      }
+
+      // Save custom duration override for Picking
+      if (marker && (marker.type === 'picking' || marker.type === 'gpicking') && onPickingCustomDurationChange) {
+        if (usePickingCustomDuration && pickingCustomDurationVal !== undefined) {
+          onPickingCustomDurationChange(activeNoteMarkerId, pickingPicky ? 0 : pickingCustomDurationVal);
+        } else {
+          onPickingCustomDurationChange(activeNoteMarkerId, undefined as any);
+        }
+      }
+
+      // Save custom duration override for Long Picking
+      if (marker && (marker.type === 'long_picking' || marker.type === 'glong_picking') && onLongPickingCustomDurationChange) {
+        if (useLongPickingCustomDuration && longPickingCustomDurationVal !== undefined) {
+          onLongPickingCustomDurationChange(activeNoteMarkerId, pickingPicky ? 0 : longPickingCustomDurationVal);
+        } else {
+          onLongPickingCustomDurationChange(activeNoteMarkerId, undefined as any);
         }
       }
 
@@ -784,7 +932,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             return rest;
           }
           return m;
-        })
+        }),
+      true
     );
     setActiveNoteMarkerId(null);
   };
@@ -797,7 +946,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         markers.map(m => m.id === activeNoteMarkerId ? {
           ...m,
           scrollConfig: { x: pan.x, y: pan.y, zoom: zoom }
-        } : m)
+        } : m),
+        true
       );
     }
   };
@@ -811,7 +961,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             return rest;
           }
           return m;
-        })
+        }),
+        true
       );
     }
   };
@@ -921,17 +1072,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
           {/* Guide lines from pins to their corresponding draggable popups */}
           {markers
-            .filter(m => (m.type === 'info' || m.type === 'boss') && m.floor === floor)
+            .filter(m => (m.type === 'info' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
+              const meta = MARKER_META[m.type];
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
 
               const isVisible = (m.type === 'info' && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
-                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
+                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
 
               if (!isVisible) return null;
 
-              const color = m.type === 'boss' ? '#ff0055' : '#4fc3f7';
+              const color = (m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? meta.color : '#4fc3f7';
               return (
                 <line
                   key={`popup-connector-${m.id}`}
@@ -984,11 +1138,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <div
                   key={m.id}
                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass}`}
-                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : '')}
+                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : '')}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
-                     '--theme-color': m.phoneActive ? '#39ff14' : meta.color
+                     '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
+                     pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto'
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
                   onClick={(e) => handleMarkerClick(e, m)}
@@ -1158,6 +1313,211 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {/* Battle Details Popup in Presentation Mode or Preview in Edit Mode */}
+                  {((!isEditMode && (m.type === 'battle' || m.type === 'gbattle') && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id && (m.type === 'battle' || m.type === 'gbattle'))) && (
+                    <div 
+                      className="boss-marker-popup"
+                      style={getPopupStyle(
+                        isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
+                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        meta.color
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div 
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>⚔️</span> {m.note.trim() ? m.note : 'BATTLE STATUS'}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                        </span>
+                        {!isEditMode && (
+                          <button 
+                            className="info-popup-close"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, battleExpanded: false } : mk)
+                              );
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <div className="info-popup-content">
+                        {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button 
+                              className="btn-cyber danger" 
+                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                              onClick={() => {
+                                const currentVal = battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
+                                const newVal = Math.max(0, currentVal - 10);
+                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
+                              }}
+                            >
+                              -10s
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              className="input-cyber"
+                              style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: 'var(--cyan-neon, #00f0ff)', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                              value={battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)}
+                              onChange={(e) => {
+                                const newVal = Math.max(0, parseInt(e.target.value) || 0);
+                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
+                              }}
+                            />
+                            <button 
+                              className="btn-cyber success" 
+                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                              onClick={() => {
+                                const currentVal = battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
+                                const newVal = currentVal + 10;
+                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
+                              }}
+                            >
+                              +10s
+                            </button>
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', marginTop: '2px' }}>
+                            現在の設定: {Math.floor((battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)) / 60)}分 {(battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)) % 60}秒
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Picking / Long Picking Details Popup in Presentation Mode or Preview in Edit Mode */}
+                  {((!isEditMode && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.pickingExpanded) || 
+                    (isEditMode && activeNoteMarkerId === m.id && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'))) && (
+                    <div 
+                      className="boss-marker-popup"
+                      style={getPopupStyle(
+                        isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
+                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        meta.color
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div 
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>{meta.emoji}</span> {m.note.trim() ? m.note : `${meta.label} STATUS`}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                        </span>
+                        {!isEditMode && (
+                          <button 
+                            className="info-popup-close"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, pickingExpanded: false } : mk)
+                              );
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <div className="info-popup-content">
+                        {/* Picky state indicator */}
+                        {m.pickingPicky && (
+                          <div style={{ fontSize: '11px', color: '#39ff14', fontWeight: 'bold', marginBottom: '6px' }}>
+                            ⚡ ピッキー (0秒) 設定中
+                          </div>
+                        )}
+                        {/* Duration settings - editable in presentation mode */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                          {m.pickingPicky ? (
+                            <div style={{ fontSize: '14px', color: '#39ff14', fontWeight: 'bold', padding: '4px 0' }}>
+                              0秒 (Picky)
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                  className="btn-cyber danger" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  onClick={() => {
+                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                                    const customDurs = isLong ? longPickingCustomDurations : pickingCustomDurations;
+                                    const defaultDur = isLong ? (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7) : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
+                                    const currentVal = (customDurs && customDurs[m.id] !== undefined) ? customDurs[m.id] : defaultDur;
+                                    const newVal = Math.max(0, currentVal - 1);
+                                    if (isLong) {
+                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
+                                    } else {
+                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
+                                    }
+                                  }}
+                                >
+                                  -1s
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="input-cyber"
+                                  style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: 'var(--cyan-neon, #00f0ff)', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                                  value={
+                                    (m.type === 'long_picking' || m.type === 'glong_picking')
+                                      ? (longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined ? longPickingCustomDurations[m.id] : (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7))
+                                      : (pickingCustomDurations && pickingCustomDurations[m.id] !== undefined ? pickingCustomDurations[m.id] : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5))
+                                  }
+                                  onChange={(e) => {
+                                    const newVal = Math.max(0, parseInt(e.target.value) || 0);
+                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                                    if (isLong) {
+                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
+                                    } else {
+                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
+                                    }
+                                  }}
+                                />
+                                <button 
+                                  className="btn-cyber success" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  onClick={() => {
+                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                                    const customDurs = isLong ? longPickingCustomDurations : pickingCustomDurations;
+                                    const defaultDur = isLong ? (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7) : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
+                                    const currentVal = (customDurs && customDurs[m.id] !== undefined) ? customDurs[m.id] : defaultDur;
+                                    const newVal = currentVal + 1;
+                                    if (isLong) {
+                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
+                                    } else {
+                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
+                                    }
+                                  }}
+                                >
+                                  +1s
+                                </button>
+                              </div>
+                              <span style={{ fontSize: '11px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', marginTop: '2px' }}>
+                                現在の設定: {
+                                  (m.type === 'long_picking' || m.type === 'glong_picking')
+                                    ? (longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined ? longPickingCustomDurations[m.id] : (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7))
+                                    : (pickingCustomDurations && pickingCustomDurations[m.id] !== undefined ? pickingCustomDurations[m.id] : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5))
+                                }秒
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               );
             })}
@@ -1365,6 +1725,198 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Battle marker duration editing */}
+          {(activeNoteMarker.type === 'battle' || activeNoteMarker.type === 'gbattle') && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
+                
+                {/* Global Default Duration */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
+                      {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input-cyber"
+                      style={{ width: '80px', fontSize: '11px', padding: '4px' }}
+                      value={battleDurationSeconds}
+                      onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                    />
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                  </div>
+                </div>
+
+                {/* Plan Specific Custom Duration */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input 
+                      type="checkbox"
+                      id="use-battle-custom-duration-cb"
+                      checked={useBattleCustomDuration}
+                      onChange={(e) => {
+                        setUseBattleCustomDuration(e.target.checked);
+                        if (e.target.checked && (battleCustomDurationVal === undefined || battleCustomDurationVal === null)) {
+                          setBattleCustomDurationVal(battleDurationSeconds);
+                        }
+                      }}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="use-battle-custom-duration-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                      このプラン独自の時間を設定する
+                    </label>
+                  </div>
+                  
+                  {useBattleCustomDuration && (
+                    <div style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                        <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
+                          {Math.floor((battleCustomDurationVal || 0) / 60)}分 {(battleCustomDurationVal || 0) % 60}秒
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          className="input-cyber"
+                          style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                          value={battleCustomDurationVal || 0}
+                          onChange={(e) => setBattleCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
+                        />
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Picking / Long Picking marker duration & picky editing */}
+          {(activeNoteMarker.type === 'picking' || activeNoteMarker.type === 'gpicking' || activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
+                
+                {/* Picky Checkbox */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(57, 255, 20, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(57, 255, 20, 0.15)', marginBottom: '4px' }}>
+                  <input 
+                    type="checkbox"
+                    id="picky-cb"
+                    checked={pickingPicky}
+                    onChange={(e) => setPickingPicky(e.target.checked)}
+                    style={{ accentColor: '#39ff14', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="picky-cb" style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                    ピッキー (Picky) — 所要時間を0秒にする
+                  </label>
+                </div>
+
+                {!pickingPicky && (
+                  <>
+                    {/* Global Default Duration */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
+                          {(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingDurationSeconds : pickingDurationSeconds}秒
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          className="input-cyber"
+                          style={{ width: '80px', fontSize: '11px', padding: '4px' }}
+                          value={(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingDurationSeconds : pickingDurationSeconds}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value) || 0);
+                            if (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') {
+                              setLongPickingDurationSeconds(val);
+                            } else {
+                              setPickingDurationSeconds(val);
+                            }
+                          }}
+                        />
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                      </div>
+                    </div>
+
+                    {/* Plan Specific Custom Duration */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input 
+                          type="checkbox"
+                          id="use-picking-custom-duration-cb"
+                          checked={(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? useLongPickingCustomDuration : usePickingCustomDuration}
+                          onChange={(e) => {
+                            const isLong = activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking';
+                            if (isLong) {
+                              setUseLongPickingCustomDuration(e.target.checked);
+                              if (e.target.checked && (longPickingCustomDurationVal === undefined || longPickingCustomDurationVal === null)) {
+                                setLongPickingCustomDurationVal(longPickingDurationSeconds);
+                              }
+                            } else {
+                              setUsePickingCustomDuration(e.target.checked);
+                              if (e.target.checked && (pickingCustomDurationVal === undefined || pickingCustomDurationVal === null)) {
+                                setPickingCustomDurationVal(pickingDurationSeconds);
+                              }
+                            }
+                          }}
+                          style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                        />
+                        <label htmlFor="use-picking-custom-duration-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                          このプラン独自の時間を設定する
+                        </label>
+                      </div>
+                      
+                      {((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? useLongPickingCustomDuration : usePickingCustomDuration) && (
+                        <div style={{ marginTop: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                            <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
+                              {((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingCustomDurationVal : pickingCustomDurationVal) || 0}秒
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              className="input-cyber"
+                              style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                              value={((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingCustomDurationVal : pickingCustomDurationVal) || 0}
+                              onChange={(e) => {
+                                const val = Math.max(0, parseInt(e.target.value) || 0);
+                                if (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') {
+                                  setLongPickingCustomDurationVal(val);
+                                } else {
+                                  setPickingCustomDurationVal(val);
+                                }
+                              }}
+                            />
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {pickingPicky && (
+                  <div style={{ fontSize: '11px', color: '#39ff14', fontWeight: 'bold', padding: '4px', background: 'rgba(57,255,20,0.05)', borderRadius: '4px', textAlign: 'center' }}>
+                    Picky (0秒) 設定中のため時間設定は無効化されています。
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'start' | 'goal' | 'camera' | 'guard' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'p4' | 'info';
+export type MarkerType = 'start' | 'goal' | 'camera' | 'guard' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking';
 
 export interface Point {
   x: number;
@@ -37,9 +37,15 @@ export interface HeistMarker {
   bossDrops?: string[];   // For boss markers: list of drop items
   bossDurationSeconds?: number; // For boss markers: duration in seconds
   bossExpanded?: boolean; // For boss markers: whether details are expanded in presentation mode
+  battleDurationSeconds?: number; // For battle markers: duration in seconds
+  battleExpanded?: boolean; // For battle markers: whether details are expanded in presentation mode
   popupDirection?: 'top' | 'bottom' | 'left' | 'right'; // Direction of detail popup
   popupWidth?: number;    // Width of detail popup in pixels
   popupOffset?: { x: number; y: number }; // Offset position from pin center
+  pickingDurationSeconds?: number; // For picking markers: duration in seconds
+  longPickingDurationSeconds?: number; // For long picking markers: duration in seconds
+  pickingPicky?: boolean;  // For picking/long_picking markers: true = Picky (0s)
+  pickingExpanded?: boolean; // For picking markers: whether details are expanded in presentation mode
 }
 
 export interface RouteData {
@@ -53,6 +59,9 @@ export interface RouteData {
   customBg: { [key in FloorType]: string | null }; // base64 images
   createdAt: number;
   bossCustomDurations?: { [markerId: string]: number }; // Plan-specific override for boss timers
+  battleCustomDurations?: { [markerId: string]: number }; // Plan-specific override for battle timers
+  pickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for picking timers
+  longPickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for long picking timers
 }
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
@@ -69,6 +78,9 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
     main: null
   },
   bossCustomDurations: {},
+  battleCustomDurations: {},
+  pickingCustomDurations: {},
+  longPickingCustomDurations: {},
   createdAt: Date.now()
 });
 
@@ -85,11 +97,16 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   room: { emoji: '🚪', label: 'ROOM / ZONE', color: '#00f0ff' },
   warp: { emoji: '🌀', label: 'WARP POINT', color: '#ff00ff' },
   stairs: { emoji: '🪜', label: 'STAIRS', color: '#ffaa00' },
+  battle: { emoji: '⚔', label: 'BATTLE', color: '#ff0055' },
+  picking: { emoji: '🔑', label: 'PICKING', color: '#ffe600' },
+  long_picking: { emoji: '🔐', label: 'L-PICKING', color: '#ffaa00' },
   p1: { emoji: '1', label: 'PIN 1', color: '#00f0ff' },
   p2: { emoji: '2', label: 'PIN 2', color: '#ffe600' },
   p3: { emoji: '3', label: 'PIN 3', color: '#ff00ff' },
-  p4: { emoji: '4', label: 'PIN 4', color: '#39ff14' },
-  info: { emoji: 'ⓘ', label: 'INFO PIN', color: '#4fc3f7' }
+  info: { emoji: 'ⓘ', label: 'INFO PIN', color: '#4fc3f7' },
+  gbattle: { emoji: '⚔', label: 'BATTLE (GLOBAL)', color: '#ff0055' },
+  gpicking: { emoji: '🔑', label: 'PICKING (GLOBAL)', color: '#ffe600' },
+  glong_picking: { emoji: '🔐', label: 'L-PICKING (GLOBAL)', color: '#ffaa00' }
 };
 
 // Preset Maps metadata with local paths
