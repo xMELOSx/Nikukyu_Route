@@ -163,6 +163,60 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
+  // Helper to resolve connection properties between Warp/Stairs
+  const getWarpConnectionInfo = (m: HeistMarker, allMarkers: HeistMarker[]) => {
+    if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') {
+      return { hasLink: false, isPrimary: false, primary: null, partner: null, isReversed: false };
+    }
+
+    // 1. Find partner (destination m.linkedWarpId or incoming link pointing to m)
+    let partner = m.linkedWarpId ? allMarkers.find(mk => mk.id === m.linkedWarpId) : null;
+    let isIncoming = false;
+    if (!partner) {
+      partner = allMarkers.find(mk => mk.linkedWarpId === m.id && mk.floor === m.floor && (mk.type === 'warp' || mk.type === 'iwarp' || mk.type === 'stairs'));
+      if (partner) {
+        isIncoming = true;
+      }
+    }
+
+    if (!partner) {
+      return { hasLink: false, isPrimary: false, primary: null, partner: null, isReversed: false };
+    }
+
+    const isMutuallyLinked = m.linkedWarpId === partner.id && partner.linkedWarpId === m.id;
+
+    let primary: HeistMarker;
+    let isPrimary: boolean;
+    let isReversed: boolean;
+
+    if (isMutuallyLinked) {
+      const isMPrimary = m.id < partner.id;
+      primary = isMPrimary ? m : partner;
+      isPrimary = isMPrimary;
+      isReversed = !isMPrimary; // If m is secondary, path is reversed (from m's perspective)
+    } else {
+      if (isIncoming) {
+        // Link starts at partner, ends at m
+        primary = partner;
+        isPrimary = false;
+        isReversed = true;
+      } else {
+        // Link starts at m, ends at partner
+        primary = m;
+        isPrimary = true;
+        isReversed = false;
+      }
+    }
+
+    return {
+      hasLink: true,
+      isPrimary,
+      primary,
+      partner,
+      isReversed
+    };
+  };
+
   // Helper function to check if marker is individual
   const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
 
@@ -673,17 +727,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (draggingWaypoint) {
+      const dm = markers.find(mk => mk.id === draggingWaypoint.markerId);
       onMarkersChange(
-        markers.map(m => {
-          if (m.id === draggingWaypoint.markerId && m.warpWaypoints) {
-            const nextWaypoints = [...m.warpWaypoints];
+        markers.map(mk => {
+          if (dm) {
+            const conn = getWarpConnectionInfo(dm, markers);
+            if (conn.hasLink && conn.primary && conn.partner) {
+              if (mk.id === conn.primary.id) {
+                const nextWaypoints = conn.primary.warpWaypoints ? [...conn.primary.warpWaypoints] : [];
+                const targetIdx = conn.isReversed
+                  ? nextWaypoints.length - 1 - draggingWaypoint.index
+                  : draggingWaypoint.index;
+                
+                nextWaypoints[targetIdx] = {
+                  x: Math.max(0, Math.min(1600, coords.x)),
+                  y: Math.max(0, Math.min(4550, coords.y))
+                };
+                return { ...mk, warpWaypoints: nextWaypoints };
+              } else if (mk.id === conn.partner.id && mk.id !== conn.primary.id) {
+                return { ...mk, warpWaypoints: [] };
+              }
+            }
+          }
+          if (mk.id === draggingWaypoint.markerId && mk.warpWaypoints) {
+            const nextWaypoints = [...mk.warpWaypoints];
             nextWaypoints[draggingWaypoint.index] = {
               x: Math.max(0, Math.min(1600, coords.x)),
               y: Math.max(0, Math.min(4550, coords.y))
             };
-            return { ...m, warpWaypoints: nextWaypoints };
+            return { ...mk, warpWaypoints: nextWaypoints };
           }
-          return m;
+          return mk;
         })
       );
       return;
@@ -1141,19 +1215,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </marker>
           </defs>
           {markers
-            .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId && m.floor === floor)
+            .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.floor === floor)
             .map(m => {
-              const partner = markers.find(mk => mk.id === m.linkedWarpId);
-              if (!partner) return null;
+              const conn = getWarpConnectionInfo(m, markers);
+              if (!conn.hasLink || !conn.partner || !conn.primary) return null;
+
+              // Draw only from the primary side to avoid duplicate overlapping lines
+              if (m.id !== conn.primary.id) return null;
+
+              const partner = conn.partner;
+              const isMutuallyLinked = m.linkedWarpId === partner.id && partner.linkedWarpId === m.id;
+
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
               const color = isWarp ? '#ff00ff' : '#ffaa00';
               const strokeWidth = isWarp ? "2" : "1";
               const strokeDasharray = isWarp ? "6 4" : "3 3";
               const markerEnd = isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)";
+              const markerStart = isMutuallyLinked ? (isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)") : undefined;
               const opacity = isWarp ? "0.6" : "0.35";
+              
+              // primary has the source of truth warpWaypoints
+              const effectiveWaypoints = m.warpWaypoints || [];
 
-              if (m.warpWaypoints && m.warpWaypoints.length > 0) {
-                const pathD = `M ${m.x} ${m.y} ` + m.warpWaypoints.map(wp => `L ${wp.x} ${wp.y}`).join(' ') + ` L ${partner.x} ${partner.y}`;
+              if (effectiveWaypoints.length > 0) {
+                const pathD = `M ${m.x} ${m.y} ` + effectiveWaypoints.map(wp => `L ${wp.x} ${wp.y}`).join(' ') + ` L ${partner.x} ${partner.y}`;
                 return (
                   <path
                     key={`warp-path-${m.id}`}
@@ -1163,6 +1248,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     strokeWidth={strokeWidth}
                     strokeDasharray={strokeDasharray}
                     opacity={opacity}
+                    markerStart={markerStart}
                     markerEnd={markerEnd}
                   />
                 );
@@ -1176,6 +1262,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   strokeWidth={strokeWidth}
                   strokeDasharray={strokeDasharray}
                   opacity={opacity}
+                  markerStart={markerStart}
                   markerEnd={markerEnd}
                 />
               );
@@ -1296,35 +1383,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
-              if (isEditMode && activeNoteMarkerId === m.id && m.warpWaypoints) {
-                const meta = MARKER_META[m.type];
-                return m.warpWaypoints.map((wp, wpIdx) => (
-                  <div
-                    key={`wp-${m.id}-${wpIdx}`}
-                    className="warp-waypoint-handle"
-                    style={{
-                      position: 'absolute',
-                      left: `${wp.x}px`,
-                      top: `${wp.y}px`,
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      background: meta.color,
-                      border: '2px solid #fff',
-                      boxShadow: '0 0 6px rgba(0,0,0,0.6)',
-                      cursor: 'pointer',
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: 35,
-                      pointerEvents: 'auto'
-                    }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      if (onMarkersDragStart) onMarkersDragStart();
-                      setDraggingWaypoint({ markerId: m.id, index: wpIdx });
-                    }}
-                    title={`Drag to adjust waypoint #${wpIdx + 1}`}
-                  />
-                ));
+              if (isEditMode && activeNoteMarkerId === m.id) {
+                const conn = getWarpConnectionInfo(m, markers);
+                if (conn.hasLink && conn.primary) {
+                  const waypoints = conn.primary.warpWaypoints || [];
+                  const showWaypoints = conn.isReversed ? [...waypoints].reverse() : waypoints;
+
+                  if (showWaypoints.length > 0) {
+                    const meta = MARKER_META[m.type];
+                    return showWaypoints.map((wp, wpIdx) => (
+                      <div
+                        key={`wp-${m.id}-${wpIdx}`}
+                        className="warp-waypoint-handle"
+                        style={{
+                          position: 'absolute',
+                          left: `${wp.x}px`,
+                          top: `${wp.y}px`,
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: meta.color,
+                          border: '2px solid #fff',
+                          boxShadow: '0 0 6px rgba(0,0,0,0.6)',
+                          cursor: 'pointer',
+                          transform: 'translate(-50%, -50%)',
+                          zIndex: 35,
+                          pointerEvents: 'auto'
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          if (onMarkersDragStart) onMarkersDragStart();
+                          setDraggingWaypoint({ markerId: m.id, index: wpIdx });
+                        }}
+                        title={`Drag to adjust waypoint #${wpIdx + 1}`}
+                      />
+                    ));
+                  }
+                }
               }
               return null;
             })}
@@ -2067,117 +2162,173 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Warp & Stairs Point Linking */}
-          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp' || activeNoteMarker.type === 'stairs') && (
-            <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀 WARP TARGET (Unidirectional):' : '🪜 STAIRS TARGET (Unidirectional):'}
-              </div>
-              {activeNoteMarker.linkedWarpId ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
-                    ✓ Leads to: {markers.find(m => m.id === activeNoteMarker.linkedWarpId)?.note || activeNoteMarker.linkedWarpId.substring(activeNoteMarker.linkedWarpId.length - 6)}
-                  </div>
-                  <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} onClick={() => {
-                    onMarkersChange(
-                      markers.map(m => {
-                        if (m.id === activeNoteMarker.id) {
-                          const { linkedWarpId, ...rest } = m;
-                          return rest;
-                        }
-                        return m;
-                      })
-                    );
-                  }}>
-                    Remove Target
-                  </button>
+          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp' || activeNoteMarker.type === 'stairs') && (() => {
+            const conn = getWarpConnectionInfo(activeNoteMarker, markers);
+            return (
+              <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀 WARP TARGET (Bidirectional):' : '🪜 STAIRS TARGET (Bidirectional):'}
                 </div>
-              ) : (
-                <select
-                  className="input-cyber"
-                  style={{ width: '100%', fontSize: '10px', padding: '4px' }}
-                  value=""
-                  onChange={(e) => {
-                    const partnerId = e.target.value;
-                    if (partnerId) {
-                      onMarkersChange(
-                        markers.map(m => {
-                          if (m.id === activeNoteMarker.id) return { ...m, linkedWarpId: partnerId };
-                          return m;
-                        })
-                      );
-                    }
-                  }}
-                >
-                  <option value="">-- Select target {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'warp' : 'stairs'} --</option>
-                  {markers
-                    .filter(m => m.type === activeNoteMarker.type && m.id !== activeNoteMarker.id)
-                    .map(m => (
-                      <option key={m.id} value={m.id}>
-                        {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
-                      </option>
-                    ))
-                  }
-                </select>
-              )}
-
-              {/* Waypoint controls */}
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '4px' }}>
-                経由点操作 (WAYPOINTS):
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  type="button"
-                  className="btn-cyber success"
-                  style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
-                  onClick={() => {
-                    const waypoints = activeNoteMarker.warpWaypoints || [];
-                    const startPt = waypoints.length > 0
-                      ? waypoints[waypoints.length - 1]
-                      : { x: activeNoteMarker.x, y: activeNoteMarker.y };
-                    const partner = markers.find(m => m.id === activeNoteMarker.linkedWarpId);
-                    const endPt = partner ? { x: partner.x, y: partner.y } : { x: activeNoteMarker.x + 100, y: activeNoteMarker.y + 100 };
-                    const midpoint = {
-                      x: Math.round((startPt.x + endPt.x) / 2),
-                      y: Math.round((startPt.y + endPt.y) / 2)
-                    };
-                    onMarkersChange(
-                      markers.map(m => {
-                        if (m.id === activeNoteMarker.id) {
-                          return { ...m, warpWaypoints: [...waypoints, midpoint] };
-                        }
-                        return m;
-                      }),
-                      true
-                    );
-                  }}
-                >
-                  経由点を追加
-                </button>
-                <button
-                  type="button"
-                  className="btn-cyber danger"
-                  style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
-                  disabled={!(activeNoteMarker.warpWaypoints && activeNoteMarker.warpWaypoints.length > 0)}
-                  onClick={() => {
-                    const waypoints = activeNoteMarker.warpWaypoints || [];
-                    if (waypoints.length > 0) {
+                {conn.hasLink && conn.partner ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
+                      ✓ Leads to: {conn.partner.note.trim() ? conn.partner.note : `${activeNoteMarker.type === 'stairs' ? 'Stairs' : 'Warp'} #${conn.partner.id.substring(conn.partner.id.length - 4)}`}
+                    </div>
+                    <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} onClick={() => {
                       onMarkersChange(
                         markers.map(m => {
                           if (m.id === activeNoteMarker.id) {
-                            return { ...m, warpWaypoints: waypoints.slice(0, -1) };
+                            const { linkedWarpId, ...rest } = m;
+                            return rest;
+                          }
+                          // Also remove link back from partner if mutually linked
+                          if (conn.partner && m.id === conn.partner.id && m.linkedWarpId === activeNoteMarker.id) {
+                            const { linkedWarpId, ...rest } = m;
+                            return rest;
                           }
                           return m;
                         }),
                         true
                       );
+                    }}>
+                      Remove Target
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    className="input-cyber"
+                    style={{ width: '100%', fontSize: '10px', padding: '4px' }}
+                    value=""
+                    onChange={(e) => {
+                      const partnerId = e.target.value;
+                      if (partnerId) {
+                        onMarkersChange(
+                          markers.map(m => {
+                            if (m.id === activeNoteMarker.id) {
+                              return { ...m, linkedWarpId: partnerId };
+                            }
+                            if (m.id === partnerId) {
+                              // Automatically link back to activeNoteMarker for mutual connection
+                              return { ...m, linkedWarpId: activeNoteMarker.id };
+                            }
+                            return m;
+                          }).map(m => {
+                            // Clean secondary warp waypoints on mutual pairs
+                            const partner = m.linkedWarpId ? markers.find(mk => mk.id === m.linkedWarpId) : null;
+                            const isMutuallyLinked = partner && partner.linkedWarpId === m.id;
+                            if (isMutuallyLinked && m.id > partner.id) {
+                              return { ...m, warpWaypoints: [] };
+                            }
+                            return m;
+                          }),
+                          true
+                        );
+                      }
+                    }}
+                  >
+                    <option value="">-- Select target {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'warp' : 'stairs'} --</option>
+                    {markers
+                      .filter(m => m.type === activeNoteMarker.type && m.id !== activeNoteMarker.id)
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
+                        </option>
+                      ))
                     }
-                  }}
-                >
-                  最後を削除
-                </button>
+                  </select>
+                )}
+
+                {/* Waypoint controls - visible when connection exists */}
+                {conn.hasLink && conn.primary && conn.partner && (
+                  <>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '4px' }}>
+                      経由点操作 (WAYPOINTS):
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        className="btn-cyber success"
+                        style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
+                        onClick={() => {
+                          const primary = conn.primary!;
+                          const partner = conn.partner!;
+                          const waypoints = primary.warpWaypoints || [];
+                          
+                          if (!conn.isReversed) {
+                            const startPt = waypoints.length > 0
+                              ? waypoints[waypoints.length - 1]
+                              : { x: primary.x, y: primary.y };
+                            const endPt = { x: partner.x, y: partner.y };
+                            const midpoint = {
+                              x: Math.round((startPt.x + endPt.x) / 2),
+                              y: Math.round((startPt.y + endPt.y) / 2)
+                            };
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === primary.id) return { ...m, warpWaypoints: [...waypoints, midpoint] };
+                                if (m.id === partner.id) return { ...m, warpWaypoints: [] };
+                                return m;
+                              }),
+                              true
+                            );
+                          } else {
+                            const startPt = { x: activeNoteMarker.x, y: activeNoteMarker.y };
+                            const endPt = waypoints.length > 0
+                              ? waypoints[0]
+                              : { x: partner.x, y: partner.y };
+                            const midpoint = {
+                              x: Math.round((startPt.x + endPt.x) / 2),
+                              y: Math.round((startPt.y + endPt.y) / 2)
+                            };
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === primary.id) return { ...m, warpWaypoints: [midpoint, ...waypoints] };
+                                if (m.id === activeNoteMarker.id) return { ...m, warpWaypoints: [] };
+                                return m;
+                              }),
+                              true
+                            );
+                          }
+                        }}
+                      >
+                        経由点を追加
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-cyber danger"
+                        style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
+                        disabled={!(conn.primary.warpWaypoints && conn.primary.warpWaypoints.length > 0)}
+                        onClick={() => {
+                          const primary = conn.primary!;
+                          const partner = conn.partner!;
+                          const waypoints = primary.warpWaypoints || [];
+                          if (waypoints.length > 0) {
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === primary.id) {
+                                  const nextWaypoints = conn.isReversed
+                                    ? waypoints.slice(1)
+                                    : waypoints.slice(0, -1);
+                                  return { ...m, warpWaypoints: nextWaypoints };
+                                }
+                                if (m.id === partner.id || m.id === activeNoteMarker.id) {
+                                  if (m.id !== primary.id) return { ...m, warpWaypoints: [] };
+                                }
+                                return m;
+                              }),
+                              true
+                            );
+                          }
+                        }}
+                      >
+                        最後を削除
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
           
           {/* Appearance (Direction & Size) configuration for Info & Boss markers */}
           {(activeNoteMarker.type === 'info' || activeNoteMarker.type === 'boss') && (

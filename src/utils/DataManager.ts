@@ -205,6 +205,13 @@ export class DataManager {
         if ((m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
           const partner = floorMarkers.find(mk => mk.id === m.linkedWarpId);
           if (!partner) return;
+
+          const isMutuallyLinked = partner.linkedWarpId === m.id;
+          if (isMutuallyLinked && m.id > partner.id) {
+            // Skip return trip to avoid overlapping duplicate paths
+            return;
+          }
+
           const isWarp = m.type === 'warp' || m.type === 'iwarp';
           const color = isWarp ? '#ff00ff' : '#ffaa00';
           const lineWidth = (isWarp ? 2 : 1) * scaleMultiplier;
@@ -214,8 +221,14 @@ export class DataManager {
           ctx.setLineDash(isWarp ? [6 * scaleMultiplier, 4 * scaleMultiplier] : [3 * scaleMultiplier, 3 * scaleMultiplier]);
           ctx.beginPath();
           ctx.moveTo(m.x, m.y);
-          if (m.warpWaypoints && m.warpWaypoints.length > 0) {
-            m.warpWaypoints.forEach(wp => {
+          const effectiveWaypoints = m.warpWaypoints && m.warpWaypoints.length > 0
+            ? m.warpWaypoints
+            : (isMutuallyLinked && partner.warpWaypoints && partner.warpWaypoints.length > 0
+                ? [...partner.warpWaypoints].reverse()
+                : []);
+
+          if (effectiveWaypoints.length > 0) {
+            effectiveWaypoints.forEach(wp => {
               ctx.lineTo(wp.x, wp.y);
             });
           }
@@ -223,8 +236,8 @@ export class DataManager {
           ctx.stroke();
 
           // Draw an arrowhead at the target pin
-          const lastPt = m.warpWaypoints && m.warpWaypoints.length > 0
-            ? m.warpWaypoints[m.warpWaypoints.length - 1]
+          const lastPt = effectiveWaypoints.length > 0
+            ? effectiveWaypoints[effectiveWaypoints.length - 1]
             : { x: m.x, y: m.y };
           const angle = Math.atan2(partner.y - lastPt.y, partner.x - lastPt.x);
           const headLength = Math.max(lineWidth * 5, 10);
@@ -246,6 +259,29 @@ export class DataManager {
           );
           ctx.closePath();
           ctx.fill();
+
+          // Draw an arrowhead at the start pin if mutually linked
+          if (isMutuallyLinked) {
+            const firstPt = effectiveWaypoints.length > 0
+              ? effectiveWaypoints[0]
+              : { x: partner.x, y: partner.y };
+            const startAngle = Math.atan2(m.y - firstPt.y, m.x - firstPt.x);
+            ctx.beginPath();
+            const startArrowOffsetX = m.x - (isWarp ? 12 : 10) * scaleMultiplier * Math.cos(startAngle);
+            const startArrowOffsetY = m.y - (isWarp ? 12 : 10) * scaleMultiplier * Math.sin(startAngle);
+            
+            ctx.moveTo(startArrowOffsetX, startArrowOffsetY);
+            ctx.lineTo(
+              startArrowOffsetX - headLength * Math.cos(startAngle - Math.PI / 6),
+              startArrowOffsetY - headLength * Math.sin(startAngle - Math.PI / 6)
+            );
+            ctx.lineTo(
+              startArrowOffsetX - headLength * Math.cos(startAngle + Math.PI / 6),
+              startArrowOffsetY - headLength * Math.sin(startAngle + Math.PI / 6)
+            );
+            ctx.closePath();
+            ctx.fill();
+          }
         }
       });
       ctx.setLineDash([]); // Reset line dash
