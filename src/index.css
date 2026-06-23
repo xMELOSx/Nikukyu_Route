@@ -352,6 +352,8 @@ button, select, input {
   transform-origin: center center;
   transition: transform 0.05s ease-out;
   box-shadow: 0 0 50px rgba(0, 240, 255, 0.05);
+  flex-shrink: 0;
+  flex-grow: 0;
 }
 
 /* Background Map styling */
@@ -817,13 +819,17 @@ select.input-cyber {
   background: #020305;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+  flex: 1;
+  min-height: 220px;
 }
 
 .info-popup-media img, .info-popup-media video {
   max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   display: block;
 }

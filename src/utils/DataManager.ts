@@ -63,6 +63,8 @@ export interface RouteData {
   battleCustomDurations?: { [markerId: string]: number }; // Plan-specific override for battle timers
   pickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for picking timers
   longPickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for long picking timers
+  mapVersion?: number; // Version of map coordinate scale (e.g. 2 = 3200x9100)
+  markerScale?: number; // Optional scale of markers (e.g. 30 = 100%)
 }
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
@@ -82,7 +84,8 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   battleCustomDurations: {},
   pickingCustomDurations: {},
   longPickingCustomDurations: {},
-  createdAt: Date.now()
+  createdAt: Date.now(),
+  mapVersion: 2
 });
 
 // Marker Metadata helper for styling and emoji representation
@@ -174,8 +177,8 @@ export class DataManager {
     onComplete: (dataUrl: string) => void
   ): void {
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = 800;
-    exportCanvas.height = 2275;
+    exportCanvas.width = 1600;
+    exportCanvas.height = 4550;
     const ctx = exportCanvas.getContext('2d');
     if (!ctx) return;
 
@@ -183,27 +186,29 @@ export class DataManager {
     const bgImg = new Image();
     
     bgImg.onload = () => {
-      ctx.drawImage(bgImg, 0, 0, 800, 2275);
+      ctx.drawImage(bgImg, 0, 0, 1600, 4550);
       
       // Draw Stroke Lines (from the drawing Canvas overlay)
       if (canvasElement) {
-        ctx.drawImage(canvasElement, 0, 0, 800, 2275);
+        ctx.drawImage(canvasElement, 0, 0, 1600, 4550);
       }
       
       // Draw Markers (DOM overlay)
       const floorMarkers = route.markers.filter(m => m.floor === floor);
+      const scaleMultiplier = (route.markerScale || 30) / 30;
+
       floorMarkers.forEach(m => {
         const meta = MARKER_META[m.type];
         const isLargePin = m.type === 'warp' || m.type === 'stairs';
-        const radius = isLargePin ? 9 : 8;
-        const fontSize = isLargePin ? 10 : 9;
+        const radius = (isLargePin ? 9 : 8) * scaleMultiplier;
+        const fontSize = (isLargePin ? 10 : 9) * scaleMultiplier;
         
         // Marker Outer Circle Glow
         ctx.shadowColor = meta.color;
-        ctx.shadowBlur = isLargePin ? 8 : 6;
+        ctx.shadowBlur = (isLargePin ? 8 : 6) * scaleMultiplier;
         ctx.fillStyle = 'rgba(10, 15, 28, 0.85)';
         ctx.strokeStyle = meta.color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.5 * scaleMultiplier;
         
         ctx.beginPath();
         ctx.arc(m.x, m.y, radius, 0, Math.PI * 2);
@@ -222,26 +227,28 @@ export class DataManager {
         
         // Draw Text Note labels if they exist
         if (m.note.trim()) {
-          ctx.font = 'bold 10px Rajdhani, Orbitron, Arial';
+          ctx.font = `bold ${Math.round(10 * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
           const textWidth = ctx.measureText(m.note).width;
-          const labelWidth = Math.max(textWidth + 12, 40);
+          const labelWidth = Math.max(textWidth + 12 * scaleMultiplier, 40 * scaleMultiplier);
+          const labelHeight = 18 * scaleMultiplier;
+          const labelRadius = 4 * scaleMultiplier;
           
           ctx.fillStyle = 'rgba(5, 7, 10, 0.9)';
           ctx.strokeStyle = meta.color;
           ctx.lineWidth = 1;
           
           const rx = m.x - labelWidth / 2;
-          const ry = m.y + radius + 4;
+          const ry = m.y + radius + 4 * scaleMultiplier;
           
           // Draw note text box
           ctx.beginPath();
-          ctx.roundRect(rx, ry, labelWidth, 18, 4);
+          ctx.roundRect(rx, ry, labelWidth, labelHeight, labelRadius);
           ctx.fill();
           ctx.stroke();
           
           // Draw text
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(m.note, m.x, ry + 9);
+          ctx.fillText(m.note, m.x, ry + 9 * scaleMultiplier);
         }
       });
 

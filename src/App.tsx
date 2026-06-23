@@ -29,6 +29,53 @@ interface HistoryState {
   globalMarkers: HeistMarker[];
 }
 
+const migrateRouteCoordinates = (data: RouteData): RouteData => {
+  if (data.mapVersion && data.mapVersion >= 2) {
+    return data;
+  }
+
+  // Multiply all coordinates in markers by 2
+  const migratedMarkers = (data.markers || []).map(m => {
+    const updated = {
+      ...m,
+      x: m.x * 2,
+      y: m.y * 2,
+    };
+    if (m.scrollConfig) {
+      updated.scrollConfig = {
+        ...m.scrollConfig,
+        x: m.scrollConfig.x * 2,
+        y: m.scrollConfig.y * 2,
+      };
+    }
+    return updated;
+  });
+
+  // Multiply all coordinates in strokes by 2
+  const migratedStrokes: { [key in FloorType]: DrawingStroke[] } = { main: [] };
+  if (data.strokes) {
+    Object.keys(data.strokes).forEach(floorKey => {
+      const floorStrokes = data.strokes[floorKey as FloorType];
+      if (Array.isArray(floorStrokes)) {
+        migratedStrokes[floorKey as FloorType] = floorStrokes.map(stroke => ({
+          ...stroke,
+          points: (stroke.points || []).map(pt => ({
+            x: pt.x * 2,
+            y: pt.y * 2,
+          }))
+        }));
+      }
+    });
+  }
+
+  return {
+    ...data,
+    markers: migratedMarkers,
+    strokes: migratedStrokes,
+    mapVersion: 2
+  };
+};
+
 export default function App() {
   // Global State: Current Active Heist Plan
   const [route, setRoute] = useState<RouteData>(DEFAULT_ROUTE());
@@ -36,6 +83,12 @@ export default function App() {
 
   // Shared Global Markers state (cameras, guards, etc. persisting across plans)
   const [globalMarkers, setGlobalMarkers] = useState<HeistMarker[]>([]);
+
+  // Pin & Label Scaling State (30% to 200%, default 30%)
+  const [markerScale, setMarkerScale] = useState<number>(() => {
+    const saved = localStorage.getItem('heist_marker_scale');
+    return saved !== null ? parseInt(saved) : 30;
+  });
 
   // Presentation / View Mode toggle state
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
@@ -197,7 +250,30 @@ export default function App() {
     const savedGlobal = localStorage.getItem('heist_global_markers');
     if (savedGlobal) {
       try {
-        const parsed: HeistMarker[] = JSON.parse(savedGlobal);
+        let parsed: HeistMarker[] = JSON.parse(savedGlobal);
+        
+        // Migrate coordinates to 2x if not already done
+        const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
+        if (!isMigrated) {
+          parsed = parsed.map(m => {
+            const updated = {
+              ...m,
+              x: m.x * 2,
+              y: m.y * 2,
+            };
+            if (m.scrollConfig) {
+              updated.scrollConfig = {
+                ...m.scrollConfig,
+                x: m.scrollConfig.x * 2,
+                y: m.scrollConfig.y * 2,
+              };
+            }
+            return updated;
+          });
+          localStorage.setItem('heist_global_markers', JSON.stringify(parsed));
+          localStorage.setItem('heist_global_markers_migrated_v2', 'true');
+        }
+
         const migrated = parsed.map(m => {
           if (m.type === 'boss') {
             const updated = { ...m };
@@ -334,24 +410,32 @@ export default function App() {
 
   // Local Storage actions
   const handleSaveToLocal = () => {
-    DataManager.saveToLocalStorage(route);
+    const routeToSave = { ...route, mapVersion: 2, markerScale: markerScale };
+    DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
     alert(`Successfully saved: ${route.title}`);
   };
 
   const handleLoadFromLocal = (id: string) => {
-    const data = DataManager.loadFromLocalStorage(id);
+    let data = DataManager.loadFromLocalStorage(id);
     if (data) {
+      // 2x Coordinate Scale Migration
+      const migratedData = migrateRouteCoordinates(data);
+      if (migratedData.mapVersion !== data.mapVersion) {
+        DataManager.saveToLocalStorage(migratedData);
+        data = migratedData;
+      }
+      const routeData = data;
       // Compatibility migrations
-      if (data.strokes && !data.strokes.main) {
+      if (routeData.strokes && !routeData.strokes.main) {
         const merged: DrawingStroke[] = [];
-        Object.keys(data.strokes).forEach(key => {
-          const keyStrokes = (data.strokes as any)[key];
+        Object.keys(routeData.strokes).forEach(key => {
+          const keyStrokes = (routeData.strokes as any)[key];
           if (Array.isArray(keyStrokes)) merged.push(...keyStrokes);
         });
-        data.strokes = { main: merged };
+        routeData.strokes = { main: merged };
       }
-      if (data.markers) {
+      if (routeData.markers) {
         const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
@@ -423,6 +507,10 @@ export default function App() {
         data.longPickingCustomDurations = {};
       }
       setRoute(data);
+      if (data.markerScale !== undefined) {
+        setMarkerScale(data.markerScale);
+        localStorage.setItem('heist_marker_scale', String(data.markerScale));
+      }
       alert(`Loaded plan: ${data.title}`);
     }
   };
@@ -446,7 +534,8 @@ export default function App() {
 
   // JSON Import / Export
   const handleExportJSON = () => {
-    DataManager.exportToJSON(route);
+    const routeToExport = { ...route, mapVersion: 2, markerScale: markerScale };
+    DataManager.exportToJSON(routeToExport);
   };
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -456,8 +545,11 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const importedData = JSON.parse(event.target?.result as string) as RouteData;
-        if (importedData.strokes && importedData.markers) {
+        const rawData = JSON.parse(event.target?.result as string) as RouteData;
+        if (rawData.strokes && rawData.markers) {
+          // 4x Coordinate Scale Migration
+          const importedData = migrateRouteCoordinates(rawData);
+
           // Normalize structure in case of older structure
           if (!importedData.strokes.main) {
             const merged: DrawingStroke[] = [];
@@ -541,6 +633,10 @@ export default function App() {
             importedData.longPickingCustomDurations = {};
           }
           setRoute(importedData);
+          if (importedData.markerScale !== undefined) {
+            setMarkerScale(importedData.markerScale);
+            localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
+          }
           alert(`Imported successfully: ${importedData.title}`);
         } else {
           alert('Invalid JSON file format.');
@@ -583,7 +679,8 @@ export default function App() {
   const handleExportPNG = () => {
     const routeForExport = {
       ...route,
-      markers: [...globalMarkers, ...route.markers]
+      markers: [...globalMarkers, ...route.markers],
+      markerScale: markerScale
     };
     DataManager.exportToPNG(
       currentFloor,
@@ -738,6 +835,33 @@ export default function App() {
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px' }}>
               Hotkey: Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>V</kbd> or <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>P</kbd> to toggle instantly.
+            </div>
+          </div>
+
+          {/* Pin and Label Sizing Adjuster */}
+          <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                <span>📌 ピン・ラベル倍率:</span>
+                <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{markerScale}%</span>
+              </div>
+              <input
+                type="range"
+                min="30"
+                max="200"
+                step="5"
+                value={markerScale}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setMarkerScale(val);
+                  localStorage.setItem('heist_marker_scale', String(val));
+                }}
+                style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                <span>最小 (30%)</span>
+                <span>最大 (200%)</span>
+              </div>
             </div>
           </div>
 
@@ -1063,6 +1187,7 @@ export default function App() {
             floor={currentFloor}
             strokes={route.strokes[currentFloor]}
             markers={[...globalMarkers, ...route.markers]}
+            markerScale={markerScale}
             customBg={route.customBg[currentFloor]}
             toolMode={toolMode}
             activeMarkerType={activeMarkerType}

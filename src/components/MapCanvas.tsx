@@ -124,6 +124,7 @@ interface MapCanvasProps {
   disablePinsDuringDraw?: boolean;
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
+  markerScale?: number;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -154,7 +155,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onLongPickingCustomDurationChange,
   disablePinsDuringDraw = true,
   onMarkersDragStart,
-  onMarkersDragEnd
+  onMarkersDragEnd,
+  markerScale = 30
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -165,7 +167,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
 
   // Viewport State (Zoom & Pan)
-  const [zoom, setZoom] = useState(4);
+  const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
@@ -208,11 +210,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
 
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
-  const targetZoomRef = useRef<number>(4);
+  const targetZoomRef = useRef<number>(1);
   const targetPanRef = useRef<Point>({ x: 0, y: 0 });
   const animFrameIdRef = useRef<number | null>(null);
   const animPanRef = useRef<Point>({ x: 0, y: 0 });
-  const animZoomRef = useRef<number>(2);
+  const animZoomRef = useRef<number>(1);
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -235,13 +237,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!wrapper) return;
 
     const handleWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('.info-marker-popup, .boss-marker-popup, .edit-popup, .control-panel, .map-sidebar')) {
+        return; // Allow native scrolling inside popups or panels
+      }
       e.preventDefault();
       const zoomFactor = 1.12;
       const factor = e.deltaY < 0 ? zoomFactor : 1 / zoomFactor;
 
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       setZoom(prev => {
-        const nz = Math.max(0.5, Math.min(4, prev * factor));
+        const nz = Math.max(0.1, Math.min(4, prev * factor));
         targetZoomRef.current = nz;
         return nz;
       });
@@ -321,11 +327,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const H_v = wrapper.clientHeight;
             const tgtZoom = 2;
             // CSS transform: screenPos = wrapperCenter + (markerLocal - containerCenter) * zoom + pan
-            // To center horizontally: pan.x = (400 - marker.x) * zoom
-            // To place at 60% down:   pan.y = H_v * 0.1 - (marker.y - 1137.5) * zoom
+            // To center horizontally: pan.x = (800 - marker.x) * zoom
+            // To place at 60% down:   pan.y = H_v * 0.1 - (marker.y - 2275) * zoom
             const tgtPan = {
-              x: (400 - marker.x) * tgtZoom,
-              y: H_v * 0.1 - (marker.y - 1137.5) * tgtZoom
+              x: (800 - marker.x) * tgtZoom,
+              y: H_v * 0.1 - (marker.y - 2275) * tgtZoom
             };
             startSmoothScroll(tgtPan, tgtZoom);
           }
@@ -362,7 +368,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const redrawStrokes = () => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    ctx.clearRect(0, 0, 800, 2275);
+    ctx.clearRect(0, 0, 1600, 4550);
 
     strokes.forEach(stroke => {
       ctx.strokeStyle = stroke.color;
@@ -430,7 +436,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       left: `${offset.x}px`,
       top: `${offset.y}px`,
       width: `${w}px`,
-      ...(h > 0 ? { height: `${h}px`, overflowY: 'auto' as const } : {}),
+      ...(h > 0 ? { height: `${h}px`, maxHeight: `${h}px` } : {}),
       transform: `translate(-50%, -50%) scale(${1 / zoom})`,
       transformOrigin: 'center center',
       zIndex: 1000,
@@ -464,8 +470,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const getCanvasCoords = (e: React.MouseEvent<HTMLElement>): Point => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 800;
-    const y = ((e.clientY - rect.top) / rect.height) * 2275;
+    const x = ((e.clientX - rect.left) / rect.width) * 1600;
+    const y = ((e.clientY - rect.top) / rect.height) * 4550;
     return { x: Math.round(x), y: Math.round(y) };
   };
 
@@ -615,8 +621,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onMarkersChange(
           markers.map(m => {
             if (m.id === draggingMarkerId) {
-              const targetX = Math.max(0, Math.min(800, coords.x - dragStartOffset.x));
-              const targetY = Math.max(0, Math.min(2275, coords.y - dragStartOffset.y));
+              const targetX = Math.max(0, Math.min(1600, coords.x - dragStartOffset.x));
+              const targetY = Math.max(0, Math.min(4550, coords.y - dragStartOffset.y));
               return { ...m, x: targetX, y: targetY };
             }
             return m;
@@ -835,7 +841,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleZoom = (factor: number) => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     setZoom(prev => {
-      const nz = Math.max(0.5, Math.min(8, prev * factor));
+      const nz = Math.max(0.1, Math.min(4, prev * factor));
       targetZoomRef.current = nz;
       return nz;
     });
@@ -843,7 +849,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const resetView = () => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-    startSmoothScroll({ x: 0, y: 0 }, 4);
+    startSmoothScroll({ x: 0, y: 0 }, 1);
   };
 
   const handleSaveNote = () => {
@@ -995,8 +1001,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         className="canvas-container"
         ref={containerRef}
         style={{
-          width: '800px',
-          height: '2275px',
+          width: '1600px',
+          height: '4550px',
           transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
         }}
       >
@@ -1011,14 +1017,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <canvas
           ref={canvasRef}
           className="drawing-canvas"
-          width={800}
-          height={2275}
+          width={1600}
+          height={4550}
         />
 
         {/* Warp & Stairs pair connector lines */}
         <svg
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15 }}
-          viewBox="0 0 800 2275"
+          viewBox="0 0 1600 4550"
         >
           <defs>
             <marker 
@@ -1138,6 +1144,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 : meta.emoji;
               // Phone markers that are locked show a small lock indicator
               const phoneClass = isPhone ? (m.phoneActive ? 'phone-active' : 'phone-inactive') : '';
+              const scaleMultiplier = markerScale / 30;
               return (
                 <div
                   key={m.id}
@@ -1146,6 +1153,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
+                     width: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
+                     height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto'
                   } as React.CSSProperties}
@@ -1154,12 +1163,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 >
                   <div 
                     className="map-marker-icon"
-                    style={isLargePin ? { width: '18px', height: '18px', fontSize: '10px' } : undefined}
+                    style={{
+                      fontSize: `${(isLargePin ? 10 : 9) * scaleMultiplier}px`,
+                      borderWidth: `${1.5 * scaleMultiplier}px`,
+                      boxShadow: `0 0 ${6 * scaleMultiplier}px var(--theme-color, var(--cyan-neon))`
+                    }}
                   >
                     {displayEmoji}
                   </div>
                   {showMarkerLabels && m.note.trim() && !isLargePin && (isEditMode || m.type !== 'info') && (
-                    <div className="map-marker-label">
+                    <div 
+                      className="map-marker-label"
+                      style={{
+                        fontSize: `${10 * scaleMultiplier}px`,
+                        padding: `${2 * scaleMultiplier}px ${6 * scaleMultiplier}px`,
+                        borderRadius: `${4 * scaleMultiplier}px`,
+                        maxWidth: `${120 * scaleMultiplier}px`,
+                        marginTop: `${4 * scaleMultiplier}px`,
+                        borderWidth: `${1 * scaleMultiplier}px`,
+                        boxShadow: `0 ${2 * scaleMultiplier}px ${5 * scaleMultiplier}px rgba(0, 0, 0, 0.5)`
+                      }}
+                    >
                       {m.note}
                     </div>
                   )}
@@ -1439,88 +1463,52 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         )}
                       </div>
                       <div className="info-popup-content">
-                        {/* Picky state indicator */}
-                        {m.pickingPicky && (
-                          <div style={{ fontSize: '11px', color: '#39ff14', fontWeight: 'bold', marginBottom: '6px' }}>
-                            ⚡ ピッキー (0秒) 設定中
-                          </div>
-                        )}
-                        {/* Duration settings - editable in presentation mode */}
+                        {/* Picky Checkbox - editable directly in presentation mode */}
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '6px', 
+                          background: 'rgba(57, 255, 20, 0.05)', 
+                          padding: '6px', 
+                          borderRadius: '4px', 
+                          border: '1px solid rgba(57, 255, 20, 0.15)', 
+                          marginBottom: '6px' 
+                        }}>
+                          <input 
+                            type="checkbox"
+                            id={`picky-cb-${m.id}`}
+                            checked={!!m.pickingPicky}
+                            onChange={(e) => {
+                              const updatedPicky = e.target.checked;
+                              const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                              onMarkersChange(
+                                markers.map(mk => {
+                                  if (mk.id === m.id) {
+                                    const updated = { ...mk, pickingPicky: updatedPicky };
+                                    if (isLong) {
+                                      updated.longPickingDurationSeconds = updatedPicky ? 0 : 7;
+                                    } else {
+                                      updated.pickingDurationSeconds = updatedPicky ? 0 : 5;
+                                    }
+                                    return updated;
+                                  }
+                                  return mk;
+                                })
+                              );
+                            }}
+                            style={{ accentColor: '#39ff14', cursor: 'pointer' }}
+                          />
+                          <label htmlFor={`picky-cb-${m.id}`} style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                            ピッキー (Picky) — 所要時間を0秒にする
+                          </label>
+                        </div>
+
+                        {/* Duration settings - read-only display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
-                          {m.pickingPicky ? (
-                            <div style={{ fontSize: '14px', color: '#39ff14', fontWeight: 'bold', padding: '4px 0' }}>
-                              0秒 (Picky)
-                            </div>
-                          ) : (
-                            <>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <button 
-                                  className="btn-cyber danger" 
-                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                                  onClick={() => {
-                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
-                                    const customDurs = isLong ? longPickingCustomDurations : pickingCustomDurations;
-                                    const defaultDur = isLong ? (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7) : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
-                                    const currentVal = (customDurs && customDurs[m.id] !== undefined) ? customDurs[m.id] : defaultDur;
-                                    const newVal = Math.max(0, currentVal - 1);
-                                    if (isLong) {
-                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
-                                    } else {
-                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
-                                    }
-                                  }}
-                                >
-                                  -1s
-                                </button>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="input-cyber"
-                                  style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: 'var(--cyan-neon, #00f0ff)', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                                  value={
-                                    (m.type === 'long_picking' || m.type === 'glong_picking')
-                                      ? (longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined ? longPickingCustomDurations[m.id] : (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7))
-                                      : (pickingCustomDurations && pickingCustomDurations[m.id] !== undefined ? pickingCustomDurations[m.id] : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5))
-                                  }
-                                  onChange={(e) => {
-                                    const newVal = Math.max(0, parseInt(e.target.value) || 0);
-                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
-                                    if (isLong) {
-                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
-                                    } else {
-                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
-                                    }
-                                  }}
-                                />
-                                <button 
-                                  className="btn-cyber success" 
-                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                                  onClick={() => {
-                                    const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
-                                    const customDurs = isLong ? longPickingCustomDurations : pickingCustomDurations;
-                                    const defaultDur = isLong ? (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7) : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
-                                    const currentVal = (customDurs && customDurs[m.id] !== undefined) ? customDurs[m.id] : defaultDur;
-                                    const newVal = currentVal + 1;
-                                    if (isLong) {
-                                      if (onLongPickingCustomDurationChange) onLongPickingCustomDurationChange(m.id, newVal);
-                                    } else {
-                                      if (onPickingCustomDurationChange) onPickingCustomDurationChange(m.id, newVal);
-                                    }
-                                  }}
-                                >
-                                  +1s
-                                </button>
-                              </div>
-                              <span style={{ fontSize: '11px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', marginTop: '2px' }}>
-                                現在の設定: {
-                                  (m.type === 'long_picking' || m.type === 'glong_picking')
-                                    ? (longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined ? longPickingCustomDurations[m.id] : (m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7))
-                                    : (pickingCustomDurations && pickingCustomDurations[m.id] !== undefined ? pickingCustomDurations[m.id] : (m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5))
-                                }秒
-                              </span>
-                            </>
-                          )}
+                          <div style={{ fontSize: '14px', color: m.pickingPicky ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
+                            {m.pickingPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1830,95 +1818,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </label>
                 </div>
 
-                {!pickingPicky && (
-                  <>
-                    {/* Global Default Duration */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
-                          {(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingDurationSeconds : pickingDurationSeconds}秒
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          className="input-cyber"
-                          style={{ width: '80px', fontSize: '11px', padding: '4px' }}
-                          value={(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingDurationSeconds : pickingDurationSeconds}
-                          onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value) || 0);
-                            if (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') {
-                              setLongPickingDurationSeconds(val);
-                            } else {
-                              setPickingDurationSeconds(val);
-                            }
-                          }}
-                        />
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
-                      </div>
-                    </div>
-
-                    {/* Plan Specific Custom Duration */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <input 
-                          type="checkbox"
-                          id="use-picking-custom-duration-cb"
-                          checked={(activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? useLongPickingCustomDuration : usePickingCustomDuration}
-                          onChange={(e) => {
-                            const isLong = activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking';
-                            if (isLong) {
-                              setUseLongPickingCustomDuration(e.target.checked);
-                              if (e.target.checked && (longPickingCustomDurationVal === undefined || longPickingCustomDurationVal === null)) {
-                                setLongPickingCustomDurationVal(longPickingDurationSeconds);
-                              }
-                            } else {
-                              setUsePickingCustomDuration(e.target.checked);
-                              if (e.target.checked && (pickingCustomDurationVal === undefined || pickingCustomDurationVal === null)) {
-                                setPickingCustomDurationVal(pickingDurationSeconds);
-                              }
-                            }
-                          }}
-                          style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                        />
-                        <label htmlFor="use-picking-custom-duration-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
-                          このプラン独自の時間を設定する
-                        </label>
-                      </div>
-                      
-                      {((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? useLongPickingCustomDuration : usePickingCustomDuration) && (
-                        <div style={{ marginTop: '4px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
-                            <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
-                              {((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingCustomDurationVal : pickingCustomDurationVal) || 0}秒
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              className="input-cyber"
-                              style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                              value={((activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') ? longPickingCustomDurationVal : pickingCustomDurationVal) || 0}
-                              onChange={(e) => {
-                                const val = Math.max(0, parseInt(e.target.value) || 0);
-                                if (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') {
-                                  setLongPickingCustomDurationVal(val);
-                                } else {
-                                  setPickingCustomDurationVal(val);
-                                }
-                              }}
-                            />
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+                <div style={{ fontSize: '11px', color: 'var(--text-primary)', marginTop: '2px' }}>
+                  現在の設定: <strong style={{ color: 'var(--cyan-neon)' }}>{pickingPicky ? '0秒' : (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking' ? '7秒' : '5秒')}</strong>
+                </div>
 
                 {pickingPicky && (
                   <div style={{ fontSize: '11px', color: '#39ff14', fontWeight: 'bold', padding: '4px', background: 'rgba(57,255,20,0.05)', borderRadius: '4px', textAlign: 'center' }}>
@@ -2120,7 +2022,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <button className="zoom-btn" onClick={() => handleZoom(0.8)} title="Zoom Out">
           <ZoomOut size={18} />
         </button>
-        <button className="zoom-btn" onClick={resetView} title="Reset View (4x)">
+        <button className="zoom-btn" onClick={resetView} title="Reset View (1x)">
           <Maximize2 size={18} />
         </button>
         {isEditMode && (
