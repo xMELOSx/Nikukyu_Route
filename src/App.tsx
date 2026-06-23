@@ -374,7 +374,7 @@ export default function App() {
     if (shouldPushHistory) {
       pushHistory(route.strokes, route.markers, globalMarkers);
     }
-    const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
+    const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
     const newGlobal = newMarkers.filter(m => !isIndiv(m.type));
     const newIndividual = newMarkers.filter(m => isIndiv(m.type));
 
@@ -454,7 +454,7 @@ export default function App() {
       }
       if (routeData.markers) {
         data.markers = data.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
+        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
           if (updated.type === 'boss') {
@@ -579,7 +579,7 @@ export default function App() {
           }
 
           importedData.markers = importedData.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
+          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
           const planIndiv = importedData.markers.filter(m => isIndiv(m.type)).map(m => {
             const updated = { ...m, floor: 'main' as FloorType };
             if (updated.type === 'boss') {
@@ -1097,7 +1097,7 @@ export default function App() {
             </div>
 
             <div className="marker-list">
-              {(['battle', 'picking', 'long_picking', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+              {(['battle', 'picking', 'long_picking', 'iwarp', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                 const meta = MARKER_META[t];
                 return (
                   <button
@@ -1110,7 +1110,7 @@ export default function App() {
                     style={{ '--theme-color': meta.color } as React.CSSProperties}
                   >
                     <span className="marker-icon-preview">{meta.emoji}</span>
-                    <span>{meta.label}</span>
+                    <span>{t === 'iwarp' ? 'I-WARP' : meta.label}</span>
                   </button>
                 );
               })}

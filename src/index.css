@@ -438,7 +438,7 @@ button, select, input {
   padding: 2px 6px;
   border-radius: 4px;
   white-space: nowrap;
-  max-width: 120px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
@@ -942,7 +942,7 @@ select.input-cyber {
   text-shadow: 0 0 8px var(--cyan-neon, #00f0ff);
 }
 
-/* Eternal Heart High Rate Marker Pulsing Glow Outline */
+/* Eternal Heart High Rate Marker Pulsing Glow Outline (Halved) */
 .map-marker.eh-high-rate::before {
   content: '';
   position: absolute;
@@ -952,7 +952,7 @@ select.input-cyber {
   bottom: -4px;
   border-radius: 50%;
   border: 1.5px solid var(--cyan-neon);
-  box-shadow: 0 0 8px var(--cyan-neon), inset 0 0 8px var(--cyan-neon);
+  box-shadow: 0 0 4px var(--cyan-neon), inset 0 0 4px var(--cyan-neon);
   animation: eh-pulse 1.8s infinite alternate ease-in-out;
   pointer-events: none;
   z-index: -1;
@@ -966,6 +966,45 @@ select.input-cyber {
   100% {
     transform: scale(1.15);
     opacity: 1;
-    box-shadow: 0 0 14px var(--cyan-neon), inset 0 0 10px var(--cyan-neon);
+    box-shadow: 0 0 7px var(--cyan-neon), inset 0 0 5px var(--cyan-neon);
   }
+}
+
+/* Card Key High Rate Marker Pulsing Glow Outline (Halved) */
+.map-marker.cardkey-high-rate::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--green-neon);
+  box-shadow: 0 0 4px var(--green-neon), inset 0 0 4px var(--green-neon);
+  animation: cardkey-pulse 1.8s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes cardkey-pulse {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 7px var(--green-neon), inset 0 0 5px var(--green-neon);
+  }
+}
+
+/* Warp Waypoint Handle styling */
+.warp-waypoint-handle {
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.warp-waypoint-handle:hover {
+  transform: translate(-50%, -50%) scale(1.3) !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.9) !important;
 }

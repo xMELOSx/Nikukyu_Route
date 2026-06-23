@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp';
 
 export interface Point {
   x: number;
@@ -48,6 +48,8 @@ export interface HeistMarker {
   pickingPicky?: boolean;  // For picking/long_picking markers: true = Picky (0s)
   pickingExpanded?: boolean; // For picking markers: whether details are expanded in presentation mode
   ehHighRate?: boolean;   // For EH markers: true = high appearance rate highlighted glow
+  cardkeyHighRate?: boolean; // For Card Key markers: true = high appearance rate highlighted glow
+  warpWaypoints?: Point[]; // For warp/stairs markers: custom path waypoints
 }
 
 export interface RouteData {
@@ -110,7 +112,8 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   info: { emoji: 'ⓘ', label: 'INFO PIN', color: '#4fc3f7' },
   gbattle: { emoji: '⚔', label: 'BATTLE (GLOBAL)', color: '#ff0055' },
   gpicking: { emoji: '🔑', label: 'PICKING (GLOBAL)', color: '#ffe600' },
-  glong_picking: { emoji: '🔐', label: 'L-PICKING (GLOBAL)', color: '#ffaa00' }
+  glong_picking: { emoji: '🔐', label: 'L-PICKING (GLOBAL)', color: '#ffaa00' },
+  iwarp: { emoji: '🌀', label: 'I-WARP', color: '#ff00ff' }
 };
 
 // Preset Maps metadata with local paths
@@ -197,9 +200,59 @@ export class DataManager {
       const floorMarkers = route.markers.filter(m => m.floor === floor);
       const scaleMultiplier = (route.markerScale || 30) / 30;
 
+      // Draw Warp & Stairs connection lines to PNG canvas
+      floorMarkers.forEach(m => {
+        if ((m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
+          const partner = floorMarkers.find(mk => mk.id === m.linkedWarpId);
+          if (!partner) return;
+          const isWarp = m.type === 'warp' || m.type === 'iwarp';
+          const color = isWarp ? '#ff00ff' : '#ffaa00';
+          const lineWidth = (isWarp ? 2 : 1) * scaleMultiplier;
+          
+          ctx.strokeStyle = color;
+          ctx.lineWidth = lineWidth;
+          ctx.setLineDash(isWarp ? [6 * scaleMultiplier, 4 * scaleMultiplier] : [3 * scaleMultiplier, 3 * scaleMultiplier]);
+          ctx.beginPath();
+          ctx.moveTo(m.x, m.y);
+          if (m.warpWaypoints && m.warpWaypoints.length > 0) {
+            m.warpWaypoints.forEach(wp => {
+              ctx.lineTo(wp.x, wp.y);
+            });
+          }
+          ctx.lineTo(partner.x, partner.y);
+          ctx.stroke();
+
+          // Draw an arrowhead at the target pin
+          const lastPt = m.warpWaypoints && m.warpWaypoints.length > 0
+            ? m.warpWaypoints[m.warpWaypoints.length - 1]
+            : { x: m.x, y: m.y };
+          const angle = Math.atan2(partner.y - lastPt.y, partner.x - lastPt.x);
+          const headLength = Math.max(lineWidth * 5, 10);
+          
+          ctx.fillStyle = color;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          const arrowOffsetX = partner.x - (isWarp ? 12 : 10) * scaleMultiplier * Math.cos(angle);
+          const arrowOffsetY = partner.y - (isWarp ? 12 : 10) * scaleMultiplier * Math.sin(angle);
+          
+          ctx.moveTo(arrowOffsetX, arrowOffsetY);
+          ctx.lineTo(
+            arrowOffsetX - headLength * Math.cos(angle - Math.PI / 6),
+            arrowOffsetY - headLength * Math.sin(angle - Math.PI / 6)
+          );
+          ctx.lineTo(
+            arrowOffsetX - headLength * Math.cos(angle + Math.PI / 6),
+            arrowOffsetY - headLength * Math.sin(angle + Math.PI / 6)
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+      ctx.setLineDash([]); // Reset line dash
+
       floorMarkers.forEach(m => {
         const meta = MARKER_META[m.type];
-        const isLargePin = m.type === 'warp' || m.type === 'stairs';
+        const isLargePin = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
         const radius = (isLargePin ? 9 : 8) * scaleMultiplier;
         const fontSize = (isLargePin ? 10 : 9) * scaleMultiplier;
         
@@ -220,7 +273,18 @@ export class DataManager {
           ctx.strokeStyle = '#00f0ff';
           ctx.lineWidth = 1.5 * scaleMultiplier;
           ctx.shadowColor = '#00f0ff';
-          ctx.shadowBlur = 10 * scaleMultiplier;
+          ctx.shadowBlur = 5 * scaleMultiplier;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, radius + 4 * scaleMultiplier, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Draw double ring for high appearance rate Card Key pin
+        if (m.type === 'cardkey' && m.cardkeyHighRate) {
+          ctx.strokeStyle = '#39ff14';
+          ctx.lineWidth = 1.5 * scaleMultiplier;
+          ctx.shadowColor = '#39ff14';
+          ctx.shadowBlur = 5 * scaleMultiplier;
           ctx.beginPath();
           ctx.arc(m.x, m.y, radius + 4 * scaleMultiplier, 0, Math.PI * 2);
           ctx.stroke();

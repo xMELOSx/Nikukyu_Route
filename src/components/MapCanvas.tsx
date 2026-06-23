@@ -164,7 +164,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
+  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
 
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(1);
@@ -179,6 +179,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Drag-and-drop Marker State
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
   const [dragStartOffset, setDragStartOffset] = useState<Point>({ x: 0, y: 0 });
+  const [draggingWaypoint, setDraggingWaypoint] = useState<{ markerId: string; index: number } | null>(null);
 
   // Note Popover State
   const [activeNoteMarkerId, setActiveNoteMarkerId] = useState<string | null>(null);
@@ -192,6 +193,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [longPickingDurationSeconds, setLongPickingDurationSeconds] = useState(7);
   const [pickingPicky, setPickingPicky] = useState(false);
   const [ehHighRate, setEhHighRate] = useState(false);
+  const [cardkeyHighRate, setCardkeyHighRate] = useState(false);
   const [customDropInput, setCustomDropInput] = useState('');
   const [useBossCustomDuration, setUseBossCustomDuration] = useState(false);
   const [bossCustomDurationVal, setBossCustomDurationVal] = useState<number | undefined>(undefined);
@@ -473,11 +475,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPopupOffsetStart(popupOffset);
   };
 
-  const getPopupStyle = (offset: Point, w: number, h: number, color: string): React.CSSProperties => {
+  const getPopupStyle = (m: HeistMarker, offset: Point, w: number, h: number, color: string): React.CSSProperties => {
     return {
       position: 'absolute',
-      left: `${offset.x}px`,
-      top: `${offset.y}px`,
+      left: `${m.x + offset.x}px`,
+      top: `${m.y + offset.y}px`,
       width: `${w}px`,
       ...(h > 0 ? { height: `${h}px`, maxHeight: `${h}px` } : {}),
       transform: `translate(-50%, -50%) scale(${1 / zoom})`,
@@ -572,6 +574,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (activeMarkerType === 'eh') {
         newMarker.ehHighRate = false;
       }
+      if (activeMarkerType === 'cardkey') {
+        newMarker.cardkeyHighRate = false;
+      }
+      if (activeMarkerType === 'warp' || activeMarkerType === 'iwarp' || activeMarkerType === 'stairs') {
+        newMarker.warpWaypoints = [];
+      }
       if (activeMarkerType === 'info') {
         newMarker.infoMediaUrl = '';
         newMarker.infoMediaType = 'image';
@@ -608,6 +616,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setLongPickingDurationSeconds(7);
       setPickingPicky(false);
       setEhHighRate(false);
+      setCardkeyHighRate(false);
       setCustomDropInput('');
       setUseBattleCustomDuration(false);
       setBattleCustomDurationVal(20);
@@ -663,6 +672,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (draggingWaypoint) {
+      onMarkersChange(
+        markers.map(m => {
+          if (m.id === draggingWaypoint.markerId && m.warpWaypoints) {
+            const nextWaypoints = [...m.warpWaypoints];
+            nextWaypoints[draggingWaypoint.index] = {
+              x: Math.max(0, Math.min(1600, coords.x)),
+              y: Math.max(0, Math.min(4550, coords.y))
+            };
+            return { ...m, warpWaypoints: nextWaypoints };
+          }
+          return m;
+        })
+      );
+      return;
+    }
+
     if (draggingMarkerId) {
       const marker = markers.find(m => m.id === draggingMarkerId);
       const canDrag = isEditMode || (marker && isIndiv(marker.type));
@@ -703,6 +729,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    if (draggingWaypoint) {
+      if (onMarkersDragEnd) onMarkersDragEnd();
+      setDraggingWaypoint(null);
+      return;
+    }
     if (draggingMarkerId) {
       if (onMarkersDragEnd) onMarkersDragEnd();
       setDraggingMarkerId(null);
@@ -811,7 +842,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       // Warp/stairs navigation: use partner's scrollConfig if available (manual setting priority)
-      const isLinkable = m.type === 'warp' || m.type === 'stairs';
+      const isLinkable = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
       if (isLinkable && m.linkedWarpId) {
         const partner = markers.find(mk => mk.id === m.linkedWarpId);
         if (partner) {
@@ -860,6 +891,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7);
     setPickingPicky(!!m.pickingPicky);
     setEhHighRate(!!m.ehHighRate);
+    setCardkeyHighRate(!!m.cardkeyHighRate);
     setCustomDropInput('');
 
     // Load custom durations if it exists for Boss
@@ -938,6 +970,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             if (m.type === 'eh') {
               updated.ehHighRate = ehHighRate;
+            }
+            if (m.type === 'cardkey') {
+              updated.cardkeyHighRate = cardkeyHighRate;
             }
             return updated;
           }
@@ -1106,31 +1141,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </marker>
           </defs>
           {markers
-            .filter(m => m.type === 'warp' && m.linkedWarpId && m.floor === floor)
+            .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId && m.floor === floor)
             .map(m => {
               const partner = markers.find(mk => mk.id === m.linkedWarpId);
               if (!partner) return null;
+              const isWarp = m.type === 'warp' || m.type === 'iwarp';
+              const color = isWarp ? '#ff00ff' : '#ffaa00';
+              const strokeWidth = isWarp ? "2" : "1";
+              const strokeDasharray = isWarp ? "6 4" : "3 3";
+              const markerEnd = isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)";
+              const opacity = isWarp ? "0.6" : "0.35";
+
+              if (m.warpWaypoints && m.warpWaypoints.length > 0) {
+                const pathD = `M ${m.x} ${m.y} ` + m.warpWaypoints.map(wp => `L ${wp.x} ${wp.y}`).join(' ') + ` L ${partner.x} ${partner.y}`;
+                return (
+                  <path
+                    key={`warp-path-${m.id}`}
+                    d={pathD}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
+                    opacity={opacity}
+                    markerEnd={markerEnd}
+                  />
+                );
+              }
+
               return (
                 <line
                   key={`warp-line-${m.id}`}
                   x1={m.x} y1={m.y} x2={partner.x} y2={partner.y}
-                  stroke="#ff00ff" strokeWidth="2" strokeDasharray="6 4" opacity="0.6"
-                  markerEnd="url(#warp-arrow)"
-                />
-              );
-            })
-          }
-          {markers
-            .filter(m => m.type === 'stairs' && m.linkedWarpId && m.floor === floor)
-            .map(m => {
-              const partner = markers.find(mk => mk.id === m.linkedWarpId);
-              if (!partner) return null;
-              return (
-                <line
-                  key={`stairs-line-${m.id}`}
-                  x1={m.x} y1={m.y} x2={partner.x} y2={partner.y}
-                  stroke="#ffaa00" strokeWidth="1" strokeDasharray="3 3" opacity="0.35"
-                  markerEnd="url(#stairs-arrow)"
+                  stroke={color}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={strokeDasharray}
+                  opacity={opacity}
+                  markerEnd={markerEnd}
                 />
               );
             })
@@ -1188,7 +1234,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             .map(m => {
               if (!isEditMode && m.type === 'room') return null;
 
-              const isWarp = m.type === 'warp';
+              const isWarp = m.type === 'warp' || m.type === 'iwarp';
               const isStairs = m.type === 'stairs';
               const isPhone = m.type === 'phone';
               const isLargePin = isWarp || isStairs;
@@ -1203,7 +1249,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <div
                   key={m.id}
-                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''}`}
+                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''}`}
                   data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
                   style={{
                      left: `${m.x}px`,
@@ -1233,7 +1279,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         fontSize: `${10 * scaleMultiplier}px`,
                         padding: `${2 * scaleMultiplier}px ${6 * scaleMultiplier}px`,
                         borderRadius: `${4 * scaleMultiplier}px`,
-                        maxWidth: `${120 * scaleMultiplier}px`,
+                        maxWidth: `${140 * scaleMultiplier}px`,
                         marginTop: `${4 * scaleMultiplier}px`,
                         borderWidth: `${1 * scaleMultiplier}px`,
                         boxShadow: `0 ${2 * scaleMultiplier}px ${5 * scaleMultiplier}px rgba(0, 0, 0, 0.5)`
@@ -1242,12 +1288,60 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       {m.note}
                     </div>
                   )}
+                </div>
+              );
+            })}
 
+          {/* Render draggable waypoint handles for the active warp/stairs pin in Edit Mode */}
+          {markers
+            .filter(m => m.floor === floor)
+            .map(m => {
+              if (isEditMode && activeNoteMarkerId === m.id && m.warpWaypoints) {
+                const meta = MARKER_META[m.type];
+                return m.warpWaypoints.map((wp, wpIdx) => (
+                  <div
+                    key={`wp-${m.id}-${wpIdx}`}
+                    className="warp-waypoint-handle"
+                    style={{
+                      position: 'absolute',
+                      left: `${wp.x}px`,
+                      top: `${wp.y}px`,
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      background: meta.color,
+                      border: '2px solid #fff',
+                      boxShadow: '0 0 6px rgba(0,0,0,0.6)',
+                      cursor: 'pointer',
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 35,
+                      pointerEvents: 'auto'
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      if (onMarkersDragStart) onMarkersDragStart();
+                      setDraggingWaypoint({ markerId: m.id, index: wpIdx });
+                    }}
+                    title={`Drag to adjust waypoint #${wpIdx + 1}`}
+                  />
+                ));
+              }
+              return null;
+            })}
+
+          {/* Details Popups rendered in flat layer at the end to stay on top of everything */}
+          {markers
+            .filter(m => m.floor === floor)
+            .map(m => {
+              const meta = MARKER_META[m.type];
+              return (
+                <React.Fragment key={`popups-${m.id}`}>
                   {/* Details Popup in Presentation Mode or Preview in Edit Mode */}
                   {((!isEditMode && m.type === 'info' && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'info')) && (
                     <div 
                       className="info-marker-popup"
                       style={getPopupStyle(
+                        m,
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 300),
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
@@ -1306,6 +1400,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
+                        m,
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
@@ -1404,6 +1499,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
+                        m,
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         220,
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
@@ -1487,6 +1583,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
+                        m,
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
                         220,
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
@@ -1568,8 +1665,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                     </div>
                   )}
-
-                </div>
+                </React.Fragment>
               );
             })}
 
@@ -1904,6 +2000,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
+          {/* Card Key marker high appearance rate editing */}
+          {activeNoteMarker.type === 'cardkey' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(57, 255, 20, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(57, 255, 20, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(57, 255, 20, 0.15)', marginTop: '4px' }}>
+                <input
+                  type="checkbox"
+                  id="cardkey-high-rate-cb"
+                  checked={cardkeyHighRate}
+                  onChange={(e) => setCardkeyHighRate(e.target.checked)}
+                  style={{ accentColor: 'var(--green-neon)', cursor: 'pointer' }}
+                />
+                <label htmlFor="cardkey-high-rate-cb" style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                  出現率が高い (High Spawn Rate) - 強調表示する
+                </label>
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>SCROLL TARGET:</div>
             <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>Pan/zoom the map freely, then click below to capture this view.</div>
@@ -1953,14 +2067,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Warp & Stairs Point Linking */}
-          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'stairs') && (
-            <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${activeNoteMarker.type === 'warp' ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
+          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp' || activeNoteMarker.type === 'stairs') && (
+            <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                {activeNoteMarker.type === 'warp' ? '🌀 WARP TARGET (Unidirectional):' : '🪜 STAIRS TARGET (Unidirectional):'}
+                {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀 WARP TARGET (Unidirectional):' : '🪜 STAIRS TARGET (Unidirectional):'}
               </div>
               {activeNoteMarker.linkedWarpId ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '10px', color: activeNoteMarker.type === 'warp' ? 'var(--magenta-neon)' : '#ffaa00' }}>
+                  <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
                     ✓ Leads to: {markers.find(m => m.id === activeNoteMarker.linkedWarpId)?.note || activeNoteMarker.linkedWarpId.substring(activeNoteMarker.linkedWarpId.length - 6)}
                   </div>
                   <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} onClick={() => {
@@ -1994,17 +2108,74 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     }
                   }}
                 >
-                  <option value="">-- Select target {activeNoteMarker.type === 'warp' ? 'warp' : 'stairs'} --</option>
+                  <option value="">-- Select target {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'warp' : 'stairs'} --</option>
                   {markers
                     .filter(m => m.type === activeNoteMarker.type && m.id !== activeNoteMarker.id)
                     .map(m => (
                       <option key={m.id} value={m.id}>
-                        {activeNoteMarker.type === 'warp' ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${activeNoteMarker.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
+                        {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
                       </option>
                     ))
                   }
                 </select>
               )}
+
+              {/* Waypoint controls */}
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '4px' }}>
+                経由点操作 (WAYPOINTS):
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="btn-cyber success"
+                  style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
+                  onClick={() => {
+                    const waypoints = activeNoteMarker.warpWaypoints || [];
+                    const startPt = waypoints.length > 0
+                      ? waypoints[waypoints.length - 1]
+                      : { x: activeNoteMarker.x, y: activeNoteMarker.y };
+                    const partner = markers.find(m => m.id === activeNoteMarker.linkedWarpId);
+                    const endPt = partner ? { x: partner.x, y: partner.y } : { x: activeNoteMarker.x + 100, y: activeNoteMarker.y + 100 };
+                    const midpoint = {
+                      x: Math.round((startPt.x + endPt.x) / 2),
+                      y: Math.round((startPt.y + endPt.y) / 2)
+                    };
+                    onMarkersChange(
+                      markers.map(m => {
+                        if (m.id === activeNoteMarker.id) {
+                          return { ...m, warpWaypoints: [...waypoints, midpoint] };
+                        }
+                        return m;
+                      }),
+                      true
+                    );
+                  }}
+                >
+                  経由点を追加
+                </button>
+                <button
+                  type="button"
+                  className="btn-cyber danger"
+                  style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
+                  disabled={!(activeNoteMarker.warpWaypoints && activeNoteMarker.warpWaypoints.length > 0)}
+                  onClick={() => {
+                    const waypoints = activeNoteMarker.warpWaypoints || [];
+                    if (waypoints.length > 0) {
+                      onMarkersChange(
+                        markers.map(m => {
+                          if (m.id === activeNoteMarker.id) {
+                            return { ...m, warpWaypoints: waypoints.slice(0, -1) };
+                          }
+                          return m;
+                        }),
+                        true
+                      );
+                    }
+                  }}
+                >
+                  最後を削除
+                </button>
+              </div>
             </div>
           )}
           
