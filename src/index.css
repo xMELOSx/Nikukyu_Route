@@ -928,3 +928,16 @@ select.input-cyber {
     opacity: 0;
   }
 }
+
+/* Help Content Link Styling */
+.help-content-view a {
+  color: var(--cyan-neon, #00f0ff);
+  text-decoration: underline;
+  font-weight: bold;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.help-content-view a:hover {
+  color: #ffffff;
+  text-shadow: 0 0 8px var(--cyan-neon, #00f0ff);
+}

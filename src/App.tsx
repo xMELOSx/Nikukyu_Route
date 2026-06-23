@@ -92,6 +92,20 @@ export default function App() {
 
   // Presentation / View Mode toggle state
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
+  const [globalHelpText, setGlobalHelpText] = useState<string>(() => {
+    const saved = localStorage.getItem('heist_global_help_text');
+    if (saved !== null) return saved;
+    return `<h3>🐾 にくきゅう大強盗 仕様 & 出展</h3>
+<p>【基本仕様】<br>
+・猫となって警備網を潜り抜け、お宝を強奪して脱出するシミュレーションプランナーです。<br>
+・各アクションやピンをクリックすると、個別設定や所要時間の確認が行えます。</p>
+
+<p>【著作物出展・クレジット】<br>
+・背景マップ画像・ゲーム仕様等: にくきゅう大強盗チーム / 開発元元データより引用<br>
+・公式Xアカウント: <a href="https://x.com" target="_blank" rel="noopener noreferrer">@x_account</a></p>`;
+  });
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_labels');
     return saved !== null ? saved === 'true' : true;
@@ -251,7 +265,7 @@ export default function App() {
     if (savedGlobal) {
       try {
         let parsed: HeistMarker[] = JSON.parse(savedGlobal);
-        
+
         // Migrate coordinates to 2x if not already done
         const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
         if (!isMigrated) {
@@ -714,8 +728,28 @@ export default function App() {
     <div className="app-container">
       {/* Top Application Header */}
       <header className="app-header glass-panel">
-        <div className="app-title">
-          <span>🐾</span> にくきゅう大強盗（大強奪）v1.1.8 ルートプランナー
+        <div className="app-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>🐾</span> にくきゅう大強盗（大強奪）v1.1.8 マップ
+          <button
+            className="btn-cyber"
+            onClick={() => setShowHelpModal(true)}
+            style={{
+              padding: '2px 8px',
+              fontSize: '11px',
+              borderRadius: '4px',
+              border: '1px solid var(--cyan-neon)',
+              background: 'rgba(0, 240, 255, 0.1)',
+              color: 'var(--cyan-neon)',
+              cursor: 'pointer',
+              marginLeft: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              clipPath: 'none'
+            }}
+          >
+            ❓ ヘルプ・出展
+          </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -833,8 +867,8 @@ export default function App() {
                 👁 PRESENT
               </button>
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px' }}>
-              Hotkey: Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>V</kbd> or <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>P</kbd> to toggle instantly.
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px', lineHeight: '1.4' }}>
+              Hotkey: Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>V</kbd>/<kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>P</kbd> to toggle mode, <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>R</kbd> to toggle nearest phone box.
             </div>
           </div>
 
@@ -1374,6 +1408,137 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Help & Attribution Modal Overlay */}
+      {showHelpModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(5, 7, 10, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            backdropFilter: 'blur(8px)'
+          }}
+          onClick={() => setShowHelpModal(false)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '900px',
+              maxWidth: '95%',
+              height: '85vh',
+              maxHeight: '90%',
+              padding: '25px',
+              borderRadius: '8px',
+              border: '1.5px solid var(--cyan-neon)',
+              boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
+              background: 'rgba(10, 15, 28, 0.98)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '15px',
+              pointerEvents: 'auto',
+              color: 'var(--text-primary)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px' }}>
+              <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--cyan-neon)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                ❓ 仕様＆出展
+              </span>
+              <button
+                onClick={() => setShowHelpModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '18px',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: '200px' }}>
+              {(isEditMode && !isHelpPreviewMode) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    ※ エディットモード: 以下に仕様や出展をHTMLタグ（aタグ等含む）で自由に編集できます。
+                  </div>
+                  <textarea
+                    value={globalHelpText}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setGlobalHelpText(val);
+                      localStorage.setItem('heist_global_help_text', val);
+                    }}
+                    style={{
+                      width: '100%',
+                      flex: 1,
+                      minHeight: '300px',
+                      background: 'rgba(5, 7, 10, 0.8)',
+                      border: '1px solid rgba(0, 240, 255, 0.3)',
+                      color: 'var(--text-primary)',
+                      padding: '12px',
+                      borderRadius: '4px',
+                      fontFamily: 'Consolas, Monaco, monospace',
+                      fontSize: '13px',
+                      resize: 'none'
+                    }}
+                    placeholder="HTMLタグを使って自由に記述してください（例: <a href='...' target='_blank'>リンク</a>）"
+                  />
+                </div>
+              ) : (
+                <div
+                  className="help-content-view"
+                  style={{
+                    fontSize: '14px',
+                    lineHeight: '1.6',
+                    color: 'var(--text-primary)',
+                    padding: '5px'
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: globalHelpText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。エディットモードで入力してください。</p>'
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
+              {isEditMode ? (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={isHelpPreviewMode}
+                    onChange={(e) => setIsHelpPreviewMode(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  👁 プレビュー表示 (HTML表示)
+                </label>
+              ) : (
+                <div />
+              )}
+              <button
+                className="btn-cyber success"
+                onClick={() => {
+                  setShowHelpModal(false);
+                  setIsHelpPreviewMode(false);
+                }}
+                style={{ padding: '6px 16px', fontSize: '12px', clipPath: 'none' }}
+              >
+                {isEditMode ? '保存して閉じる' : '閉じる'}
+              </button>
+            </div>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }

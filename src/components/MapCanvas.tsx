@@ -364,6 +364,48 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [strokes]);
 
+  // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if (e.key === 'r' || e.key === 'R') {
+        if (!currentPosition) return;
+        
+        // Find all phone markers on the current floor
+        const phoneMarkers = markers.filter(m => m.type === 'phone' && m.floor === floor);
+        if (phoneMarkers.length === 0) return;
+        
+        // Find the closest phone marker
+        let closestPhone: HeistMarker | null = null;
+        let minDistance = Infinity;
+        
+        phoneMarkers.forEach(m => {
+          const dist = Math.hypot(m.x - currentPosition.x, m.y - currentPosition.y);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestPhone = m;
+          }
+        });
+        
+        if (closestPhone && !(closestPhone as HeistMarker).phoneLocked) {
+          onMarkersChange(
+            markers.map(mk => {
+              if (mk.id === (closestPhone as HeistMarker).id) {
+                return { ...mk, phoneActive: !mk.phoneActive };
+              }
+              return mk;
+            }),
+            true // should push history
+          );
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentPosition, markers, floor, onMarkersChange]);
+
   // Redraw all strokes on canvas
   const redrawStrokes = () => {
     const ctx = ctxRef.current;
