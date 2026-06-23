@@ -861,10 +861,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               ...m, 
               note: noteText,
               popupDirection: popupDirection,
-              popupWidth: popupWidth,
-              popupHeight: popupHeight,
               popupOffset: popupOffset
-            };
+            } as any;
+            if (m.type === 'info' || m.type === 'boss') {
+              updated.popupWidth = popupWidth;
+              updated.popupHeight = popupHeight;
+            }
             if (m.type === 'info') {
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
@@ -1350,7 +1352,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       className="boss-marker-popup"
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
-                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        220,
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
@@ -1433,7 +1435,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       className="boss-marker-popup"
                       style={getPopupStyle(
                         isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
-                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 280),
+                        220,
                         isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
                         meta.color
                       )}
