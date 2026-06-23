@@ -68,6 +68,7 @@ export interface RouteData {
   longPickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for long picking timers
   mapVersion?: number; // Version of map coordinate scale (e.g. 2 = 3200x9100)
   markerScale?: number; // Optional scale of markers (e.g. 30 = 100%)
+  hiddenMarkers?: string[]; // Global markers hidden in this specific plan
 }
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
@@ -87,6 +88,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   battleCustomDurations: {},
   pickingCustomDurations: {},
   longPickingCustomDurations: {},
+  hiddenMarkers: [],
   createdAt: Date.now(),
   mapVersion: 2
 });

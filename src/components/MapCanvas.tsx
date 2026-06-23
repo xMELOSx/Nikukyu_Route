@@ -125,6 +125,7 @@ interface MapCanvasProps {
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
   markerScale?: number;
+  onHideGlobalMarker?: (id: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -156,8 +157,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   disablePinsDuringDraw = true,
   onMarkersDragStart,
   onMarkersDragEnd,
-  markerScale = 30
+  markerScale = 30,
+  onHideGlobalMarker
 }) => {
+  const isLocal = window.location.hostname === 'localhost' || 
+                  window.location.hostname === '127.0.0.1' || 
+                  window.location.hostname === '::1';
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
@@ -428,6 +434,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       if (e.key === 'r' || e.key === 'R') {
+        if (!isEditMode || !isLocal) return;
         if (!currentPosition) return;
         
         // Find all phone markers on the current floor
@@ -586,6 +593,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (e.button !== 0) return;
 
+    if (!isEditMode) {
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      return;
+    }
+
     // When popover is open, allow panning but block placing new markers or drawing.
     // The popover stays open so the user can navigate then set a scroll target.
     if (activeNoteMarkerId) {
@@ -615,6 +629,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const coords = getCanvasCoords(e);
 
     if (toolMode === 'add-marker' && activeMarkerType) {
+      if (!isLocal && !isIndiv(activeMarkerType)) {
+        return;
+      }
       const newMarker: HeistMarker = {
         id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type: activeMarkerType,
@@ -728,44 +745,49 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (draggingWaypoint) {
       const dm = markers.find(mk => mk.id === draggingWaypoint.markerId);
-      onMarkersChange(
-        markers.map(mk => {
-          if (dm) {
-            const conn = getWarpConnectionInfo(dm, markers);
-            if (conn.hasLink && conn.primary && conn.partner) {
-              if (mk.id === conn.primary.id) {
-                const nextWaypoints = conn.primary.warpWaypoints ? [...conn.primary.warpWaypoints] : [];
-                const targetIdx = conn.isReversed
-                  ? nextWaypoints.length - 1 - draggingWaypoint.index
-                  : draggingWaypoint.index;
-                
-                nextWaypoints[targetIdx] = {
-                  x: Math.max(0, Math.min(1600, coords.x)),
-                  y: Math.max(0, Math.min(4550, coords.y))
-                };
-                return { ...mk, warpWaypoints: nextWaypoints };
-              } else if (mk.id === conn.partner.id && mk.id !== conn.primary.id) {
-                return { ...mk, warpWaypoints: [] };
+      const isIndivWarp = dm && isIndiv(dm.type);
+      const canEditWaypoint = isEditMode && (isLocal ? true : isIndivWarp);
+      if (canEditWaypoint) {
+        onMarkersChange(
+          markers.map(mk => {
+            if (dm) {
+              const conn = getWarpConnectionInfo(dm, markers);
+              if (conn.hasLink && conn.primary && conn.partner) {
+                if (mk.id === conn.primary.id) {
+                  const nextWaypoints = conn.primary.warpWaypoints ? [...conn.primary.warpWaypoints] : [];
+                  const targetIdx = conn.isReversed
+                    ? nextWaypoints.length - 1 - draggingWaypoint.index
+                    : draggingWaypoint.index;
+                  
+                  nextWaypoints[targetIdx] = {
+                    x: Math.max(0, Math.min(1600, coords.x)),
+                    y: Math.max(0, Math.min(4550, coords.y))
+                  };
+                  return { ...mk, warpWaypoints: nextWaypoints };
+                } else if (mk.id === conn.partner.id && mk.id !== conn.primary.id) {
+                  return { ...mk, warpWaypoints: [] };
+                }
               }
             }
-          }
-          if (mk.id === draggingWaypoint.markerId && mk.warpWaypoints) {
-            const nextWaypoints = [...mk.warpWaypoints];
-            nextWaypoints[draggingWaypoint.index] = {
-              x: Math.max(0, Math.min(1600, coords.x)),
-              y: Math.max(0, Math.min(4550, coords.y))
-            };
-            return { ...mk, warpWaypoints: nextWaypoints };
-          }
-          return mk;
-        })
-      );
+            if (mk.id === draggingWaypoint.markerId && mk.warpWaypoints) {
+              const nextWaypoints = [...mk.warpWaypoints];
+              nextWaypoints[draggingWaypoint.index] = {
+                x: Math.max(0, Math.min(1600, coords.x)),
+                y: Math.max(0, Math.min(4550, coords.y))
+              };
+              return { ...mk, warpWaypoints: nextWaypoints };
+            }
+            return mk;
+          })
+        );
+      }
       return;
     }
 
     if (draggingMarkerId) {
       const marker = markers.find(m => m.id === draggingMarkerId);
-      const canDrag = isEditMode || (marker && isIndiv(marker.type));
+      const isIndivMarker = marker && isIndiv(marker.type);
+      const canDrag = isEditMode && (isLocal ? true : isIndivMarker);
       if (canDrag) {
         onMarkersChange(
           markers.map(m => {
@@ -845,22 +867,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMarkerMouseDown = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
     
-    const canInteract = isEditMode || isIndiv(m.type);
+    const isIndivMarker = isIndiv(m.type);
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
     if (!canInteract) return;
 
     if (toolMode === 'erase') {
-      onMarkersChange(
-        markers
-          .filter(item => item.id !== m.id)
-          .map(item => {
-            if (item.linkedWarpId === m.id) {
-              const { linkedWarpId, ...rest } = item;
-              return rest;
-            }
-            return item;
-          }),
-        true
-      );
+      if (isLocal || isIndivMarker) {
+        onMarkersChange(
+          markers
+            .filter(item => item.id !== m.id)
+            .map(item => {
+              if (item.linkedWarpId === m.id) {
+                const { linkedWarpId, ...rest } = item;
+                return rest;
+              }
+              return item;
+            }),
+          true
+        );
+      } else {
+        if (onHideGlobalMarker) {
+          onHideGlobalMarker(m.id);
+        }
+      }
       if (activeNoteMarkerId === m.id) {
         setActiveNoteMarkerId(null);
       }
@@ -876,7 +905,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMarkerClick = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
     
-    const isPresenterModeForGlobal = !isEditMode && !isIndiv(m.type);
+    const isPresenterModeForGlobal = !isEditMode;
     if (isPresenterModeForGlobal) {
       // Info toggle in presentation mode
       if (m.type === 'info') {
@@ -906,9 +935,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         );
         return;
       }
-      // Phone toggle in presentation mode
+      // Phone toggle in presentation mode or external indiv edit mode (only allowed for local edit mode)
       if (m.type === 'phone') {
-        if (!m.phoneLocked) {
+        if (!m.phoneLocked && isEditMode && isLocal) {
           onMarkersChange(
             markers.map(mk => mk.id === m.id ? { ...mk, phoneActive: !mk.phoneActive } : mk)
           );
@@ -1384,40 +1413,44 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             .filter(m => m.floor === floor)
             .map(m => {
               if (isEditMode && activeNoteMarkerId === m.id) {
-                const conn = getWarpConnectionInfo(m, markers);
-                if (conn.hasLink && conn.primary) {
-                  const waypoints = conn.primary.warpWaypoints || [];
-                  const showWaypoints = conn.isReversed ? [...waypoints].reverse() : waypoints;
+                const isIndivMarker = isIndiv(m.type);
+                const canEditWaypoints = isLocal ? true : isIndivMarker;
+                if (canEditWaypoints) {
+                  const conn = getWarpConnectionInfo(m, markers);
+                  if (conn.hasLink && conn.primary) {
+                    const waypoints = conn.primary.warpWaypoints || [];
+                    const showWaypoints = conn.isReversed ? [...waypoints].reverse() : waypoints;
 
-                  if (showWaypoints.length > 0) {
-                    const meta = MARKER_META[m.type];
-                    return showWaypoints.map((wp, wpIdx) => (
-                      <div
-                        key={`wp-${m.id}-${wpIdx}`}
-                        className="warp-waypoint-handle"
-                        style={{
-                          position: 'absolute',
-                          left: `${wp.x}px`,
-                          top: `${wp.y}px`,
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: meta.color,
-                          border: '2px solid #fff',
-                          boxShadow: '0 0 6px rgba(0,0,0,0.6)',
-                          cursor: 'pointer',
-                          transform: 'translate(-50%, -50%)',
-                          zIndex: 35,
-                          pointerEvents: 'auto'
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          if (onMarkersDragStart) onMarkersDragStart();
-                          setDraggingWaypoint({ markerId: m.id, index: wpIdx });
-                        }}
-                        title={`Drag to adjust waypoint #${wpIdx + 1}`}
-                      />
-                    ));
+                    if (showWaypoints.length > 0) {
+                      const meta = MARKER_META[m.type];
+                      return showWaypoints.map((wp, wpIdx) => (
+                        <div
+                          key={`wp-${m.id}-${wpIdx}`}
+                          className="warp-waypoint-handle"
+                          style={{
+                            position: 'absolute',
+                            left: `${wp.x}px`,
+                            top: `${wp.y}px`,
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: meta.color,
+                            border: '2px solid #fff',
+                            boxShadow: '0 0 6px rgba(0,0,0,0.6)',
+                            cursor: 'pointer',
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 35,
+                            pointerEvents: 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            if (onMarkersDragStart) onMarkersDragStart();
+                            setDraggingWaypoint({ markerId: m.id, index: wpIdx });
+                          }}
+                          title={`Drag to adjust waypoint #${wpIdx + 1}`}
+                        />
+                      ));
+                    }
                   }
                 }
               }
@@ -1544,47 +1577,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         </div>
 
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px', marginTop: '4px' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button 
-                              className="btn-cyber danger" 
-                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                              onClick={() => {
-                                const currentVal = bossCustomDurations[m.id] !== undefined ? bossCustomDurations[m.id] : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
-                                const newVal = Math.max(0, currentVal - 10);
-                                if (onBossCustomDurationChange) onBossCustomDurationChange(m.id, newVal);
-                              }}
-                            >
-                              -10s
-                            </button>
-                            <input
-                              type="number"
-                              min="0"
-                              className="input-cyber"
-                              style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: '#ff0055', borderColor: 'rgba(255, 0, 85, 0.4)' }}
-                              value={bossCustomDurations[m.id] !== undefined ? bossCustomDurations[m.id] : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60)}
-                              onChange={(e) => {
-                                const newVal = Math.max(0, parseInt(e.target.value) || 0);
-                                if (onBossCustomDurationChange) onBossCustomDurationChange(m.id, newVal);
-                              }}
-                            />
-                            <button 
-                              className="btn-cyber success" 
-                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                              onClick={() => {
-                                const currentVal = bossCustomDurations[m.id] !== undefined ? bossCustomDurations[m.id] : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
-                                const newVal = currentVal + 10;
-                                if (onBossCustomDurationChange) onBossCustomDurationChange(m.id, newVal);
-                              }}
-                            >
-                              +10s
-                            </button>
-                          </div>
-                          <span style={{ fontSize: '11px', color: 'var(--red-neon)', fontWeight: 'bold', marginTop: '2px' }}>
-                            現在の設定: {Math.floor((bossCustomDurations[m.id] !== undefined ? bossCustomDurations[m.id] : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60)) / 60)}分 {(bossCustomDurations[m.id] !== undefined ? bossCustomDurations[m.id] : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60)) % 60}秒
-                          </span>
-                        </div>
+                        {(() => {
+                          const currentVal = (!isLocal && bossCustomDurations[m.id] !== undefined)
+                            ? bossCustomDurations[m.id]
+                            : (m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
+                          
+                          const handleValChange = (newVal: number) => {
+                            if (isLocal) {
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, bossDurationSeconds: newVal } : mk),
+                                true
+                              );
+                            } else {
+                              if (onBossCustomDurationChange) onBossCustomDurationChange(m.id, newVal);
+                            }
+                          };
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px', marginTop: '4px' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                  className="btn-cyber danger" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  disabled={!isEditMode}
+                                  onClick={() => handleValChange(Math.max(0, currentVal - 10))}
+                                >
+                                  -10s
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="input-cyber"
+                                  disabled={!isEditMode}
+                                  style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: '#ff0055', borderColor: 'rgba(255, 0, 85, 0.4)' }}
+                                  value={currentVal}
+                                  onChange={(e) => handleValChange(Math.max(0, parseInt(e.target.value) || 0))}
+                                />
+                                <button 
+                                  className="btn-cyber success" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  disabled={!isEditMode}
+                                  onClick={() => handleValChange(currentVal + 10)}
+                                >
+                                  +10s
+                                </button>
+                              </div>
+                              <span style={{ fontSize: '11px', color: 'var(--red-neon)', fontWeight: 'bold', marginTop: '2px' }}>
+                                現在の設定: {Math.floor(currentVal / 60)}分 {currentVal % 60}秒
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1627,47 +1671,61 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                       <div className="info-popup-content">
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button 
-                              className="btn-cyber danger" 
-                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                              onClick={() => {
-                                const currentVal = battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
-                                const newVal = Math.max(0, currentVal - 10);
-                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
-                              }}
-                            >
-                              -10s
-                            </button>
-                            <input
-                              type="number"
-                              min="0"
-                              className="input-cyber"
-                              style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: 'var(--cyan-neon, #00f0ff)', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                              value={battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)}
-                              onChange={(e) => {
-                                const newVal = Math.max(0, parseInt(e.target.value) || 0);
-                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
-                              }}
-                            />
-                            <button 
-                              className="btn-cyber success" 
-                              style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                              onClick={() => {
-                                const currentVal = battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
-                                const newVal = currentVal + 10;
-                                if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
-                              }}
-                            >
-                              +10s
-                            </button>
-                          </div>
-                          <span style={{ fontSize: '11px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', marginTop: '2px' }}>
-                            現在の設定: {Math.floor((battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)) / 60)}分 {(battleCustomDurations[m.id] !== undefined ? battleCustomDurations[m.id] : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20)) % 60}秒
-                          </span>
-                        </div>
+                        {(() => {
+                          const isGlobalPin = m.type === 'gbattle';
+                          const canEditDuration = isEditMode;
+                          const currentVal = (isGlobalPin && !isLocal && battleCustomDurations[m.id] !== undefined)
+                            ? battleCustomDurations[m.id]
+                            : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
+
+                          const handleValChange = (newVal: number) => {
+                            if (isGlobalPin && !isLocal) {
+                              if (onBattleCustomDurationChange) onBattleCustomDurationChange(m.id, newVal);
+                            } else {
+                              // isLocal global pin OR individual pin
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, battleDurationSeconds: newVal } : mk),
+                                true
+                              );
+                            }
+                          };
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                  className="btn-cyber danger" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  disabled={!canEditDuration}
+                                  onClick={() => handleValChange(Math.max(0, currentVal - 10))}
+                                >
+                                  -10s
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="input-cyber"
+                                  disabled={!canEditDuration}
+                                  style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: 'var(--cyan-neon, #00f0ff)', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                                  value={currentVal}
+                                  onChange={(e) => handleValChange(Math.max(0, parseInt(e.target.value) || 0))}
+                                />
+                                <button 
+                                  className="btn-cyber success" 
+                                  style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
+                                  disabled={!canEditDuration}
+                                  onClick={() => handleValChange(currentVal + 10)}
+                                >
+                                  +10s
+                                </button>
+                              </div>
+                              <span style={{ fontSize: '11px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', marginTop: '2px' }}>
+                                現在の設定: {Math.floor(currentVal / 60)}分 {currentVal % 60}秒
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1711,23 +1769,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                       <div className="info-popup-content">
                         {/* Picky Checkbox - editable directly in presentation mode */}
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '6px', 
-                          background: 'rgba(57, 255, 20, 0.05)', 
-                          padding: '6px', 
-                          borderRadius: '4px', 
-                          border: '1px solid rgba(57, 255, 20, 0.15)', 
-                          marginBottom: '6px' 
-                        }}>
-                          <input 
-                            type="checkbox"
-                            id={`picky-cb-${m.id}`}
-                            checked={!!m.pickingPicky}
-                            onChange={(e) => {
-                              const updatedPicky = e.target.checked;
-                              const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                        {(() => {
+                          const isGlobalPin = m.type === 'gpicking' || m.type === 'glong_picking';
+                          const canEditDuration = isEditMode;
+                          const isPicky = (isGlobalPin && !isLocal && pickingCustomDurations[m.id] !== undefined)
+                            ? (pickingCustomDurations[m.id] === 0)
+                            : (isGlobalPin && !isLocal && longPickingCustomDurations[m.id] !== undefined)
+                              ? (longPickingCustomDurations[m.id] === 0)
+                              : !!m.pickingPicky;
+
+                          const handlePickyChange = (updatedPicky: boolean) => {
+                            const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
+                            if (isGlobalPin && !isLocal) {
+                              if (isLong) {
+                                if (onLongPickingCustomDurationChange) {
+                                  onLongPickingCustomDurationChange(m.id, updatedPicky ? 0 : undefined);
+                                }
+                              } else {
+                                if (onPickingCustomDurationChange) {
+                                  onPickingCustomDurationChange(m.id, updatedPicky ? 0 : undefined);
+                                }
+                              }
+                            } else {
                               onMarkersChange(
                                 markers.map(mk => {
                                   if (mk.id === m.id) {
@@ -1740,21 +1803,52 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                     return updated;
                                   }
                                   return mk;
-                                })
+                                }),
+                                true
                               );
-                            }}
-                            style={{ accentColor: '#39ff14', cursor: 'pointer' }}
-                          />
-                          <label htmlFor={`picky-cb-${m.id}`} style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
-                            ピッキー (Picky) — 所要時間を0秒にする
-                          </label>
-                        </div>
+                            }
+                          };
+
+                          return (
+                            <div style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '6px', 
+                              background: 'rgba(57, 255, 20, 0.05)', 
+                              padding: '6px', 
+                              borderRadius: '4px', 
+                              border: '1px solid rgba(57, 255, 20, 0.15)', 
+                              marginBottom: '6px' 
+                            }}>
+                              <input 
+                                type="checkbox"
+                                id={`picky-cb-${m.id}`}
+                                checked={isPicky}
+                                disabled={!canEditDuration}
+                                onChange={(e) => handlePickyChange(e.target.checked)}
+                                style={{ accentColor: '#39ff14', cursor: canEditDuration ? 'pointer' : 'default' }}
+                              />
+                              <label htmlFor={`picky-cb-${m.id}`} style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: canEditDuration ? 'pointer' : 'default', userSelect: 'none' }}>
+                                ピッキー (Picky) — 所要時間を0秒にする
+                              </label>
+                            </div>
+                          );
+                        })()}
 
                         {/* Duration settings - read-only display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
-                          <div style={{ fontSize: '14px', color: m.pickingPicky ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
-                            {m.pickingPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')}
+                          <div style={{ fontSize: '14px', color: (
+                            (m.type === 'gpicking' || m.type === 'glong_picking')
+                              ? (((m.type === 'glong_picking' ? longPickingCustomDurations[m.id] : pickingCustomDurations[m.id]) === 0) || (m.pickingPicky))
+                              : !!m.pickingPicky
+                          ) ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
+                            {
+                              ((m.type === 'gpicking' || m.type === 'glong_picking')
+                                ? (((m.type === 'glong_picking' ? longPickingCustomDurations[m.id] : pickingCustomDurations[m.id]) === 0) || (m.pickingPicky))
+                                : !!m.pickingPicky
+                              ) ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')
+                            }
                           </div>
                         </div>
                       </div>
@@ -1784,13 +1878,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             <span style={{ fontSize: '12px', fontWeight: 'bold', color: MARKER_META[activeNoteMarker.type].color }}>
               {MARKER_META[activeNoteMarker.type].label}
             </span>
-            <button 
-              className="delete-btn"
-              style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
-              onClick={() => handleDeleteMarker(activeNoteMarker.id)}
-            >
-              <Trash2 size={14} />
-            </button>
+            {(isIndiv(activeNoteMarker.type) || isLocal) ? (
+              <button 
+                className="delete-btn"
+                style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
+                onClick={() => handleDeleteMarker(activeNoteMarker.id)}
+                title="Delete Marker"
+              >
+                <Trash2 size={14} />
+              </button>
+            ) : (
+              <button 
+                className="delete-btn"
+                style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                onClick={() => {
+                  if (onHideGlobalMarker) {
+                    onHideGlobalMarker(activeNoteMarker.id);
+                  }
+                  setActiveNoteMarkerId(null);
+                }}
+                title="Hide this global marker in this plan only"
+              >
+                非表示
+              </button>
+            )}
           </div>
           
           <textarea
@@ -1972,58 +2083,86 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Battle marker duration editing */}
-          {(activeNoteMarker.type === 'battle' || activeNoteMarker.type === 'gbattle') && (
-            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
-                
-                {/* Global Default Duration */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
-                      {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input-cyber"
-                      style={{ width: '80px', fontSize: '11px', padding: '4px' }}
-                      value={battleDurationSeconds}
-                      onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
-                    />
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
-                  </div>
-                </div>
-
-                {/* Plan Specific Custom Duration */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input 
-                      type="checkbox"
-                      id="use-battle-custom-duration-cb"
-                      checked={useBattleCustomDuration}
-                      onChange={(e) => {
-                        setUseBattleCustomDuration(e.target.checked);
-                        if (e.target.checked && (battleCustomDurationVal === undefined || battleCustomDurationVal === null)) {
-                          setBattleCustomDurationVal(battleDurationSeconds);
-                        }
-                      }}
-                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                    />
-                    <label htmlFor="use-battle-custom-duration-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
-                      このプラン独自の時間を設定する
-                    </label>
-                  </div>
+          {(activeNoteMarker.type === 'battle' || activeNoteMarker.type === 'gbattle') && (() => {
+            const isGlobal = activeNoteMarker.type === 'gbattle';
+            return (
+              <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
                   
-                  {useBattleCustomDuration && (
-                    <div style={{ marginTop: '4px' }}>
+                  {isGlobal ? (
+                    <>
+                      {/* Global Default Duration */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
+                            {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            className="input-cyber"
+                            style={{ width: '80px', fontSize: '11px', padding: '4px' }}
+                            value={battleDurationSeconds}
+                            onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                          />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                        </div>
+                      </div>
+
+                      {/* Plan Specific Custom Duration */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input 
+                            type="checkbox"
+                            id="use-battle-custom-duration-cb"
+                            checked={useBattleCustomDuration}
+                            onChange={(e) => {
+                              setUseBattleCustomDuration(e.target.checked);
+                              if (e.target.checked && (battleCustomDurationVal === undefined || battleCustomDurationVal === null)) {
+                                setBattleCustomDurationVal(battleDurationSeconds);
+                              }
+                            }}
+                            style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                          />
+                          <label htmlFor="use-battle-custom-duration-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                            このプラン独自の時間を設定する
+                          </label>
+                        </div>
+                        
+                        {useBattleCustomDuration && (
+                          <div style={{ marginTop: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                              <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
+                                {Math.floor((battleCustomDurationVal || 0) / 60)}分 {(battleCustomDurationVal || 0) % 60}秒
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                className="input-cyber"
+                                style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
+                                value={battleCustomDurationVal || 0}
+                                onChange={(e) => setBattleCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
+                              />
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    /* Individual Pin Duration */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間:</span>
                         <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
-                          {Math.floor((battleCustomDurationVal || 0) / 60)}分 {(battleCustomDurationVal || 0) % 60}秒
+                          {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
@@ -2032,8 +2171,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           min="0"
                           className="input-cyber"
                           style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                          value={battleCustomDurationVal || 0}
-                          onChange={(e) => setBattleCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
+                          value={battleDurationSeconds}
+                          onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
                         />
                         <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
                       </div>
@@ -2041,8 +2180,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Picking / Long Picking marker duration & picky editing */}
           {(activeNoteMarker.type === 'picking' || activeNoteMarker.type === 'gpicking' || activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') && (
@@ -2164,6 +2303,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Warp & Stairs Point Linking */}
           {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp' || activeNoteMarker.type === 'stairs') && (() => {
             const conn = getWarpConnectionInfo(activeNoteMarker, markers);
+            const canLink = true;
             return (
               <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
@@ -2174,7 +2314,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
                       ✓ Leads to: {conn.partner.note.trim() ? conn.partner.note : `${activeNoteMarker.type === 'stairs' ? 'Stairs' : 'Warp'} #${conn.partner.id.substring(conn.partner.id.length - 4)}`}
                     </div>
-                    <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} onClick={() => {
+                    <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} disabled={!canLink} onClick={() => {
                       onMarkersChange(
                         markers.map(m => {
                           if (m.id === activeNoteMarker.id) {
@@ -2199,6 +2339,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     className="input-cyber"
                     style={{ width: '100%', fontSize: '10px', padding: '4px' }}
                     value=""
+                    disabled={!canLink}
                     onChange={(e) => {
                       const partnerId = e.target.value;
                       if (partnerId) {
@@ -2249,6 +2390,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         type="button"
                         className="btn-cyber success"
                         style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
+                        disabled={!canLink}
                         onClick={() => {
                           const primary = conn.primary!;
                           const partner = conn.partner!;
@@ -2297,7 +2439,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         type="button"
                         className="btn-cyber danger"
                         style={{ flex: 1, padding: '4px 6px', fontSize: '9px', clipPath: 'none' }}
-                        disabled={!(conn.primary.warpWaypoints && conn.primary.warpWaypoints.length > 0)}
+                        disabled={!canLink || !(conn.primary.warpWaypoints && conn.primary.warpWaypoints.length > 0)}
                         onClick={() => {
                           const primary = conn.primary!;
                           const partner = conn.partner!;

@@ -77,6 +77,10 @@ const migrateRouteCoordinates = (data: RouteData): RouteData => {
 };
 
 export default function App() {
+  const isLocal = window.location.hostname === 'localhost' || 
+                  window.location.hostname === '127.0.0.1' || 
+                  window.location.hostname === '::1';
+
   // Global State: Current Active Heist Plan
   const [route, setRoute] = useState<RouteData>(DEFAULT_ROUTE());
   const currentFloor: FloorType = 'main';
@@ -236,6 +240,19 @@ export default function App() {
     });
   };
 
+  const handleHideGlobalMarker = (markerId: string) => {
+    setRoute(prev => {
+      const nextHidden = [...(prev.hiddenMarkers || [])];
+      if (!nextHidden.includes(markerId)) {
+        nextHidden.push(markerId);
+      }
+      return {
+        ...prev,
+        hiddenMarkers: nextHidden
+      };
+    });
+  };
+
   // Tool Configurations
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('draw');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('goal');
@@ -261,65 +278,88 @@ export default function App() {
   // Load Saved list and Global Markers on start
   useEffect(() => {
     refreshSavesList();
-    const savedGlobal = localStorage.getItem('heist_global_markers');
-    if (savedGlobal) {
-      try {
-        let parsed: HeistMarker[] = JSON.parse(savedGlobal);
-
-        // Filter out obsolete marker types
-        parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-
-        // Migrate coordinates to 2x if not already done
-        const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
-        if (!isMigrated) {
-          parsed = parsed.map(m => {
-            const updated = {
-              ...m,
-              x: m.x * 2,
-              y: m.y * 2,
-            };
-            if (m.scrollConfig) {
-              updated.scrollConfig = {
-                ...m.scrollConfig,
-                x: m.scrollConfig.x * 2,
-                y: m.scrollConfig.y * 2,
-              };
-            }
-            return updated;
-          });
-          localStorage.setItem('heist_global_markers', JSON.stringify(parsed));
-          localStorage.setItem('heist_global_markers_migrated_v2', 'true');
+    fetch('/api/global-markers')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
+          setGlobalMarkers(filtered);
+          localStorage.setItem('heist_global_markers', JSON.stringify(filtered));
+        } else {
+          loadGlobalMarkersFromLocalStorage();
         }
+      })
+      .catch(err => {
+        console.error('Failed to fetch global markers:', err);
+        loadGlobalMarkersFromLocalStorage();
+      });
 
-        const migrated = parsed.map(m => {
-          if (m.type === 'boss') {
-            const updated = { ...m };
-            if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
-            if (updated.bossDrops === undefined) updated.bossDrops = [];
-            return updated;
+    function loadGlobalMarkersFromLocalStorage() {
+      const savedGlobal = localStorage.getItem('heist_global_markers');
+      if (savedGlobal) {
+        try {
+          let parsed: HeistMarker[] = JSON.parse(savedGlobal);
+          parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
+
+          const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
+          if (!isMigrated) {
+            parsed = parsed.map(m => {
+              const updated = {
+                ...m,
+                x: m.x * 2,
+                y: m.y * 2,
+              };
+              if (m.scrollConfig) {
+                updated.scrollConfig = {
+                  ...m.scrollConfig,
+                  x: m.scrollConfig.x * 2,
+                  y: m.scrollConfig.y * 2,
+                };
+              }
+              return updated;
+            });
+            localStorage.setItem('heist_global_markers', JSON.stringify(parsed));
+            localStorage.setItem('heist_global_markers_migrated_v2', 'true');
           }
-          if (m.type === 'battle' || m.type === 'gbattle') {
-            const updated = { ...m };
-            if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
-            return updated;
+
+          const migrated = parsed.map(m => {
+            if (m.type === 'boss') {
+              const updated = { ...m };
+              if (updated.bossDurationSeconds === undefined) updated.bossDurationSeconds = 60;
+              if (updated.bossDrops === undefined) updated.bossDrops = [];
+              return updated;
+            }
+            if (m.type === 'battle' || m.type === 'gbattle') {
+              const updated = { ...m };
+              if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
+              return updated;
+            }
+            if (m.type === 'picking' || m.type === 'gpicking') {
+              const updated = { ...m };
+              if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+              return updated;
+            }
+            if (m.type === 'long_picking' || m.type === 'glong_picking') {
+              const updated = { ...m };
+              if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+              if (updated.pickingPicky === undefined) updated.pickingPicky = false;
+              return updated;
+            }
+            return m;
+          });
+          setGlobalMarkers(migrated);
+
+          if (isLocal) {
+            fetch('/api/global-markers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(migrated)
+            }).catch(e => console.error(e));
           }
-          if (m.type === 'picking' || m.type === 'gpicking') {
-            const updated = { ...m };
-            if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
-            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
-            return updated;
-          }
-          if (m.type === 'long_picking' || m.type === 'glong_picking') {
-            const updated = { ...m };
-            if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
-            if (updated.pickingPicky === undefined) updated.pickingPicky = false;
-            return updated;
-          }
-          return m;
-        });
-        setGlobalMarkers(migrated);
-      } catch (e) {
-        console.error(e);
+        } catch (e) {
+          console.error(e);
+        }
       }
     }
   }, []);
@@ -381,6 +421,14 @@ export default function App() {
     setGlobalMarkers(newGlobal);
     localStorage.setItem('heist_global_markers', JSON.stringify(newGlobal));
 
+    if (isLocal) {
+      fetch('/api/global-markers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newGlobal)
+      }).catch(err => console.error('Failed to sync global markers:', err));
+    }
+
     setRoute(prev => ({
       ...prev,
       markers: newIndividual
@@ -421,13 +469,18 @@ export default function App() {
       strokes: {
         main: (trimmed === '1' || trimmed === '3') ? [] : prev.strokes.main
       },
-      markers: (trimmed === '2' || trimmed === '3') ? [] : prev.markers
+      markers: (trimmed === '2' || trimmed === '3') ? [] : prev.markers,
+      hiddenMarkers: (trimmed === '2' || trimmed === '3') ? [] : prev.hiddenMarkers
     }));
   };
 
   // Local Storage actions
   const handleSaveToLocal = () => {
-    const routeToSave = { ...route, mapVersion: 2, markerScale: markerScale };
+    const routeToSave = { 
+      ...route, 
+      mapVersion: 2, 
+      markerScale: markerScale 
+    };
     DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
     alert(`Successfully saved: ${route.title}`);
@@ -494,16 +547,28 @@ export default function App() {
           return updated;
         });
 
-        // Merge global markers from loaded plan without duplicating existing ones
+        // Merge and update global markers from loaded plan
         if (planGlobal.length > 0) {
           setGlobalMarkers(prev => {
             const merged = [...prev];
             planGlobal.forEach(pm => {
-              if (!merged.some(m => m.id === pm.id)) {
+              const idx = merged.findIndex(m => m.id === pm.id);
+              if (idx >= 0) {
+                merged[idx] = { ...merged[idx], ...pm };
+              } else {
                 merged.push(pm);
               }
             });
             localStorage.setItem('heist_global_markers', JSON.stringify(merged));
+
+            if (isLocal) {
+              fetch('/api/global-markers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(merged)
+              }).catch(err => console.error(err));
+            }
+
             return merged;
           });
         }
@@ -523,6 +588,9 @@ export default function App() {
       }
       if (!data.longPickingCustomDurations) {
         data.longPickingCustomDurations = {};
+      }
+      if (!data.hiddenMarkers) {
+        data.hiddenMarkers = [];
       }
       setRoute(data);
       if (data.markerScale !== undefined) {
@@ -552,7 +620,11 @@ export default function App() {
 
   // JSON Import / Export
   const handleExportJSON = () => {
-    const routeToExport = { ...route, mapVersion: 2, markerScale: markerScale };
+    const routeToExport = { 
+      ...route, 
+      mapVersion: 2, 
+      markerScale: markerScale 
+    };
     DataManager.exportToJSON(routeToExport);
   };
 
@@ -623,11 +695,23 @@ export default function App() {
             setGlobalMarkers(prev => {
               const merged = [...prev];
               planGlobal.forEach(pm => {
-                if (!merged.some(m => m.id === pm.id)) {
+                const idx = merged.findIndex(m => m.id === pm.id);
+                if (idx >= 0) {
+                  merged[idx] = { ...merged[idx], ...pm };
+                } else {
                   merged.push(pm);
                 }
               });
               localStorage.setItem('heist_global_markers', JSON.stringify(merged));
+
+              if (isLocal) {
+                fetch('/api/global-markers', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(merged)
+                }).catch(err => console.error(err));
+              }
+
               return merged;
             });
           }
@@ -650,6 +734,9 @@ export default function App() {
           }
           if (!importedData.longPickingCustomDurations) {
             importedData.longPickingCustomDurations = {};
+          }
+          if (!importedData.hiddenMarkers) {
+            importedData.hiddenMarkers = [];
           }
           setRoute(importedData);
           if (importedData.markerScale !== undefined) {
@@ -816,7 +903,7 @@ export default function App() {
             }}
             style={{ minWidth: '150px' }}
           >
-            {isEditMode ? '⚙ EDIT MODE' : '👁 PRESENTATION'}
+            {isEditMode ? (isLocal ? '⚙ EDIT MODE' : '⚙ INDIVIDUAL EDIT') : '👁 PRESENTATION'}
           </button>
 
           <button className="btn-cyber success" onClick={handleSaveToLocal} title="Save to local browser storage">
@@ -859,7 +946,7 @@ export default function App() {
                   setIsEditMode(true);
                 }}
               >
-                ⚙ EDIT
+                {isLocal ? '⚙ EDIT' : '⚙ INDIV EDIT'}
               </button>
               <button
                 className={`btn-cyber ${!isEditMode ? 'active success' : ''}`}
@@ -943,22 +1030,26 @@ export default function App() {
           <div className="panel-section">
             <div className="panel-title">2. TOOL MODE</div>
             <div className="tool-grid">
-              <button
-                className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
-                onClick={() => setToolMode('draw')}
-                id="tool-draw-btn"
-              >
-                <Paintbrush size={18} />
-                <span>Draw Line</span>
-              </button>
-              <button
-                className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
-                onClick={() => setToolMode('erase')}
-                id="tool-erase-btn"
-              >
-                <Eraser size={18} />
-                <span>Eraser</span>
-              </button>
+              {isEditMode && (
+                <>
+                  <button
+                    className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
+                    onClick={() => setToolMode('draw')}
+                    id="tool-draw-btn"
+                  >
+                    <Paintbrush size={18} />
+                    <span>Draw Line</span>
+                  </button>
+                  <button
+                    className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
+                    onClick={() => setToolMode('erase')}
+                    id="tool-erase-btn"
+                  >
+                    <Eraser size={18} />
+                    <span>Eraser</span>
+                  </button>
+                </>
+              )}
               <button
                 className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`}
                 onClick={() => setToolMode('pan')}
@@ -967,14 +1058,16 @@ export default function App() {
                 <Move size={18} />
                 <span>Pan Map</span>
               </button>
-              <button
-                className="tool-btn"
-                onClick={clearCurrentFloor}
-                id="tool-reset-btn"
-              >
-                <RotateCcw size={18} />
-                <span>Reset Map</span>
-              </button>
+              {isEditMode && (
+                <button
+                  className="tool-btn"
+                  onClick={clearCurrentFloor}
+                  id="tool-reset-btn"
+                >
+                  <RotateCcw size={18} />
+                  <span>Reset Map</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1059,8 +1152,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Global Markers: Only editable in Edit Mode */}
-          {isEditMode && (
+          {/* Global Markers: Only editable in Edit Mode and from Localhost */}
+          {isEditMode && isLocal && (
             <div className="panel-section">
               <div className="panel-title">4. MAP MARKERS (GLOBAL)</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -1089,33 +1182,35 @@ export default function App() {
             </div>
           )}
 
-          {/* Individual Markers: Editable in both Edit and Presentation modes */}
-          <div className="panel-section">
-            <div className="panel-title">5. MAP MARKERS (INDIVIDUAL)</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Saved only in this plan.
-            </div>
+          {/* Individual Markers: Editable only in Edit mode */}
+          {isEditMode && (
+            <div className="panel-section">
+              <div className="panel-title">5. MAP MARKERS (INDIVIDUAL)</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Saved only in this plan.
+              </div>
 
-            <div className="marker-list">
-              {(['battle', 'picking', 'long_picking', 'iwarp', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
-                const meta = MARKER_META[t];
-                return (
-                  <button
-                    key={t}
-                    className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
-                    onClick={() => {
-                      setToolMode('add-marker');
-                      setActiveMarkerType(t);
-                    }}
-                    style={{ '--theme-color': meta.color } as React.CSSProperties}
-                  >
-                    <span className="marker-icon-preview">{meta.emoji}</span>
-                    <span>{t === 'iwarp' ? 'I-WARP' : meta.label}</span>
-                  </button>
-                );
-              })}
+              <div className="marker-list">
+                {(['battle', 'picking', 'long_picking', 'iwarp', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                  const meta = MARKER_META[t];
+                  return (
+                    <button
+                      key={t}
+                      className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
+                      onClick={() => {
+                        setToolMode('add-marker');
+                        setActiveMarkerType(t);
+                      }}
+                      style={{ '--theme-color': meta.color } as React.CSSProperties}
+                    >
+                      <span className="marker-icon-preview">{meta.emoji}</span>
+                      <span>{t === 'iwarp' ? 'I-WARP' : meta.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ReroRero電話ボックス Controls - visible in both modes */}
           {(() => {
@@ -1225,7 +1320,10 @@ export default function App() {
           <MapCanvas
             floor={currentFloor}
             strokes={route.strokes[currentFloor]}
-            markers={[...globalMarkers, ...route.markers]}
+            markers={[
+              ...globalMarkers.filter(m => !(route.hiddenMarkers || []).includes(m.id)),
+              ...route.markers
+            ]}
             markerScale={markerScale}
             customBg={route.customBg[currentFloor]}
             toolMode={toolMode}
@@ -1252,6 +1350,7 @@ export default function App() {
             disablePinsDuringDraw={disablePinsDuringDraw}
             onMarkersDragStart={handleMarkersDragStart}
             onMarkersDragEnd={handleMarkersDragEnd}
+            onHideGlobalMarker={handleHideGlobalMarker}
           />
         </section>
 
@@ -1471,7 +1570,7 @@ export default function App() {
             </div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: '200px' }}>
-              {(isEditMode && !isHelpPreviewMode) ? (
+              {(isEditMode && isLocal && !isHelpPreviewMode) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     ※ エディットモード: 以下に仕様や出展をHTMLタグ（aタグ等含む）で自由に編集できます。
@@ -1516,7 +1615,7 @@ export default function App() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-              {isEditMode ? (
+              {isEditMode && isLocal ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                   <input
                     type="checkbox"
