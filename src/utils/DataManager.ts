@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'start' | 'goal' | 'camera' | 'guard' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking';
 
 export interface Point {
   x: number;
@@ -47,6 +47,7 @@ export interface HeistMarker {
   longPickingDurationSeconds?: number; // For long picking markers: duration in seconds
   pickingPicky?: boolean;  // For picking/long_picking markers: true = Picky (0s)
   pickingExpanded?: boolean; // For picking markers: whether details are expanded in presentation mode
+  ehHighRate?: boolean;   // For EH markers: true = high appearance rate highlighted glow
 }
 
 export interface RouteData {
@@ -90,11 +91,10 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
 
 // Marker Metadata helper for styling and emoji representation
 export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string; color: string } } = {
-  start: { emoji: '🐾', label: 'START POINT', color: '#39ff14' },
   goal: { emoji: '🏁', label: 'ESCAPE AREA', color: '#39ff14' },
-  camera: { emoji: '📹', label: 'CAMERA', color: '#ffe600' },
-  guard: { emoji: '👮', label: 'GUARD', color: '#ff0055' },
-  vault: { emoji: '💰', label: 'VAULT LOCK', color: '#ffe600' },
+  cardkey: { emoji: '💳', label: 'CARD KEY', color: '#39ff14' },
+  eh: { emoji: '💎', label: 'EH', color: '#00f0ff' },
+  vault: { emoji: '💰', label: 'MDP', color: '#ffe600' },
   boss: { emoji: '😈', label: 'BOSS (MAMON)', color: '#ff0055' },
   phone: { emoji: '☎', label: 'ESCAPE PHONE', color: '#ff00ff' },
   note: { emoji: '📌', label: 'MEMO', color: '#64748b' },
@@ -215,6 +215,17 @@ export class DataManager {
         ctx.fill();
         ctx.stroke();
         
+        // Draw double ring for high appearance rate EH pin
+        if (m.type === 'eh' && m.ehHighRate) {
+          ctx.strokeStyle = '#00f0ff';
+          ctx.lineWidth = 1.5 * scaleMultiplier;
+          ctx.shadowColor = '#00f0ff';
+          ctx.shadowBlur = 10 * scaleMultiplier;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, radius + 4 * scaleMultiplier, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
         // Reset Shadow for interior drawing
         ctx.shadowBlur = 0;
         

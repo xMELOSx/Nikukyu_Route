@@ -941,3 +941,31 @@ select.input-cyber {
   color: #ffffff;
   text-shadow: 0 0 8px var(--cyan-neon, #00f0ff);
 }
+
+/* Eternal Heart High Rate Marker Pulsing Glow Outline */
+.map-marker.eh-high-rate::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--cyan-neon);
+  box-shadow: 0 0 8px var(--cyan-neon), inset 0 0 8px var(--cyan-neon);
+  animation: eh-pulse 1.8s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes eh-pulse {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 14px var(--cyan-neon), inset 0 0 10px var(--cyan-neon);
+  }
+}

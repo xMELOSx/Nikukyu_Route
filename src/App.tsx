@@ -238,7 +238,7 @@ export default function App() {
 
   // Tool Configurations
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('draw');
-  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('start');
+  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('goal');
 
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
@@ -265,6 +265,9 @@ export default function App() {
     if (savedGlobal) {
       try {
         let parsed: HeistMarker[] = JSON.parse(savedGlobal);
+
+        // Filter out obsolete marker types
+        parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
 
         // Migrate coordinates to 2x if not already done
         const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
@@ -450,6 +453,7 @@ export default function App() {
         routeData.strokes = { main: merged };
       }
       if (routeData.markers) {
+        data.markers = data.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
         const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
@@ -574,6 +578,7 @@ export default function App() {
             importedData.strokes = { main: merged };
           }
 
+          importedData.markers = importedData.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
           const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking'].includes(type);
           const planIndiv = importedData.markers.filter(m => isIndiv(m.type)).map(m => {
             const updated = { ...m, floor: 'main' as FloorType };
@@ -1062,8 +1067,8 @@ export default function App() {
                 Shared across all plans.
               </div>
 
-              <div className="marker-list">
-                {(['start', 'goal', 'camera', 'guard', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
+               <div className="marker-list">
+                {(['goal', 'cardkey', 'eh', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1076,7 +1081,7 @@ export default function App() {
                       style={{ '--theme-color': meta.color } as React.CSSProperties}
                     >
                       <span className="marker-icon-preview">{meta.emoji}</span>
-                      <span>{meta.label.split(' ')[0]}</span>
+                      <span>{t === 'cardkey' ? 'CARD KEY' : meta.label.split(' ')[0]}</span>
                     </button>
                   );
                 })}

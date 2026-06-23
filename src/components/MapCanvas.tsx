@@ -191,6 +191,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [pickingDurationSeconds, setPickingDurationSeconds] = useState(5);
   const [longPickingDurationSeconds, setLongPickingDurationSeconds] = useState(7);
   const [pickingPicky, setPickingPicky] = useState(false);
+  const [ehHighRate, setEhHighRate] = useState(false);
   const [customDropInput, setCustomDropInput] = useState('');
   const [useBossCustomDuration, setUseBossCustomDuration] = useState(false);
   const [bossCustomDurationVal, setBossCustomDurationVal] = useState<number | undefined>(undefined);
@@ -563,9 +564,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         type: activeMarkerType,
         x: coords.x,
         y: coords.y,
-        note: '',
+        note: activeMarkerType === 'vault' ? 'マルチドロップポイント' :
+              activeMarkerType === 'eh' ? 'エターナルハート発見地点' :
+              activeMarkerType === 'cardkey' ? 'カードキー発見ポイント' : '',
         floor: floor
       };
+      if (activeMarkerType === 'eh') {
+        newMarker.ehHighRate = false;
+      }
       if (activeMarkerType === 'info') {
         newMarker.infoMediaUrl = '';
         newMarker.infoMediaType = 'image';
@@ -592,7 +598,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onMarkersChange([...markers, newMarker], true);
       setActiveNoteMarkerId(newMarker.id);
-      setNoteText('');
+      setNoteText(newMarker.note);
       setInfoMediaUrl('');
       setInfoMediaType('image');
       setBossDrops([]);
@@ -601,6 +607,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setPickingDurationSeconds(5);
       setLongPickingDurationSeconds(7);
       setPickingPicky(false);
+      setEhHighRate(false);
       setCustomDropInput('');
       setUseBattleCustomDuration(false);
       setBattleCustomDurationVal(20);
@@ -852,6 +859,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPickingDurationSeconds(m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
     setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7);
     setPickingPicky(!!m.pickingPicky);
+    setEhHighRate(!!m.ehHighRate);
     setCustomDropInput('');
 
     // Load custom durations if it exists for Boss
@@ -927,6 +935,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (m.type === 'long_picking' || m.type === 'glong_picking') {
               updated.longPickingDurationSeconds = pickingPicky ? 0 : longPickingDurationSeconds;
               updated.pickingPicky = pickingPicky;
+            }
+            if (m.type === 'eh') {
+              updated.ehHighRate = ehHighRate;
             }
             return updated;
           }
@@ -1192,8 +1203,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <div
                   key={m.id}
-                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass}`}
-                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : '')}
+                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''}`}
+                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
@@ -1871,6 +1882,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     Picky (0秒) 設定中のため時間設定は無効化されています。
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* EH marker high appearance rate editing */}
+          {activeNoteMarker.type === 'eh' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0, 240, 255, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)', marginTop: '4px' }}>
+                <input
+                  type="checkbox"
+                  id="eh-high-rate-cb"
+                  checked={ehHighRate}
+                  onChange={(e) => setEhHighRate(e.target.checked)}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                <label htmlFor="eh-high-rate-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
+                  出現率が高い (High Spawn Rate) - 強調表示する
+                </label>
               </div>
             </div>
           )}
