@@ -90,6 +90,21 @@ export default function App() {
   const [route, setRoute] = useState<RouteData>(DEFAULT_ROUTE());
   const currentFloor: FloorType = 'main';
 
+  // Global default hidden markers/types (loaded from global_defaults.json at startup)
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+      .then(r => r.ok ? r.json() : null)
+      .then(gd => {
+        if (!gd) return;
+        setRoute(prev => ({
+          ...prev,
+          hiddenMarkers: gd.hiddenMarkers || [],
+          hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
   // Shared Global Markers state (cameras, guards, etc. persisting across plans)
   const [globalMarkers, setGlobalMarkers] = useState<HeistMarker[]>([]);
 
@@ -241,49 +256,60 @@ export default function App() {
       if (!nextHidden.includes(markerId)) {
         nextHidden.push(markerId);
       }
-      // In global edit mode, also save as default for individual plans
+      const nextHiddenTypes = [...(prev.hiddenMarkerTypes || [])];
       if (isLocal) {
-        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-          .then(r => r.json())
-          .then(data => {
-            const hidden = data.hiddenMarkers || [];
-            if (!hidden.includes(markerId)) {
-              hidden.push(markerId);
-              fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...data, hiddenMarkers: hidden })
-              });
-            }
-          });
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes })
+        });
       }
-      return {
-        ...prev,
-        hiddenMarkers: nextHidden
-      };
+      return { ...prev, hiddenMarkers: nextHidden };
     });
   };
 
   const handleShowGlobalMarker = (markerId: string) => {
     setRoute(prev => {
       const nextHidden = (prev.hiddenMarkers || []).filter(id => id !== markerId);
-      // In global edit mode, also remove from defaults
+      const nextHiddenTypes = [...(prev.hiddenMarkerTypes || [])];
       if (isLocal) {
-        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-          .then(r => r.json())
-          .then(data => {
-            const hidden = (data.hiddenMarkers || []).filter((id: string) => id !== markerId);
-            fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...data, hiddenMarkers: hidden })
-            });
-          });
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes })
+        });
       }
-      return {
-        ...prev,
-        hiddenMarkers: nextHidden
-      };
+      return { ...prev, hiddenMarkers: nextHidden };
+    });
+  };
+
+  const handleHideGlobalMarkerType = (markerType: MarkerType) => {
+    setRoute(prev => {
+      const nextHiddenTypes = [...(prev.hiddenMarkerTypes || []), markerType];
+      const nextHidden = [...(prev.hiddenMarkers || [])];
+      if (isLocal) {
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes })
+        });
+      }
+      return { ...prev, hiddenMarkerTypes: nextHiddenTypes };
+    });
+  };
+
+  const handleShowGlobalMarkerType = (markerType: MarkerType) => {
+    setRoute(prev => {
+      const nextHiddenTypes = (prev.hiddenMarkerTypes || []).filter(t => t !== markerType);
+      const nextHidden = [...(prev.hiddenMarkers || [])];
+      if (isLocal) {
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes })
+        });
+      }
+      return { ...prev, hiddenMarkerTypes: nextHiddenTypes };
     });
   };
 
@@ -779,17 +805,15 @@ export default function App() {
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
       }
       alert(`Loaded plan: ${data.title}`);
-      // Fetch global defaults and merge for individual plans
+      // Merge global defaults for individual plans
       if (data.id !== 'default') {
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-          .then(r => r.json())
-          .then(def => {
-            setRoute(prev => {
-              const mergedH = [...new Set([...(prev.hiddenMarkers || []), ...(def.hiddenMarkers || [])])];
-              const mergedT = [...new Set([...(prev.hiddenMarkerTypes || []), ...(def.hiddenMarkerTypes || [])])];
-              if (mergedH.length === prev.hiddenMarkers?.length && mergedT.length === prev.hiddenMarkerTypes?.length) return prev;
-              return { ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT };
-            });
+          .then(r => r.ok ? r.json() : null)
+          .then(gd => {
+            if (!gd) return;
+            const mergedH = [...new Set([...(data.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
+            const mergedT = [...new Set([...(data.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
+            setRoute(prev => ({ ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT }));
           })
           .catch(() => {});
       }
@@ -942,17 +966,15 @@ export default function App() {
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
           }
           alert(`Imported successfully: ${importedData.title}`);
-          // Fetch global defaults and merge for imported individual plans
+          // Merge global defaults for imported individual plans
           if (importedData.id !== 'default') {
             fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-              .then(r => r.json())
-              .then(def => {
-                setRoute(prev => {
-                  const mergedH = [...new Set([...(prev.hiddenMarkers || []), ...(def.hiddenMarkers || [])])];
-                  const mergedT = [...new Set([...(prev.hiddenMarkerTypes || []), ...(def.hiddenMarkerTypes || [])])];
-                  if (mergedH.length === prev.hiddenMarkers?.length && mergedT.length === prev.hiddenMarkerTypes?.length) return prev;
-                  return { ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT };
-                });
+              .then(r => r.ok ? r.json() : null)
+              .then(gd => {
+                if (!gd) return;
+                const mergedH = [...new Set([...(importedData.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
+                const mergedT = [...new Set([...(importedData.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
+                setRoute(prev => ({ ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT }));
               })
               .catch(() => {});
           }
@@ -1244,7 +1266,11 @@ export default function App() {
                       const next = isTypeHidden
                         ? current.filter(x => x !== t)
                         : [...current, t];
-                      setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                      if (isTypeHidden) {
+                        handleShowGlobalMarkerType(t);
+                      } else {
+                        handleHideGlobalMarkerType(t);
+                      }
                     }}
                   >
                     {meta.emoji} {meta.label.split(' ')[0]}
