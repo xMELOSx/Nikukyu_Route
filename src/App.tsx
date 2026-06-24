@@ -100,7 +100,7 @@ export default function App() {
   });
 
   // Presentation / View Mode toggle state
-  const [isEditMode, setIsEditMode] = useState<boolean>(true);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
   const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
@@ -259,7 +259,7 @@ export default function App() {
   };
 
   // Tool Configurations
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('draw');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('pan');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('goal');
 
   // Sidebar Collapse Configurations
@@ -1129,9 +1129,7 @@ export default function App() {
                 👁 PRESENT
               </button>
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px', lineHeight: '1.4' }}>
-              Hotkey: Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>V</kbd>/<kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>P</kbd> to toggle mode, <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>R</kbd> to toggle nearest phone box.
-            </div>
+
           </div>
 
           {/* Pin and Label Sizing Adjuster */}
@@ -1196,50 +1194,52 @@ export default function App() {
           </div>
 
 
-          {/* Tool Mode (Visible in both Edit & Presentation Modes) */}
-          <div className="panel-section">
-            <div className="panel-title">2. TOOL MODE</div>
-            <div className="tool-grid">
-              {isEditMode && (
-                <>
-                  <button
-                    className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
-                    onClick={() => setToolMode('draw')}
-                    id="tool-draw-btn"
-                  >
-                    <Paintbrush size={18} />
-                    <span>Draw Line</span>
-                  </button>
-                  <button
-                    className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
-                    onClick={() => setToolMode('erase')}
-                    id="tool-erase-btn"
-                  >
-                    <Eraser size={18} />
-                    <span>Eraser</span>
-                  </button>
-                </>
-              )}
-              <button
-                className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`}
-                onClick={() => setToolMode('pan')}
-                id="tool-pan-btn"
-              >
-                <Move size={18} />
-                <span>Pan Map</span>
-              </button>
-              {isEditMode && (
+          {/* Tool Mode (Edit Mode only) */}
+          {isEditMode && (
+            <div className="panel-section">
+              <div className="panel-title">2. TOOL MODE</div>
+              <div className="tool-grid">
+                {isEditMode && (
+                  <>
+                    <button
+                      className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`}
+                      onClick={() => setToolMode('draw')}
+                      id="tool-draw-btn"
+                    >
+                      <Paintbrush size={18} />
+                      <span>Draw Line</span>
+                    </button>
+                    <button
+                      className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`}
+                      onClick={() => setToolMode('erase')}
+                      id="tool-erase-btn"
+                    >
+                      <Eraser size={18} />
+                      <span>Eraser</span>
+                    </button>
+                  </>
+                )}
                 <button
-                  className="tool-btn"
-                  onClick={clearCurrentFloor}
-                  id="tool-reset-btn"
+                  className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`}
+                  onClick={() => setToolMode('pan')}
+                  id="tool-pan-btn"
                 >
-                  <RotateCcw size={18} />
-                  <span>Reset Map</span>
+                  <Move size={18} />
+                  <span>Pan Map</span>
                 </button>
-              )}
+                {isEditMode && (
+                  <button
+                    className="tool-btn"
+                    onClick={clearCurrentFloor}
+                    id="tool-reset-btn"
+                  >
+                    <RotateCcw size={18} />
+                    <span>Reset Map</span>
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {toolMode === 'draw' && (
             <div className="panel-section">

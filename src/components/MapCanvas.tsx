@@ -441,7 +441,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       if (e.key === 'r' || e.key === 'R') {
-        if (!isEditMode || !isLocal) return;
         if (!currentPosition) return;
         
         // Find all phone markers on the current floor
@@ -954,9 +953,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         );
         return;
       }
-      // Phone toggle in presentation mode or external indiv edit mode (only allowed for local edit mode)
+      // Phone toggle in presentation mode or external indiv edit mode
       if (m.type === 'phone') {
-        if (!m.phoneLocked && isEditMode && isLocal) {
+        if (!m.phoneLocked) {
           onMarkersChange(
             markers.map(mk => mk.id === m.id ? { ...mk, phoneActive: !mk.phoneActive } : mk)
           );
