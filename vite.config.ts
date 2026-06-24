@@ -5,13 +5,17 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/Nikukyu_Route/',
   plugins: [
     react(),
     {
       name: 'global-markers-api',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url === '/api/global-markers' && req.method === 'GET') {
+          const apiPath = '/api/global-markers';
+          const urlPath = req.url?.split('?')[0] || '';
+          const isApiMatch = urlPath === apiPath || urlPath.endsWith(apiPath);
+          if (isApiMatch && req.method === 'GET') {
             const filePath = path.resolve(__dirname, 'global_markers.json');
             if (fs.existsSync(filePath)) {
               const data = fs.readFileSync(filePath, 'utf-8');
@@ -21,7 +25,7 @@ export default defineConfig({
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify([]));
             }
-          } else if (req.url === '/api/global-markers' && req.method === 'POST') {
+          } else if (isApiMatch && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => {
               body += chunk;

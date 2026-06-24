@@ -295,7 +295,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
-    fetch('/api/global-markers')
+    fetch(`${import.meta.env.BASE_URL}api/global-markers`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
@@ -317,7 +317,7 @@ export default function App() {
       })
       .catch(err => {
         console.error('Failed to fetch from /api/global-markers, trying static fallback:', err);
-        fetch('./global_markers.json')
+        fetch(`${import.meta.env.BASE_URL}global_markers.json`)
           .then(res => {
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             return res.json();
@@ -405,7 +405,7 @@ export default function App() {
           setGlobalMarkers(migrated);
 
           if (isLocal) {
-            fetch('/api/global-markers', {
+            fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(migrated)
@@ -484,7 +484,7 @@ export default function App() {
     localStorage.setItem('heist_global_markers', JSON.stringify(newGlobal));
 
     if (isLocal) {
-      fetch('/api/global-markers', {
+      fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newGlobal)
@@ -624,7 +624,7 @@ export default function App() {
             localStorage.setItem('heist_global_markers', JSON.stringify(merged));
 
             if (isLocal) {
-              fetch('/api/global-markers', {
+              fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(merged)
@@ -767,7 +767,7 @@ export default function App() {
               localStorage.setItem('heist_global_markers', JSON.stringify(merged));
 
               if (isLocal) {
-                fetch('/api/global-markers', {
+                fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(merged)

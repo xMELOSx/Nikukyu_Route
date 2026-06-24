@@ -120,7 +120,7 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
 
 // Preset Maps metadata with local paths
 export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; label: string } } = {
-  main: { path: '/nikukyu_map.webp', label: 'にくきゅうまっぷ' }
+  main: { path: `${import.meta.env.BASE_URL}nikukyu_map.webp`, label: 'にくきゅうまっぷ' }
 };
 
 export class DataManager {
@@ -378,7 +378,7 @@ export class DataManager {
       if (preset.path) {
         bgImg.src = preset.path;
       } else {
-        bgImg.src = '/nikukyu_map.webp';
+        bgImg.src = `${import.meta.env.BASE_URL}nikukyu_map.webp`;
       }
     }
   }
