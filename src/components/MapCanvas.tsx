@@ -126,6 +126,9 @@ interface MapCanvasProps {
   onMarkersDragEnd?: () => void;
   markerScale?: number;
   onHideGlobalMarker?: (id: string) => void;
+  hiddenMarkers?: string[];
+  globalMarkerIds?: string[];
+  onShowGlobalMarker?: (id: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -158,7 +161,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onMarkersDragStart,
   onMarkersDragEnd,
   markerScale = 30,
-  onHideGlobalMarker
+  onHideGlobalMarker,
+  hiddenMarkers = [],
+  globalMarkerIds = [],
+  onShowGlobalMarker
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -874,7 +880,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!canInteract) return;
 
     if (toolMode === 'erase') {
-      if (isLocal || isIndivMarker) {
+      const isGlobal = globalMarkerIds.includes(m.id);
+      if (!isGlobal || isLocal) {
         onMarkersChange(
           markers
             .filter(item => item.id !== m.id)
@@ -888,8 +895,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           true
         );
       } else {
-        if (onHideGlobalMarker) {
-          onHideGlobalMarker(m.id);
+        const isHidden = hiddenMarkers.includes(m.id);
+        if (isHidden) {
+          if (onShowGlobalMarker) {
+            onShowGlobalMarker(m.id);
+          }
+        } else {
+          if (onHideGlobalMarker) {
+            onHideGlobalMarker(m.id);
+          }
         }
       }
       if (activeNoteMarkerId === m.id) {
@@ -1255,6 +1269,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               if (m.id !== conn.primary.id) return null;
 
               const partner = conn.partner;
+              const isMHidden = hiddenMarkers.includes(m.id);
+              const isPartnerHidden = hiddenMarkers.includes(partner.id);
+              if (!isEditMode && (isMHidden || isPartnerHidden)) return null;
+
               const isMutuallyLinked = m.linkedWarpId === partner.id && partner.linkedWarpId === m.id;
 
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
@@ -1263,7 +1281,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const strokeDasharray = isWarp ? "6 4" : "3 3";
               const markerEnd = isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)";
               const markerStart = isMutuallyLinked ? (isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)") : undefined;
-              const opacity = isWarp ? "0.6" : "0.35";
+              const opacity = (isMHidden || isPartnerHidden) ? "0.15" : (isWarp ? "0.6" : "0.35");
               
               // primary has the source of truth warpWaypoints
               const effectiveWaypoints = (m.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
@@ -1303,6 +1321,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => (m.type === 'info' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
+              const isHidden = hiddenMarkers.includes(m.id);
+              if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
@@ -1350,6 +1370,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
+              const isHidden = hiddenMarkers.includes(m.id);
+              if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
 
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
@@ -1367,7 +1389,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <div
                   key={m.id}
-                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''}`}
+                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden ? 'hidden-marker-pin' : ''}`}
                   data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
                   style={{
                      left: `${m.x}px`,
@@ -1375,7 +1397,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      width: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
-                     pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto'
+                     pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
+                     opacity: isHidden ? 0.35 : 1,
+                     filter: isHidden ? 'grayscale(90%)' : 'none'
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
                   onClick={(e) => handleMarkerClick(e, m)}
@@ -1463,6 +1487,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
+              const isHidden = hiddenMarkers.includes(m.id);
+              if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
               return (
                 <React.Fragment key={`popups-${m.id}`}>
@@ -1880,30 +1906,56 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             <span style={{ fontSize: '12px', fontWeight: 'bold', color: MARKER_META[activeNoteMarker.type].color }}>
               {MARKER_META[activeNoteMarker.type].label}
             </span>
-            {(isIndiv(activeNoteMarker.type) || isLocal) ? (
-              <button 
-                className="delete-btn"
-                style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
-                onClick={() => handleDeleteMarker(activeNoteMarker.id)}
-                title="Delete Marker"
-              >
-                <Trash2 size={14} />
-              </button>
-            ) : (
-              <button 
-                className="delete-btn"
-                style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
-                onClick={() => {
-                  if (onHideGlobalMarker) {
-                    onHideGlobalMarker(activeNoteMarker.id);
-                  }
-                  setActiveNoteMarkerId(null);
-                }}
-                title="Hide this global marker in this plan only"
-              >
-                非表示
-              </button>
-            )}
+            {(() => {
+              const isGlobal = globalMarkerIds.includes(activeNoteMarker.id);
+              const isHidden = hiddenMarkers.includes(activeNoteMarker.id);
+
+              return (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {isGlobal && (
+                    isHidden ? (
+                      <button 
+                        className="delete-btn"
+                        style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                        onClick={() => {
+                          if (onShowGlobalMarker) {
+                            onShowGlobalMarker(activeNoteMarker.id);
+                          }
+                          setActiveNoteMarkerId(null);
+                        }}
+                        title="Show this global marker in this plan"
+                      >
+                        表示
+                      </button>
+                    ) : (
+                      <button 
+                        className="delete-btn"
+                        style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                        onClick={() => {
+                          if (onHideGlobalMarker) {
+                            onHideGlobalMarker(activeNoteMarker.id);
+                          }
+                          setActiveNoteMarkerId(null);
+                        }}
+                        title="Hide this global marker in this plan only"
+                      >
+                        非表示
+                      </button>
+                    )
+                  )}
+                  {(!isGlobal || isLocal) && (
+                    <button 
+                      className="delete-btn"
+                      style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
+                      onClick={() => handleDeleteMarker(activeNoteMarker.id)}
+                      title="Delete Marker"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           
           <textarea

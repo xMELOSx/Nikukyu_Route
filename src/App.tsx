@@ -20,7 +20,9 @@ import {
   Move,
   RotateCcw,
   Undo,
-  Redo
+  Redo,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 interface HistoryState {
@@ -253,9 +255,23 @@ export default function App() {
     });
   };
 
+  const handleShowGlobalMarker = (markerId: string) => {
+    setRoute(prev => {
+      const nextHidden = (prev.hiddenMarkers || []).filter(id => id !== markerId);
+      return {
+        ...prev,
+        hiddenMarkers: nextHidden
+      };
+    });
+  };
+
   // Tool Configurations
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('draw');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('goal');
+
+  // Sidebar Collapse Configurations
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
 
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
@@ -400,6 +416,14 @@ export default function App() {
           }
           return next;
         });
+      }
+      if (e.key === '[' || e.key === '［') {
+        e.preventDefault();
+        setLeftSidebarCollapsed(prev => !prev);
+      }
+      if (e.key === ']' || e.key === '］') {
+        e.preventDefault();
+        setRightSidebarCollapsed(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -945,9 +969,17 @@ export default function App() {
       </header>
 
       {/* Main Layout */}
-      <main className="main-content">
+      <main 
+        className="main-content"
+        style={{
+          gridTemplateColumns: `${leftSidebarCollapsed ? '0px' : '280px'} 1fr ${rightSidebarCollapsed ? '0px' : '340px'}`
+        }}
+      >
         {/* Left Control Panel: Rooms Quick Pan & Drawing/Markers */}
-        <section className="sidebar glass-panel">
+        <section 
+          className="sidebar glass-panel"
+          style={{ display: leftSidebarCollapsed ? 'none' : 'flex' }}
+        >
           {/* Segmented Mode Selector Toggle */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', background: 'rgba(5, 7, 10, 0.6)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
@@ -1333,9 +1365,11 @@ export default function App() {
             floor={currentFloor}
             strokes={route.strokes[currentFloor]}
             markers={[
-              ...globalMarkers.filter(m => !(route.hiddenMarkers || []).includes(m.id)),
+              ...globalMarkers,
               ...route.markers
             ]}
+            hiddenMarkers={route.hiddenMarkers || []}
+            globalMarkerIds={globalMarkers.map(m => m.id)}
             markerScale={markerScale}
             customBg={route.customBg[currentFloor]}
             toolMode={toolMode}
@@ -1363,11 +1397,65 @@ export default function App() {
             onMarkersDragStart={handleMarkersDragStart}
             onMarkersDragEnd={handleMarkersDragEnd}
             onHideGlobalMarker={handleHideGlobalMarker}
+            onShowGlobalMarker={handleShowGlobalMarker}
           />
+
+          {/* Left Sidebar Collapse Handle */}
+          <button
+            onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
+            style={{
+              position: 'absolute',
+              left: '0',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 100,
+              background: 'rgba(10, 15, 28, 0.9)',
+              border: '1px solid var(--border-color)',
+              borderLeft: 'none',
+              color: 'var(--cyan-neon)',
+              padding: '12px 4px',
+              borderRadius: '0 8px 8px 0',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: '2px 0 10px rgba(0, 240, 255, 0.2)',
+            }}
+            title={leftSidebarCollapsed ? "Show Left Panel (Shortcut: [)" : "Hide Left Panel (Shortcut: [)"}
+          >
+            {leftSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+
+          {/* Right Sidebar Collapse Handle */}
+          <button
+            onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
+            style={{
+              position: 'absolute',
+              right: '0',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 100,
+              background: 'rgba(10, 15, 28, 0.9)',
+              border: '1px solid var(--border-color)',
+              borderRight: 'none',
+              color: 'var(--cyan-neon)',
+              padding: '12px 4px',
+              borderRadius: '8px 0 0 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: '-2px 0 10px rgba(0, 240, 255, 0.2)',
+            }}
+            title={rightSidebarCollapsed ? "Show Right Panel (Shortcut: ])" : "Hide Right Panel (Shortcut: ])"}
+          >
+            {rightSidebarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
         </section>
 
         {/* Right Sidebar: Plan Profiles & Local Storage Saves */}
-        <section className="sidebar-right glass-panel">
+        <section 
+          className="sidebar-right glass-panel"
+          style={{ display: rightSidebarCollapsed ? 'none' : 'flex' }}
+        >
           <div className="panel-section">
             <div className="panel-title">ROUTE PROFILE</div>
 

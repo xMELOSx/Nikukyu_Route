@@ -946,13 +946,13 @@ select.input-cyber {
 .map-marker.eh-high-rate::before {
   content: '';
   position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
   border-radius: 50%;
-  border: 1.5px solid var(--cyan-neon);
-  box-shadow: 0 0 4px var(--cyan-neon), inset 0 0 4px var(--cyan-neon);
+  border: 1px solid var(--cyan-neon);
+  box-shadow: 0 0 2px var(--cyan-neon), inset 0 0 2px var(--cyan-neon);
   animation: eh-pulse 1.8s infinite alternate ease-in-out;
   pointer-events: none;
   z-index: -1;
@@ -960,13 +960,13 @@ select.input-cyber {
 
 @keyframes eh-pulse {
   0% {
-    transform: scale(0.96);
-    opacity: 0.55;
+    transform: scale(0.98);
+    opacity: 0.5;
   }
   100% {
-    transform: scale(1.15);
-    opacity: 1;
-    box-shadow: 0 0 7px var(--cyan-neon), inset 0 0 5px var(--cyan-neon);
+    transform: scale(1.08);
+    opacity: 0.95;
+    box-shadow: 0 0 4px var(--cyan-neon), inset 0 0 3px var(--cyan-neon);
   }
 }
 
@@ -974,13 +974,13 @@ select.input-cyber {
 .map-marker.cardkey-high-rate::before {
   content: '';
   position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
   border-radius: 50%;
-  border: 1.5px solid var(--green-neon);
-  box-shadow: 0 0 4px var(--green-neon), inset 0 0 4px var(--green-neon);
+  border: 1px solid var(--green-neon);
+  box-shadow: 0 0 2px var(--green-neon), inset 0 0 2px var(--green-neon);
   animation: cardkey-pulse 1.8s infinite alternate ease-in-out;
   pointer-events: none;
   z-index: -1;
@@ -988,13 +988,13 @@ select.input-cyber {
 
 @keyframes cardkey-pulse {
   0% {
-    transform: scale(0.96);
-    opacity: 0.55;
+    transform: scale(0.98);
+    opacity: 0.5;
   }
   100% {
-    transform: scale(1.15);
-    opacity: 1;
-    box-shadow: 0 0 7px var(--green-neon), inset 0 0 5px var(--green-neon);
+    transform: scale(1.08);
+    opacity: 0.95;
+    box-shadow: 0 0 4px var(--green-neon), inset 0 0 3px var(--green-neon);
   }
 }
 
