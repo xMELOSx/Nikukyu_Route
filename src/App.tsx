@@ -91,18 +91,23 @@ export default function App() {
   const currentFloor: FloorType = 'main';
 
   // Global default hidden markers/types (loaded from global_defaults.json at startup)
+  const globalDefaultsRef = useRef<{ hiddenMarkers: string[]; hiddenMarkerTypes: string[] }>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
       .then(r => r.ok ? r.json() : null)
       .then(gd => {
         if (!gd) return;
-        setRoute(prev => ({
-          ...prev,
-          hiddenMarkers: gd.hiddenMarkers || [],
-          hiddenMarkerTypes: gd.hiddenMarkerTypes || []
-        }));
+        globalDefaultsRef.current = gd;
+        setRoute(prev => {
+          if (prev.id !== 'default') return prev;
+          return {
+            ...prev,
+            hiddenMarkers: gd.hiddenMarkers || [],
+            hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+          };
+        });
       })
-      .catch(() => {});
+      .catch(err => console.error('Failed to load global defaults:', err));
   }, []);
 
   // Shared Global Markers state (cameras, guards, etc. persisting across plans)
@@ -257,6 +262,7 @@ export default function App() {
         nextHidden.push(markerId);
       }
       const nextHiddenTypes = [...(prev.hiddenMarkerTypes || [])];
+      globalDefaultsRef.current = { hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes };
       if (isLocal) {
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
           method: 'POST',
@@ -272,6 +278,7 @@ export default function App() {
     setRoute(prev => {
       const nextHidden = (prev.hiddenMarkers || []).filter(id => id !== markerId);
       const nextHiddenTypes = [...(prev.hiddenMarkerTypes || [])];
+      globalDefaultsRef.current = { hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes };
       if (isLocal) {
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
           method: 'POST',
@@ -287,6 +294,7 @@ export default function App() {
     setRoute(prev => {
       const nextHiddenTypes = [...(prev.hiddenMarkerTypes || []), markerType];
       const nextHidden = [...(prev.hiddenMarkers || [])];
+      globalDefaultsRef.current = { hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes };
       if (isLocal) {
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
           method: 'POST',
@@ -302,6 +310,7 @@ export default function App() {
     setRoute(prev => {
       const nextHiddenTypes = (prev.hiddenMarkerTypes || []).filter(t => t !== markerType);
       const nextHidden = [...(prev.hiddenMarkers || [])];
+      globalDefaultsRef.current = { hiddenMarkers: nextHidden, hiddenMarkerTypes: nextHiddenTypes };
       if (isLocal) {
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
           method: 'POST',
@@ -799,23 +808,40 @@ export default function App() {
       if (!data.hiddenMarkerTypes) {
         data.hiddenMarkerTypes = [];
       }
-      setRoute(data);
-      if (data.markerScale !== undefined) {
-        setMarkerScale(data.markerScale);
-        localStorage.setItem('heist_marker_scale', String(data.markerScale));
-      }
-      alert(`Loaded plan: ${data.title}`);
-      // Merge global defaults for individual plans
       if (data.id !== 'default') {
+        // Always fetch fresh global defaults to avoid stale ref
+        const applyAndLoad = (gd: { hiddenMarkers?: string[]; hiddenMarkerTypes?: string[] }) => {
+          data!.hiddenMarkers = [...new Set([...(data!.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
+          data!.hiddenMarkerTypes = [...new Set([...(data!.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
+          globalDefaultsRef.current = gd;
+          setRoute(data!);
+          if (data!.markerScale !== undefined) {
+            setMarkerScale(data!.markerScale);
+            localStorage.setItem('heist_marker_scale', String(data!.markerScale));
+          }
+          alert(`Loaded plan: ${data!.title}`);
+        };
         fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
           .then(r => r.ok ? r.json() : null)
           .then(gd => {
-            if (!gd) return;
-            const mergedH = [...new Set([...(data.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
-            const mergedT = [...new Set([...(data.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
-            setRoute(prev => ({ ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT }));
+            if (!gd) {
+              setRoute(data);
+              alert(`Loaded plan: ${data.title}`);
+              return;
+            }
+            applyAndLoad(gd);
           })
-          .catch(() => {});
+          .catch(() => {
+            setRoute(data);
+            alert(`Loaded plan: ${data.title}`);
+          });
+      } else {
+        setRoute(data);
+        if (data.markerScale !== undefined) {
+          setMarkerScale(data.markerScale);
+          localStorage.setItem('heist_marker_scale', String(data.markerScale));
+        }
+        alert(`Loaded plan: ${data.title}`);
       }
     }
   };
@@ -960,24 +986,18 @@ export default function App() {
           if (!importedData.hiddenMarkerTypes) {
             importedData.hiddenMarkerTypes = [];
           }
+          // Merge global defaults for imported individual plans BEFORE setting route
+          if (importedData.id !== 'default') {
+            const gd = globalDefaultsRef.current;
+            importedData.hiddenMarkers = [...new Set([...importedData.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
+            importedData.hiddenMarkerTypes = [...new Set([...importedData.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
+          }
           setRoute(importedData);
           if (importedData.markerScale !== undefined) {
             setMarkerScale(importedData.markerScale);
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
           }
           alert(`Imported successfully: ${importedData.title}`);
-          // Merge global defaults for imported individual plans
-          if (importedData.id !== 'default') {
-            fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-              .then(r => r.ok ? r.json() : null)
-              .then(gd => {
-                if (!gd) return;
-                const mergedH = [...new Set([...(importedData.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
-                const mergedT = [...new Set([...(importedData.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
-                setRoute(prev => ({ ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT }));
-              })
-              .catch(() => {});
-          }
         } else {
           alert('Invalid JSON file format.');
         }
@@ -1055,7 +1075,7 @@ export default function App() {
       {/* Top Application Header */}
       <header className="app-header glass-panel">
         <div className="app-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>🐾</span> にくきゅう大強盗（大強奪）v1.1.8 マップ
+          <span>🐾</span> にくきゅう大強盗（大強奪） マップ
           <button
             className="btn-cyber"
             onClick={() => setShowHelpModal(true)}

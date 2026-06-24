@@ -1325,7 +1325,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const partner = conn.partner;
               const isMHidden = hiddenMarkers.includes(m.id);
               const isPartnerHidden = hiddenMarkers.includes(partner.id);
-              if (!isEditMode && (isMHidden || isPartnerHidden)) return null;
+              if (!(isLocal && isEditMode) && (isMHidden || isPartnerHidden)) return null;
 
               const isMutuallyLinked = m.linkedWarpId === partner.id && partner.linkedWarpId === m.id;
 
@@ -1376,7 +1376,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             .filter(m => (m.type === 'info' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id);
-              if (isHidden && !isEditMode) return null;
+              if (isHidden && !(isLocal && isEditMode)) return null;
               const meta = MARKER_META[m.type];
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
@@ -1425,7 +1425,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             .filter(m => m.floor === floor)
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
-              if (isHidden && !isEditMode) return null;
+              if (isHidden && !(isLocal && isEditMode)) return null;
               if (!isEditMode && m.type === 'room') return null;
 
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
@@ -1575,7 +1575,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             .filter(m => m.floor === floor)
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id);
-              if (isHidden && !isEditMode) return null;
+              if (isHidden && !(isLocal && isEditMode)) return null;
               const meta = MARKER_META[m.type];
               return (
                 <React.Fragment key={`popups-${m.id}`}>
