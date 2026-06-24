@@ -535,6 +535,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1) return;
     e.stopPropagation();
     if (!isEditMode) return;
     setIsDraggingPopup(true);
@@ -873,6 +874,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   const handleMarkerMouseDown = (e: React.MouseEvent, m: HeistMarker) => {
+    if (e.button === 1) return;
     e.stopPropagation();
     
     const isIndivMarker = isIndiv(m.type);
@@ -1469,6 +1471,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             pointerEvents: 'auto'
                           }}
                           onMouseDown={(e) => {
+                            if (e.button === 1) return;
                             e.stopPropagation();
                             if (onMarkersDragStart) onMarkersDragStart();
                             setDraggingWaypoint({ markerId: m.id, index: wpIdx });

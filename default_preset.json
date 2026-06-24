@@ -1,0 +1,21 @@
+{
+  "id": "default",
+  "title": "DEFAULT PRESET PLAN",
+  "description": "Default plan description here...",
+  "targetCash": "100,000",
+  "difficulty": "medium",
+  "strokes": {
+    "main": []
+  },
+  "markers": [],
+  "customBg": {
+    "main": null
+  },
+  "bossCustomDurations": {},
+  "battleCustomDurations": {},
+  "pickingCustomDurations": {},
+  "longPickingCustomDurations": {},
+  "hiddenMarkers": [],
+  "createdAt": 1770000000000,
+  "mapVersion": 2
+}

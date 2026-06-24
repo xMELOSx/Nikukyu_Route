@@ -22,7 +22,9 @@ import {
   Undo,
   Redo,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Copy,
+  Star
 } from 'lucide-react';
 
 interface HistoryState {
@@ -281,6 +283,7 @@ export default function App() {
 
   // App UI lists
   const [saves, setSaves] = useState<{ id: string; title: string; updatedAt: number }[]>([]);
+  const [defaultPreset, setDefaultPreset] = useState<RouteData | null>(null);
   const [svgString, setSvgString] = useState<string>('');
 
   // Smooth scroll room focus state
@@ -295,6 +298,39 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
+
+    // Fetch default preset on start
+    fetch(`${import.meta.env.BASE_URL}api/default-preset`)
+      .then(res => {
+        if (!res.ok) throw new Error();
+        return res.json();
+      })
+      .then(data => {
+        setDefaultPreset(data);
+        const savesList = DataManager.getSavesList();
+        if (savesList.length === 0) {
+          const migrated = migrateRouteCoordinates(data);
+          setRoute({ ...migrated, id: 'default' });
+        }
+      })
+      .catch(() => {
+        fetch(`${import.meta.env.BASE_URL}default_preset.json`)
+          .then(res => {
+            if (!res.ok) throw new Error();
+            return res.json();
+          })
+          .then(data => {
+            setDefaultPreset(data);
+            const savesList = DataManager.getSavesList();
+            if (savesList.length === 0) {
+              const migrated = migrateRouteCoordinates(data);
+              setRoute({ ...migrated, id: 'default' });
+            }
+          })
+          .catch(() => {
+            console.log('No default preset found on server or static folder.');
+          });
+      });
     fetch(`${import.meta.env.BASE_URL}api/global-markers`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -548,8 +584,67 @@ export default function App() {
     alert(`Successfully saved: ${route.title}`);
   };
 
+  const handleSaveAsCopy = () => {
+    const newTitle = window.prompt('コピーのプラン名を入力してください:', `${route.title} (COPY)`);
+    if (newTitle === null) return;
+    const newId = `route_${Date.now()}`;
+    const copyRoute = {
+      ...route,
+      id: newId,
+      title: newTitle.trim().toUpperCase() || 'NEW HEIST ROUTE PLAN',
+      createdAt: Date.now()
+    };
+    DataManager.saveToLocalStorage(copyRoute);
+    setRoute(copyRoute);
+    refreshSavesList();
+    alert(`Successfully saved copy: ${copyRoute.title}`);
+  };
+
+  const handleSaveDefaultPreset = () => {
+    if (!window.confirm('現在のルートプランを「デフォルトプリセット」としてサーバーに保存しますか？\n(次回新規作成時や、他環境での初期データとして利用されます)')) {
+      return;
+    }
+    const routeToSave = { 
+      ...route, 
+      mapVersion: 2, 
+      markerScale: markerScale 
+    };
+    fetch(`${import.meta.env.BASE_URL}api/default-preset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(routeToSave)
+    })
+      .then(res => {
+        if (!res.ok) throw new Error();
+        return res.json();
+      })
+      .then(() => {
+        setDefaultPreset(routeToSave);
+        alert('デフォルトプリセットを保存しました。');
+      })
+      .catch(err => {
+        console.error(err);
+        alert('デフォルトプリセットの保存に失敗しました。');
+      });
+  };
+
   const handleLoadFromLocal = (id: string) => {
-    let data = DataManager.loadFromLocalStorage(id);
+    if (route.id !== id && pastHistory.length > 0) {
+      if (!window.confirm('他のプランを読み込みますか？現在の未保存の編集内容は上書きされます。')) {
+        return;
+      }
+    }
+    let data: RouteData | null = null;
+    if (id === '__default_preset__') {
+      if (!defaultPreset) return;
+      data = {
+        ...defaultPreset,
+        id: `route_${Date.now()}`,
+        title: `${defaultPreset.title} (COPY)`
+      };
+    } else {
+      data = DataManager.loadFromLocalStorage(id);
+    }
     if (data) {
       // 2x Coordinate Scale Migration
       const migratedData = migrateRouteCoordinates(data);
@@ -971,6 +1066,19 @@ export default function App() {
           <button className="btn-cyber success" onClick={handleSaveToLocal} title="Save to local browser storage">
             <Save size={16} /> Save Plan
           </button>
+          <button className="btn-cyber" onClick={handleSaveAsCopy} title="Save a copy of the current plan">
+            <Copy size={16} /> Save as Copy
+          </button>
+          {isLocal && isEditMode && (
+            <button 
+              className="btn-cyber" 
+              onClick={handleSaveDefaultPreset} 
+              title="Save current plan as server default preset"
+              style={{ borderColor: 'var(--yellow-neon, #ffe600)', color: 'var(--yellow-neon, #ffe600)' }}
+            >
+              <Star size={16} /> Set Default Preset
+            </button>
+          )}
           <button className="btn-cyber" onClick={handleExportJSON} title="Download plan as JSON">
             <Download size={16} /> Export JSON
           </button>
@@ -1610,6 +1718,17 @@ export default function App() {
           <div className="panel-section" style={{ marginTop: 'auto' }}>
             <div className="panel-title">SAVED ROUTE PLANS</div>
             <div className="saves-list">
+              {defaultPreset && (
+                <div
+                  className="save-item default-preset-item"
+                  style={{ borderLeft: '3px solid var(--accent-cyan, #00f0ff)' }}
+                  onClick={() => handleLoadFromLocal('__default_preset__')}
+                >
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                    <strong>🎁 デフォルトプリセット</strong>
+                  </div>
+                </div>
+              )}
               {saves.length === 0 ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
                   No saved plans found in browser.
