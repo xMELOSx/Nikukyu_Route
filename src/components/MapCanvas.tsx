@@ -253,6 +253,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [infoLabel, setInfoLabel] = useState('');
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
+  const [textColor, setTextColor] = useState('#ffffff');
+  const [textSize, setTextSize] = useState(14);
+  const [warpLinkTargetId, setWarpLinkTargetId] = useState<string>('');
+  const [warpLinkMode, setWarpLinkMode] = useState<'idle' | 'selecting-bi' | 'selecting-oneway'>('idle');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
   const [bossDurationSeconds, setBossDurationSeconds] = useState(60);
   const [battleDurationSeconds, setBattleDurationSeconds] = useState(20);
@@ -663,6 +667,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.infoMediaType = 'image';
         newMarker.infoExpanded = false;
       }
+      if (activeMarkerType === 'text') {
+        newMarker.textColor = '#ffffff';
+        newMarker.textSize = 14;
+      }
       if (activeMarkerType === 'boss') {
         newMarker.bossDrops = [];
         newMarker.bossDurationSeconds = 60;
@@ -922,7 +930,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMarkerClick = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
-    
+
+    // Click-to-link mode for warp/stairs
+    if (warpLinkMode !== 'idle' && activeNoteMarkerId) {
+      const source = markers.find(mk => mk.id === activeNoteMarkerId);
+      if (source && (source.type === 'warp' || source.type === 'iwarp' || source.type === 'stairs')) {
+        const isValidTarget = m.id !== source.id
+          && (source.type === 'iwarp' || m.type === 'iwarp'
+            ? (source.type === 'warp' || source.type === 'iwarp') && (m.type === 'warp' || m.type === 'iwarp')
+            : m.type === source.type);
+        if (isValidTarget) {
+          const isBidirectional = warpLinkMode === 'selecting-bi';
+          const partnerMarker = markers.find(mk => mk.id === m.id);
+          const canBidirectional = isBidirectional && source.type !== 'iwarp' && m.type !== 'iwarp'
+            && (!partnerMarker?.linkedWarpId || partnerMarker.linkedWarpId === source.id);
+          onMarkersChange(
+            markers.map(mk => {
+              if (mk.id === source.id) {
+                return { ...mk, linkedWarpId: m.id };
+              }
+              if (canBidirectional && mk.id === m.id) {
+                return { ...mk, linkedWarpId: source.id };
+              }
+              return mk;
+            }),
+            true
+          );
+        }
+      }
+      setWarpLinkMode('idle');
+      return;
+    }
+
     const isPresenterModeForGlobal = !isEditMode;
     if (isPresenterModeForGlobal) {
       // Info toggle in presentation mode
@@ -1006,6 +1045,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setInfoLabel(m.infoLabel || '');
     setInfoMediaUrl(m.infoMediaUrl || '');
     setInfoMediaType(m.infoMediaType || 'image');
+    setTextColor(m.textColor || '#ffffff');
+    setTextSize(m.textSize || 14);
     setBossDrops(m.bossDrops || []);
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
@@ -1075,6 +1116,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.infoLabel = infoLabel;
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
+            }
+            if (m.type === 'text') {
+              updated.textColor = textColor;
+              updated.textSize = textSize;
             }
             if (m.type === 'boss') {
               updated.bossDrops = bossDrops;
@@ -1381,6 +1426,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
               const isStairs = m.type === 'stairs';
               const isPhone = m.type === 'phone';
+              const isText = m.type === 'text';
               const isLargePin = isWarp || isStairs;
               const meta = MARKER_META[m.type];
               // Dynamic emoji for phone markers
@@ -1390,6 +1436,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               // Phone markers that are locked show a small lock indicator
               const phoneClass = isPhone ? (m.phoneActive ? 'phone-active' : 'phone-inactive') : '';
               const scaleMultiplier = markerScale / 30;
+              if (isText) {
+                return (
+                  <div
+                    key={m.id}
+                    className={`map-marker ${isHidden ? 'hidden-marker-pin' : ''}`}
+                    data-note={m.note || 'Text'}
+                    style={{
+                      position: 'absolute',
+                      left: `${m.x}px`,
+                      top: `${m.y}px`,
+                      transform: 'translate(-50%, -50%)',
+                      color: m.textColor || '#ffffff',
+                      fontSize: `${(m.textSize || 14) * scaleMultiplier}px`,
+                      fontWeight: 'bold',
+                      textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                      whiteSpace: 'nowrap',
+                      cursor: 'move',
+                      pointerEvents: 'auto',
+                      opacity: isHidden ? 0.35 : 1,
+                      filter: isHidden ? 'grayscale(90%)' : 'none',
+                      zIndex: 20,
+                      userSelect: 'none'
+                    } as React.CSSProperties}
+                    onMouseDown={(e) => handleMarkerMouseDown(e, m)}
+                    onClick={(e) => handleMarkerClick(e, m)}
+                  >
+                    {m.note || 'Text'}
+                  </div>
+                );
+              }
               return (
                 <div
                   key={m.id}
@@ -2023,6 +2099,46 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
+          {/* Text marker color & size editing */}
+          {activeNoteMarker.type === 'text' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 255, 255, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>TEXT SETTINGS:</div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Color:</label>
+                <input
+                  type="color"
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                  style={{ width: '30px', height: '24px', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
+                />
+                <input
+                  type="text"
+                  className="input-cyber"
+                  style={{ width: '80px', fontSize: '10px', padding: '2px 4px' }}
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                  <span>Size:</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{textSize}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="8"
+                  max="48"
+                  step="1"
+                  value={textSize}
+                  onChange={(e) => setTextSize(parseInt(e.target.value))}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Boss marker drops & duration editing */}
           {activeNoteMarker.type === 'boss' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 0, 85, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2387,14 +2503,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
                   {activeNoteMarker.type === 'iwarp'
                     ? '🌀 WARP TARGET (Unidirectional):'
-                    : activeNoteMarker.type === 'warp'
-                      ? '🌀 WARP TARGET (Bidirectional):'
-                      : '🪜 STAIRS TARGET (Bidirectional):'}
+                    : '🔗 LINK TARGET:'}
                 </div>
-                {conn.hasLink && conn.partner ? (
+                {/* Show incoming link info if any */}
+                {conn.hasLink && conn.partner && !activeNoteMarker.linkedWarpId && (
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', padding: '4px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                    ← 来たリンク: {conn.partner.note.trim() ? conn.partner.note : `#${conn.partner.id.substring(conn.partner.id.length - 4)}`}
+                  </div>
+                )}
+                {/* Show outgoing link and remove button */}
+                {activeNoteMarker.linkedWarpId && conn.partner ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
-                      ✓ Leads to: {conn.partner.note.trim() ? conn.partner.note : `${activeNoteMarker.type === 'stairs' ? 'Stairs' : 'Warp'} #${conn.partner.id.substring(conn.partner.id.length - 4)}`}
+                      {conn.isMutuallyLinked ? '↔' : '→'} Leads to: {conn.partner.note.trim() ? conn.partner.note : `${activeNoteMarker.type === 'stairs' ? 'Stairs' : 'Warp'} #${conn.partner.id.substring(conn.partner.id.length - 4)}`}
+                      <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '4px' }}>({conn.isMutuallyLinked ? '双方向' : '片道'})</span>
                     </div>
                     <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} disabled={!canLink} onClick={() => {
                       onMarkersChange(
@@ -2417,20 +2539,51 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </button>
                   </div>
                 ) : (
-                  <select
-                    className="input-cyber"
-                    style={{ width: '100%', fontSize: '10px', padding: '4px' }}
-                    value=""
-                    disabled={!canLink}
-                    onChange={(e) => {
-                      const partnerId = e.target.value;
-                      if (partnerId) {
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <select
+                      className="input-cyber"
+                      style={{ width: '100%', fontSize: '10px', padding: '4px' }}
+                      value={warpLinkTargetId}
+                      disabled={!canLink}
+                      onChange={(e) => setWarpLinkTargetId(e.target.value)}
+                    >
+                      <option value="">-- Select target --</option>
+                      {markers
+                        .filter(m => {
+                          if (m.id === activeNoteMarker.id) return false;
+                          if (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') {
+                            return m.type === 'warp' || m.type === 'iwarp';
+                          }
+                          return m.type === activeNoteMarker.type;
+                        })
+                        .map(m => (
+                          <option key={m.id} value={m.id}>
+                            {(m.type === 'warp' || m.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${m.type === 'iwarp' ? 'iWarp' : m.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
+                          </option>
+                        ))
+                      }
+                    </select>
+                    <button
+                      className="btn-cyber"
+                      style={{ width: '100%', padding: '4px', fontSize: '9px', clipPath: 'none' }}
+                      disabled={!canLink}
+                      onClick={() => setWarpLinkMode(warpLinkMode === 'idle' ? 'selecting-bi' : 'idle')}
+                    >
+                      {warpLinkMode === 'selecting-bi' ? '... ターゲットをクリック (双方向)' : '↔ マップから選択 (双方向)'}
+                    </button>
+                    <button
+                      className="btn-cyber"
+                      style={{ width: '100%', padding: '4px', fontSize: '9px', clipPath: 'none' }}
+                      disabled={!canLink}
+                      onClick={() => setWarpLinkMode(warpLinkMode === 'idle' ? 'selecting-oneway' : 'idle')}
+                    >
+                      {warpLinkMode === 'selecting-oneway' ? '... ターゲットをクリック (片道)' : '→ マップから選択 (片道)'}
+                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }} disabled={!canLink || !warpLinkTargetId} onClick={() => {
+                        const partnerId = warpLinkTargetId;
                         const partnerMarker = markers.find(mk => mk.id === partnerId);
-                        // Only create bidirectional link when:
-                        // 1. Neither side is iwarp (iwarp is always unidirectional)
-                        // 2. Partner has no existing link, or already links back to this marker
-                        //    (prevents overwriting an existing bidirectional pair)
-                        const shouldBidirectional = activeNoteMarker.type !== 'iwarp'
+                        const canBidirectional = activeNoteMarker.type !== 'iwarp'
                           && partnerMarker?.type !== 'iwarp'
                           && (!partnerMarker?.linkedWarpId || partnerMarker.linkedWarpId === activeNoteMarker.id);
                         onMarkersChange(
@@ -2438,42 +2591,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             if (m.id === activeNoteMarker.id) {
                               return { ...m, linkedWarpId: partnerId };
                             }
-                            if (shouldBidirectional && m.id === partnerId) {
-                              // Bidirectional: link back for mutual connection (warp↔warp, stairs↔stairs)
+                            if (canBidirectional && m.id === partnerId) {
                               return { ...m, linkedWarpId: activeNoteMarker.id };
-                            }
-                            return m;
-                          }).map(m => {
-                            // Clean secondary warp waypoints on mutual pairs
-                            const partner = m.linkedWarpId ? markers.find(mk => mk.id === m.linkedWarpId) : null;
-                            const isMutuallyLinked = partner && partner.linkedWarpId === m.id;
-                            if (isMutuallyLinked && m.id > partner.id) {
-                              return { ...m, warpWaypoints: [] };
                             }
                             return m;
                           }),
                           true
                         );
-                      }
-                    }}
-                  >
-                    <option value="">-- Select target {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'warp' : 'stairs'} --</option>
-                    {markers
-                      .filter(m => {
-                        if (m.id === activeNoteMarker.id) return false;
-                        // Allow cross-linking between warp and iwarp
-                        if (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') {
-                          return m.type === 'warp' || m.type === 'iwarp';
-                        }
-                        return m.type === activeNoteMarker.type;
-                      })
-                      .map(m => (
-                        <option key={m.id} value={m.id}>
-                          {(m.type === 'warp' || m.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${m.type === 'iwarp' ? 'iWarp' : m.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y}){m.type === 'iwarp' ? ' [単方向]' : ''}
-                        </option>
-                      ))
-                    }
-                  </select>
+                        setWarpLinkTargetId('');
+                      }}>
+                        ↔ 双方向
+                      </button>
+                      <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }} disabled={!canLink || !warpLinkTargetId} onClick={() => {
+                        const partnerId = warpLinkTargetId;
+                        onMarkersChange(
+                          markers.map(m => {
+                            if (m.id === activeNoteMarker.id) {
+                              return { ...m, linkedWarpId: partnerId };
+                            }
+                            return m;
+                          }),
+                          true
+                        );
+                        setWarpLinkTargetId('');
+                      }}>
+                        → 片道
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {/* Waypoint controls - visible when connection exists */}

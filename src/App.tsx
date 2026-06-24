@@ -1331,7 +1331,7 @@ export default function App() {
               </div>
 
               <div className="marker-list">
-                {(['goal', 'cardkey', 'eh', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
+                {(['goal', 'cardkey', 'eh', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button

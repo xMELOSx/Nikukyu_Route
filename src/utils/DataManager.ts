@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text';
 
 export interface Point {
   x: number;
@@ -51,6 +51,8 @@ export interface HeistMarker {
   ehHighRate?: boolean;   // For EH markers: true = high appearance rate highlighted glow
   cardkeyHighRate?: boolean; // For Card Key markers: true = high appearance rate highlighted glow
   warpWaypoints?: Point[]; // For warp/stairs markers: custom path waypoints
+  textColor?: string;     // For text markers: color of the text
+  textSize?: number;      // For text markers: font size in px
 }
 
 export interface RouteData {
@@ -116,7 +118,8 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   gbattle: { emoji: '⚔', label: 'BATTLE (GLOBAL)', color: '#ff0055' },
   gpicking: { emoji: '🔑', label: 'PICKING (GLOBAL)', color: '#ffe600' },
   glong_picking: { emoji: '🔐', label: 'L-PICKING (GLOBAL)', color: '#ffaa00' },
-  iwarp: { emoji: '🌀', label: 'I-WARP', color: '#ff00ff' }
+  iwarp: { emoji: '🌀', label: 'I-WARP', color: '#ff00ff' },
+  text: { emoji: 'T', label: 'TEXT', color: '#ffffff' }
 };
 
 // Preset Maps metadata with local paths
@@ -291,7 +294,21 @@ export class DataManager {
 
       floorMarkers.forEach(m => {
         const meta = MARKER_META[m.type];
+        const isText = m.type === 'text';
         const isLargePin = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
+
+        if (isText) {
+          ctx.fillStyle = m.textColor || '#ffffff';
+          ctx.font = `bold ${Math.round((m.textSize || 14) * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0,0,0,0.8)';
+          ctx.shadowBlur = 4;
+          ctx.fillText(m.note || 'Text', m.x, m.y);
+          ctx.shadowBlur = 0;
+          return;
+        }
+
         const radius = (isLargePin ? 9 : 8) * scaleMultiplier;
         const fontSize = (isLargePin ? 10 : 9) * scaleMultiplier;
         
