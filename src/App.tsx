@@ -277,14 +277,21 @@ export default function App() {
 
   // Load Saved list and Global Markers on start
   useEffect(() => {
+    localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
     fetch('/api/global-markers')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
-          const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
+          const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+            if (m.warpWaypoints) {
+              return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
+            }
+            return m;
+          });
           setGlobalMarkers(filtered);
           localStorage.setItem('heist_global_markers', JSON.stringify(filtered));
+          localStorage.setItem('heist_global_markers_migrated_v2', 'true');
         } else {
           loadGlobalMarkersFromLocalStorage();
         }
@@ -299,7 +306,12 @@ export default function App() {
       if (savedGlobal) {
         try {
           let parsed: HeistMarker[] = JSON.parse(savedGlobal);
-          parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
+          parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+            if (m.warpWaypoints) {
+              return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
+            }
+            return m;
+          });
 
           const isMigrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true';
           if (!isMigrated) {

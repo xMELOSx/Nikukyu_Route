@@ -754,7 +754,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const conn = getWarpConnectionInfo(dm, markers);
               if (conn.hasLink && conn.primary && conn.partner) {
                 if (mk.id === conn.primary.id) {
-                  const nextWaypoints = conn.primary.warpWaypoints ? [...conn.primary.warpWaypoints] : [];
+                  const nextWaypoints = conn.primary.warpWaypoints
+                    ? conn.primary.warpWaypoints.filter((wp): wp is Point => wp !== null && wp !== undefined)
+                    : [];
                   const targetIdx = conn.isReversed
                     ? nextWaypoints.length - 1 - draggingWaypoint.index
                     : draggingWaypoint.index;
@@ -770,7 +772,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               }
             }
             if (mk.id === draggingWaypoint.markerId && mk.warpWaypoints) {
-              const nextWaypoints = [...mk.warpWaypoints];
+              const nextWaypoints = mk.warpWaypoints.filter((wp): wp is Point => wp !== null && wp !== undefined);
               nextWaypoints[draggingWaypoint.index] = {
                 x: Math.max(0, Math.min(1600, coords.x)),
                 y: Math.max(0, Math.min(4550, coords.y))
@@ -1264,7 +1266,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const opacity = isWarp ? "0.6" : "0.35";
               
               // primary has the source of truth warpWaypoints
-              const effectiveWaypoints = m.warpWaypoints || [];
+              const effectiveWaypoints = (m.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
 
               if (effectiveWaypoints.length > 0) {
                 const pathD = `M ${m.x} ${m.y} ` + effectiveWaypoints.map(wp => `L ${wp.x} ${wp.y}`).join(' ') + ` L ${partner.x} ${partner.y}`;
@@ -1418,7 +1420,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 if (canEditWaypoints) {
                   const conn = getWarpConnectionInfo(m, markers);
                   if (conn.hasLink && conn.primary) {
-                    const waypoints = conn.primary.warpWaypoints || [];
+                    const waypoints = (conn.primary.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
                     const showWaypoints = conn.isReversed ? [...waypoints].reverse() : waypoints;
 
                     if (showWaypoints.length > 0) {
@@ -2307,7 +2309,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             return (
               <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀 WARP TARGET (Bidirectional):' : '🪜 STAIRS TARGET (Bidirectional):'}
+                  {activeNoteMarker.type === 'iwarp'
+                    ? '🌀 WARP TARGET (Unidirectional):'
+                    : activeNoteMarker.type === 'warp'
+                      ? '🌀 WARP TARGET (Bidirectional):'
+                      : '🪜 STAIRS TARGET (Bidirectional):'}
                 </div>
                 {conn.hasLink && conn.partner ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2343,13 +2349,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     onChange={(e) => {
                       const partnerId = e.target.value;
                       if (partnerId) {
+                        const partnerMarker = markers.find(mk => mk.id === partnerId);
+                        // Only create bidirectional link when:
+                        // 1. Neither side is iwarp (iwarp is always unidirectional)
+                        // 2. Partner has no existing link, or already links back to this marker
+                        //    (prevents overwriting an existing bidirectional pair)
+                        const shouldBidirectional = activeNoteMarker.type !== 'iwarp'
+                          && partnerMarker?.type !== 'iwarp'
+                          && (!partnerMarker?.linkedWarpId || partnerMarker.linkedWarpId === activeNoteMarker.id);
                         onMarkersChange(
                           markers.map(m => {
                             if (m.id === activeNoteMarker.id) {
                               return { ...m, linkedWarpId: partnerId };
                             }
-                            if (m.id === partnerId) {
-                              // Automatically link back to activeNoteMarker for mutual connection
+                            if (shouldBidirectional && m.id === partnerId) {
+                              // Bidirectional: link back for mutual connection (warp↔warp, stairs↔stairs)
                               return { ...m, linkedWarpId: activeNoteMarker.id };
                             }
                             return m;
@@ -2369,10 +2383,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   >
                     <option value="">-- Select target {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'warp' : 'stairs'} --</option>
                     {markers
-                      .filter(m => m.type === activeNoteMarker.type && m.id !== activeNoteMarker.id)
+                      .filter(m => {
+                        if (m.id === activeNoteMarker.id) return false;
+                        // Allow cross-linking between warp and iwarp
+                        if (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') {
+                          return m.type === 'warp' || m.type === 'iwarp';
+                        }
+                        return m.type === activeNoteMarker.type;
+                      })
                       .map(m => (
                         <option key={m.id} value={m.id}>
-                          {(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
+                          {(m.type === 'warp' || m.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${m.type === 'iwarp' ? 'iWarp' : m.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y}){m.type === 'iwarp' ? ' [単方向]' : ''}
                         </option>
                       ))
                     }
@@ -2394,7 +2415,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onClick={() => {
                           const primary = conn.primary!;
                           const partner = conn.partner!;
-                          const waypoints = primary.warpWaypoints || [];
+                          const waypoints = (primary.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
                           
                           if (!conn.isReversed) {
                             const startPt = waypoints.length > 0
@@ -2443,7 +2464,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onClick={() => {
                           const primary = conn.primary!;
                           const partner = conn.partner!;
-                          const waypoints = primary.warpWaypoints || [];
+                          const waypoints = (primary.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
                           if (waypoints.length > 0) {
                             onMarkersChange(
                               markers.map(m => {
