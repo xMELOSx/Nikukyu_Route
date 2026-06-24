@@ -824,7 +824,7 @@ export default function App() {
         data.hiddenMarkers = [...new Set([...(data.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
         data.hiddenMarkerTypes = [...new Set([...(data.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
       }
-      setRoute(data);
+      setRouteWithGlobalDefaults(data);
       if (data.markerScale !== undefined) {
         setMarkerScale(data.markerScale);
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
@@ -839,14 +839,14 @@ export default function App() {
       DataManager.deleteFromLocalStorage(id);
       refreshSavesList();
       if (route.id === id) {
-        setRoute(DEFAULT_ROUTE(id));
+        setRouteWithGlobalDefaults(DEFAULT_ROUTE(id));
       }
     }
   };
 
   const createNewPlan = () => {
     if (window.confirm('Create a new route plan? Unsaved changes will be lost.')) {
-      setRoute(DEFAULT_ROUTE(`route_${Date.now()}`));
+      setRouteWithGlobalDefaults(DEFAULT_ROUTE(`route_${Date.now()}`));
     }
   };
 
@@ -979,7 +979,7 @@ export default function App() {
             importedData.hiddenMarkers = [...new Set([...importedData.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
             importedData.hiddenMarkerTypes = [...new Set([...importedData.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
           }
-          setRoute(importedData);
+          setRouteWithGlobalDefaults(importedData);
           if (importedData.markerScale !== undefined) {
             setMarkerScale(importedData.markerScale);
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
@@ -1269,10 +1269,6 @@ export default function App() {
                       color: isTypeHidden ? 'var(--text-muted)' : meta.color
                     }}
                     onClick={() => {
-                      const current = route.hiddenMarkerTypes || [];
-                      const next = isTypeHidden
-                        ? current.filter(x => x !== t)
-                        : [...current, t];
                       if (isTypeHidden) {
                         handleShowGlobalMarkerType(t);
                       } else {
