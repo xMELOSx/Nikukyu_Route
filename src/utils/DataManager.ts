@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext';
 
 export interface Point {
   x: number;
@@ -34,6 +34,7 @@ export interface HeistMarker {
   infoMediaUrl?: string;  // For info markers: URL to image, webm or X post
   infoMediaType?: 'image' | 'webm' | 'x-embed'; // For info markers: type of media
   infoExpanded?: boolean; // For info markers: whether details are expanded in presentation mode
+  noteExpanded?: boolean; // For note markers: whether popup is expanded in presentation mode
   infoLabel?: string;     // For info markers: short label displayed under the pin
   bossDrops?: string[];   // For boss markers: list of drop items
   bossDurationSeconds?: number; // For boss markers: duration in seconds
@@ -123,7 +124,10 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   gpicking: { emoji: '🔑', label: 'PICKING (GLOBAL)', color: '#ffe600' },
   glong_picking: { emoji: '🔐', label: 'L-PICKING (GLOBAL)', color: '#ffaa00' },
   iwarp: { emoji: '🌀', label: 'I-WARP', color: '#ff00ff' },
-  text: { emoji: 'T', label: 'TEXT', color: '#ffffff' }
+  text: { emoji: 'T', label: 'TEXT', color: '#ffffff' },
+  iinfo: { emoji: 'ⓘ', label: 'I-INFO', color: '#4fc3f7' },
+  inote: { emoji: '📝', label: 'I-MEMO', color: '#39ff14' },
+  itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' }
 };
 
 // Preset Maps metadata with local paths

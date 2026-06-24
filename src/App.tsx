@@ -578,9 +578,9 @@ export default function App() {
     if (shouldPushHistory) {
       pushHistory(route.strokes, route.markers, globalMarkers);
     }
-    const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
-    const newGlobal = newMarkers.filter(m => !isIndiv(m.type));
-    const newIndividual = newMarkers.filter(m => isIndiv(m.type));
+    const isIndivType = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+    const newGlobal = newMarkers.filter(m => !isIndivType(m.type));
+    const newIndividual = newMarkers.filter(m => isIndivType(m.type));
 
     setGlobalMarkers(newGlobal);
     localStorage.setItem('heist_global_markers', JSON.stringify(newGlobal));
@@ -730,7 +730,7 @@ export default function App() {
       }
       if (routeData.markers) {
         data.markers = data.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
+        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
           if (updated.type === 'boss') {
@@ -883,7 +883,7 @@ export default function App() {
           }
 
           importedData.markers = importedData.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
+          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
           const planIndiv = importedData.markers.filter(m => isIndiv(m.type)).map(m => {
             const updated = { ...m, floor: 'main' as FloorType };
             if (updated.type === 'boss') {
@@ -1251,9 +1251,44 @@ export default function App() {
 
           {/* Marker Type Visibility Toggles */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
-            <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-              {(['cardkey', 'eh', 'rare', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
+            <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span>MARKER VISIBILITY</span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
+                  onClick={() => {
+                    const allTypes: MarkerType[] = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'];
+                    allTypes.forEach(t => {
+                      if ((route.hiddenMarkerTypes || []).includes(t)) {
+                        handleShowGlobalMarkerType(t);
+                      }
+                    });
+                  }}
+                >
+                  ALL ON
+                </button>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
+                  onClick={() => {
+                    const allTypes: MarkerType[] = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'];
+                    allTypes.forEach(t => {
+                      if (!(route.hiddenMarkerTypes || []).includes(t)) {
+                        handleHideGlobalMarkerType(t);
+                      }
+                    });
+                  }}
+                >
+                  ALL OFF
+                </button>
+              </div>
+            </div>
+
+            {/* Global marker type toggles */}
+            <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold', marginBottom: '4px' }}>GLOBAL:</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+              {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                 const meta = MARKER_META[t];
                 const isTypeHidden = (route.hiddenMarkerTypes || []).includes(t);
                 return (
@@ -1265,8 +1300,43 @@ export default function App() {
                       fontSize: '9px',
                       clipPath: 'none',
                       opacity: isTypeHidden ? 0.4 : 1,
-                      borderColor: isTypeHidden ? 'var(--text-muted)' : meta.color,
-                      color: isTypeHidden ? 'var(--text-muted)' : meta.color
+                      borderColor: isTypeHidden ? '#555' : meta.color,
+                      color: isTypeHidden ? '#555' : meta.color
+                    }}
+                    onClick={() => {
+                      if (isTypeHidden) {
+                        handleShowGlobalMarkerType(t);
+                      } else {
+                        handleHideGlobalMarkerType(t);
+                      }
+                    }}
+                  >
+                    {meta.emoji} {meta.label.split(' ')[0]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Separator */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 8px' }} />
+
+            {/* Individual marker type toggles */}
+            <div style={{ fontSize: '10px', color: '#ff6b9d', fontWeight: 'bold', marginBottom: '4px' }}>INDIVIDUAL:</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                const meta = MARKER_META[t];
+                const isTypeHidden = (route.hiddenMarkerTypes || []).includes(t);
+                return (
+                  <button
+                    key={t}
+                    className="btn-cyber"
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '9px',
+                      clipPath: 'none',
+                      opacity: isTypeHidden ? 0.4 : 1,
+                      borderColor: isTypeHidden ? '#555' : meta.color,
+                      color: isTypeHidden ? '#555' : meta.color
                     }}
                     onClick={() => {
                       if (isTypeHidden) {
@@ -1452,7 +1522,7 @@ export default function App() {
               </div>
 
               <div className="marker-list">
-                {(['cardkey', 'eh', 'rare', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
+                {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1482,7 +1552,7 @@ export default function App() {
               </div>
 
               <div className="marker-list">
-                {(['battle', 'picking', 'long_picking', 'iwarp', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1563,7 +1633,7 @@ export default function App() {
             return (
               <div className="panel-section" style={{ borderTop: '1px solid rgba(79, 195, 247, 0.15)', paddingTop: '6px' }}>
                 <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>ℹ️ INFO PINS</span>
+                  <span>ℹ️ INFO</span>
                   <span style={{ fontSize: '10px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold' }}>{allInfos.filter(m => m.infoExpanded).length}/{allInfos.length}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>

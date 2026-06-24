@@ -233,7 +233,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp'].includes(type);
+  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+  // Helpers to check type family (global or individual variant)
+  const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
+  const isNoteType = (type: string) => type === 'note' || type === 'inote';
+  const isTextType = (type: string) => type === 'text' || type === 'itext';
 
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(1);
@@ -969,9 +973,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const isPresenterModeForGlobal = !isEditMode;
     if (isPresenterModeForGlobal) {
       // Info toggle in presentation mode
-      if (m.type === 'info') {
+      if (isInfoType(m.type)) {
         onMarkersChange(
           markers.map(mk => mk.id === m.id ? { ...mk, infoExpanded: !mk.infoExpanded } : mk)
+        );
+        return;
+      }
+      // Note toggle in presentation mode
+      if (isNoteType(m.type)) {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, noteExpanded: !mk.noteExpanded } : mk)
         );
         return;
       }
@@ -1113,16 +1124,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               popupDirection: popupDirection,
               popupOffset: popupOffset
             } as any;
-            if (m.type === 'info' || m.type === 'boss') {
+            if (isInfoType(m.type) || m.type === 'boss') {
               updated.popupWidth = popupWidth;
               updated.popupHeight = popupHeight;
             }
-            if (m.type === 'info') {
+            if (isInfoType(m.type)) {
               updated.infoLabel = infoLabel;
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
             }
-            if (m.type === 'text') {
+            if (isTextType(m.type)) {
               updated.textColor = textColor;
               updated.textSize = textSize;
               updated.textScaleWithMap = textScaleWithMap;
@@ -1374,7 +1385,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
           {/* Guide lines from pins to their corresponding draggable popups */}
           {markers
-            .filter(m => (m.type === 'info' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
+            .filter(m => (isInfoType(m.type) || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id);
               if (isHidden && !isEditMode) return null;
@@ -1382,7 +1393,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
 
-              const isVisible = (m.type === 'info' && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+              const isVisible = (isInfoType(m.type) && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
                 || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
                 || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
                 || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
@@ -1600,7 +1611,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <span>ⓘ</span> {meta.label}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
                         {!isEditMode && (
                           <button 
@@ -1644,6 +1655,109 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                   )}
 
+                  {/* Note popup in Presentation Mode */}
+                  {(!isEditMode && m.type === 'note' && m.noteExpanded) && (
+                    <div
+                      className="info-marker-popup"
+                      style={getPopupStyle(
+                        m,
+                        m.popupOffset || { x: 0, y: -100 },
+                        m.popupWidth || 300,
+                        m.popupHeight || 0,
+                        meta.color
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>📝</span> MEMO
+                        </span>
+                        <button
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, noteExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="info-popup-content">
+                        {m.note.trim() && (
+                          <div className="info-popup-desc">
+                            {m.note}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Note (MEMO) inline editing popup near the pin */}
+                  {isEditMode && activeNoteMarkerId === m.id && m.type === 'note' && (
+                    <div
+                      className="info-marker-popup"
+                      style={{
+                        ...getPopupStyle(
+                          m,
+                          popupOffset,
+                          350,
+                          popupHeight || 0,
+                          meta.color
+                        ),
+                        minHeight: '80px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>📝</span> MEMO
+                          <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>
+                        </span>
+                        <button
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveNote();
+                            setActiveNoteMarkerId(null);
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div style={{ padding: '6px 0' }}>
+                        <textarea
+                          style={{
+                            width: '100%',
+                            minHeight: '60px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(79,195,247,0.3)',
+                            borderRadius: '4px',
+                            color: '#fff',
+                            fontSize: '12px',
+                            padding: '6px',
+                            resize: 'vertical',
+                            fontFamily: 'inherit'
+                          }}
+                          placeholder="メモを入力..."
+                          value={noteText}
+                          onChange={(e) => setNoteText(e.target.value)}
+                          onBlur={() => handleSaveNote()}
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Boss Details Popup in Presentation Mode or Preview in Edit Mode */}
                   {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'boss')) && (
                     <div 
@@ -1664,7 +1778,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <span>😈</span> {m.note.trim() ? m.note : 'BOSS STATUS'}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
                         {!isEditMode && (
                           <button 
@@ -1683,7 +1797,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <div className="info-popup-content">
                         {/* Drops display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>落としやすいアイテム (Drops):</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>ボスドロップ:</span>
                           {m.bossDrops && m.bossDrops.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {m.bossDrops.map(item => (
@@ -1693,7 +1807,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               ))}
                             </div>
                           ) : (
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>設定なし</span>
+                            <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>設定なし</span>
                           )}
                         </div>
 
@@ -1716,7 +1830,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px', marginTop: '4px' }}>
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
                                   className="btn-cyber danger" 
@@ -1774,7 +1888,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <span>⚔️</span> {m.note.trim() ? m.note : 'BATTLE STATUS'}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
                         {!isEditMode && (
                           <button 
@@ -1813,7 +1927,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
                                   className="btn-cyber danger" 
@@ -1872,7 +1986,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <span>{meta.emoji}</span> {m.note.trim() ? m.note : `${meta.label} STATUS`}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(Drag Header to Move)</span>}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
                         {!isEditMode && (
                           <button 
@@ -1958,7 +2072,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                         {/* Duration settings - read-only display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間 (Duration):</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
                           <div style={{ fontSize: '14px', color: (
                             (m.type === 'gpicking' || m.type === 'glong_picking')
                               ? (((m.type === 'glong_picking' ? longPickingCustomDurations[m.id] : pickingCustomDurations[m.id]) === 0) || (m.pickingPicky))
@@ -2053,12 +2167,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           
           {activeNoteMarker.type === 'info' && (
             <div style={{ marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>ラベル (LABEL)</label>
+              <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>ラベル</label>
               <input
                 type="text"
                 className="input-cyber"
                 style={{ width: '100%', fontSize: '11px', padding: '4px 6px' }}
-                placeholder="Pin title (shown on top)"
+                placeholder="ピンのタイトル（上部に表示）"
                 value={infoLabel}
                 onChange={(e) => setInfoLabel(e.target.value)}
               />
@@ -2066,7 +2180,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           <textarea
-            placeholder={activeNoteMarker.type === 'info' ? '説明テキスト (DESCRIPTION)' : 'Write route descriptions or heist tactics...'}
+            placeholder={activeNoteMarker.type === 'info' ? '説明テキスト' : 'ルートのメモや攻略情報を記入...'}
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             autoFocus
@@ -2075,7 +2189,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Info marker media URL & type editing */}
           {activeNoteMarker.type === 'info' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ATTACHED MEDIA:</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>添付メディア:</div>
               
               <div style={{ display: 'flex', gap: '4px' }}>
                 {(['image', 'webm', 'x-embed'] as const).map(t => (
@@ -2109,10 +2223,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Text marker color & size editing */}
           {activeNoteMarker.type === 'text' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 255, 255, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>TEXT SETTINGS:</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>テキスト設定:</div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Color:</label>
+                <label style={{ fontSize: '10px', color: '#b0b0b0' }}>色:</label>
                 <input
                   type="color"
                   value={textColor}
@@ -2129,8 +2243,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
-                  <span>Size:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
+                  <span>サイズ:</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{textSize}px</span>
                 </div>
                 <input
@@ -2143,7 +2257,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                 />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#b0b0b0', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={textScaleWithMap}
@@ -2158,7 +2272,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Boss marker drops & duration editing */}
           {activeNoteMarker.type === 'boss' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 0, 85, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>BOSS DROPS:</div>
+              <div style={{ fontSize: '10px', color: '#ff6b9d' }}>ボスドロップ:</div>
 
               {/* Drops List */}
               {bossDrops.length > 0 ? (
@@ -2176,7 +2290,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontStyle: 'italic' }}>登録アイテムなし</div>
+                <div style={{ fontSize: '9px', color: '#666', fontStyle: 'italic' }}>登録アイテムなし</div>
               )}
 
               {/* Custom Drop Input */}
@@ -2223,12 +2337,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               {/* Duration Setting */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
+                <div style={{ fontSize: '10px', color: '#ff6b9d', fontWeight: 'bold' }}>所要時間</div>
                 
                 {/* Global Default Duration */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
+                    <span style={{ fontSize: '10px', color: '#b0b0b0' }}>デフォルト:</span>
                     <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
                       {Math.floor(bossDurationSeconds / 60)}分 {bossDurationSeconds % 60}秒
                     </span>
@@ -2242,7 +2356,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       value={bossDurationSeconds}
                       onChange={(e) => setBossDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
                     />
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                    <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
                   </div>
                 </div>
 
@@ -2269,7 +2383,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   {useBossCustomDuration && (
                     <div style={{ marginTop: '4px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
                         <span style={{ fontSize: '11px', color: 'var(--red-neon)', fontWeight: 'bold' }}>
                           {Math.floor((bossCustomDurationVal || 0) / 60)}分 {(bossCustomDurationVal || 0) % 60}秒
                         </span>
@@ -2283,7 +2397,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           value={bossCustomDurationVal || 0}
                           onChange={(e) => setBossCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
                         />
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
                       </div>
                     </div>
                   )}
@@ -2298,14 +2412,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             return (
               <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
+                  <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>所要時間</div>
                   
                   {isGlobal ? (
                     <>
                       {/* Global Default Duration */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>デフォルト (グローバル):</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>デフォルト:</span>
                           <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
                             {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                           </span>
@@ -2319,7 +2433,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             value={battleDurationSeconds}
                             onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
                           />
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
                         </div>
                       </div>
 
@@ -2346,7 +2460,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {useBattleCustomDuration && (
                           <div style={{ marginTop: '4px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>個別設定値:</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
                               <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
                                 {Math.floor((battleCustomDurationVal || 0) / 60)}分 {(battleCustomDurationVal || 0) % 60}秒
                               </span>
@@ -2360,7 +2474,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 value={battleCustomDurationVal || 0}
                                 onChange={(e) => setBattleCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
                               />
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
                             </div>
                           </div>
                         )}
@@ -2370,7 +2484,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     /* Individual Pin Duration */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>所要時間:</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
                         <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
                           {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                         </span>
@@ -2384,7 +2498,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           value={battleDurationSeconds}
                           onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
                         />
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
                       </div>
                     </div>
                   )}
@@ -2397,7 +2511,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {(activeNoteMarker.type === 'picking' || activeNoteMarker.type === 'gpicking' || activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>所要時間 (DURATION)</div>
+                <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>所要時間</div>
                 
                 {/* Picky Checkbox */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(57, 255, 20, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(57, 255, 20, 0.15)', marginBottom: '4px' }}>
@@ -2463,25 +2577,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>SCROLL TARGET:</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>Pan/zoom the map freely, then click below to capture this view.</div>
+            <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>スクロールターゲット:</div>
+            <div style={{ fontSize: '9px', color: '#b0b0b0', marginBottom: '4px' }}>マップを自由に移動・ズームしてから、以下をクリックでこのビューを記録。</div>
             {activeNoteMarker.scrollConfig ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ fontSize: '10px', color: 'var(--green-neon)' }}>
-                  ✓ Registered (X: {Math.round(activeNoteMarker.scrollConfig.x)}, Y: {Math.round(activeNoteMarker.scrollConfig.y)}, Z: {activeNoteMarker.scrollConfig.zoom.toFixed(2)}x)
+                  ✓ 登録済み (X: {Math.round(activeNoteMarker.scrollConfig.x)}, Y: {Math.round(activeNoteMarker.scrollConfig.y)}, Z: {activeNoteMarker.scrollConfig.zoom.toFixed(2)}x)
                 </div>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button className="btn-cyber" style={{ padding: '2px 6px', fontSize: '9px', flex: 1 }} onClick={handleSetScrollTarget}>
-                    Update
+                    更新
                   </button>
                   <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px', flex: 1 }} onClick={handleClearScrollTarget}>
-                    Clear
+                    クリア
                   </button>
                 </div>
               </div>
             ) : (
               <button className="btn-cyber success" style={{ padding: '4px 8px', fontSize: '10px', width: '100%' }} onClick={handleSetScrollTarget}>
-                Set Current View as Target
+                現在のビューをターゲットに設定
               </button>
             )}
           </div>
@@ -2504,8 +2618,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 />
                 🔒 常時起動 (Always On) — リセット・切り替えの影響を受けない
               </label>
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Status: {activeNoteMarker.phoneLocked ? '🔒 Locked (Always Active)' : (activeNoteMarker.phoneActive ? '📞 Active' : '☎ Inactive')}
+              <div style={{ fontSize: '9px', color: '#b0b0b0', marginTop: '4px' }}>
+                ステータス: {activeNoteMarker.phoneLocked ? '🔒 ロック中 (常時有効)' : (activeNoteMarker.phoneActive ? '📞 有効' : '☎ 無効')}
               </div>
             </div>
           )}
@@ -2516,14 +2630,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const canLink = true;
             return (
               <div style={{ marginTop: '8px', borderTop: `1px dashed rgba(${(activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? '255, 0, 255' : '255, 170, 0'}, 0.3)`, paddingTop: '8px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>
                   {activeNoteMarker.type === 'iwarp'
-                    ? '🌀 WARP TARGET (Unidirectional):'
-                    : '🔗 LINK TARGET:'}
+                    ? '🌀 ワープ先（片道）:'
+                    : '🔗 リンク先:'}
                 </div>
                 {/* Show incoming link info if any */}
                 {conn.hasLink && conn.partner && !activeNoteMarker.linkedWarpId && (
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', padding: '4px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '10px', color: '#b0b0b0', marginBottom: '4px', padding: '4px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
                     ← 来たリンク: {conn.partner.note.trim() ? conn.partner.note : `#${conn.partner.id.substring(conn.partner.id.length - 4)}`}
                   </div>
                 )}
@@ -2640,8 +2754,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 {/* Waypoint controls - visible when connection exists */}
                 {conn.hasLink && conn.primary && conn.partner && (
                   <>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '4px' }}>
-                      経由点操作 (WAYPOINTS):
+                    <div style={{ fontSize: '10px', color: '#7ec8e3', marginTop: '8px', marginBottom: '4px' }}>
+                      経由点操作:
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
@@ -2733,7 +2847,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Appearance (Direction & Size) configuration for Info & Boss markers */}
           {(activeNoteMarker.type === 'info' || activeNoteMarker.type === 'boss') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ポップアップ表示設定 (APPEARANCE):</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>ポップアップ表示設定:</div>
               
               {/* Reset offset button */}
               <button
@@ -2747,7 +2861,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               {/* Width slider */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
                   <span>ポップアップの幅:</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupWidth}px</span>
                 </div>
@@ -2764,7 +2878,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               {/* Height slider */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
                   <span>ポップアップの高さ:</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupHeight === 0 ? 'AUTO' : `${popupHeight}px`}</span>
                 </div>
