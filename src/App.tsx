@@ -1367,7 +1367,7 @@ export default function App() {
 
           {/* Rooms and Zones List */}
           <div className="panel-section">
-            <div className="panel-title">1. ROOMS & ZONES (QUICK PAN)</div>
+            <div className="panel-title">階層移動</div>
 
             <div className="saves-list" style={{ maxHeight: '175px' }}>
               {globalMarkers.filter(m => m.type === 'room').length === 0 ? (
@@ -1400,7 +1400,7 @@ export default function App() {
           {/* Tool Mode (Edit Mode only) */}
           {isEditMode && (
             <div className="panel-section">
-              <div className="panel-title">2. TOOL MODE</div>
+              <div className="panel-title">モード選択</div>
               <div className="tool-grid">
                 {isEditMode && (
                   <>
@@ -1528,7 +1528,7 @@ export default function App() {
           {/* Global Markers: Only editable in Edit Mode and from Localhost */}
           {isEditMode && isLocal && (
             <div className="panel-section">
-              <div className="panel-title">4. MAP MARKERS (GLOBAL)</div>
+              <div className="panel-title">マーカー(グローバル)</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 Shared across all plans.
               </div>
@@ -1558,7 +1558,7 @@ export default function App() {
           {/* Individual Markers: Editable only in Edit mode */}
           {isEditMode && (
             <div className="panel-section">
-              <div className="panel-title">5. MAP MARKERS (INDIVIDUAL)</div>
+              <div className="panel-title">マーカー</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 Saved only in this plan.
               </div>

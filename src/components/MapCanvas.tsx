@@ -290,6 +290,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
+  const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
 
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
   const targetZoomRef = useRef<number>(1);
@@ -2186,6 +2187,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             autoFocus
           />
 
+          {activeNoteMarker && (
+            <button
+              type="button"
+              onClick={() => setNoteSettingsExpanded(!noteSettingsExpanded)}
+              style={{
+                width: '100%',
+                padding: '4px 8px',
+                fontSize: '10px',
+                background: 'rgba(0, 255, 255, 0.05)',
+                border: '1px solid rgba(0, 255, 255, 0.15)',
+                borderRadius: '4px',
+                color: 'var(--cyan-neon)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: '6px'
+              }}
+            >
+              <span>▼ 詳細設定</span>
+              <span style={{ fontSize: '9px', opacity: 0.6 }}>{noteSettingsExpanded ? '折りたたむ' : '展開する'}</span>
+            </button>
+          )}
+
+          {noteSettingsExpanded && activeNoteMarker && (
+          <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(0, 255, 255, 0.15)', paddingTop: '8px' }}>
+
           {/* Info marker media URL & type editing */}
           {isInfoType(activeNoteMarker.type) && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2893,6 +2921,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 />
               </div>
             </div>
+          )}
+
+          </div>
           )}
 
           <div className="note-popover-buttons" style={{ marginTop: '8px' }}>
