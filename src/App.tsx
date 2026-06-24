@@ -1251,42 +1251,32 @@ export default function App() {
 
           {/* Marker Type Visibility Toggles */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
-            <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <span>MARKER VISIBILITY</span>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button
-                  className="btn-cyber"
-                  style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
-                  onClick={() => {
-                    const allTypes: MarkerType[] = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'];
-                    allTypes.forEach(t => {
-                      if ((route.hiddenMarkerTypes || []).includes(t)) {
-                        handleShowGlobalMarkerType(t);
-                      }
-                    });
-                  }}
-                >
-                  ALL ON
-                </button>
-                <button
-                  className="btn-cyber"
-                  style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
-                  onClick={() => {
-                    const allTypes: MarkerType[] = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'];
-                    allTypes.forEach(t => {
-                      if (!(route.hiddenMarkerTypes || []).includes(t)) {
-                        handleHideGlobalMarkerType(t);
-                      }
-                    });
-                  }}
-                >
-                  ALL OFF
-                </button>
-              </div>
-            </div>
+            <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
 
             {/* Global marker type toggles */}
-            <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold', marginBottom: '4px' }}>GLOBAL:</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <div style={{ fontSize: '12px', color: '#7ec8e3', fontWeight: 'bold' }}>GLOBAL:</div>
+              <div style={{ display: 'flex', gap: '3px' }}>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
+                  onClick={() => {
+                    (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                      if ((route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
+                    });
+                  }}
+                >ALL ON</button>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
+                  onClick={() => {
+                    (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                      if (!(route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
+                    });
+                  }}
+                >ALL OFF</button>
+              </div>
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
               {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                 const meta = MARKER_META[t];
@@ -1297,7 +1287,7 @@ export default function App() {
                     className="btn-cyber"
                     style={{
                       padding: '2px 6px',
-                      fontSize: '9px',
+                      fontSize: '10px',
                       clipPath: 'none',
                       opacity: isTypeHidden ? 0.4 : 1,
                       borderColor: isTypeHidden ? '#555' : meta.color,
@@ -1321,7 +1311,29 @@ export default function App() {
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 8px' }} />
 
             {/* Individual marker type toggles */}
-            <div style={{ fontSize: '10px', color: '#ff6b9d', fontWeight: 'bold', marginBottom: '4px' }}>INDIVIDUAL:</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <div style={{ fontSize: '12px', color: '#ff6b9d', fontWeight: 'bold' }}>INDIVIDUAL:</div>
+              <div style={{ display: 'flex', gap: '3px' }}>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
+                  onClick={() => {
+                    (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).forEach(t => {
+                      if ((route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
+                    });
+                  }}
+                >ALL ON</button>
+                <button
+                  className="btn-cyber"
+                  style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
+                  onClick={() => {
+                    (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).forEach(t => {
+                      if (!(route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
+                    });
+                  }}
+                >ALL OFF</button>
+              </div>
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
               {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                 const meta = MARKER_META[t];
@@ -1332,7 +1344,7 @@ export default function App() {
                     className="btn-cyber"
                     style={{
                       padding: '2px 6px',
-                      fontSize: '9px',
+                      fontSize: '10px',
                       clipPath: 'none',
                       opacity: isTypeHidden ? 0.4 : 1,
                       borderColor: isTypeHidden ? '#555' : meta.color,
@@ -1775,10 +1787,10 @@ export default function App() {
           style={{ display: rightSidebarCollapsed ? 'none' : 'flex' }}
         >
           <div className="panel-section">
-            <div className="panel-title">ROUTE PROFILE</div>
+            <div className="panel-title">ルート計画</div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>PLAN NAME</label>
+              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>プラン名</label>
               <input
                 type="text"
                 className="input-cyber"
@@ -1787,7 +1799,7 @@ export default function App() {
                 disabled={!isEditMode}
               />
 
-              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>ESTIMATED CASH REWARD</label>
+              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>想定獲得ファンス</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
                 <input
@@ -1847,7 +1859,7 @@ export default function App() {
                 </button>
               )}
 
-              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>PLANNING NOTES</label>
+              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>備考</label>
               <textarea
                 className="textarea-cyber"
                 placeholder="Write overall heist instructions..."

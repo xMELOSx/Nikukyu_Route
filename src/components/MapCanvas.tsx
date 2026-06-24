@@ -1113,7 +1113,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     startSmoothScroll({ x: 0, y: 0 }, 1);
   };
 
-  const handleSaveNote = () => {
+  const handleSaveNote = (closePanel = true) => {
     if (activeNoteMarkerId) {
       onMarkersChange(
         markers.map(m => {
@@ -1203,7 +1203,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
 
-      setActiveNoteMarkerId(null);
+      if (closePanel) setActiveNoteMarkerId(null);
     }
   };
 
@@ -1443,7 +1443,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
               const isStairs = m.type === 'stairs';
               const isPhone = m.type === 'phone';
-              const isText = m.type === 'text';
+              const isText = isTextType(m.type);
               const isLargePin = isWarp || isStairs;
               const meta = MARKER_META[m.type];
               // Dynamic emoji for phone markers
@@ -1457,7 +1457,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 return (
                   <div
                     key={m.id}
-                    className={`map-marker ${isHidden ? 'hidden-marker-pin' : ''}`}
+                    className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
                     data-note={m.note || 'Text'}
                     style={{
                       position: 'absolute',
@@ -1487,8 +1487,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <div
                   key={m.id}
-                  className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden ? 'hidden-marker-pin' : ''}`}
-                  data-note={m.type === 'info' ? (m.infoLabel?.trim() || 'Info Pin') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
+                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                    data-note={isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
@@ -1512,7 +1512,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   >
                     {displayEmoji}
                   </div>
-                  {showMarkerLabels && (m.note.trim() || (m.type === 'info' && m.infoLabel?.trim())) && !isLargePin && (isEditMode || m.type !== 'info') && (
+                  {showMarkerLabels && (m.note.trim() || (isInfoType(m.type) && m.infoLabel?.trim())) && !isLargePin && (isEditMode || !isInfoType(m.type)) && (
                     <div 
                       className="map-marker-label"
                       style={{
@@ -1525,7 +1525,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         boxShadow: `0 ${2 * scaleMultiplier}px ${5 * scaleMultiplier}px rgba(0, 0, 0, 0.5)`
                       }}
                     >
-                      {m.type === 'info' ? (m.infoLabel?.trim() || m.note) : m.note}
+                      {isInfoType(m.type) ? (m.infoLabel?.trim() || m.note) : m.note}
                     </div>
                   )}
                 </div>
@@ -1592,7 +1592,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <React.Fragment key={`popups-${m.id}`}>
                   {/* Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && m.type === 'info' && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'info')) && (
+                  {((!isEditMode && isInfoType(m.type) && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && isInfoType(m.type))) && (
                     <div 
                       className="info-marker-popup"
                       style={getPopupStyle(
@@ -1656,7 +1656,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Note popup in Presentation Mode */}
-                  {(!isEditMode && m.type === 'note' && m.noteExpanded) && (
+                  {(!isEditMode && isNoteType(m.type) && m.noteExpanded) && (
                     <div
                       className="info-marker-popup"
                       style={getPopupStyle(
@@ -1699,7 +1699,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Note (MEMO) inline editing popup near the pin */}
-                  {isEditMode && activeNoteMarkerId === m.id && m.type === 'note' && (
+                  {isEditMode && activeNoteMarkerId === m.id && isNoteType(m.type) && (
                     <div
                       className="info-marker-popup"
                       style={{
@@ -1751,7 +1751,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           placeholder="メモを入力..."
                           value={noteText}
                           onChange={(e) => setNoteText(e.target.value)}
-                          onBlur={() => handleSaveNote()}
+                          onBlur={() => handleSaveNote(false)}
                           autoFocus
                         />
                       </div>
@@ -2165,7 +2165,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             })()}
           </div>
           
-          {activeNoteMarker.type === 'info' && (
+          {isInfoType(activeNoteMarker.type) && (
             <div style={{ marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>ラベル</label>
               <input
@@ -2180,14 +2180,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           <textarea
-            placeholder={activeNoteMarker.type === 'info' ? '説明テキスト' : 'ルートのメモや攻略情報を記入...'}
+            placeholder={isInfoType(activeNoteMarker.type) ? '説明テキスト' : 'ルートのメモや攻略情報を記入...'}
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             autoFocus
           />
 
           {/* Info marker media URL & type editing */}
-          {activeNoteMarker.type === 'info' && (
+          {isInfoType(activeNoteMarker.type) && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: '#7ec8e3' }}>添付メディア:</div>
               
@@ -2221,7 +2221,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Text marker color & size editing */}
-          {activeNoteMarker.type === 'text' && (
+          {isTextType(activeNoteMarker.type) && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 255, 255, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: '#7ec8e3' }}>テキスト設定:</div>
               
@@ -2845,7 +2845,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           })()}
           
           {/* Appearance (Direction & Size) configuration for Info & Boss markers */}
-          {(activeNoteMarker.type === 'info' || activeNoteMarker.type === 'boss') && (
+          {(isInfoType(activeNoteMarker.type) || activeNoteMarker.type === 'boss') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: '#7ec8e3' }}>ポップアップ表示設定:</div>
               

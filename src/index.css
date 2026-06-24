@@ -447,6 +447,13 @@ button, select, input {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
+/* Editor-only hidden marker: semi-transparent but fully interactive */
+.editor-hidden-marker {
+  opacity: 0.35;
+  filter: grayscale(90%);
+  pointer-events: auto;
+}
+
 /* Note Popover / Modal */
 .note-popover {
   position: absolute;
