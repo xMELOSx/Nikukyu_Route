@@ -92,6 +92,19 @@ export default function App() {
 
   // Global default hidden markers/types (loaded from global_defaults.json at startup)
   const globalDefaultsRef = useRef<{ hiddenMarkers: string[]; hiddenMarkerTypes: string[] }>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
+
+  // Always force-apply global hidden defaults when setting route
+  const setRouteWithGlobalDefaults = (action: RouteData | ((prev: RouteData) => RouteData)) => {
+    setRoute(prev => {
+      const nextRoute = typeof action === 'function' ? action(prev) : action;
+      const gd = globalDefaultsRef.current;
+      return {
+        ...nextRoute,
+        hiddenMarkers: gd.hiddenMarkers || [],
+        hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+      };
+    });
+  };
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
       .then(r => r.ok ? r.json() : null)
@@ -363,7 +376,7 @@ export default function App() {
         const savesList = DataManager.getSavesList();
         if (savesList.length === 0) {
           const migrated = migrateRouteCoordinates(data);
-          setRoute({ ...migrated, id: 'default' });
+          setRouteWithGlobalDefaults({ ...migrated, id: 'default' });
         }
       })
       .catch(() => {
@@ -377,7 +390,7 @@ export default function App() {
             const savesList = DataManager.getSavesList();
             if (savesList.length === 0) {
               const migrated = migrateRouteCoordinates(data);
-              setRoute({ ...migrated, id: 'default' });
+              setRouteWithGlobalDefaults({ ...migrated, id: 'default' });
             }
           })
           .catch(() => {
