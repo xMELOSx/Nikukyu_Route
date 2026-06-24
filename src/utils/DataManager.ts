@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text';
 
 export interface Point {
   x: number;
@@ -53,6 +53,7 @@ export interface HeistMarker {
   warpWaypoints?: Point[]; // For warp/stairs markers: custom path waypoints
   textColor?: string;     // For text markers: color of the text
   textSize?: number;      // For text markers: font size in px
+  textScaleWithMap?: boolean; // For text markers: scale size with map zoom
 }
 
 export interface RouteData {
@@ -72,6 +73,7 @@ export interface RouteData {
   mapVersion?: number; // Version of map coordinate scale (e.g. 2 = 3200x9100)
   markerScale?: number; // Optional scale of markers (e.g. 30 = 100%)
   hiddenMarkers?: string[]; // Global markers hidden in this specific plan
+  hiddenMarkerTypes?: string[]; // Marker types hidden in this plan (e.g. ['eh', 'boss'])
 }
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
@@ -92,6 +94,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   pickingCustomDurations: {},
   longPickingCustomDurations: {},
   hiddenMarkers: [],
+  hiddenMarkerTypes: [],
   createdAt: Date.now(),
   mapVersion: 2
 });
@@ -101,6 +104,7 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   goal: { emoji: '🏁', label: 'ESCAPE AREA', color: '#39ff14' },
   cardkey: { emoji: '💳', label: 'CARD KEY', color: '#39ff14' },
   eh: { emoji: '💎', label: 'EH', color: '#00f0ff' },
+  rare: { emoji: '💴', label: 'RARE', color: '#ffd700' },
   vault: { emoji: '💰', label: 'MDP', color: '#ffe600' },
   boss: { emoji: '😈', label: 'BOSS (MAMON)', color: '#ff0055' },
   phone: { emoji: '☎', label: 'ESCAPE PHONE', color: '#ff00ff' },

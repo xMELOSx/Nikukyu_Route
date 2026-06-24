@@ -42,6 +42,25 @@ export default defineConfig({
                 res.end(JSON.stringify({ success: true }));
               });
             }
+          } else if (urlPath === '/api/global-defaults' || urlPath.endsWith('/api/global-defaults')) {
+            if (req.method === 'GET') {
+              const filePath = path.resolve(__dirname, 'public/global_defaults.json');
+              if (fs.existsSync(filePath)) {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(fs.readFileSync(filePath, 'utf-8'));
+              } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ hiddenMarkers: [], hiddenMarkerTypes: [] }));
+              }
+            } else if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', () => {
+                fs.writeFileSync(path.resolve(__dirname, 'public/global_defaults.json'), body, 'utf-8');
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true }));
+              });
+            }
           } else if (isApiMatch) {
             if (req.method === 'GET') {
               const filePath = path.resolve(__dirname, 'global_markers.json');
@@ -127,6 +146,17 @@ export default defineConfig({
           fs.copyFileSync(helpSrcPath, helpDestPath);
           console.log('Copied global_help.json to dist/ during build');
         }
+
+        const defaultsSrcPath = path.resolve(__dirname, 'public/global_defaults.json');
+        const defaultsDestPath = path.resolve(__dirname, 'dist/global_defaults.json');
+        if (fs.existsSync(defaultsSrcPath)) {
+          const distDir = path.dirname(defaultsDestPath);
+          if (!fs.existsSync(distDir)) {
+            fs.mkdirSync(distDir, { recursive: true });
+          }
+          fs.copyFileSync(defaultsSrcPath, defaultsDestPath);
+          console.log('Copied global_defaults.json to dist/ during build');
+        }
       }
     }
   ],
@@ -140,7 +170,9 @@ export default defineConfig({
         path.resolve(__dirname, 'default_preset.json'),
         '**/default_preset.json',
         path.resolve(__dirname, 'public/global_help.json'),
-        '**/public/global_help.json'
+        '**/public/global_help.json',
+        path.resolve(__dirname, 'public/global_defaults.json'),
+        '**/public/global_defaults.json'
       ]
     }
   }

@@ -241,6 +241,22 @@ export default function App() {
       if (!nextHidden.includes(markerId)) {
         nextHidden.push(markerId);
       }
+      // In global edit mode, also save as default for individual plans
+      if (isLocal) {
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+          .then(r => r.json())
+          .then(data => {
+            const hidden = data.hiddenMarkers || [];
+            if (!hidden.includes(markerId)) {
+              hidden.push(markerId);
+              fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...data, hiddenMarkers: hidden })
+              });
+            }
+          });
+      }
       return {
         ...prev,
         hiddenMarkers: nextHidden
@@ -251,6 +267,19 @@ export default function App() {
   const handleShowGlobalMarker = (markerId: string) => {
     setRoute(prev => {
       const nextHidden = (prev.hiddenMarkers || []).filter(id => id !== markerId);
+      // In global edit mode, also remove from defaults
+      if (isLocal) {
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+          .then(r => r.json())
+          .then(data => {
+            const hidden = (data.hiddenMarkers || []).filter((id: string) => id !== markerId);
+            fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...data, hiddenMarkers: hidden })
+            });
+          });
+      }
       return {
         ...prev,
         hiddenMarkers: nextHidden
@@ -260,7 +289,7 @@ export default function App() {
 
   // Tool Configurations
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('pan');
-  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('goal');
+  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
 
   // Sidebar Collapse Configurations
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
@@ -741,12 +770,29 @@ export default function App() {
       if (!data.hiddenMarkers) {
         data.hiddenMarkers = [];
       }
+      if (!data.hiddenMarkerTypes) {
+        data.hiddenMarkerTypes = [];
+      }
       setRoute(data);
       if (data.markerScale !== undefined) {
         setMarkerScale(data.markerScale);
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
       }
       alert(`Loaded plan: ${data.title}`);
+      // Fetch global defaults and merge for individual plans
+      if (data.id !== 'default') {
+        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+          .then(r => r.json())
+          .then(def => {
+            setRoute(prev => {
+              const mergedH = [...new Set([...(prev.hiddenMarkers || []), ...(def.hiddenMarkers || [])])];
+              const mergedT = [...new Set([...(prev.hiddenMarkerTypes || []), ...(def.hiddenMarkerTypes || [])])];
+              if (mergedH.length === prev.hiddenMarkers?.length && mergedT.length === prev.hiddenMarkerTypes?.length) return prev;
+              return { ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT };
+            });
+          })
+          .catch(() => {});
+      }
     }
   };
 
@@ -887,12 +933,29 @@ export default function App() {
           if (!importedData.hiddenMarkers) {
             importedData.hiddenMarkers = [];
           }
+          if (!importedData.hiddenMarkerTypes) {
+            importedData.hiddenMarkerTypes = [];
+          }
           setRoute(importedData);
           if (importedData.markerScale !== undefined) {
             setMarkerScale(importedData.markerScale);
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
           }
           alert(`Imported successfully: ${importedData.title}`);
+          // Fetch global defaults and merge for imported individual plans
+          if (importedData.id !== 'default') {
+            fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+              .then(r => r.json())
+              .then(def => {
+                setRoute(prev => {
+                  const mergedH = [...new Set([...(prev.hiddenMarkers || []), ...(def.hiddenMarkers || [])])];
+                  const mergedT = [...new Set([...(prev.hiddenMarkerTypes || []), ...(def.hiddenMarkerTypes || [])])];
+                  if (mergedH.length === prev.hiddenMarkers?.length && mergedT.length === prev.hiddenMarkerTypes?.length) return prev;
+                  return { ...prev, hiddenMarkers: mergedH, hiddenMarkerTypes: mergedT };
+                });
+              })
+              .catch(() => {});
+          }
         } else {
           alert('Invalid JSON file format.');
         }
@@ -1027,20 +1090,6 @@ export default function App() {
             <Redo size={14} />
           </button>
 
-          {/* Label Visibility Toggle */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginRight: '5px' }}>
-            <input
-              type="checkbox"
-              checked={showMarkerLabels}
-              onChange={(e) => {
-                setShowMarkerLabels(e.target.checked);
-                localStorage.setItem('heist_show_labels', String(e.target.checked));
-              }}
-              style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-            />
-            🏷️ ラベル表示
-          </label>
-
           {/* Edit / View Presentation Toggle */}
           <button
             className={`btn-cyber ${isEditMode ? 'active' : 'success'}`}
@@ -1134,6 +1183,18 @@ export default function App() {
 
           {/* Pin and Label Sizing Adjuster */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginBottom: '6px' }}>
+              <input
+                type="checkbox"
+                checked={showMarkerLabels}
+                onChange={(e) => {
+                  setShowMarkerLabels(e.target.checked);
+                  localStorage.setItem('heist_show_labels', String(e.target.checked));
+                }}
+                style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+              />
+              🏷️ ラベル表示
+            </label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
                 <span>📌 ピン・ラベル倍率:</span>
@@ -1159,12 +1220,43 @@ export default function App() {
             </div>
           </div>
 
+          {/* Marker Type Visibility Toggles */}
+          <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
+            <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {(['cardkey', 'eh', 'rare', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
+                const meta = MARKER_META[t];
+                const isTypeHidden = (route.hiddenMarkerTypes || []).includes(t);
+                return (
+                  <button
+                    key={t}
+                    className="btn-cyber"
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '9px',
+                      clipPath: 'none',
+                      opacity: isTypeHidden ? 0.4 : 1,
+                      borderColor: isTypeHidden ? 'var(--text-muted)' : meta.color,
+                      color: isTypeHidden ? 'var(--text-muted)' : meta.color
+                    }}
+                    onClick={() => {
+                      const current = route.hiddenMarkerTypes || [];
+                      const next = isTypeHidden
+                        ? current.filter(x => x !== t)
+                        : [...current, t];
+                      setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                    }}
+                  >
+                    {meta.emoji} {meta.label.split(' ')[0]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Rooms and Zones List */}
           <div className="panel-section">
             <div className="panel-title">1. ROOMS & ZONES (QUICK PAN)</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Click to focus room. Set scroll targets on map.
-            </div>
 
             <div className="saves-list" style={{ maxHeight: '175px' }}>
               {globalMarkers.filter(m => m.type === 'room').length === 0 ? (
@@ -1331,7 +1423,7 @@ export default function App() {
               </div>
 
               <div className="marker-list">
-                {(['goal', 'cardkey', 'eh', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
+                {(['cardkey', 'eh', 'rare', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info', 'text'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1495,6 +1587,7 @@ export default function App() {
               ...route.markers
             ]}
             hiddenMarkers={route.hiddenMarkers || []}
+            hiddenMarkerTypes={route.hiddenMarkerTypes || []}
             globalMarkerIds={globalMarkers.map(m => m.id)}
             markerScale={markerScale}
             customBg={route.customBg[currentFloor]}

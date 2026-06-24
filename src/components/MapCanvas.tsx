@@ -127,6 +127,7 @@ interface MapCanvasProps {
   markerScale?: number;
   onHideGlobalMarker?: (id: string) => void;
   hiddenMarkers?: string[];
+  hiddenMarkerTypes?: string[];
   globalMarkerIds?: string[];
   onShowGlobalMarker?: (id: string) => void;
 }
@@ -163,6 +164,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   markerScale = 30,
   onHideGlobalMarker,
   hiddenMarkers = [],
+  hiddenMarkerTypes = [],
   globalMarkerIds = [],
   onShowGlobalMarker
 }) => {
@@ -255,6 +257,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
+  const [textScaleWithMap, setTextScaleWithMap] = useState(false);
   const [warpLinkTargetId, setWarpLinkTargetId] = useState<string>('');
   const [warpLinkMode, setWarpLinkMode] = useState<'idle' | 'selecting-bi' | 'selecting-oneway'>('idle');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
@@ -1047,6 +1050,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setInfoMediaType(m.infoMediaType || 'image');
     setTextColor(m.textColor || '#ffffff');
     setTextSize(m.textSize || 14);
+    setTextScaleWithMap(!!m.textScaleWithMap);
     setBossDrops(m.bossDrops || []);
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
@@ -1120,6 +1124,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (m.type === 'text') {
               updated.textColor = textColor;
               updated.textSize = textSize;
+              updated.textScaleWithMap = textScaleWithMap;
             }
             if (m.type === 'boss') {
               updated.bossDrops = bossDrops;
@@ -1419,7 +1424,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
-              const isHidden = hiddenMarkers.includes(m.id);
+              const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
               if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
 
@@ -1448,10 +1453,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       top: `${m.y}px`,
                       transform: 'translate(-50%, -50%)',
                       color: m.textColor || '#ffffff',
-                      fontSize: `${(m.textSize || 14) * scaleMultiplier}px`,
+                      fontSize: `${m.textScaleWithMap ? (m.textSize || 14) * scaleMultiplier : (m.textSize || 14)}px`,
                       fontWeight: 'bold',
                       textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
-                      whiteSpace: 'nowrap',
+                      whiteSpace: 'pre',
+                      textAlign: 'center',
                       cursor: 'move',
                       pointerEvents: 'auto',
                       opacity: isHidden ? 0.35 : 1,
@@ -2136,6 +2142,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                 />
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={textScaleWithMap}
+                  onChange={(e) => setTextScaleWithMap(e.target.checked)}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                ピン・ラベルと同率で拡大
+              </label>
             </div>
           )}
 
@@ -2540,29 +2555,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <select
-                      className="input-cyber"
-                      style={{ width: '100%', fontSize: '10px', padding: '4px' }}
-                      value={warpLinkTargetId}
-                      disabled={!canLink}
-                      onChange={(e) => setWarpLinkTargetId(e.target.value)}
-                    >
-                      <option value="">-- Select target --</option>
-                      {markers
-                        .filter(m => {
-                          if (m.id === activeNoteMarker.id) return false;
-                          if (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') {
-                            return m.type === 'warp' || m.type === 'iwarp';
-                          }
-                          return m.type === activeNoteMarker.type;
-                        })
-                        .map(m => (
-                          <option key={m.id} value={m.id}>
-                            {(m.type === 'warp' || m.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${m.type === 'iwarp' ? 'iWarp' : m.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
-                          </option>
-                        ))
-                      }
-                    </select>
                     <button
                       className="btn-cyber"
                       style={{ width: '100%', padding: '4px', fontSize: '9px', clipPath: 'none' }}
@@ -2579,6 +2571,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     >
                       {warpLinkMode === 'selecting-oneway' ? '... ターゲットをクリック (片道)' : '→ マップから選択 (片道)'}
                     </button>
+                    <select
+                      className="input-cyber"
+                      style={{ width: '100%', fontSize: '10px', padding: '4px' }}
+                      value={warpLinkTargetId}
+                      disabled={!canLink}
+                      onChange={(e) => setWarpLinkTargetId(e.target.value)}
+                    >
+                      <option value="">-- またはドロップダウンで選択 --</option>
+                      {markers
+                        .filter(m => {
+                          if (m.id === activeNoteMarker.id) return false;
+                          if (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') {
+                            return m.type === 'warp' || m.type === 'iwarp';
+                          }
+                          return m.type === activeNoteMarker.type;
+                        })
+                        .map(m => (
+                          <option key={m.id} value={m.id}>
+                            {(m.type === 'warp' || m.type === 'iwarp') ? '🌀' : '🪜'} {m.note.trim() ? m.note : `${m.type === 'iwarp' ? 'iWarp' : m.type === 'warp' ? 'Warp' : 'Stairs'} #${m.id.substring(m.id.length - 4)}`} (X:{m.x} Y:{m.y})
+                          </option>
+                        ))
+                      }
+                    </select>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }} disabled={!canLink || !warpLinkTargetId} onClick={() => {
                         const partnerId = warpLinkTargetId;
