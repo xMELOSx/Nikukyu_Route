@@ -139,6 +139,7 @@ export default function App() {
     const saved = localStorage.getItem('heist_show_labels');
     return saved !== null ? saved === 'true' : true;
   });
+  const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
 
   // Undo/Redo History States
   const [pastHistory, setPastHistory] = useState<HistoryState[]>([]);
@@ -525,6 +526,9 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
+      }
+      if (e.key === 'Escape') {
+        if (showHelpModal) { setShowHelpModal(false); return; }
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
@@ -1210,9 +1214,33 @@ export default function App() {
 
           </div>
 
-          {/* Pin and Label Sizing Adjuster */}
+          {/* Pin and Label Sizing Adjuster + Marker Visibility */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginBottom: '6px' }}>
+            <button
+              type="button"
+              onClick={() => setMarkerVisExpanded(!markerVisExpanded)}
+              style={{
+                width: '100%',
+                padding: '4px 8px',
+                fontSize: '11px',
+                background: 'rgba(0, 255, 255, 0.05)',
+                border: '1px solid rgba(0, 255, 255, 0.15)',
+                borderRadius: '4px',
+                color: 'var(--cyan-neon)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontWeight: 'bold'
+              }}
+            >
+              <span>🏷️ マーカー表示設定</span>
+              <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{markerVisExpanded ? '▼ 折りたたむ' : '▶ 展開'}</span>
+            </button>
+
+            {markerVisExpanded && (
+            <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginBottom: '6px', marginTop: '8px' }}>
               <input
                 type="checkbox"
                 checked={showMarkerLabels}
@@ -1247,10 +1275,10 @@ export default function App() {
                 <span>最大 (200%)</span>
               </div>
             </div>
-          </div>
 
-          {/* Marker Type Visibility Toggles */}
-          <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
+            {/* Marker Type Visibility Toggles */}
+            <div style={{ marginTop: '8px' }}>
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0' }} />
             <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
 
             {/* Global marker type toggles */}
@@ -1363,6 +1391,9 @@ export default function App() {
                 );
               })}
             </div>
+            </div>
+            </>
+            )}
           </div>
 
           {/* Rooms and Zones List */}
@@ -1529,9 +1560,6 @@ export default function App() {
           {isEditMode && isLocal && (
             <div className="panel-section">
               <div className="panel-title">マーカー(グローバル)</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Shared across all plans.
-              </div>
 
               <div className="marker-list">
                 {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
@@ -1559,9 +1587,6 @@ export default function App() {
           {isEditMode && (
             <div className="panel-section">
               <div className="panel-title">マーカー</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Saved only in this plan.
-              </div>
 
               <div className="marker-list">
                 {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {

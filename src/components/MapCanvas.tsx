@@ -450,6 +450,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeNoteMarkerId) {
+        e.preventDefault();
+        setActiveNoteMarkerId(null);
+        return;
+      }
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
       }
