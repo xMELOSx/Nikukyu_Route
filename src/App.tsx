@@ -93,19 +93,16 @@ export default function App() {
   // Global default hidden markers/types (loaded from global_defaults.json at startup)
   const globalDefaultsRef = useRef<{ hiddenMarkers: string[]; hiddenMarkerTypes: string[] }>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
+    fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
       .then(r => r.ok ? r.json() : null)
       .then(gd => {
         if (!gd) return;
         globalDefaultsRef.current = gd;
-        setRoute(prev => {
-          if (prev.id !== 'default') return prev;
-          return {
-            ...prev,
-            hiddenMarkers: gd.hiddenMarkers || [],
-            hiddenMarkerTypes: gd.hiddenMarkerTypes || []
-          };
-        });
+        setRoute(prev => ({
+          ...prev,
+          hiddenMarkers: gd.hiddenMarkers || [],
+          hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+        }));
       })
       .catch(err => console.error('Failed to load global defaults:', err));
   }, []);
@@ -808,41 +805,18 @@ export default function App() {
       if (!data.hiddenMarkerTypes) {
         data.hiddenMarkerTypes = [];
       }
+      // Merge global defaults for individual plans
       if (data.id !== 'default') {
-        // Always fetch fresh global defaults to avoid stale ref
-        const applyAndLoad = (gd: { hiddenMarkers?: string[]; hiddenMarkerTypes?: string[] }) => {
-          data!.hiddenMarkers = [...new Set([...(data!.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
-          data!.hiddenMarkerTypes = [...new Set([...(data!.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
-          globalDefaultsRef.current = gd;
-          setRoute(data!);
-          if (data!.markerScale !== undefined) {
-            setMarkerScale(data!.markerScale);
-            localStorage.setItem('heist_marker_scale', String(data!.markerScale));
-          }
-          alert(`Loaded plan: ${data!.title}`);
-        };
-        fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-          .then(r => r.ok ? r.json() : null)
-          .then(gd => {
-            if (!gd) {
-              setRoute(data);
-              alert(`Loaded plan: ${data.title}`);
-              return;
-            }
-            applyAndLoad(gd);
-          })
-          .catch(() => {
-            setRoute(data);
-            alert(`Loaded plan: ${data.title}`);
-          });
-      } else {
-        setRoute(data);
-        if (data.markerScale !== undefined) {
-          setMarkerScale(data.markerScale);
-          localStorage.setItem('heist_marker_scale', String(data.markerScale));
-        }
-        alert(`Loaded plan: ${data.title}`);
+        const gd = globalDefaultsRef.current;
+        data.hiddenMarkers = [...new Set([...(data.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])];
+        data.hiddenMarkerTypes = [...new Set([...(data.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
       }
+      setRoute(data);
+      if (data.markerScale !== undefined) {
+        setMarkerScale(data.markerScale);
+        localStorage.setItem('heist_marker_scale', String(data.markerScale));
+      }
+      alert(`Loaded plan: ${data.title}`);
     }
   };
 
