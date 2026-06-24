@@ -10,6 +10,7 @@ import {
   MARKER_META,
   DataManager
 } from './utils/DataManager';
+import { HELP_TABS, type HelpData, fetchHelpData, saveHelpData } from './utils/HelpDataManager';
 import {
   Save,
   Download,
@@ -81,9 +82,9 @@ const migrateRouteCoordinates = (data: RouteData): RouteData => {
 };
 
 export default function App() {
-  const isLocal = window.location.hostname === 'localhost' || 
-                  window.location.hostname === '127.0.0.1' || 
-                  window.location.hostname === '::1';
+  const isLocal = window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '::1';
 
   // Global State: Current Active Heist Plan
   const [route, setRoute] = useState<RouteData>(DEFAULT_ROUTE());
@@ -101,19 +102,9 @@ export default function App() {
   // Presentation / View Mode toggle state
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
   const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
-  const [globalHelpText, setGlobalHelpText] = useState<string>(() => {
-    const saved = localStorage.getItem('heist_global_help_text');
-    if (saved !== null) return saved;
-    return `<h3>🐾 にくきゅう大強盗 仕様 & 出展</h3>
-<p>【基本仕様】<br>
-・猫となって警備網を潜り抜け、お宝を強奪して脱出するシミュレーションプランナーです。<br>
-・各アクションやピンをクリックすると、個別設定や所要時間の確認が行えます。</p>
-
-<p>【著作物出展・クレジット】<br>
-・背景マップ画像・ゲーム仕様等: にくきゅう大強盗チーム / 開発元元データより引用<br>
-・公式Xアカウント: <a href="https://x.com" target="_blank" rel="noopener noreferrer">@x_account</a></p>`;
-  });
+  const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_labels');
     return saved !== null ? saved === 'true' : true;
@@ -298,6 +289,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
+    fetchHelpData().then(data => setHelpTexts(data));
 
     // Fetch default preset on start
     fetch(`${import.meta.env.BASE_URL}api/default-preset`)
@@ -574,10 +566,10 @@ export default function App() {
 
   // Local Storage actions
   const handleSaveToLocal = () => {
-    const routeToSave = { 
-      ...route, 
-      mapVersion: 2, 
-      markerScale: markerScale 
+    const routeToSave = {
+      ...route,
+      mapVersion: 2,
+      markerScale: markerScale
     };
     DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
@@ -604,10 +596,10 @@ export default function App() {
     if (!window.confirm('現在のルートプランを「デフォルトプリセット」としてサーバーに保存しますか？\n(次回新規作成時や、他環境での初期データとして利用されます)')) {
       return;
     }
-    const routeToSave = { 
-      ...route, 
-      mapVersion: 2, 
-      markerScale: markerScale 
+    const routeToSave = {
+      ...route,
+      mapVersion: 2,
+      markerScale: markerScale
     };
     fetch(`${import.meta.env.BASE_URL}api/default-preset`, {
       method: 'POST',
@@ -777,10 +769,10 @@ export default function App() {
 
   // JSON Import / Export
   const handleExportJSON = () => {
-    const routeToExport = { 
-      ...route, 
-      mapVersion: 2, 
-      markerScale: markerScale 
+    const routeToExport = {
+      ...route,
+      mapVersion: 2,
+      markerScale: markerScale
     };
     DataManager.exportToJSON(routeToExport);
   };
@@ -997,7 +989,7 @@ export default function App() {
               clipPath: 'none'
             }}
           >
-            ❓ ヘルプ・出展
+            ❓ ヘルプ
           </button>
         </div>
 
@@ -1070,9 +1062,9 @@ export default function App() {
             <Copy size={16} /> Save as Copy
           </button>
           {isLocal && isEditMode && (
-            <button 
-              className="btn-cyber" 
-              onClick={handleSaveDefaultPreset} 
+            <button
+              className="btn-cyber"
+              onClick={handleSaveDefaultPreset}
               title="Save current plan as server default preset"
               style={{ borderColor: 'var(--yellow-neon, #ffe600)', color: 'var(--yellow-neon, #ffe600)' }}
             >
@@ -1103,14 +1095,14 @@ export default function App() {
       </header>
 
       {/* Main Layout */}
-      <main 
+      <main
         className="main-content"
         style={{
           gridTemplateColumns: `${leftSidebarCollapsed ? '0px' : '280px'} 1fr ${rightSidebarCollapsed ? '0px' : '340px'}`
         }}
       >
         {/* Left Control Panel: Rooms Quick Pan & Drawing/Markers */}
-        <section 
+        <section
           className="sidebar glass-panel"
           style={{ display: leftSidebarCollapsed ? 'none' : 'flex' }}
         >
@@ -1338,7 +1330,7 @@ export default function App() {
                 Shared across all plans.
               </div>
 
-               <div className="marker-list">
+              <div className="marker-list">
                 {(['goal', 'cardkey', 'eh', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'note', 'room', 'warp', 'stairs', 'info'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
@@ -1586,7 +1578,7 @@ export default function App() {
         </section>
 
         {/* Right Sidebar: Plan Profiles & Local Storage Saves */}
-        <section 
+        <section
           className="sidebar-right glass-panel"
           style={{ display: rightSidebarCollapsed ? 'none' : 'flex' }}
         >
@@ -1759,135 +1751,163 @@ export default function App() {
       </main>
 
       {/* Help & Attribution Modal Overlay */}
-      {showHelpModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(5, 7, 10, 0.85)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            backdropFilter: 'blur(8px)'
-          }}
-          onClick={() => setShowHelpModal(false)}
-        >
+      {showHelpModal && (() => {
+        const tabs = HELP_TABS;
+        const currentTabData = tabs.find(t => t.id === helpActiveTab) || tabs[0];
+        const currentText = helpTexts[currentTabData.id] || '';
+        const setCurrentText = isLocal ? (val: string) => {
+          const next = { ...helpTexts, [currentTabData.id]: val };
+          setHelpTexts(next);
+          saveHelpData(next);
+        } : undefined;
+
+        return (
           <div
-            className="glass-panel"
             style={{
-              width: '900px',
-              maxWidth: '95%',
-              height: '85vh',
-              maxHeight: '90%',
-              padding: '25px',
-              borderRadius: '8px',
-              border: '1.5px solid var(--cyan-neon)',
-              boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
-              background: 'rgba(10, 15, 28, 0.98)',
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(5, 7, 10, 0.85)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '15px',
-              pointerEvents: 'auto',
-              color: 'var(--text-primary)'
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              backdropFilter: 'blur(8px)'
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px' }}>
-              <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--cyan-neon)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                ❓ 仕様＆出展
-              </span>
-              <button
-                onClick={() => setShowHelpModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '18px',
-                  cursor: 'pointer'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: '200px' }}>
-              {(isEditMode && isLocal && !isHelpPreviewMode) ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    ※ エディットモード: 以下に仕様や出展をHTMLタグ（aタグ等含む）で自由に編集できます。
-                  </div>
-                  <textarea
-                    value={globalHelpText}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setGlobalHelpText(val);
-                      localStorage.setItem('heist_global_help_text', val);
-                    }}
-                    style={{
-                      width: '100%',
-                      flex: 1,
-                      minHeight: '300px',
-                      background: 'rgba(5, 7, 10, 0.8)',
-                      border: '1px solid rgba(0, 240, 255, 0.3)',
-                      color: 'var(--text-primary)',
-                      padding: '12px',
-                      borderRadius: '4px',
-                      fontFamily: 'Consolas, Monaco, monospace',
-                      fontSize: '13px',
-                      resize: 'none'
-                    }}
-                    placeholder="HTMLタグを使って自由に記述してください（例: <a href='...' target='_blank'>リンク</a>）"
-                  />
-                </div>
-              ) : (
-                <div
-                  className="help-content-view"
+            <div
+              className="glass-panel"
+              style={{
+                width: '900px',
+                maxWidth: '95%',
+                height: '85vh',
+                maxHeight: '90%',
+                padding: '25px',
+                borderRadius: '8px',
+                border: '1.5px solid var(--cyan-neon)',
+                boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
+                background: 'rgba(10, 15, 28, 0.98)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0',
+                pointerEvents: 'auto',
+                color: 'var(--text-primary)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px', marginBottom: '0' }}>
+                <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--cyan-neon)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  ❓ ヘルプ・情報
+                </span>
+                <button
+                  onClick={() => { setShowHelpModal(false); setIsHelpPreviewMode(false); }}
                   style={{
-                    fontSize: '14px',
-                    lineHeight: '1.6',
-                    color: 'var(--text-primary)',
-                    padding: '5px'
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '18px',
+                    cursor: 'pointer'
                   }}
-                  dangerouslySetInnerHTML={{
-                    __html: globalHelpText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。エディットモードで入力してください。</p>'
-                  }}
-                />
-              )}
-            </div>
+                >
+                  ✕
+                </button>
+              </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-              {isEditMode && isLocal ? (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={isHelpPreviewMode}
-                    onChange={(e) => setIsHelpPreviewMode(e.target.checked)}
-                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+              {/* Tab Bar */}
+              <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid rgba(0, 240, 255, 0.15)', flexShrink: 0 }}>
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setHelpActiveTab(tab.id)}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: helpActiveTab === tab.id ? 'bold' : 'normal',
+                      color: helpActiveTab === tab.id ? 'var(--cyan-neon)' : 'var(--text-muted)',
+                      background: helpActiveTab === tab.id ? 'rgba(0, 240, 255, 0.08)' : 'transparent',
+                      border: 'none',
+                      borderBottom: helpActiveTab === tab.id ? '2px solid var(--cyan-neon)' : '2px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab Content */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: '200px', padding: '12px 0' }}>
+                {isEditMode && isLocal && !isHelpPreviewMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      ※ グローバル編集モード: HTMLタグ（aタグ等含む）で自由に編集できます。
+                    </div>
+                    <textarea
+                      value={currentText}
+                      onChange={setCurrentText ? (e) => setCurrentText(e.target.value) : undefined}
+                      style={{
+                        width: '100%',
+                        flex: 1,
+                        minHeight: '300px',
+                        background: 'rgba(5, 7, 10, 0.8)',
+                        border: '1px solid rgba(0, 240, 255, 0.3)',
+                        color: 'var(--text-primary)',
+                        padding: '12px',
+                        borderRadius: '4px',
+                        fontFamily: 'Consolas, Monaco, monospace',
+                        fontSize: '13px',
+                        resize: 'none'
+                      }}
+                      placeholder="HTMLタグを使って自由に記述してください"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="help-content-view"
+                    style={{
+                      fontSize: '14px',
+                      lineHeight: '1.6',
+                      color: 'var(--text-primary)',
+                      padding: '5px'
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'
+                    }}
                   />
-                  👁 プレビュー表示 (HTML表示)
-                </label>
-              ) : (
-                <div />
-              )}
-              <button
-                className="btn-cyber success"
-                onClick={() => {
-                  setShowHelpModal(false);
-                  setIsHelpPreviewMode(false);
-                }}
-                style={{ padding: '6px 16px', fontSize: '12px', clipPath: 'none' }}
-              >
-                {isEditMode ? '保存して閉じる' : '閉じる'}
-              </button>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px', flexShrink: 0 }}>
+                {isEditMode && isLocal ? (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={isHelpPreviewMode}
+                      onChange={(e) => setIsHelpPreviewMode(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    👁 プレビュー表示 (HTML表示)
+                  </label>
+                ) : (
+                  <div />
+                )}
+                <button
+                  className="btn-cyber success"
+                  onClick={() => { setShowHelpModal(false); setIsHelpPreviewMode(false); }}
+                  style={{ padding: '6px 16px', fontSize: '12px', clipPath: 'none' }}
+                >
+                  {isEditMode ? '保存して閉じる' : '閉じる'}
+                </button>
+              </div>
             </div>
           </div>
-
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
