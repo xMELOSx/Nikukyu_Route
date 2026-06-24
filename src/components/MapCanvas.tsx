@@ -2899,7 +2899,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             <button className="btn-cyber danger" style={{ padding: '4px 8px', fontSize: '10px' }} onClick={() => setActiveNoteMarkerId(null)}>
               Cancel
             </button>
-            <button className="btn-cyber success" style={{ padding: '4px 8px', fontSize: '10px' }} onClick={handleSaveNote}>
+            <button className="btn-cyber success" style={{ padding: '4px 8px', fontSize: '10px' }} onClick={() => handleSaveNote()}>
               Save
             </button>
           </div>
