@@ -182,6 +182,7 @@ button, select, input {
 
 /* Sidebar Styling */
 .sidebar {
+  grid-column: 1;
   padding: 12px;
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -191,6 +192,7 @@ button, select, input {
 }
 
 .sidebar-right {
+  grid-column: 3;
   padding: 12px;
   border-left: 1px solid var(--border-color);
   display: flex;
@@ -321,6 +323,7 @@ button, select, input {
 
 /* Main Canvas Area - outer section in App.tsx */
 .canvas-area {
+  grid-column: 2;
   position: relative;
   overflow: hidden;
   min-width: 0;

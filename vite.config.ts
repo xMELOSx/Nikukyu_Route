@@ -36,6 +36,18 @@ export default defineConfig({
             next();
           }
         });
+      },
+      closeBundle() {
+        const srcPath = path.resolve(__dirname, 'global_markers.json');
+        const destPath = path.resolve(__dirname, 'dist/global_markers.json');
+        if (fs.existsSync(srcPath)) {
+          const distDir = path.dirname(destPath);
+          if (!fs.existsSync(distDir)) {
+            fs.mkdirSync(distDir, { recursive: true });
+          }
+          fs.copyFileSync(srcPath, destPath);
+          console.log('Copied global_markers.json to dist/ during build');
+        }
       }
     }
   ],
@@ -43,7 +55,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     watch: {
-      ignored: ['**/global_markers.json']
+      ignored: [path.resolve(__dirname, 'global_markers.json'), '**/global_markers.json']
     }
   }
 })

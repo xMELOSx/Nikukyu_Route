@@ -296,7 +296,10 @@ export default function App() {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
     fetch('/api/global-markers')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
           const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
@@ -313,8 +316,31 @@ export default function App() {
         }
       })
       .catch(err => {
-        console.error('Failed to fetch global markers:', err);
-        loadGlobalMarkersFromLocalStorage();
+        console.error('Failed to fetch from /api/global-markers, trying static fallback:', err);
+        fetch('./global_markers.json')
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return res.json();
+          })
+          .then(data => {
+            if (Array.isArray(data) && data.length > 0) {
+              const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+                if (m.warpWaypoints) {
+                  return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
+                }
+                return m;
+              });
+              setGlobalMarkers(filtered);
+              localStorage.setItem('heist_global_markers', JSON.stringify(filtered));
+              localStorage.setItem('heist_global_markers_migrated_v2', 'true');
+            } else {
+              loadGlobalMarkersFromLocalStorage();
+            }
+          })
+          .catch(fallbackErr => {
+            console.error('Failed to fetch static global markers, falling back to local storage:', fallbackErr);
+            loadGlobalMarkersFromLocalStorage();
+          });
       });
 
     function loadGlobalMarkersFromLocalStorage() {
