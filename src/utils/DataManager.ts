@@ -34,6 +34,7 @@ export interface HeistMarker {
   infoMediaUrl?: string;  // For info markers: URL to image, webm or X post
   infoMediaType?: 'image' | 'webm' | 'x-embed'; // For info markers: type of media
   infoExpanded?: boolean; // For info markers: whether details are expanded in presentation mode
+  infoLabel?: string;     // For info markers: short label displayed under the pin
   bossDrops?: string[];   // For boss markers: list of drop items
   bossDurationSeconds?: number; // For boss markers: duration in seconds
   bossExpanded?: boolean; // For boss markers: whether details are expanded in presentation mode
@@ -339,29 +340,52 @@ export class DataManager {
         ctx.fillText(meta.emoji, m.x, m.y);
         
         // Draw Text Note labels if they exist
-        if (m.note.trim()) {
+        const infoLbl = m.type === 'info' ? (m.infoLabel?.trim() || '') : '';
+        const infoDesc = m.type === 'info' ? m.note.trim() : '';
+        const displayLabel = m.type === 'info' ? (infoLbl || infoDesc) : m.note.trim();
+        if (displayLabel) {
+          const hasTwoLines = m.type === 'info' && infoLbl && infoDesc && infoDesc !== infoLbl;
+          const lineHeight = 18 * scaleMultiplier;
+          const totalHeight = hasTwoLines ? lineHeight * 2 : lineHeight;
+
+          // Measure label (top line) width
           ctx.font = `bold ${Math.round(10 * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
-          const textWidth = ctx.measureText(m.note).width;
-          const labelWidth = Math.max(textWidth + 12 * scaleMultiplier, 40 * scaleMultiplier);
-          const labelHeight = 18 * scaleMultiplier;
+          const labelW = ctx.measureText(infoLbl || infoDesc).width;
+
+          // Measure desc (bottom line) width if two lines
+          let descW = 0;
+          if (hasTwoLines) {
+            ctx.font = `${Math.round(9 * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
+            descW = ctx.measureText(infoDesc).width;
+          }
+
+          const boxWidth = Math.max(labelW, descW) + 12 * scaleMultiplier;
           const labelRadius = 4 * scaleMultiplier;
-          
+
           ctx.fillStyle = 'rgba(5, 7, 10, 0.9)';
           ctx.strokeStyle = meta.color;
           ctx.lineWidth = 1;
-          
-          const rx = m.x - labelWidth / 2;
+
+          const rx = m.x - boxWidth / 2;
           const ry = m.y + radius + 4 * scaleMultiplier;
-          
-          // Draw note text box
+
+          // Draw text box
           ctx.beginPath();
-          ctx.roundRect(rx, ry, labelWidth, labelHeight, labelRadius);
+          ctx.roundRect(rx, ry, boxWidth, totalHeight, labelRadius);
           ctx.fill();
           ctx.stroke();
-          
-          // Draw text
+
+          // Draw label (top line)
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(m.note, m.x, ry + 9 * scaleMultiplier);
+          ctx.font = `bold ${Math.round(10 * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
+          ctx.textAlign = 'center';
+          ctx.fillText(infoLbl || infoDesc, m.x, ry + 9 * scaleMultiplier);
+
+          // Draw description (bottom line)
+          if (hasTwoLines) {
+            ctx.font = `${Math.round(9 * scaleMultiplier)}px Rajdhani, Orbitron, Arial`;
+            ctx.fillText(infoDesc, m.x, ry + lineHeight + 9 * scaleMultiplier);
+          }
         }
       });
 

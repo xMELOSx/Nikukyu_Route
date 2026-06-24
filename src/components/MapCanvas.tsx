@@ -250,6 +250,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Note Popover State
   const [activeNoteMarkerId, setActiveNoteMarkerId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [infoLabel, setInfoLabel] = useState('');
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
@@ -1003,6 +1004,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     setActiveNoteMarkerId(m.id);
     setNoteText(m.note);
+    setInfoLabel(m.infoLabel || '');
     setInfoMediaUrl(m.infoMediaUrl || '');
     setInfoMediaType(m.infoMediaType || 'image');
     setBossDrops(m.bossDrops || []);
@@ -1071,6 +1073,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.popupHeight = popupHeight;
             }
             if (m.type === 'info') {
+              updated.infoLabel = infoLabel;
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
             }
@@ -1392,7 +1395,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <div
                   key={m.id}
                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden ? 'hidden-marker-pin' : ''}`}
-                  data-note={m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'info' ? 'Info Pin' : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
+                  data-note={m.type === 'info' ? (m.infoLabel?.trim() || 'Info Pin') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
@@ -1416,7 +1419,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   >
                     {displayEmoji}
                   </div>
-                  {showMarkerLabels && m.note.trim() && !isLargePin && (isEditMode || m.type !== 'info') && (
+                  {showMarkerLabels && (m.note.trim() || (m.type === 'info' && m.infoLabel?.trim())) && !isLargePin && (isEditMode || m.type !== 'info') && (
                     <div 
                       className="map-marker-label"
                       style={{
@@ -1429,7 +1432,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         boxShadow: `0 ${2 * scaleMultiplier}px ${5 * scaleMultiplier}px rgba(0, 0, 0, 0.5)`
                       }}
                     >
-                      {m.note}
+                      {m.type === 'info' ? (m.infoLabel?.trim() || m.note) : m.note}
                     </div>
                   )}
                 </div>
@@ -1532,6 +1535,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         )}
                       </div>
                       <div className="info-popup-content">
+                        {m.infoLabel?.trim() && (
+                          <div style={{ fontWeight: 'bold', fontSize: '13px', color: meta.color, marginBottom: '6px' }}>
+                            {m.infoLabel}
+                          </div>
+                        )}
                         {m.note.trim() && (
                           <div className="info-popup-desc">
                             {m.note}
@@ -1961,8 +1969,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             })()}
           </div>
           
+          {activeNoteMarker.type === 'info' && (
+            <div style={{ marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>ラベル (LABEL)</label>
+              <input
+                type="text"
+                className="input-cyber"
+                style={{ width: '100%', fontSize: '11px', padding: '4px 6px' }}
+                placeholder="Pin title (shown on top)"
+                value={infoLabel}
+                onChange={(e) => setInfoLabel(e.target.value)}
+              />
+            </div>
+          )}
+
           <textarea
-            placeholder="Write route descriptions or heist tactics..."
+            placeholder={activeNoteMarker.type === 'info' ? '説明テキスト (DESCRIPTION)' : 'Write route descriptions or heist tactics...'}
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             autoFocus
