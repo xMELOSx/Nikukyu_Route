@@ -601,6 +601,48 @@ select.input-cyber {
   color: var(--text-primary);
 }
 
+/* Read-only display field — replaces inputs/textarea in display mode.
+   No border/background so it does not look like an editable text field. */
+.display-field {
+  color: #b8d4d6;
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+  padding: 2px 0;
+}
+.display-field .empty {
+  color: rgba(120, 140, 145, 0.45);
+  font-style: italic;
+  font-size: 13px;
+}
+.display-field-multi {
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.display-field-multi::-webkit-scrollbar {
+  width: 6px;
+}
+.display-field-multi::-webkit-scrollbar-track {
+  background: rgba(5, 7, 10, 0.3);
+  border-radius: 3px;
+}
+.display-field-multi::-webkit-scrollbar-thumb {
+  background: rgba(93, 138, 142, 0.4);
+  border-radius: 3px;
+}
+.display-field-multi::-webkit-scrollbar-thumb:hover {
+  background: rgba(93, 138, 142, 0.6);
+}
+.display-field-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: bold;
+  color: #b8d4d6;
+  font-size: 18px;
+  padding: 2px 0;
+}
+
 /* Route Saves List */
 .saves-list {
   display: flex;

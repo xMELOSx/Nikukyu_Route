@@ -1973,148 +1973,184 @@ export default function App() {
                 style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
               >
                 <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>プラン名</label>
-                <input
-                  type="text"
-                  className="input-cyber"
-                  value={route.title}
-                  onChange={(e) => setRoute({ ...route, title: e.target.value.toUpperCase() })}
-                  onFocus={(e) => { (e.target as HTMLInputElement).dataset.origTitle = route.title; }}
-                  onBlur={(e) => {
-                    const origTitle = e.target.dataset.origTitle || '';
-                    const newTitle = e.target.value.trim().toUpperCase();
-                    if (!newTitle || newTitle === origTitle) return;
-                    const newId = `route_${Date.now()}`;
-                    const newRoute = { ...route, id: newId, title: newTitle, createdAt: Date.now() };
-                    DataManager.saveToLocalStorage(newRoute);
-                    setRoute(newRoute);
-                    refreshSavesList();
-                  }}
-                  disabled={!isEditMode}
-                />
+                {isEditMode ? (
+                  <input
+                    type="text"
+                    className="input-cyber"
+                    value={route.title}
+                    onChange={(e) => setRoute({ ...route, title: e.target.value.toUpperCase() })}
+                    onFocus={(e) => { (e.target as HTMLInputElement).dataset.origTitle = route.title; }}
+                    onBlur={(e) => {
+                      const origTitle = e.target.dataset.origTitle || '';
+                      const newTitle = e.target.value.trim().toUpperCase();
+                      if (!newTitle || newTitle === origTitle) return;
+                      const newId = `route_${Date.now()}`;
+                      const newRoute = { ...route, id: newId, title: newTitle, createdAt: Date.now() };
+                      DataManager.saveToLocalStorage(newRoute);
+                      setRoute(newRoute);
+                      refreshSavesList();
+                    }}
+                  />
+                ) : (
+                  <div className="display-field">{route.title || <span className="empty">(未設定)</span>}</div>
+                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>想定獲得ファンス</label>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
-                      <input
-                        type="text"
-                        className="input-cyber"
-                        style={{ paddingLeft: '24px', width: '100%' }}
-                        value={route.targetCash}
-                        onChange={(e) => setRoute({ ...route, targetCash: e.target.value.replace(/,/g, '') })}
-                        onBlur={(e) => {
-                          const raw = e.target.value.replace(/,/g, '');
-                          const num = parseInt(raw);
-                          if (raw === '' || isNaN(num)) return;
-                          setRoute(prev => ({ ...prev, targetCash: num.toLocaleString() }));
-                        }}
-                        onFocus={(e) => {
-                          const raw = e.target.value.replace(/,/g, '');
-                          if (raw) setRoute(prev => ({ ...prev, targetCash: raw }));
-                        }}
-                        disabled={!isEditMode}
-                      />
-                    </div>
+                    {isEditMode ? (
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
+                        <input
+                          type="text"
+                          className="input-cyber"
+                          style={{ paddingLeft: '24px', width: '100%' }}
+                          value={route.targetCash}
+                          onChange={(e) => setRoute({ ...route, targetCash: e.target.value.replace(/,/g, '') })}
+                          onBlur={(e) => {
+                            const raw = e.target.value.replace(/,/g, '');
+                            const num = parseInt(raw);
+                            if (raw === '' || isNaN(num)) return;
+                            setRoute(prev => ({ ...prev, targetCash: num.toLocaleString() }));
+                          }}
+                          onFocus={(e) => {
+                            const raw = e.target.value.replace(/,/g, '');
+                            if (raw) setRoute(prev => ({ ...prev, targetCash: raw }));
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="display-field">
+                        <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>$</span>
+                        {route.targetCash ? route.targetCash : <span className="empty">(未設定)</span>}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>にくきゅうコイン</label>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>🪙</span>
-                      <input
-                        type="text"
-                        className="input-cyber"
-                        style={{ paddingLeft: '30px', width: '100%' }}
-                        value={route.targetCoins}
-                        onChange={(e) => setRoute({ ...route, targetCoins: e.target.value.replace(/,/g, '') })}
-                        onBlur={(e) => {
-                          const raw = e.target.value.replace(/,/g, '');
-                          const num = parseInt(raw);
-                          if (raw === '' || isNaN(num)) return;
-                          setRoute(prev => ({ ...prev, targetCoins: num.toLocaleString() }));
-                        }}
-                        onFocus={(e) => {
-                          const raw = e.target.value.replace(/,/g, '');
-                          if (raw) setRoute(prev => ({ ...prev, targetCoins: raw }));
-                        }}
-                        disabled={!isEditMode}
-                      />
-                    </div>
+                    {isEditMode ? (
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>🪙</span>
+                        <input
+                          type="text"
+                          className="input-cyber"
+                          style={{ paddingLeft: '30px', width: '100%' }}
+                          value={route.targetCoins}
+                          onChange={(e) => setRoute({ ...route, targetCoins: e.target.value.replace(/,/g, '') })}
+                          onBlur={(e) => {
+                            const raw = e.target.value.replace(/,/g, '');
+                            const num = parseInt(raw);
+                            if (raw === '' || isNaN(num)) return;
+                            setRoute(prev => ({ ...prev, targetCoins: num.toLocaleString() }));
+                          }}
+                          onFocus={(e) => {
+                            const raw = e.target.value.replace(/,/g, '');
+                            if (raw) setRoute(prev => ({ ...prev, targetCoins: raw }));
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="display-field">
+                        <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>🪙</span>
+                        {route.targetCoins ? route.targetCoins : <span className="empty">(未設定)</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div style={{ marginTop: '6px' }}>
                   <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
-                    目標所要時間 {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                    目標所要時間
                   </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                    <input
-                      type="range"
-                      style={{ flex: 1, accentColor: 'var(--cyan-neon)', height: '24px' }}
-                      min="0" max="720" step="1"
-                      value={route.targetDuration || '0'}
-                      onChange={(e) => setRoute({ ...route, targetDuration: e.target.value })}
-                      onWheel={(e) => {
-                        if (!isEditMode) return;
-                        e.preventDefault();
-                        const cur = parseInt(route.targetDuration || '0');
-                        const next = Math.min(720, Math.max(0, cur + (e.deltaY < 0 ? 1 : -1)));
-                        setRoute({ ...route, targetDuration: String(next) });
-                      }}
-                      disabled={!isEditMode}
-                    />
-                    <input
-                      type="text"
-                      className="input-cyber"
-                      style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: isEditMode ? 'var(--cyan-neon)' : '#b8d4d6' }}
-                      defaultValue={(() => {
-                        const sec = parseInt(route.targetDuration || '0');
-                        return isNaN(sec) ? '0' : String(sec);
-                      })()}
-                      onFocus={(e) => {
-                        const sec = parseInt(route.targetDuration || '0');
-                        (e.target as HTMLInputElement).value = isNaN(sec) ? '' : String(sec);
-                      }}
-                      onBlur={(e) => {
-                        const v = e.target.value.replace(/[^0-9]/g, '');
-                        const num = parseInt(v) || 0;
-                        const total = v.length >= 4 ? Math.floor(num / 100) * 60 + (num % 100) : num;
-                        setRoute({ ...route, targetDuration: String(Math.min(720, Math.max(0, total))) });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                      }}
-                      disabled={!isEditMode}
-                      placeholder="秒数か4桁"
-                    />
-                  </div>
+                  {isEditMode ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                      <input
+                        type="range"
+                        style={{ flex: 1, accentColor: 'var(--cyan-neon)', height: '24px' }}
+                        min="0" max="720" step="1"
+                        value={route.targetDuration || '0'}
+                        onChange={(e) => setRoute({ ...route, targetDuration: e.target.value })}
+                        onWheel={(e) => {
+                          if (!isEditMode) return;
+                          e.preventDefault();
+                          const cur = parseInt(route.targetDuration || '0');
+                          const next = Math.min(720, Math.max(0, cur + (e.deltaY < 0 ? 1 : -1)));
+                          setRoute({ ...route, targetDuration: String(next) });
+                        }}
+                      />
+                      <input
+                        type="text"
+                        className="input-cyber"
+                        style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: 'var(--cyan-neon)' }}
+                        defaultValue={(() => {
+                          const sec = parseInt(route.targetDuration || '0');
+                          return isNaN(sec) ? '0' : String(sec);
+                        })()}
+                        onFocus={(e) => {
+                          const sec = parseInt(route.targetDuration || '0');
+                          (e.target as HTMLInputElement).value = isNaN(sec) ? '' : String(sec);
+                        }}
+                        onBlur={(e) => {
+                          const v = e.target.value.replace(/[^0-9]/g, '');
+                          const num = parseInt(v) || 0;
+                          const total = v.length >= 4 ? Math.floor(num / 100) * 60 + (num % 100) : num;
+                          setRoute({ ...route, targetDuration: String(Math.min(720, Math.max(0, total))) });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        }}
+                        placeholder="秒数か4桁"
+                      />
+                    </div>
+                  ) : (
+                    <div className="display-field-time" style={{ marginTop: '4px' }}>
+                      {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>作者名</label>
-                    <input
-                      type="text"
-                      className="input-cyber"
-                      style={{ width: '100%', boxSizing: 'border-box' }}
-                      value={xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt))}
-                      onChange={(e) => setRoute({ ...route, author: xorEncrypt(e.target.value, getAuthorKey(route.id, route.createdAt)) })}
-                      disabled={!isEditMode}
-                      placeholder="名前"
-                    />
-                  </div>
-                  {isLocal && (
-                    <div>
-                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>原作者名</label>
+                    {isEditMode ? (
                       <input
                         type="text"
                         className="input-cyber"
                         style={{ width: '100%', boxSizing: 'border-box' }}
-                        value={xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt))}
-                        onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(route.id, route.createdAt)) })}
-                        disabled={!isEditMode || (route.originalAuthor !== undefined && route.originalAuthor !== '')}
-                        placeholder="元の作者"
+                        value={xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt))}
+                        onChange={(e) => setRoute({ ...route, author: xorEncrypt(e.target.value, getAuthorKey(route.id, route.createdAt)) })}
+                        placeholder="名前"
                       />
+                    ) : (
+                      <div className="display-field">
+                        {(() => {
+                          const v = xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt));
+                          return v || <span className="empty">(未設定)</span>;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                  {isLocal && (
+                    <div>
+                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>原作者名</label>
+                      {isEditMode ? (
+                        <input
+                          type="text"
+                          className="input-cyber"
+                          style={{ width: '100%', boxSizing: 'border-box' }}
+                          value={xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt))}
+                          onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(route.id, route.createdAt)) })}
+                          disabled={route.originalAuthor !== undefined && route.originalAuthor !== ''}
+                          placeholder="元の作者"
+                        />
+                      ) : (
+                        <div className="display-field">
+                          {(() => {
+                            const v = xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt));
+                            return v || <span className="empty">(未設定)</span>;
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2123,22 +2159,29 @@ export default function App() {
                   {isLocal && (
                     <div>
                       <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>CUSTOM BG</label>
-                      <button
-                        className="btn-cyber"
-                        style={{ width: '100%', marginTop: '4px', padding: '6px' }}
-                        onClick={() => bgFileInputRef.current?.click()}
-                        disabled={!isEditMode}
-                      >
-                        <ImageIcon size={12} /> Upload Map
-                      </button>
-                      <input
-                        type="file"
-                        ref={bgFileInputRef}
-                        onChange={handleBgUpload}
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                        id="bg-file-input"
-                      />
+                      {isEditMode ? (
+                        <>
+                          <button
+                            className="btn-cyber"
+                            style={{ width: '100%', marginTop: '4px', padding: '6px' }}
+                            onClick={() => bgFileInputRef.current?.click()}
+                          >
+                            <ImageIcon size={12} /> Upload Map
+                          </button>
+                          <input
+                            type="file"
+                            ref={bgFileInputRef}
+                            onChange={handleBgUpload}
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            id="bg-file-input"
+                          />
+                        </>
+                      ) : (
+                        <div className="display-field" style={{ marginTop: '4px' }}>
+                          {route.customBg[currentFloor] ? 'カスタムBG: 設定済み' : <span className="empty">デフォルトBG使用中</span>}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2154,13 +2197,18 @@ export default function App() {
                 </div>
 
                 <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>備考</label>
-                <textarea
-                  className="textarea-cyber"
-                  placeholder="Write overall heist instructions..."
-                  value={route.description}
-                  onChange={(e) => setRoute({ ...route, description: e.target.value })}
-                  disabled={!isEditMode}
-                />
+                {isEditMode ? (
+                  <textarea
+                    className="textarea-cyber"
+                    placeholder="Write overall heist instructions..."
+                    value={route.description}
+                    onChange={(e) => setRoute({ ...route, description: e.target.value })}
+                  />
+                ) : (
+                  <div className="display-field display-field-multi">
+                    {route.description ? route.description : <span className="empty">(未設定)</span>}
+                  </div>
+                )}
               </div>
             </div>
 
