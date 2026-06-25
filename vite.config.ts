@@ -84,6 +84,48 @@ export default defineConfig({
                 res.end(JSON.stringify({ success: true }));
               });
             }
+          } else if (urlPath === '/api/upload-media' || urlPath.endsWith('/api/upload-media')) {
+            if (req.method === 'POST') {
+              const chunks: Buffer[] = [];
+              req.on('data', chunk => chunks.push(chunk));
+              req.on('end', () => {
+                const body = Buffer.concat(chunks);
+                const boundary = req.headers['content-type']?.match(/boundary=(.+)/)?.[1];
+                if (!boundary) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ error: 'No boundary' }));
+                  return;
+                }
+                const parts = body.toString('binary').split('--' + boundary);
+                let filename = '';
+                let fileData: Buffer | null = null;
+                for (const part of parts) {
+                  const headerEnd = part.indexOf('\r\n\r\n');
+                  if (headerEnd === -1) continue;
+                  const header = part.substring(0, headerEnd);
+                  const contentDisposition = header.match(/filename="(.+?)"/);
+                  if (contentDisposition) {
+                    filename = contentDisposition[1];
+                    const raw = part.substring(headerEnd + 4);
+                    const trimPos = raw.indexOf('\r\n--');
+                    fileData = Buffer.from(trimPos > 0 ? raw.substring(0, trimPos) : raw, 'binary');
+                  }
+                }
+                if (filename && fileData) {
+                  const uploadDir = path.resolve(__dirname, 'public/uploads');
+                  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+                  const safeName = Date.now() + '_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+                  fs.writeFileSync(path.join(uploadDir, safeName), fileData);
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ url: `/Nikukyu_Route/uploads/${safeName}`, filename: safeName }));
+                } else {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ error: 'No file' }));
+                }
+              });
+            } else {
+              next();
+            }
           } else if (isPresetMatch) {
             if (req.method === 'GET') {
               const filePath = path.resolve(__dirname, 'default_preset.json');

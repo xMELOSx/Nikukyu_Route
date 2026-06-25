@@ -8,7 +8,8 @@ export const HELP_TABS: HelpTab[] = [
   { id: 'updates', label: '最近の更新' },
   { id: 'bugs', label: '奇妙な動作' },
   { id: 'help', label: '操作ヘルプ' },
-  { id: 'credits', label: '出展' }
+  { id: 'credits', label: '出展' },
+  { id: 'debug', label: 'デバッグ' }
 ];
 
 export interface HelpData {

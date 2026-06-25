@@ -20,6 +20,13 @@ export interface ScrollConfig {
   zoom: number;
 }
 
+export interface MediaItem {
+  id: string;
+  url: string;
+  type: 'image' | 'webm' | 'x-embed';
+  description?: string;
+}
+
 export interface HeistMarker {
   id: string;
   type: MarkerType;
@@ -55,6 +62,7 @@ export interface HeistMarker {
   textColor?: string;     // For text markers: color of the text
   textSize?: number;      // For text markers: font size in px
   textScaleWithMap?: boolean; // For text markers: scale size with map zoom
+  mediaItems?: MediaItem[]; // For info/eh/boss/battle markers: multiple media attachments
 }
 
 export interface RouteData {
@@ -62,7 +70,7 @@ export interface RouteData {
   title: string;
   description: string;
   targetCash: string;
-  difficulty: 'easy' | 'medium' | 'hard' | 'expert';
+  targetCoins: string;
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
   customBg: { [key in FloorType]: string | null }; // base64 images
@@ -82,7 +90,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   title: 'NEW HEIST ROUTE PLAN',
   description: 'Plan description here...',
   targetCash: '100,000',
-  difficulty: 'medium',
+  targetCoins: '500',
   strokes: {
     main: []
   },

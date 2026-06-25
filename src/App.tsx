@@ -524,11 +524,11 @@ export default function App() {
   // Keyboard shortcut listener for EDIT/VIEW toggling and Undo/Redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
-        return;
-      }
       if (e.key === 'Escape') {
         if (showHelpModal) { setShowHelpModal(false); return; }
+      }
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
@@ -560,7 +560,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pastHistory, futureHistory, route, globalMarkers]);
+  }, [pastHistory, futureHistory, route, globalMarkers, showHelpModal]);
 
   const refreshSavesList = () => {
     setSaves(DataManager.getSavesList().sort((a, b) => b.updatedAt - a.updatedAt));
@@ -1824,35 +1824,39 @@ export default function App() {
                 disabled={!isEditMode}
               />
 
-              <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>想定獲得ファンス</label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
-                <input
-                  type="text"
-                  className="input-cyber"
-                  style={{ paddingLeft: '24px', width: '100%' }}
-                  value={route.targetCash}
-                  onChange={(e) => setRoute({ ...route, targetCash: e.target.value })}
-                  disabled={!isEditMode}
-                />
-              </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                 <div>
-                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>DIFFICULTY</label>
-                  <select
-                    className="input-cyber"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={route.difficulty}
-                    onChange={(e) => setRoute({ ...route, difficulty: e.target.value as any })}
-                    disabled={!isEditMode}
-                  >
-                    <option value="easy">Easy (EASY)</option>
-                    <option value="medium">Medium (NORMAL)</option>
-                    <option value="hard">Hard (HARD)</option>
-                    <option value="expert">Expert (EXPERT)</option>
-                  </select>
+                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>想定獲得ファンス</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
+                    <input
+                      type="text"
+                      className="input-cyber"
+                      style={{ paddingLeft: '24px', width: '100%' }}
+                      value={route.targetCash}
+                      onChange={(e) => setRoute({ ...route, targetCash: e.target.value })}
+                      disabled={!isEditMode}
+                    />
+                  </div>
                 </div>
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>にくきゅうコイン</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>&#x1f4b0;</span>
+                    <input
+                      type="text"
+                      className="input-cyber"
+                      style={{ paddingLeft: '28px', width: '100%' }}
+                      value={route.targetCoins}
+                      onChange={(e) => setRoute({ ...route, targetCoins: e.target.value })}
+                      disabled={!isEditMode}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                {isLocal && (
                 <div>
                   <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>CUSTOM BG</label>
                   <button
@@ -1872,7 +1876,7 @@ export default function App() {
                     id="bg-file-input"
                   />
                 </div>
-              </div>
+                )}
 
               {route.customBg[currentFloor] && isEditMode && (
                 <button
@@ -1883,6 +1887,7 @@ export default function App() {
                   Reset to Default Background
                 </button>
               )}
+              </div>
 
               <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>備考</label>
               <textarea
@@ -1981,10 +1986,11 @@ export default function App() {
 
       {/* Help & Attribution Modal Overlay */}
       {showHelpModal && (() => {
-        const tabs = HELP_TABS;
+        const tabs = HELP_TABS.filter(t => t.id !== 'debug' || isLocal);
         const currentTabData = tabs.find(t => t.id === helpActiveTab) || tabs[0];
-        const currentText = helpTexts[currentTabData.id] || '';
-        const setCurrentText = isLocal ? (val: string) => {
+        const isDebugTab = currentTabData.id === 'debug';
+        const currentText = isDebugTab ? '' : (helpTexts[currentTabData.id] || '');
+        const setCurrentText = (!isDebugTab && isLocal) ? (val: string) => {
           const next = { ...helpTexts, [currentTabData.id]: val };
           setHelpTexts(next);
           saveHelpData(next);
@@ -2070,7 +2076,75 @@ export default function App() {
 
               {/* Tab Content */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: '200px', padding: '12px 0' }}>
-                {isEditMode && isLocal && !isHelpPreviewMode ? (
+                {isDebugTab ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '4px' }}>
+                      🔧 デバッグメニュー（グローバル編集モード専用）
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button
+                        className="btn-cyber"
+                        style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => {
+                          setShowHelpModal(false);
+                          setIsHelpPreviewMode(false);
+                          setTimeout(() => bgFileInputRef.current?.click(), 100);
+                        }}
+                      >
+                        🗺️ カスタムBGを変更
+                      </button>
+
+                      <button
+                        className="btn-cyber"
+                        style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => {
+                          setShowHelpModal(false);
+                          setIsHelpPreviewMode(false);
+                          setLeftSidebarCollapsed(false);
+                        }}
+                      >
+                        📌 マーカー表示設定を開く
+                      </button>
+
+                      <button
+                        className="btn-cyber"
+                        style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => {
+                          setShowHelpModal(false);
+                          setIsHelpPreviewMode(false);
+                          setRightSidebarCollapsed(false);
+                        }}
+                      >
+                        📋 プラン一覧を開く
+                      </button>
+
+                      <button
+                        className="btn-cyber danger"
+                        style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => {
+                          if (confirm('全データをリセットしますか？この操作は取り消せません。')) {
+                            localStorage.clear();
+                            window.location.reload();
+                          }
+                        }}
+                      >
+                        🗑️ 全データをリセット
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>デバッグ情報:</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                        <div>isLocal: {isLocal ? 'true' : 'false'}</div>
+                        <div>isEditMode: {isEditMode ? 'true' : 'false'}</div>
+                        <div>floor: {currentFloor}</div>
+                        <div>markers: {route.markers.length}</div>
+                        <div>globalMarkers: {globalMarkers.length}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : isEditMode && isLocal && !isHelpPreviewMode ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       ※ グローバル編集モード: HTMLタグ（aタグ等含む）で自由に編集できます。

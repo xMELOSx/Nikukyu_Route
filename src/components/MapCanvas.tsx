@@ -260,6 +260,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [infoLabel, setInfoLabel] = useState('');
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
+  const [mediaItems, setMediaItems] = useState<{id: string; url: string; type: 'image' | 'webm' | 'x-embed'; description: string}[]>([]);
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -1103,6 +1104,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
     setPopupHeight(m.popupHeight || 0);
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
+    setMediaItems((m.mediaItems || []).map(item => ({ ...item, description: item.description || '' })));
   };
 
   const handleZoom = (factor: number) => {
@@ -1164,6 +1166,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             if (m.type === 'cardkey') {
               updated.cardkeyHighRate = cardkeyHighRate;
+            }
+            if (isInfoType(m.type) || m.type === 'eh' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle') {
+              updated.mediaItems = mediaItems;
             }
             return updated;
           }
@@ -1657,6 +1662,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             )}
                           </div>
                         )}
+                        {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
+                          <div key={item.id} style={{ marginTop: '4px' }}>
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1817,6 +1830,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           )}
                         </div>
 
+                        {/* Boss media items */}
+                        {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
+                          <div key={item.id} style={{ marginTop: '4px' }}>
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                          </div>
+                        ))}
+
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const currentVal = (!isLocal && bossCustomDurations[m.id] !== undefined)
@@ -1911,6 +1934,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         )}
                       </div>
                       <div className="info-popup-content">
+                        {/* Battle media items */}
+                        {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
+                          <div key={item.id} style={{ marginBottom: '4px' }}>
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                          </div>
+                        ))}
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const isGlobalPin = m.type === 'gbattle';
@@ -2219,10 +2251,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {noteSettingsExpanded && activeNoteMarker && (
           <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(0, 255, 255, 0.15)', paddingTop: '8px' }}>
 
-          {/* Info marker media URL & type editing */}
+          {/* Legacy single media for info pins (kept for backward compat) */}
           {isInfoType(activeNoteMarker.type) && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>添付メディア:</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>メインメディア:</div>
               
               <div style={{ display: 'flex', gap: '4px' }}>
                 {(['image', 'webm', 'x-embed'] as const).map(t => (
@@ -2250,6 +2282,100 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 value={infoMediaUrl}
                 onChange={(e) => setInfoMediaUrl(e.target.value)}
               />
+            </div>
+          )}
+
+          {/* Multi-media attachments for info/eh/boss/battle pins */}
+          {(isInfoType(activeNoteMarker.type) || activeNoteMarker.type === 'eh' || activeNoteMarker.type === 'boss' || activeNoteMarker.type === 'battle' || activeNoteMarker.type === 'gbattle') && isLocal && isEditMode && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>追加メディア ({mediaItems.length}):</div>
+              
+              {mediaItems.map((item, idx) => (
+                <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '3px', background: 'rgba(79, 195, 247, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(79, 195, 247, 0.15)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '9px', color: '#7ec8e3', textTransform: 'uppercase' }}>{item.type}</span>
+                    <span style={{ fontSize: '8px', color: '#666', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.url}</span>
+                    <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '11px' }} onClick={() => setMediaItems(mediaItems.filter((_, i) => i !== idx))}>×</span>
+                  </div>
+                  {item.type === 'image' && item.url && (
+                    <img src={item.url} alt="" style={{ maxWidth: '100%', maxHeight: '80px', borderRadius: '4px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  )}
+                  {item.type === 'webm' && item.url && (
+                    <video src={item.url} style={{ maxWidth: '100%', maxHeight: '80px', borderRadius: '4px' }} muted />
+                  )}
+                  <input
+                    type="text"
+                    className="input-cyber"
+                    style={{ fontSize: '9px', padding: '2px 4px' }}
+                    placeholder="説明文（任意）"
+                    value={item.description}
+                    onChange={(e) => {
+                      const next = [...mediaItems];
+                      next[idx] = { ...next[idx], description: e.target.value };
+                      setMediaItems(next);
+                    }}
+                  />
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  className="btn-cyber"
+                  style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*,video/webm';
+                    input.multiple = true;
+                    input.onchange = async () => {
+                      if (!input.files) return;
+                      for (const file of Array.from(input.files)) {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        try {
+                          const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
+                          const data = await res.json();
+                          if (data.url) {
+                            const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
+                            setMediaItems(prev => [...prev, {
+                              id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                              url: data.url,
+                              type: isVideo ? 'webm' : 'image',
+                              description: ''
+                            }]);
+                          }
+                        } catch (err) {
+                          console.error('Upload failed:', err);
+                        }
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  📎 ファイル添付
+                </button>
+                <button
+                  type="button"
+                  className="btn-cyber"
+                  style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }}
+                  onClick={() => {
+                    const url = prompt('メディアURLを入力:');
+                    if (url && url.trim()) {
+                      const isVideo = url.includes('.webm') || url.includes('video');
+                      const isX = url.includes('x.com') || url.includes('twitter.com');
+                      setMediaItems(prev => [...prev, {
+                        id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        url: url.trim(),
+                        type: isX ? 'x-embed' : isVideo ? 'webm' : 'image',
+                        description: ''
+                      }]);
+                    }
+                  }}
+                >
+                  🔗 URL追加
+                </button>
+              </div>
             </div>
           )}
 
@@ -2380,16 +2506,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       {Math.floor(bossDurationSeconds / 60)}分 {bossDurationSeconds % 60}秒
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input-cyber"
-                      style={{ width: '80px', fontSize: '11px', padding: '4px' }}
-                      value={bossDurationSeconds}
-                      onChange={(e) => setBossDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
-                    />
-                    <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
+                  <input
+                    type="range"
+                    min={60}
+                    max={720}
+                    step={1}
+                    value={Math.max(60, Math.min(720, bossDurationSeconds))}
+                    onChange={(e) => setBossDurationSeconds(parseInt(e.target.value))}
+                    style={{ accentColor: '#ff6b9d', cursor: 'pointer', width: '100%' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                    <span>1分</span>
+                    <span>12分</span>
                   </div>
                 </div>
 
@@ -2418,19 +2546,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
                         <span style={{ fontSize: '11px', color: 'var(--red-neon)', fontWeight: 'bold' }}>
-                          {Math.floor((bossCustomDurationVal || 0) / 60)}分 {(bossCustomDurationVal || 0) % 60}秒
+                          {Math.floor((bossCustomDurationVal || 60) / 60)}分 {(bossCustomDurationVal || 60) % 60}秒
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          className="input-cyber"
-                          style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.4)' }}
-                          value={bossCustomDurationVal || 0}
-                          onChange={(e) => setBossCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
-                        />
-                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
+                      <input
+                        type="range"
+                        min={60}
+                        max={720}
+                        step={1}
+                        value={Math.max(60, Math.min(720, bossCustomDurationVal || 60))}
+                        onChange={(e) => setBossCustomDurationVal(parseInt(e.target.value))}
+                        style={{ accentColor: 'var(--red-neon)', cursor: 'pointer', width: '100%' }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                        <span>1分</span>
+                        <span>12分</span>
                       </div>
                     </div>
                   )}
@@ -2457,16 +2587,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                           </span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                          <input
-                            type="number"
-                            min="0"
-                            className="input-cyber"
-                            style={{ width: '80px', fontSize: '11px', padding: '4px' }}
-                            value={battleDurationSeconds}
-                            onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
-                          />
-                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
+                        <input
+                          type="range"
+                          min={60}
+                          max={720}
+                          step={1}
+                          value={Math.max(60, Math.min(720, battleDurationSeconds))}
+                          onChange={(e) => setBattleDurationSeconds(parseInt(e.target.value))}
+                          style={{ accentColor: '#7ec8e3', cursor: 'pointer', width: '100%' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                          <span>1分</span>
+                          <span>12分</span>
                         </div>
                       </div>
 
@@ -2493,21 +2625,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {useBattleCustomDuration && (
                           <div style={{ marginTop: '4px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
                               <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
-                                {Math.floor((battleCustomDurationVal || 0) / 60)}分 {(battleCustomDurationVal || 0) % 60}秒
+                                {Math.floor((battleCustomDurationVal || 60) / 60)}分 {(battleCustomDurationVal || 60) % 60}秒
                               </span>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                              <input
-                                type="number"
-                                min="0"
-                                className="input-cyber"
-                                style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                                value={battleCustomDurationVal || 0}
-                                onChange={(e) => setBattleCustomDurationVal(Math.max(0, parseInt(e.target.value) || 0))}
-                              />
-                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
+                            <input
+                              type="range"
+                              min={60}
+                              max={720}
+                              step={1}
+                              value={Math.max(60, Math.min(720, battleCustomDurationVal || 60))}
+                              onChange={(e) => setBattleCustomDurationVal(parseInt(e.target.value))}
+                              style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                              <span>1分</span>
+                              <span>12分</span>
                             </div>
                           </div>
                         )}
@@ -2522,16 +2656,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          className="input-cyber"
-                          style={{ width: '80px', fontSize: '11px', padding: '4px', borderColor: 'rgba(0, 240, 255, 0.4)' }}
-                          value={battleDurationSeconds}
-                          onChange={(e) => setBattleDurationSeconds(Math.max(0, parseInt(e.target.value) || 0))}
-                        />
-                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>秒</span>
+                      <input
+                        type="range"
+                        min={60}
+                        max={720}
+                        step={1}
+                        value={Math.max(60, Math.min(720, battleDurationSeconds))}
+                        onChange={(e) => setBattleDurationSeconds(parseInt(e.target.value))}
+                        style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                        <span>1分</span>
+                        <span>12分</span>
                       </div>
                     </div>
                   )}
