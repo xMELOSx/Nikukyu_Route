@@ -1843,6 +1843,8 @@ export default function App() {
             onMarkersDragEnd={handleMarkersDragEnd}
             onHideGlobalMarker={handleHideGlobalMarker}
             onShowGlobalMarker={handleShowGlobalMarker}
+            leftSidebarCollapsed={leftSidebarCollapsed}
+            rightSidebarCollapsed={rightSidebarCollapsed}
           />
 
           {/* Left Sidebar Collapse Handle */}

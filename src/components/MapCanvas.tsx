@@ -131,6 +131,8 @@ interface MapCanvasProps {
   hiddenMarkerTypes?: string[];
   globalMarkerIds?: string[];
   onShowGlobalMarker?: (id: string) => void;
+  leftSidebarCollapsed?: boolean;
+  rightSidebarCollapsed?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -167,7 +169,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   hiddenMarkers = [],
   hiddenMarkerTypes = [],
   globalMarkerIds = [],
-  onShowGlobalMarker
+  onShowGlobalMarker,
+  leftSidebarCollapsed = false,
+  rightSidebarCollapsed = false
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -386,6 +390,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     };
   }, []);
+
+  const prevLeftCollapsedRef = useRef(leftSidebarCollapsed);
+  const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
+
+  useEffect(() => {
+    const prevLeft = prevLeftCollapsedRef.current;
+    const prevRight = prevRightCollapsedRef.current;
+    prevLeftCollapsedRef.current = leftSidebarCollapsed;
+    prevRightCollapsedRef.current = rightSidebarCollapsed;
+
+    if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
+
+    const vpCenterX = window.innerWidth / 2;
+
+    onMarkersChange(
+      markers.map(m => {
+        if (!m.textFixedPosition || m.floor !== floor) return m;
+        const isCloserToLeft = m.x < vpCenterX;
+
+        if (prevLeft !== leftSidebarCollapsed && isCloserToLeft) {
+          const shift = leftSidebarCollapsed ? -280 : 280;
+          return { ...m, x: m.x + shift };
+        }
+        if (prevRight !== rightSidebarCollapsed && !isCloserToLeft) {
+          const shift = rightSidebarCollapsed ? 340 : -340;
+          return { ...m, x: m.x + shift };
+        }
+        return m;
+      })
+    );
+  }, [leftSidebarCollapsed, rightSidebarCollapsed]);
 
   // Sync state to anim refs whenever state changes
   // This ensures that user manual zoom/pan (which update state)
