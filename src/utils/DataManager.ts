@@ -29,6 +29,18 @@ export function xorDecrypt(encoded: string, key: string): string {
 export const AUTHOR_KEY = 'Fans';
 export const ORIGINAL_AUTHOR_KEY = 'Colins';
 
+function deriveKey(baseKey: string, routeId: string, createdAt: number): string {
+  return baseKey + '|' + routeId + '|' + String(createdAt);
+}
+
+export function getAuthorKey(routeId: string, createdAt: number): string {
+  return deriveKey(AUTHOR_KEY, routeId, createdAt);
+}
+
+export function getOriginalAuthorKey(routeId: string, createdAt: number): string {
+  return deriveKey(ORIGINAL_AUTHOR_KEY, routeId, createdAt);
+}
+
 export interface Point {
   x: number;
   y: number;
@@ -89,6 +101,11 @@ export interface HeistMarker {
   textColor?: string;     // For text markers: color of the text
   textSize?: number;      // For text markers: font size in px
   textScaleWithMap?: boolean; // For text markers: scale size with map zoom
+  textFixedPosition?: boolean; // For text markers: fixed to viewport, not affected by pan/zoom
+  fixedOriginX?: number;      // For text markers: original map X before fixing to viewport
+  fixedOriginY?: number;      // For text markers: original map Y before fixing to viewport
+  textDescription?: string;   // For text markers: description text shown below label
+  textTooltip?: boolean;      // For text markers: show mouseover tooltip
   mediaItems?: MediaItem[]; // For info/eh/boss/battle markers: multiple media attachments
 }
 
@@ -199,6 +216,7 @@ export class DataManager {
       description: route.description || '',
       author: route.author || '',
       originalAuthor: route.originalAuthor || '',
+      createdAt: route.createdAt,
       updatedAt: Date.now()
     };
     if (index >= 0) {
@@ -212,7 +230,7 @@ export class DataManager {
   }
 
   // Get list of saved routes
-  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; updatedAt: number }[] {
+  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; createdAt: number; updatedAt: number }[] {
     const listStr = localStorage.getItem('heist_routes_list');
     return listStr ? JSON.parse(listStr) : [];
   }

@@ -341,6 +341,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
+  const [textFixedPosition, setTextFixedPosition] = useState(false);
+  const [textDescription, setTextDescription] = useState('');
+  const [textTooltip, setTextTooltip] = useState(false);
   const [warpLinkTargetId, setWarpLinkTargetId] = useState<string>('');
   const [warpLinkMode, setWarpLinkMode] = useState<'idle' | 'selecting-bi' | 'selecting-oneway'>('idle');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
@@ -951,16 +954,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isIndivMarker = marker && isIndiv(marker.type);
       const canDrag = isEditMode && (isLocal ? true : isIndivMarker);
       if (canDrag) {
-        onMarkersChange(
-          markers.map(m => {
-            if (m.id === draggingMarkerId) {
-              const targetX = Math.max(0, Math.min(1600, coords.x - dragStartOffset.x));
-              const targetY = Math.max(0, Math.min(4550, coords.y - dragStartOffset.y));
-              return { ...m, x: targetX, y: targetY };
-            }
-            return m;
-          })
-        );
+        if (marker?.textFixedPosition) {
+          const targetX = e.clientX - dragStartOffset.x;
+          const targetY = e.clientY - dragStartOffset.y;
+          onMarkersChange(
+            markers.map(m => {
+              if (m.id === draggingMarkerId) {
+                return { ...m, x: Math.round(targetX), y: Math.round(targetY) };
+              }
+              return m;
+            })
+          );
+        } else {
+          const targetX = Math.max(0, Math.min(1600, coords.x - dragStartOffset.x));
+          const targetY = Math.max(0, Math.min(4550, coords.y - dragStartOffset.y));
+          onMarkersChange(
+            markers.map(m => {
+              if (m.id === draggingMarkerId) {
+                return { ...m, x: targetX, y: targetY };
+              }
+              return m;
+            })
+          );
+        }
       }
       return;
     }
@@ -1070,7 +1086,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const coords = getCanvasCoords(e as React.MouseEvent<HTMLElement>);
     if (onMarkersDragStart) onMarkersDragStart();
     setDraggingMarkerId(m.id);
-    setDragStartOffset({ x: coords.x - m.x, y: coords.y - m.y });
+    if (m.textFixedPosition) {
+      setDragStartOffset({ x: e.clientX - m.x, y: e.clientY - m.y });
+    } else {
+      setDragStartOffset({ x: coords.x - m.x, y: coords.y - m.y });
+    }
   };
 
   const handleMarkerClick = (e: React.MouseEvent, m: HeistMarker) => {
@@ -1200,6 +1220,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setTextColor(m.textColor || '#ffffff');
     setTextSize(m.textSize || 14);
     setTextScaleWithMap(!!m.textScaleWithMap);
+    setTextFixedPosition(!!m.textFixedPosition);
+    setTextDescription(m.textDescription || '');
+    setTextTooltip(!!m.textTooltip);
     setBossDrops(m.bossDrops || []);
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
@@ -1275,6 +1298,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.textColor = textColor;
               updated.textSize = textSize;
               updated.textScaleWithMap = textScaleWithMap;
+              updated.textFixedPosition = textFixedPosition;
+              updated.textDescription = textDescription;
+              updated.textTooltip = textTooltip;
             }
             if (m.type === 'boss') {
               updated.bossDrops = bossDrops;
@@ -1598,18 +1624,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const phoneClass = isPhone ? (m.phoneActive ? 'phone-active' : 'phone-inactive') : '';
               const scaleMultiplier = markerScale / 30;
               if (isText) {
+                const isFixed = activeNoteMarkerId === m.id ? textFixedPosition : !!m.textFixedPosition;
+                if (isFixed) return null;
+                const isEditing = activeNoteMarkerId === m.id;
+                const displayColor = isEditing ? textColor : (m.textColor || '#ffffff');
+                const displaySize = isEditing ? textSize : (m.textSize || 14);
+                const displayScaleWithMap = isEditing ? textScaleWithMap : !!m.textScaleWithMap;
+                const displayDesc = isEditing ? textDescription : (m.textDescription || '');
+                const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
+                const tooltipNote = showTooltip
+                  ? (displayDesc || m.note || 'Text')
+                  : '';
                 return (
                   <div
                     key={m.id}
                     className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
-                    data-note={m.note || 'Text'}
+                    data-note={tooltipNote}
                     style={{
                       position: 'absolute',
                       left: `${m.x}px`,
                       top: `${m.y}px`,
                       transform: 'translate(-50%, -50%)',
-                      color: m.textColor || '#ffffff',
-                      fontSize: `${m.textScaleWithMap ? (m.textSize || 14) * scaleMultiplier : (m.textSize || 14)}px`,
+                      color: displayColor,
+                      fontSize: `${displayScaleWithMap ? displaySize * scaleMultiplier : displaySize}px`,
                       fontWeight: 'bold',
                       textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
                       whiteSpace: 'pre',
@@ -2282,13 +2319,57 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         </div>
                       </div>
                     </div>
-                  )}
+                    )}
                 </React.Fragment>
               );
             })}
 
         </div>
       </div>
+
+      {/* Fixed-position text markers rendered outside canvas-container to avoid transform */}
+      {markers
+        .filter(m => m.floor === floor && isTextType(m.type) && (activeNoteMarkerId === m.id ? textFixedPosition : !!m.textFixedPosition))
+        .map(m => {
+          const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
+          if (isHidden && !isEditMode) return null;
+          const isEditing = activeNoteMarkerId === m.id;
+          const displayColor = isEditing ? textColor : (m.textColor || '#ffffff');
+          const displaySize = isEditing ? textSize : (m.textSize || 14);
+          const displayDesc = isEditing ? textDescription : (m.textDescription || '');
+          const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
+          const tooltipNote = showTooltip
+            ? (displayDesc || m.note || 'Text')
+            : '';
+          return (
+            <div
+              key={`fixed-${m.id}`}
+              className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+              data-note={tooltipNote}
+              style={{
+                position: 'fixed',
+                left: `${m.x}px`,
+                top: `${m.y}px`,
+                transform: 'translate(-50%, -50%)',
+                color: displayColor,
+                fontWeight: 'bold',
+                textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                whiteSpace: 'pre',
+                textAlign: 'center',
+                cursor: 'move',
+                pointerEvents: 'auto',
+                opacity: isHidden ? 0.35 : 1,
+                filter: isHidden ? 'grayscale(90%)' : 'none',
+                zIndex: 9000,
+                userSelect: 'none'
+              } as React.CSSProperties}
+              onMouseDown={(e) => handleMarkerMouseDown(e, m)}
+              onClick={(e) => handleMarkerClick(e, m)}
+            >
+              <div style={{ fontSize: `${displaySize}px` }}>{m.note || 'Text'}</div>
+            </div>
+          );
+        })}
 
       {/* Popover rendered as fixed overlay on the wrapper, always visible on screen */}
       {isEditMode && activeNoteMarker && (
@@ -2452,6 +2533,53 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                 />
                 ピン・ラベルと同率で拡大
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#b0b0b0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={textFixedPosition}
+                  onChange={(e) => {
+                    const nowFixed = e.target.checked;
+                    setTextFixedPosition(nowFixed);
+                    if (activeNoteMarkerId) {
+                      onMarkersChange(markers.map(m => {
+                        if (m.id !== activeNoteMarkerId) return m;
+                        if (nowFixed) {
+                          const rect = containerRef.current?.getBoundingClientRect();
+                          if (!rect) return m;
+                          const vpX = rect.left + (m.x / 1600) * rect.width;
+                          const vpY = rect.top + (m.y / 4550) * rect.height;
+                          return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(vpX), y: Math.round(vpY), textFixedPosition: true };
+                        } else {
+                          const origX = m.fixedOriginX ?? m.x;
+                          const origY = m.fixedOriginY ?? m.y;
+                          return { ...m, x: origX, y: origY, fixedOriginX: undefined, fixedOriginY: undefined, textFixedPosition: false };
+                        }
+                      }));
+                    }
+                  }}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                画面に固定（ズーム影響なし）
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <label style={{ fontSize: '9px', color: '#b0b0b0' }}>説明文:</label>
+                <textarea
+                  className="input-cyber"
+                  style={{ fontSize: '10px', padding: '4px', resize: 'vertical', minHeight: '40px', fontFamily: 'inherit' }}
+                  value={textDescription}
+                  onChange={(e) => setTextDescription(e.target.value)}
+                  placeholder="テキストの説明（任意）"
+                />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#b0b0b0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={textTooltip}
+                  onChange={(e) => setTextTooltip(e.target.checked)}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                マウスオーバーでツールチップ表示
               </label>
             </div>
           )}

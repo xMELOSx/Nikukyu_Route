@@ -12,8 +12,8 @@ import {
   DataManager,
   xorEncrypt,
   xorDecrypt,
-  AUTHOR_KEY,
-  ORIGINAL_AUTHOR_KEY
+  getAuthorKey,
+  getOriginalAuthorKey
 } from './utils/DataManager';
 import { HELP_TABS, type HelpData, fetchHelpData, saveHelpData } from './utils/HelpDataManager';
 import {
@@ -661,7 +661,7 @@ export default function App() {
       markerScale: markerScale
     };
     if (!routeToSave.originalAuthor && routeToSave.author) {
-      routeToSave.originalAuthor = xorEncrypt(xorDecrypt(routeToSave.author, AUTHOR_KEY), ORIGINAL_AUTHOR_KEY);
+      routeToSave.originalAuthor = xorEncrypt(xorDecrypt(routeToSave.author, getAuthorKey(routeToSave.id, routeToSave.createdAt)), getOriginalAuthorKey(routeToSave.id, routeToSave.createdAt));
     }
     DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
@@ -671,14 +671,19 @@ export default function App() {
 
   const handleSaveAsCopy = () => {
     const newId = `route_${Date.now()}`;
+    const newCreatedAt = Date.now();
     const copyRoute = {
       ...route,
       id: newId,
       title: `${route.title} (COPY)`,
-      createdAt: Date.now()
+      createdAt: newCreatedAt
     };
-    if (!copyRoute.originalAuthor && copyRoute.author) {
-      copyRoute.originalAuthor = xorEncrypt(xorDecrypt(copyRoute.author, AUTHOR_KEY), ORIGINAL_AUTHOR_KEY);
+    if (copyRoute.author) {
+      const plainAuthor = xorDecrypt(copyRoute.author, getAuthorKey(route.id, route.createdAt));
+      copyRoute.author = xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt));
+      if (!copyRoute.originalAuthor) {
+        copyRoute.originalAuthor = xorEncrypt(plainAuthor, getOriginalAuthorKey(newId, newCreatedAt));
+      }
     }
     DataManager.saveToLocalStorage(copyRoute);
     setRoute(copyRoute);
@@ -708,8 +713,8 @@ export default function App() {
       description: presetEditorDesc,
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
-      author: xorDecrypt(route.author, AUTHOR_KEY),
-      originalAuthor: xorDecrypt(route.originalAuthor, ORIGINAL_AUTHOR_KEY),
+      author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
+      originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
       updatedAt: Date.now(),
       routeData: routeToSave
     };
@@ -899,9 +904,14 @@ export default function App() {
 
   const createNewPlan = () => {
     const currentAuthor = route.author;
-    const newRoute = DEFAULT_ROUTE(`route_${Date.now()}`);
-    newRoute.author = currentAuthor;
-    newRoute.originalAuthor = currentAuthor ? xorEncrypt(xorDecrypt(currentAuthor, AUTHOR_KEY), ORIGINAL_AUTHOR_KEY) : '';
+    const newId = `route_${Date.now()}`;
+    const newCreatedAt = Date.now();
+    const newRoute = DEFAULT_ROUTE(newId);
+    if (currentAuthor) {
+      const plainAuthor = xorDecrypt(currentAuthor, getAuthorKey(route.id, route.createdAt));
+      newRoute.author = xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt));
+      newRoute.originalAuthor = xorEncrypt(plainAuthor, getOriginalAuthorKey(newId, newCreatedAt));
+    }
     setRouteWithGlobalDefaults(newRoute);
   };
 
@@ -1950,11 +1960,11 @@ export default function App() {
                   <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>にくきゅうコイン</label>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>&#x1f4b0;</span>
+                      <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>🪙</span>
                       <input
                         type="text"
                         className="input-cyber"
-                        style={{ paddingLeft: '28px', width: '100%' }}
+                        style={{ paddingLeft: '30px', width: '100%' }}
                         value={route.targetCoins}
                         onChange={(e) => setRoute({ ...route, targetCoins: e.target.value })}
                         disabled={!isEditMode}
@@ -1969,10 +1979,10 @@ export default function App() {
                     <input
                       type="text"
                       className="input-cyber"
-                      value={xorDecrypt(route.author, AUTHOR_KEY)}
-                      onChange={(e) => setRoute({ ...route, author: xorEncrypt(e.target.value, AUTHOR_KEY) })}
+                      value={xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt))}
+                      onChange={(e) => setRoute({ ...route, author: xorEncrypt(e.target.value, getAuthorKey(route.id, route.createdAt)) })}
                       disabled={!isEditMode}
-                      placeholder="あなたの名前"
+                      placeholder="名前"
                     />
                   </div>
                   {isLocal && (
@@ -1981,8 +1991,8 @@ export default function App() {
                       <input
                         type="text"
                         className="input-cyber"
-                        value={xorDecrypt(route.originalAuthor, ORIGINAL_AUTHOR_KEY)}
-                        onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, ORIGINAL_AUTHOR_KEY) })}
+                        value={xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt))}
+                        onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(route.id, route.createdAt)) })}
                         disabled={!isEditMode || !!route.originalAuthor}
                         placeholder="元の作者"
                       />
@@ -2178,8 +2188,8 @@ export default function App() {
                                   description: save.description || '',
                                   targetCash: save.targetCash || '',
                                   targetCoins: save.targetCoins || '',
-                                  author: xorDecrypt(save.author || '', AUTHOR_KEY),
-                                  originalAuthor: xorDecrypt(save.originalAuthor || '', ORIGINAL_AUTHOR_KEY),
+                                  author: xorDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt)),
+                                  originalAuthor: xorDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt)),
                                   updatedAt: Date.now(),
                                   routeData: routeToSave
                                 };
@@ -2196,8 +2206,8 @@ export default function App() {
                         <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash || '-'} / 🪙{s.targetCoins || '-'}</span></span>
                         {s.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
                         {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
-                        {xorDecrypt(s.author || '', AUTHOR_KEY) && <span>作者: {xorDecrypt(s.author || '', AUTHOR_KEY)}</span>}
-                        {xorDecrypt(s.originalAuthor || '', ORIGINAL_AUTHOR_KEY) && <span>原作者: {xorDecrypt(s.originalAuthor || '', ORIGINAL_AUTHOR_KEY)}</span>}
+                        {xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt)) && <span>作者: {xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt))}</span>}
+                        {xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt)) && <span>原作者: {xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt))}</span>}
                         <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
                       </div>
                     </div>
