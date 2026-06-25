@@ -2,6 +2,33 @@ export type FloorType = 'main';
 
 export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext';
 
+// Simple XOR cipher for author name obfuscation
+export function xorEncrypt(plain: string, key: string): string {
+  if (!plain) return '';
+  let result = '';
+  for (let i = 0; i < plain.length; i++) {
+    result += String.fromCharCode(plain.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return btoa(unescape(encodeURIComponent(result)));
+}
+
+export function xorDecrypt(encoded: string, key: string): string {
+  if (!encoded) return '';
+  try {
+    const decoded = decodeURIComponent(escape(atob(encoded)));
+    let result = '';
+    for (let i = 0; i < decoded.length; i++) {
+      result += String.fromCharCode(decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return result;
+  } catch {
+    return encoded;
+  }
+}
+
+export const AUTHOR_KEY = 'Fans';
+export const ORIGINAL_AUTHOR_KEY = 'Colins';
+
 export interface Point {
   x: number;
   y: number;
@@ -71,6 +98,8 @@ export interface RouteData {
   description: string;
   targetCash: string;
   targetCoins: string;
+  author: string;       // XOR-encrypted with key 'Fans'
+  originalAuthor: string; // XOR-encrypted with key 'Colins'
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
   customBg: { [key in FloorType]: string | null }; // base64 images
@@ -91,6 +120,8 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   description: 'Plan description here...',
   targetCash: '100,000',
   targetCoins: '500',
+  author: '',
+  originalAuthor: '',
   strokes: {
     main: []
   },
@@ -107,6 +138,18 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   createdAt: Date.now(),
   mapVersion: 2
 });
+
+export interface PresetData {
+  id: string;
+  name: string;
+  description: string;
+  targetCash: string;
+  targetCoins: string;
+  author: string;
+  originalAuthor: string;
+  updatedAt: number;
+  routeData: RouteData;
+}
 
 // Marker Metadata helper for styling and emoji representation
 export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string; color: string } } = {
@@ -148,18 +191,28 @@ export class DataManager {
   static saveToLocalStorage(route: RouteData): void {
     const saves = this.getSavesList();
     const index = saves.findIndex(s => s.id === route.id);
+    const entry = {
+      id: route.id,
+      title: route.title,
+      targetCash: route.targetCash || '',
+      targetCoins: route.targetCoins || '',
+      description: route.description || '',
+      author: route.author || '',
+      originalAuthor: route.originalAuthor || '',
+      updatedAt: Date.now()
+    };
     if (index >= 0) {
-      saves[index] = { id: route.id, title: route.title, updatedAt: Date.now() };
+      saves[index] = entry;
     } else {
-      saves.push({ id: route.id, title: route.title, updatedAt: Date.now() });
+      saves.push(entry);
     }
     
     localStorage.setItem(`heist_route_${route.id}`, JSON.stringify(route));
     localStorage.setItem('heist_routes_list', JSON.stringify(saves));
   }
 
-  // Get list of saved routes {id, title, updatedAt}
-  static getSavesList(): { id: string; title: string; updatedAt: number }[] {
+  // Get list of saved routes
+  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; updatedAt: number }[] {
     const listStr = localStorage.getItem('heist_routes_list');
     return listStr ? JSON.parse(listStr) : [];
   }

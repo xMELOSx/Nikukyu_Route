@@ -155,6 +155,43 @@ export default defineConfig({
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ success: true }));
             }
+          } else if (urlPath === '/api/presets' || urlPath.endsWith('/api/presets')) {
+            const presetsFile = path.resolve(__dirname, 'presets.json');
+            if (req.method === 'GET') {
+              if (fs.existsSync(presetsFile)) {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(fs.readFileSync(presetsFile, 'utf-8'));
+              } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify([]));
+              }
+            } else if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', () => {
+                fs.writeFileSync(presetsFile, body, 'utf-8');
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true }));
+              });
+            } else if (req.method === 'DELETE') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', () => {
+                try {
+                  const { id } = JSON.parse(body);
+                  if (fs.existsSync(presetsFile)) {
+                    const presets = JSON.parse(fs.readFileSync(presetsFile, 'utf-8'));
+                    const next = presets.filter((p: any) => p.id !== id);
+                    fs.writeFileSync(presetsFile, JSON.stringify(next, null, 2), 'utf-8');
+                  }
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ success: true }));
+                } catch {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ error: 'Invalid request' }));
+                }
+              });
+            }
           } else {
             next();
           }
