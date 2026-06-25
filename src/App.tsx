@@ -620,27 +620,9 @@ export default function App() {
   };
 
   // Clear current floor Canvas & Markers (selective)
-  const clearCurrentFloor = () => {
-    const choice = window.prompt(
-      'リセット対象を選択してください:\n1: ラインのみ削除\n2: 個別ピンのみ削除\n3: 両方削除\n\nキャンセルで中止',
-      '3'
-    );
-    if (!choice) return;
-    const trimmed = choice.trim();
-    if (trimmed !== '1' && trimmed !== '2' && trimmed !== '3') {
-      alert('1, 2, 3 のいずれかを入力してください。');
-      return;
-    }
-    pushHistory(route.strokes, route.markers, globalMarkers);
-    setRoute(prev => ({
-      ...prev,
-      strokes: {
-        main: (trimmed === '1' || trimmed === '3') ? [] : prev.strokes.main
-      },
-      markers: (trimmed === '2' || trimmed === '3') ? [] : prev.markers,
-      hiddenMarkers: (trimmed === '2' || trimmed === '3') ? [] : prev.hiddenMarkers
-    }));
-  };
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [saveNotification, setSaveNotification] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<'lines' | 'pins' | 'both' | null>(null);
 
   // Local Storage actions
   const handleSaveToLocal = () => {
@@ -651,27 +633,31 @@ export default function App() {
     };
     DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
-    alert(`Successfully saved: ${route.title}`);
+    setSaveNotification(`保存完了: ${route.title}`);
+    setTimeout(() => setSaveNotification(null), 2000);
   };
 
   const handleSaveAsCopy = () => {
-    const newTitle = window.prompt('コピーのプラン名を入力してください:', `${route.title} (COPY)`);
-    if (newTitle === null) return;
     const newId = `route_${Date.now()}`;
     const copyRoute = {
       ...route,
       id: newId,
-      title: newTitle.trim().toUpperCase() || 'NEW HEIST ROUTE PLAN',
+      title: `${route.title} (COPY)`,
       createdAt: Date.now()
     };
     DataManager.saveToLocalStorage(copyRoute);
     setRoute(copyRoute);
     refreshSavesList();
-    alert(`Successfully saved copy: ${copyRoute.title}`);
+    setSaveNotification(`コピー保存: ${copyRoute.title}`);
+    setTimeout(() => setSaveNotification(null), 2000);
   };
 
+  const [presetConfirm, setPresetConfirm] = useState(false);
+
   const handleSaveDefaultPreset = () => {
-    if (!window.confirm('現在のルートプランを「デフォルトプリセット」としてサーバーに保存しますか？\n(次回新規作成時や、他環境での初期データとして利用されます)')) {
+    if (!presetConfirm) {
+      setPresetConfirm(true);
+      setTimeout(() => setPresetConfirm(false), 5000);
       return;
     }
     const routeToSave = {
@@ -690,19 +676,29 @@ export default function App() {
       })
       .then(() => {
         setDefaultPreset(routeToSave);
-        alert('デフォルトプリセットを保存しました。');
+        setPresetConfirm(false);
+        setSaveNotification('デフォルトプリセットを保存しました');
+        setTimeout(() => setSaveNotification(null), 2000);
       })
       .catch(err => {
         console.error(err);
-        alert('デフォルトプリセットの保存に失敗しました。');
+        setSaveNotification('デフォルトプリセットの保存に失敗しました');
+        setTimeout(() => setSaveNotification(null), 2000);
       });
+  };
+
+  const handleDeleteDefaultPreset = () => {
+    fetch(`${import.meta.env.BASE_URL}api/default-preset`, {
+      method: 'DELETE'
+    }).catch(() => {});
+    setDefaultPreset(null);
+    setSaveNotification('デフォルトプリセットを削除しました');
+    setTimeout(() => setSaveNotification(null), 2000);
   };
 
   const handleLoadFromLocal = (id: string) => {
     if (route.id !== id && pastHistory.length > 0) {
-      if (!window.confirm('他のプランを読み込みますか？現在の未保存の編集内容は上書きされます。')) {
-        return;
-      }
+      handleSaveToLocal();
     }
     let data: RouteData | null = null;
     if (id === '__default_preset__') {
@@ -833,25 +829,28 @@ export default function App() {
         setMarkerScale(data.markerScale);
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
       }
-      alert(`Loaded plan: ${data.title}`);
+      setSaveNotification(`読み込み完了: ${data.title}`);
+      setTimeout(() => setSaveNotification(null), 2000);
     }
   };
 
   const handleDeleteFromLocal = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this route plan?')) {
+    if (deleteConfirmId === id) {
       DataManager.deleteFromLocalStorage(id);
       refreshSavesList();
       if (route.id === id) {
-        setRouteWithGlobalDefaults(DEFAULT_ROUTE(id));
+        setRouteWithGlobalDefaults(DEFAULT_ROUTE(`route_${Date.now()}`));
       }
+      setDeleteConfirmId(null);
+    } else {
+      setDeleteConfirmId(id);
+      setTimeout(() => setDeleteConfirmId(null), 3000);
     }
   };
 
   const createNewPlan = () => {
-    if (window.confirm('Create a new route plan? Unsaved changes will be lost.')) {
-      setRouteWithGlobalDefaults(DEFAULT_ROUTE(`route_${Date.now()}`));
-    }
+    setRouteWithGlobalDefaults(DEFAULT_ROUTE(`route_${Date.now()}`));
   };
 
   // JSON Import / Export
@@ -988,12 +987,15 @@ export default function App() {
             setMarkerScale(importedData.markerScale);
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
           }
-          alert(`Imported successfully: ${importedData.title}`);
+          setSaveNotification(`インポート完了: ${importedData.title}`);
+          setTimeout(() => setSaveNotification(null), 2000);
         } else {
-          alert('Invalid JSON file format.');
+          setSaveNotification('JSONファイルの形式が無効です');
+          setTimeout(() => setSaveNotification(null), 2000);
         }
       } catch (err) {
-        alert('Failed to read the JSON file.');
+        setSaveNotification('JSONファイルの読み込みに失敗しました');
+        setTimeout(() => setSaveNotification(null), 2000);
       }
     };
     reader.readAsText(file);
@@ -1175,6 +1177,12 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {saveNotification && (
+        <div style={{ position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0, 200, 100, 0.9)', color: '#fff', padding: '8px 20px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, zIndex: 9999, boxShadow: '0 0 12px rgba(0, 200, 100, 0.5)' }}>
+          {saveNotification}
+        </div>
+      )}
 
       {/* Main Layout */}
       <main
@@ -1462,14 +1470,38 @@ export default function App() {
                   <span>Pan Map</span>
                 </button>
                 {isEditMode && (
-                  <button
-                    className="tool-btn"
-                    onClick={clearCurrentFloor}
-                    id="tool-reset-btn"
-                  >
-                    <RotateCcw size={18} />
-                    <span>Reset Map</span>
-                  </button>
+                  <>
+                    {!resetTarget ? (
+                      <button
+                        className="tool-btn"
+                        onClick={() => setResetTarget('both')}
+                        id="tool-reset-btn"
+                      >
+                        <RotateCcw size={18} />
+                        <span>Reset Map</span>
+                      </button>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px', background: 'rgba(255,100,100,0.1)', borderRadius: '6px', border: '1px solid rgba(255,100,100,0.3)' }}>
+                        <div style={{ fontSize: '10px', color: '#ff6b6b', textAlign: 'center', marginBottom: '2px' }}>削除対象を選択:</div>
+                        <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
+                          pushHistory(route.strokes, route.markers, globalMarkers);
+                          setRoute(prev => ({ ...prev, strokes: { main: [] } }));
+                          setResetTarget(null);
+                        }}>📝 ラインのみ</button>
+                        <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
+                          pushHistory(route.strokes, route.markers, globalMarkers);
+                          setRoute(prev => ({ ...prev, markers: [], hiddenMarkers: [] }));
+                          setResetTarget(null);
+                        }}>📍 ピンのみ</button>
+                        <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
+                          pushHistory(route.strokes, route.markers, globalMarkers);
+                          setRoute(prev => ({ ...prev, strokes: { main: [] }, markers: [], hiddenMarkers: [] }));
+                          setResetTarget(null);
+                        }}>🗑️ 両方削除</button>
+                        <button className="btn-cyber" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => setResetTarget(null)}>キャンセル</button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1821,6 +1853,17 @@ export default function App() {
                 className="input-cyber"
                 value={route.title}
                 onChange={(e) => setRoute({ ...route, title: e.target.value.toUpperCase() })}
+                onFocus={(e) => { (e.target as HTMLInputElement).dataset.origTitle = route.title; }}
+                onBlur={(e) => {
+                  const origTitle = e.target.dataset.origTitle || '';
+                  const newTitle = e.target.value.trim().toUpperCase();
+                  if (!newTitle || newTitle === origTitle) return;
+                  const newId = `route_${Date.now()}`;
+                  const newRoute = { ...route, id: newId, title: newTitle, createdAt: Date.now() };
+                  DataManager.saveToLocalStorage(newRoute);
+                  setRoute(newRoute);
+                  refreshSavesList();
+                }}
                 disabled={!isEditMode}
               />
 
@@ -1951,8 +1994,28 @@ export default function App() {
                   onClick={() => handleLoadFromLocal('__default_preset__')}
                 >
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
-                    <strong>🎁 デフォルトプリセット</strong>
+                    <strong>🎁 {defaultPreset.title || 'デフォルトプリセット'}</strong>
                   </div>
+                  {isLocal && isEditMode && (
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        className="btn-cyber"
+                        style={{ fontSize: '8px', padding: '2px 4px', clipPath: 'none', borderColor: 'var(--yellow-neon)', color: 'var(--yellow-neon)' }}
+                        onClick={(e) => { e.stopPropagation(); handleSaveDefaultPreset(); }}
+                        title="現在のプランで上書き"
+                      >
+                        {presetConfirm ? '確認' : '上書き'}
+                      </button>
+                      <button
+                        className="btn-cyber danger"
+                        style={{ fontSize: '8px', padding: '2px 4px', clipPath: 'none' }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteDefaultPreset(); }}
+                        title="プリセット削除"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {saves.length === 0 ? (
@@ -1969,13 +2032,32 @@ export default function App() {
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
                       <strong>{s.title}</strong>
                     </div>
-                    <button
-                      className="delete-btn"
-                      onClick={(e) => handleDeleteFromLocal(e, s.id)}
-                      disabled={!isEditMode}
-                    >
-                      Delete
-                    </button>
+                    {deleteConfirmId === s.id ? (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          className="btn-cyber danger"
+                          style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}
+                        >
+                          削除する
+                        </button>
+                        <button
+                          className="btn-cyber"
+                          style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
+                          onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="delete-btn"
+                        onClick={(e) => handleDeleteFromLocal(e, s.id)}
+                        disabled={!isEditMode}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 ))
               )}

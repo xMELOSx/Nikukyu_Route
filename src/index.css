@@ -340,6 +340,10 @@ button, select, input {
   align-items: center;
   justify-content: center;
   cursor: crosshair;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .canvas-wrapper.grab {
@@ -357,6 +361,10 @@ button, select, input {
   box-shadow: 0 0 50px rgba(0, 240, 255, 0.05);
   flex-shrink: 0;
   flex-grow: 0;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Background Map styling */

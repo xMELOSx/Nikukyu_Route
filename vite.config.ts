@@ -149,6 +149,11 @@ export default defineConfig({
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ success: true }));
               });
+            } else if (req.method === 'DELETE') {
+              const filePath = path.resolve(__dirname, 'default_preset.json');
+              if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ success: true }));
             }
           } else {
             next();

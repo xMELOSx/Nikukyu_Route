@@ -676,12 +676,65 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return minDistance;
   };
 
-  const getCanvasCoords = (e: React.MouseEvent<HTMLElement>): Point => {
+  const getCanvasCoords = (e: { clientX: number; clientY: number }): Point => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 1600;
     const y = ((e.clientY - rect.top) / rect.height) * 4550;
     return { x: Math.round(x), y: Math.round(y) };
+  };
+
+  // Touch state for pinch-zoom
+  const touchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const touchDragRef = useRef<{ id: number; startX: number; startY: number } | null>(null);
+
+  const toFakeMouse = (t: React.Touch) => ({
+    clientX: t.clientX, clientY: t.clientY, button: 0,
+    preventDefault: () => {}, shiftKey: false
+  } as React.MouseEvent<HTMLDivElement>);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom };
+      return;
+    }
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchDragRef.current = { id: t.identifier, startX: t.clientX, startY: t.clientY };
+      handleMouseDown(toFakeMouse(t));
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2 && touchStartRef.current) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = dist / touchStartRef.current.dist;
+      const newZoom = Math.max(0.1, Math.min(5, touchStartRef.current.zoom * scale));
+      setZoom(newZoom);
+      return;
+    }
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      handleMouseMove(toFakeMouse(t));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length < 2) {
+      touchStartRef.current = null;
+    }
+    if (e.touches.length === 0) {
+      touchDragRef.current = null;
+      handleMouseUp();
+    }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1355,6 +1408,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       onDoubleClick={(e) => {
         const coords = getCanvasCoords(e);
         setCurrentPosition(coords);
