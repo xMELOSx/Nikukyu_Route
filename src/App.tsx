@@ -2143,6 +2143,87 @@ export default function App() {
                         <div>globalMarkers: {globalMarkers.length}</div>
                       </div>
                     </div>
+
+                    {/* Individual marker visibility toggles */}
+                    <div style={{ marginTop: '4px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '6px' }}>マーカー表示切替:</div>
+                      <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {/* Global markers */}
+                        {globalMarkers.length > 0 && (
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>グローバル:</div>
+                        )}
+                        {globalMarkers.map(m => {
+                          const meta = MARKER_META[m.type];
+                          const isHidden = (route.hiddenMarkers || []).includes(m.id);
+                          return (
+                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 4px', borderRadius: '3px', background: isHidden ? 'rgba(255,255,255,0.02)' : 'rgba(0,240,255,0.04)' }}>
+                              <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
+                              <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}
+                              </span>
+                              <button
+                                className="btn-cyber"
+                                style={{
+                                  padding: '1px 6px',
+                                  fontSize: '9px',
+                                  clipPath: 'none',
+                                  borderColor: isHidden ? '#f55' : '#0f0',
+                                  color: isHidden ? '#f55' : '#0f0'
+                                }}
+                                onClick={() => {
+                                  if (isHidden) {
+                                    handleShowGlobalMarker(m.id);
+                                  } else {
+                                    handleHideGlobalMarker(m.id);
+                                  }
+                                }}
+                              >
+                                {isHidden ? '非表示' : '表示中'}
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Individual markers */}
+                        {route.markers.length > 0 && (
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>個別:</div>
+                        )}
+                        {route.markers.map(m => {
+                          const meta = MARKER_META[m.type];
+                          const isHidden = (route.hiddenMarkers || []).includes(m.id);
+                          return (
+                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 4px', borderRadius: '3px', background: isHidden ? 'rgba(255,255,255,0.02)' : 'rgba(0,240,255,0.04)' }}>
+                              <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
+                              <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}
+                              </span>
+                              <button
+                                className="btn-cyber"
+                                style={{
+                                  padding: '1px 6px',
+                                  fontSize: '9px',
+                                  clipPath: 'none',
+                                  borderColor: isHidden ? '#f55' : '#0f0',
+                                  color: isHidden ? '#f55' : '#0f0'
+                                }}
+                                onClick={() => {
+                                  if (isHidden) {
+                                    handleShowGlobalMarker(m.id);
+                                  } else {
+                                    handleHideGlobalMarker(m.id);
+                                  }
+                                }}
+                              >
+                                {isHidden ? '非表示' : '表示中'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {globalMarkers.length === 0 && route.markers.length === 0 && (
+                          <div style={{ fontSize: '10px', color: '#666', padding: '8px', textAlign: 'center' }}>マーカーがありません</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ) : isEditMode && isLocal && !isHelpPreviewMode ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>

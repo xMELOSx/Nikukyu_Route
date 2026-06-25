@@ -4,7 +4,8 @@ import {
   type DrawingStroke, 
   type HeistMarker, 
   type MarkerType, 
-  type Point, 
+  type Point,
+  type MediaItem,
   MARKER_META,
   PRESET_MAPS_META
 } from '../utils/DataManager';
@@ -239,6 +240,82 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
   const isTextType = (type: string) => type === 'text' || type === 'itext';
 
+  const detectMediaType = (url: string): MediaItem['type'] => {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+    if (url.includes('x.com') || url.includes('twitter.com')) return 'x-embed';
+    if (url.includes('.webm') || url.includes('video/webm')) return 'webm';
+    return 'image';
+  };
+
+  const [mediaUrlInputs, setMediaUrlInputs] = useState<Record<string, string>>({});
+
+  const renderMediaManager = (m: HeistMarker) => {
+    const inputVal = mediaUrlInputs[m.id] || '';
+    const submitUrl = () => {
+      if (!inputVal.trim()) return;
+      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: inputVal.trim(), type: detectMediaType(inputVal.trim()), description: '' };
+      const next = [...(m.mediaItems || []), newItem];
+      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+      setMediaItems(next);
+      setMediaUrlInputs(prev => ({ ...prev, [m.id]: '' }));
+    };
+    return (
+      <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(79, 195, 247, 0.2)', paddingTop: '6px' }}>
+        {m.mediaItems && m.mediaItems.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '6px' }}>
+            {m.mediaItems.map((item, idx) => (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', background: 'rgba(79,195,247,0.05)', borderRadius: '3px' }}>
+                <span style={{ fontSize: '8px', color: '#7ec8e3', textTransform: 'uppercase', minWidth: '24px' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
+                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '1px 4px' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
+                  const next = [...(m.mediaItems || [])];
+                  next[idx] = { ...next[idx], description: e.target.value };
+                  onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+                  setMediaItems(next);
+                }} />
+                <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px' }} onClick={() => {
+                  const next = (m.mediaItems || []).filter((_, i) => i !== idx);
+                  onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+                  setMediaItems(next);
+                }}>×</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*,video/webm';
+            input.multiple = true;
+            input.onchange = async () => {
+              if (!input.files) return;
+              for (const file of Array.from(input.files)) {
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                  const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
+                  const data = await res.json();
+                  if (data.url) {
+                    const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
+                    const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: data.url, type: isVideo ? 'webm' : 'image', description: '' };
+                    const next = [...(m.mediaItems || []), newItem];
+                    onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+                    setMediaItems(next);
+                  }
+                } catch (err) { console.error('Upload failed:', err); }
+              }
+            };
+            input.click();
+          }}>📎 添付</button>
+        </div>
+        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+          <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [m.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
+          <button type="button" className="btn-cyber" style={{ padding: '3px 8px', fontSize: '9px', clipPath: 'none' }} onClick={submitUrl}>追加</button>
+        </div>
+      </div>
+    );
+  };
+
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -259,8 +336,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [noteText, setNoteText] = useState('');
   const [infoLabel, setInfoLabel] = useState('');
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
-  const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed'>('image');
-  const [mediaItems, setMediaItems] = useState<{id: string; url: string; type: 'image' | 'webm' | 'x-embed'; description: string}[]>([]);
+  const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed' | 'youtube'>('image');
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -493,7 +570,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPosition, markers, floor, onMarkersChange]);
+  }, [currentPosition, markers, floor, onMarkersChange, activeNoteMarkerId]);
 
   // Redraw all strokes on canvas
   const redrawStrokes = () => {
@@ -1660,6 +1737,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {m.infoMediaType === 'x-embed' && (
                               <TweetEmbed url={m.infoMediaUrl} />
                             )}
+                            {m.infoMediaType === 'youtube' && (() => {
+                              const ytMatch = m.infoMediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+                              const videoId = ytMatch ? ytMatch[1] : null;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                            })()}
                           </div>
                         )}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
@@ -1667,9 +1749,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                             {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.type === 'youtube' && (() => {
+                              const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+                              const videoId = ytMatch ? ytMatch[1] : null;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                            })()}
                             {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
                           </div>
                         ))}
+                        {isEditMode && isLocal && renderMediaManager(m)}
                       </div>
                     </div>
                   )}
@@ -1836,9 +1924,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                             {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.type === 'youtube' && (() => {
+                              const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+                              const videoId = ytMatch ? ytMatch[1] : null;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                            })()}
                             {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
                           </div>
                         ))}
+                        {isEditMode && isLocal && renderMediaManager(m)}
 
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
@@ -1936,13 +2030,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <div className="info-popup-content">
                         {/* Battle media items */}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
-                          <div key={item.id} style={{ marginBottom: '4px' }}>
+                          <div key={item.id} style={{ marginTop: '4px' }}>
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                             {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
+                            {item.type === 'youtube' && (() => {
+                              const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+                              const videoId = ytMatch ? ytMatch[1] : null;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                            })()}
                             {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
                           </div>
                         ))}
+                        {isEditMode && isLocal && renderMediaManager(m)}
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const isGlobalPin = m.type === 'gbattle';
@@ -2250,134 +2350,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
           {noteSettingsExpanded && activeNoteMarker && (
           <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(0, 255, 255, 0.15)', paddingTop: '8px' }}>
-
-          {/* Legacy single media for info pins (kept for backward compat) */}
-          {isInfoType(activeNoteMarker.type) && (
-            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>メインメディア:</div>
-              
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {(['image', 'webm', 'x-embed'] as const).map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    className={`btn-cyber ${infoMediaType === t ? 'active' : ''}`}
-                    style={{ flex: 1, padding: '3px 0', fontSize: '9px', textTransform: 'uppercase', clipPath: 'none' }}
-                    onClick={() => setInfoMediaType(t)}
-                  >
-                    {t === 'x-embed' ? 'X Post' : t}
-                  </button>
-                ))}
-              </div>
-
-              <input
-                type="text"
-                className="input-cyber"
-                style={{ width: '100%', fontSize: '11px', padding: '4px 6px' }}
-                placeholder={
-                  infoMediaType === 'image' ? 'https://example.com/image.png' :
-                  infoMediaType === 'webm' ? 'https://example.com/animation.webm' :
-                  'https://x.com/username/status/123456789...'
-                }
-                value={infoMediaUrl}
-                onChange={(e) => setInfoMediaUrl(e.target.value)}
-              />
-            </div>
-          )}
-
-          {/* Multi-media attachments for info/eh/boss/battle pins */}
-          {(isInfoType(activeNoteMarker.type) || activeNoteMarker.type === 'eh' || activeNoteMarker.type === 'boss' || activeNoteMarker.type === 'battle' || activeNoteMarker.type === 'gbattle') && isLocal && isEditMode && (
-            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(79, 195, 247, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>追加メディア ({mediaItems.length}):</div>
-              
-              {mediaItems.map((item, idx) => (
-                <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '3px', background: 'rgba(79, 195, 247, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(79, 195, 247, 0.15)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '9px', color: '#7ec8e3', textTransform: 'uppercase' }}>{item.type}</span>
-                    <span style={{ fontSize: '8px', color: '#666', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.url}</span>
-                    <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '11px' }} onClick={() => setMediaItems(mediaItems.filter((_, i) => i !== idx))}>×</span>
-                  </div>
-                  {item.type === 'image' && item.url && (
-                    <img src={item.url} alt="" style={{ maxWidth: '100%', maxHeight: '80px', borderRadius: '4px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  )}
-                  {item.type === 'webm' && item.url && (
-                    <video src={item.url} style={{ maxWidth: '100%', maxHeight: '80px', borderRadius: '4px' }} muted />
-                  )}
-                  <input
-                    type="text"
-                    className="input-cyber"
-                    style={{ fontSize: '9px', padding: '2px 4px' }}
-                    placeholder="説明文（任意）"
-                    value={item.description}
-                    onChange={(e) => {
-                      const next = [...mediaItems];
-                      next[idx] = { ...next[idx], description: e.target.value };
-                      setMediaItems(next);
-                    }}
-                  />
-                </div>
-              ))}
-
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button
-                  type="button"
-                  className="btn-cyber"
-                  style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }}
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*,video/webm';
-                    input.multiple = true;
-                    input.onchange = async () => {
-                      if (!input.files) return;
-                      for (const file of Array.from(input.files)) {
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        try {
-                          const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
-                          const data = await res.json();
-                          if (data.url) {
-                            const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
-                            setMediaItems(prev => [...prev, {
-                              id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                              url: data.url,
-                              type: isVideo ? 'webm' : 'image',
-                              description: ''
-                            }]);
-                          }
-                        } catch (err) {
-                          console.error('Upload failed:', err);
-                        }
-                      }
-                    };
-                    input.click();
-                  }}
-                >
-                  📎 ファイル添付
-                </button>
-                <button
-                  type="button"
-                  className="btn-cyber"
-                  style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }}
-                  onClick={() => {
-                    const url = prompt('メディアURLを入力:');
-                    if (url && url.trim()) {
-                      const isVideo = url.includes('.webm') || url.includes('video');
-                      const isX = url.includes('x.com') || url.includes('twitter.com');
-                      setMediaItems(prev => [...prev, {
-                        id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                        url: url.trim(),
-                        type: isX ? 'x-embed' : isVideo ? 'webm' : 'image',
-                        description: ''
-                      }]);
-                    }
-                  }}
-                >
-                  🔗 URL追加
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Text marker color & size editing */}
           {isTextType(activeNoteMarker.type) && (
@@ -2724,6 +2696,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   出現率が高い (High Spawn Rate) - 強調表示する
                 </label>
               </div>
+              {isLocal && activeNoteMarker && renderMediaManager(activeNoteMarker)}
             </div>
           )}
 

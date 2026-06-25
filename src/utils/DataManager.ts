@@ -23,7 +23,7 @@ export interface ScrollConfig {
 export interface MediaItem {
   id: string;
   url: string;
-  type: 'image' | 'webm' | 'x-embed';
+  type: 'image' | 'webm' | 'x-embed' | 'youtube';
   description?: string;
 }
 
@@ -39,7 +39,7 @@ export interface HeistMarker {
   phoneActive?: boolean;  // For phone markers: true = 📞 (active), false/undefined = ☎ (inactive)
   phoneLocked?: boolean;  // For phone markers: always active, not affected by reset/toggle
   infoMediaUrl?: string;  // For info markers: URL to image, webm or X post
-  infoMediaType?: 'image' | 'webm' | 'x-embed'; // For info markers: type of media
+  infoMediaType?: 'image' | 'webm' | 'x-embed' | 'youtube'; // For info markers: type of media
   infoExpanded?: boolean; // For info markers: whether details are expanded in presentation mode
   noteExpanded?: boolean; // For note markers: whether popup is expanded in presentation mode
   infoLabel?: string;     // For info markers: short label displayed under the pin
