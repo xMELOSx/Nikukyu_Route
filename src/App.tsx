@@ -30,7 +30,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Star
+  Star,
+  FilePlus
 } from 'lucide-react';
 
 interface HistoryState {
@@ -1213,25 +1214,8 @@ export default function App() {
           <button className="btn-cyber" onClick={handleSaveAsCopy} title="Save a copy of the current plan">
             <Copy size={16} /> Save as Copy
           </button>
-          <button className="btn-cyber" onClick={handleExportJSON} title="Download plan as JSON">
-            <Download size={16} /> Export JSON
-          </button>
-          <button className="btn-cyber" onClick={() => jsonFileInputRef.current?.click()} title="Upload plan from JSON">
-            <Upload size={16} /> Import JSON
-          </button>
-          <input
-            type="file"
-            ref={jsonFileInputRef}
-            onChange={handleImportJSON}
-            accept=".json"
-            style={{ display: 'none' }}
-            id="json-file-input"
-          />
           <button className="btn-cyber success" onClick={handleExportPNG} title="Save map drawing as PNG Image">
             <ImageIcon size={16} /> Save Map Image
-          </button>
-          <button className="btn-cyber danger" onClick={createNewPlan} title="Create clean sheet">
-            New Plan
           </button>
         </div>
       </header>
@@ -1912,14 +1896,34 @@ export default function App() {
           {/* Route Tab Content */}
           {rightTab === 'route' && (<>
             <div className="panel-section">
-              {/* Save/Load buttons above label */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+              {/* Save/Load/New buttons */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
                 <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleSaveToLocal}>
                   <Save size={12} /> セーブ
                 </button>
                 <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => setPresetListVisible(true)}>
                   <Upload size={12} /> 読込
                 </button>
+                <button className="btn-cyber danger" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={createNewPlan}>
+                  <FilePlus size={12} /> 新規
+                </button>
+              </div>
+
+              {/* Export/Import buttons */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
+                  <Download size={12} /> Export
+                </button>
+                <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => jsonFileInputRef.current?.click()}>
+                  <Upload size={12} /> Import
+                </button>
+                <input
+                  type="file"
+                  ref={jsonFileInputRef}
+                  onChange={handleImportJSON}
+                  accept=".json"
+                  style={{ display: 'none' }}
+                />
               </div>
 
 
@@ -1975,7 +1979,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>作者名</label>
                     <input

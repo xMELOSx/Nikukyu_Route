@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { 
   type FloorType, 
   type DrawingStroke, 
@@ -393,19 +394,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const prevLeftCollapsedRef = useRef(leftSidebarCollapsed);
   const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
 
   useEffect(() => {
     const prevLeft = prevLeftCollapsedRef.current;
     const prevRight = prevRightCollapsedRef.current;
-    prevLeftCollapsedRef.current = leftSidebarCollapsed;
-    prevRightCollapsedRef.current = rightSidebarCollapsed;
 
     if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
 
+    prevLeftCollapsedRef.current = leftSidebarCollapsed;
+    prevRightCollapsedRef.current = rightSidebarCollapsed;
+
+    const currentMarkers = markersRef.current;
     const vpCenterX = window.innerWidth / 2;
 
     onMarkersChange(
-      markers.map(m => {
+      currentMarkers.map(m => {
         if (!m.textFixedPosition || m.floor !== floor) return m;
         const isCloserToLeft = m.x < vpCenterX;
 
@@ -2362,49 +2367,52 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       </div>
 
-      {/* Fixed-position text markers rendered outside canvas-container to avoid transform */}
-      {markers
-        .filter(m => m.floor === floor && isTextType(m.type) && (activeNoteMarkerId === m.id ? textFixedPosition : !!m.textFixedPosition))
-        .map(m => {
-          const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
-          if (isHidden && !isEditMode) return null;
-          const isEditing = activeNoteMarkerId === m.id;
-          const displayColor = isEditing ? textColor : (m.textColor || '#ffffff');
-          const displaySize = isEditing ? textSize : (m.textSize || 14);
-          const displayDesc = isEditing ? textDescription : (m.textDescription || '');
-          const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
-          const tooltipNote = showTooltip
-            ? (displayDesc || m.note || 'Text')
-            : '';
-          return (
-            <div
-              key={`fixed-${m.id}`}
-              className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
-              data-note={tooltipNote}
-              style={{
-                position: 'fixed',
-                left: `${m.x}px`,
-                top: `${m.y}px`,
-                transform: 'translate(-50%, -50%)',
-                color: displayColor,
-                fontWeight: 'bold',
-                textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
-                whiteSpace: 'pre',
-                textAlign: 'center',
-                cursor: 'move',
-                pointerEvents: 'auto',
-                opacity: isHidden ? 0.35 : 1,
-                filter: isHidden ? 'grayscale(90%)' : 'none',
-                zIndex: 9000,
-                userSelect: 'none'
-              } as React.CSSProperties}
-              onMouseDown={(e) => handleMarkerMouseDown(e, m)}
-              onClick={(e) => handleMarkerClick(e, m)}
-            >
-              <div style={{ fontSize: `${displaySize}px` }}>{m.note || 'Text'}</div>
-            </div>
-          );
-        })}
+      {/* Fixed-position text markers rendered via portal to escape overflow:hidden on iOS Safari */}
+      {ReactDOM.createPortal(
+        markers
+          .filter(m => m.floor === floor && isTextType(m.type) && (activeNoteMarkerId === m.id ? textFixedPosition : !!m.textFixedPosition))
+          .map(m => {
+            const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
+            if (isHidden && !isEditMode) return null;
+            const isEditing = activeNoteMarkerId === m.id;
+            const displayColor = isEditing ? textColor : (m.textColor || '#ffffff');
+            const displaySize = isEditing ? textSize : (m.textSize || 14);
+            const displayDesc = isEditing ? textDescription : (m.textDescription || '');
+            const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
+            const tooltipNote = showTooltip
+              ? (displayDesc || m.note || 'Text')
+              : '';
+            return (
+              <div
+                key={`fixed-${m.id}`}
+                className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                data-note={tooltipNote}
+                style={{
+                  position: 'fixed',
+                  left: `${m.x}px`,
+                  top: `${m.y}px`,
+                  transform: 'translate(-50%, -50%)',
+                  color: displayColor,
+                  fontWeight: 'bold',
+                  textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                  whiteSpace: 'pre',
+                  textAlign: 'center',
+                  cursor: 'move',
+                  pointerEvents: 'auto',
+                  opacity: isHidden ? 0.35 : 1,
+                  filter: isHidden ? 'grayscale(90%)' : 'none',
+                  zIndex: 9000,
+                  userSelect: 'none'
+                } as React.CSSProperties}
+                onMouseDown={(e) => handleMarkerMouseDown(e, m)}
+                onClick={(e) => handleMarkerClick(e, m)}
+              >
+                <div style={{ fontSize: `${displaySize}px` }}>{m.note || 'Text'}</div>
+              </div>
+            );
+          }),
+        document.body
+      )}
 
       {/* Popover rendered as fixed overlay on the wrapper, always visible on screen */}
       {isEditMode && activeNoteMarker && (
