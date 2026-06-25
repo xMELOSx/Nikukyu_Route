@@ -669,6 +669,8 @@ export default function App() {
   // Clear current floor Canvas & Markers (selective)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [presetDeleteConfirmId, setPresetDeleteConfirmId] = useState<string | null>(null);
+  const [historyDeleteConfirmId, setHistoryDeleteConfirmId] = useState<string | null>(null);
+  const [newPlanConfirm, setNewPlanConfirm] = useState(false);
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<'lines' | 'pins' | 'both' | null>(null);
 
@@ -922,6 +924,12 @@ export default function App() {
   };
 
   const createNewPlan = () => {
+    if (!newPlanConfirm) {
+      setNewPlanConfirm(true);
+      setTimeout(() => setNewPlanConfirm(false), 3000);
+      return;
+    }
+    setNewPlanConfirm(false);
     const currentAuthor = route.author;
     const newId = `route_${Date.now()}`;
     const newCreatedAt = Date.now();
@@ -1138,6 +1146,77 @@ export default function App() {
     );
   };
 
+  // PNG Import (from pixel-encoded data bar)
+  const handlePngImport = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.png')) return;
+    try {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      await new Promise<void>((resolveImg, rejectImg) => {
+        img.onload = () => resolveImg();
+        img.onerror = () => rejectImg(new Error('load failed'));
+        img.src = url;
+      });
+      URL.revokeObjectURL(url);
+      const data = await DataManager.decodePngData(img);
+      if (!data) {
+        setSaveNotification('PNGからデータを読み取れませんでした（データバー未検出）');
+        setTimeout(() => setSaveNotification(null), 3000);
+        return;
+      }
+      // Re-encrypt author names with new keys since id/createdAt change
+      const newId = `route_${Date.now()}`;
+      const newCreatedAt = Date.now();
+      const plainAuthor = xorDecrypt(data.author || '', getAuthorKey(data.id, data.createdAt));
+      const plainOriginalAuthor = xorDecrypt(data.originalAuthor || '', getOriginalAuthorKey(data.id, data.createdAt));
+      // Filter out global-type markers (they're loaded from global_markers.json)
+      const isGlobalType = (t: string) =>
+        ['eh','rare','cardkey','vault','boss','phone','warp','stairs','info','note','text','room','gbattle','gpicking','glong_picking'].includes(t);
+      const individualMarkers = (data.markers || []).filter(m => !isGlobalType(m.type));
+      const importedRoute: RouteData = {
+        ...data,
+        id: newId,
+        createdAt: newCreatedAt,
+        markers: individualMarkers,
+        author: xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt)),
+        originalAuthor: xorEncrypt(plainOriginalAuthor, getOriginalAuthorKey(newId, newCreatedAt))
+      };
+      DataManager.saveToLocalStorage(importedRoute);
+      setRouteWithGlobalDefaults(importedRoute);
+      refreshSavesList();
+      setSaveNotification(`PNGインポート完了: ${importedRoute.title}`);
+      setTimeout(() => setSaveNotification(null), 2000);
+    } catch (err) {
+      setSaveNotification('PNG読み込みに失敗しました');
+      setTimeout(() => setSaveNotification(null), 3000);
+    }
+  };
+
+  // DnD handlers for map and sidebar — window level to avoid MapCanvas interception
+  const pngFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+      if (file.name.endsWith('.json')) {
+        handleImportJSON({ target: { files: [file] } } as any);
+      } else if (file.name.endsWith('.png')) {
+        await handlePngImport(file);
+      }
+    };
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
   // Brush Preset Helper
   const setBrushPreset = (color: string, width: number, type: 'solid' | 'dashed' | 'arrow') => {
     setToolMode('draw');
@@ -1165,6 +1244,14 @@ export default function App() {
         className="main-content"
         style={{
           gridTemplateColumns: `${leftSidebarCollapsed ? '0px' : '280px'} 1fr ${rightSidebarCollapsed ? '0px' : '340px'}`
+        }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          const file = e.dataTransfer.files[0];
+          if (!file) return;
+          if (file.name.endsWith('.json')) handleImportJSON({ target: { files: [file] } } as any);
+          else if (file.name.endsWith('.png')) await handlePngImport(file);
         }}
       >
         {/* Left Control Panel: Rooms Quick Pan & Drawing/Markers */}
@@ -1737,10 +1824,11 @@ export default function App() {
           <MapCanvas
             floor={currentFloor}
             strokes={route.strokes[currentFloor]}
-            markers={[
-              ...globalMarkers,
-              ...route.markers
-            ]}
+            markers={(() => {
+              const combined = [...globalMarkers, ...route.markers];
+              const seen = new Set<string>();
+              return combined.filter(m => seen.has(m.id) ? false : (seen.add(m.id), true));
+            })()}
             hiddenMarkers={route.hiddenMarkers || []}
             hiddenMarkerTypes={route.hiddenMarkerTypes || []}
             globalMarkerIds={globalMarkers.map(m => m.id)}
@@ -1850,32 +1938,35 @@ export default function App() {
                   <Upload size={12} /> 読込
                 </button>
                 <button className="btn-cyber danger" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={createNewPlan}>
-                  <FilePlus size={12} /> 新規
+                  <FilePlus size={12} /> {newPlanConfirm ? '実行?' : '新規'}
                 </button>
               </div>
 
               {/* Export/Import buttons */}
               <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                 <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
-                  <Download size={12} /> Export
+                  <Download size={12} /> JSON保存
+                </button>
+                <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG}>
+                  <ImageIcon size={12} /> 画像保存
                 </button>
                 <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => jsonFileInputRef.current?.click()}>
-                  <Upload size={12} /> Import
+                  <Upload size={12} /> インポート
                 </button>
                 <input
                   type="file"
                   ref={jsonFileInputRef}
-                  onChange={handleImportJSON}
-                  accept=".json"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    if (f.name.endsWith('.png')) handlePngImport(f);
+                    else handleImportJSON({ target: { files: [f] } } as any);
+                    e.target.value = '';
+                  }}
+                  accept=".json,.png"
                   style={{ display: 'none' }}
                 />
               </div>
-              <div style={{ marginBottom: '6px' }}>
-                <button className="btn-cyber success" style={{ width: '100%', padding: '4px', fontSize: '10px' }} onClick={handleExportPNG}>
-                  <ImageIcon size={12} /> Save Map Image
-                </button>
-              </div>
-
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>プラン名</label>
@@ -1908,7 +1999,17 @@ export default function App() {
                         className="input-cyber"
                         style={{ paddingLeft: '24px', width: '100%' }}
                         value={route.targetCash}
-                        onChange={(e) => setRoute({ ...route, targetCash: e.target.value })}
+                        onChange={(e) => setRoute({ ...route, targetCash: e.target.value.replace(/,/g, '') })}
+                        onBlur={(e) => {
+                          const raw = e.target.value.replace(/,/g, '');
+                          const num = parseInt(raw);
+                          if (raw === '' || isNaN(num)) return;
+                          setRoute(prev => ({ ...prev, targetCash: num.toLocaleString() }));
+                        }}
+                        onFocus={(e) => {
+                          const raw = e.target.value.replace(/,/g, '');
+                          if (raw) setRoute(prev => ({ ...prev, targetCash: raw }));
+                        }}
                         disabled={!isEditMode}
                       />
                     </div>
@@ -1922,15 +2023,72 @@ export default function App() {
                         className="input-cyber"
                         style={{ paddingLeft: '30px', width: '100%' }}
                         value={route.targetCoins}
-                        onChange={(e) => setRoute({ ...route, targetCoins: e.target.value })}
+                        onChange={(e) => setRoute({ ...route, targetCoins: e.target.value.replace(/,/g, '') })}
+                        onBlur={(e) => {
+                          const raw = e.target.value.replace(/,/g, '');
+                          const num = parseInt(raw);
+                          if (raw === '' || isNaN(num)) return;
+                          setRoute(prev => ({ ...prev, targetCoins: num.toLocaleString() }));
+                        }}
+                        onFocus={(e) => {
+                          const raw = e.target.value.replace(/,/g, '');
+                          if (raw) setRoute(prev => ({ ...prev, targetCoins: raw }));
+                        }}
                         disabled={!isEditMode}
                       />
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', width: '100%', marginLeft: '-12px', marginRight: '-12px', paddingLeft: '12px', paddingRight: '12px' }}>
-                  <div style={{ width: '100%' }}>
+                <div style={{ marginTop: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
+                    目標所要時間 {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                    <input
+                      type="range"
+                      style={{ flex: 1, accentColor: 'var(--cyan-neon)', height: '24px' }}
+                      min="0" max="720" step="1"
+                      value={route.targetDuration || '0'}
+                      onChange={(e) => setRoute({ ...route, targetDuration: e.target.value })}
+                      onWheel={(e) => {
+                        if (!isEditMode) return;
+                        e.preventDefault();
+                        const cur = parseInt(route.targetDuration || '0');
+                        const next = Math.min(720, Math.max(0, cur + (e.deltaY < 0 ? 1 : -1)));
+                        setRoute({ ...route, targetDuration: String(next) });
+                      }}
+                      disabled={!isEditMode}
+                    />
+                    <input
+                      type="text"
+                      className="input-cyber"
+                      style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: 'var(--cyan-neon)' }}
+                      defaultValue={(() => {
+                        const sec = parseInt(route.targetDuration || '0');
+                        return isNaN(sec) ? '0' : String(sec);
+                      })()}
+                      onFocus={(e) => {
+                        const sec = parseInt(route.targetDuration || '0');
+                        (e.target as HTMLInputElement).value = isNaN(sec) ? '' : String(sec);
+                      }}
+                      onBlur={(e) => {
+                        const v = e.target.value.replace(/[^0-9]/g, '');
+                        const num = parseInt(v) || 0;
+                        const total = v.length >= 4 ? Math.floor(num / 100) * 60 + (num % 100) : num;
+                        setRoute({ ...route, targetDuration: String(Math.min(720, Math.max(0, total))) });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      }}
+                      disabled={!isEditMode}
+                      placeholder="秒数か4桁"
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                  <div>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>作者名</label>
                     <input
                       type="text"
@@ -1943,7 +2101,7 @@ export default function App() {
                     />
                   </div>
                   {isLocal && (
-                    <div style={{ width: '100%' }}>
+                    <div>
                       <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>原作者名</label>
                       <input
                         type="text"
@@ -1951,7 +2109,7 @@ export default function App() {
                         style={{ width: '100%', boxSizing: 'border-box' }}
                         value={xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt))}
                         onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(route.id, route.createdAt)) })}
-                        disabled={!isEditMode || !!route.originalAuthor}
+                        disabled={!isEditMode || (route.originalAuthor !== undefined && route.originalAuthor !== '')}
                         placeholder="元の作者"
                       />
                     </div>
@@ -2059,6 +2217,14 @@ export default function App() {
                             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                               X:{m.x} Y:{m.y}
                             </span>
+                            {isEditMode && (historyDeleteConfirmId === m.id ? (
+                              <>
+                                <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setRoute(prev => ({ ...prev, markers: prev.markers.filter(x => x.id !== m.id) })); setGlobalMarkers(prev => prev.filter(x => x.id !== m.id)); setHistoryDeleteConfirmId(null); setSaveNotification('マーカーを削除しました'); setTimeout(() => setSaveNotification(null), 2000); }}>削除する</button>
+                                <button className="btn-cyber" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(null); }}>×</button>
+                              </>
+                            ) : (
+                              <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(m.id); setTimeout(() => setHistoryDeleteConfirmId(null), 3000); }}>削除</button>
+                            ))}
                           </div>
                           <div className="placed-note-text">
                             {m.note.trim() ? m.note : <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No text note details</span>}
@@ -2130,11 +2296,11 @@ export default function App() {
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>獲得値: <span style={{ color: '#ffd700' }}>${p.targetCash || '-'} / 🪙{p.targetCoins || '-'}</span></span>
+                        <span>獲得値: <span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
                         {p.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
                         {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
                         {p.author && <span>作者: {p.author}</span>}
-                        {p.originalAuthor && <span>原作者: {p.originalAuthor}</span>}
+                        {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
                         {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
                       </div>
                         <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
@@ -2193,11 +2359,17 @@ export default function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash || '-'} / 🪙{s.targetCoins || '-'}</span></span>
+                        <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
                         {s.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
                         {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
-                        {xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt)) && <span>作者: {xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt))}</span>}
-                        {xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt)) && <span>原作者: {xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt))}</span>}
+                        {(() => {
+                          const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
+                          const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                          return (<>
+                            {sa && <span>作者: {sa}</span>}
+                            {so && so !== sa && <span>原作者: {so}</span>}
+                          </>);
+                        })()}
                         <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
                       </div>
                     </div>
@@ -2232,6 +2404,11 @@ export default function App() {
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
         onSetStartupFocus={(markerId) => {
           globalDefaultsRef.current = { ...globalDefaultsRef.current, startupFocusMarkerId: markerId || undefined };
+        }}
+        onClearOriginalAuthor={() => {
+          setRoute(prev => ({ ...prev, originalAuthor: '' }));
+          setSaveNotification('原作者名をクリアしました');
+          setTimeout(() => setSaveNotification(null), 2000);
         }}
       />
 

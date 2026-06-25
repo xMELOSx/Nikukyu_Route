@@ -23,6 +23,7 @@ interface HelpModalProps {
   onShowGlobalMarker: (id: string) => void;
   startupFocusMarkerId?: string;
   onSetStartupFocus: (markerId: string | null) => void;
+  onClearOriginalAuthor?: () => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -33,7 +34,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   currentFloor,
   globalMarkers, route,
   onHideGlobalMarker, onShowGlobalMarker,
-  startupFocusMarkerId, onSetStartupFocus
+  startupFocusMarkerId, onSetStartupFocus,
+  onClearOriginalAuthor
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -93,6 +95,11 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); localStorage.clear(); window.location.reload(); }}>
                   🗑️ 全データをリセット
                 </button>
+                {onClearOriginalAuthor && (
+                  <button className="btn-cyber danger" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClearOriginalAuthor(); onClose(); }}>
+                    🔓 原作者名をクリア
+                  </button>
+                )}
 
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={async () => {
                   if (!globalMarkerEditorOpen) {

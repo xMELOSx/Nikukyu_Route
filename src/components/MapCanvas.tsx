@@ -387,6 +387,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const animFrameIdRef = useRef<number | null>(null);
   const animPanRef = useRef<Point>({ x: 0, y: 0 });
   const animZoomRef = useRef<number>(1);
+  // Sync state to anim refs whenever state changes
+  animPanRef.current = pan;
+  animZoomRef.current = zoom;
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -445,18 +448,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const handleWheel = (e: WheelEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && target.closest('.info-marker-popup, .boss-marker-popup, .edit-popup, .control-panel, .map-sidebar')) {
-        return; // Allow native scrolling inside popups or panels
+        return;
       }
       e.preventDefault();
-      const zoomFactor = 1.12;
-      const factor = e.deltaY < 0 ? zoomFactor : 1 / zoomFactor;
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
 
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-      setZoom(prev => {
-        const nz = Math.max(0.1, Math.min(4, prev * factor));
-        targetZoomRef.current = nz;
-        return nz;
-      });
+
+      const prevZoom = animZoomRef.current;
+      const prevPan = animPanRef.current;
+      const newZoom = Math.max(0.1, Math.min(4, prevZoom * factor));
+      if (prevZoom === newZoom) return;
+
+      const wRect = wrapper.getBoundingClientRect();
+      // アンカー: 可視エリア中央（wrapper 中心）。画面基準の座標。
+      const anchorX = wRect.left + wRect.width / 2;
+      const anchorY = wRect.top + wRect.height / 2;
+      // wrapper 中心を基準としたアンカーオフセット
+      const localCenterX = anchorX;
+      const localCenterY = anchorY;
+      // アンカー位置にある map 座標を逆算
+      //   screenX = localCenterX + prevZoom * (mapX - 800) + prevPan.x
+      //   => mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom
+      const mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom;
+      const mapY = 2275 + (anchorY - localCenterY - prevPan.y) / prevZoom;
+      // 同じ map 座標が新しい zoom でもアンカー位置に来るように newPan を計算
+      //   anchorX = localCenterX + newZoom * (mapX - 800) + newPan.x
+      //   => newPan.x = anchorX - localCenterX - newZoom * (mapX - 800)
+      const newPanX = anchorX - localCenterX - newZoom * (mapX - 800);
+      const newPanY = anchorY - localCenterY - newZoom * (mapY - 2275);
+
+      animZoomRef.current = newZoom;
+      animPanRef.current = { x: newPanX, y: newPanY };
+      targetZoomRef.current = newZoom;
+      targetPanRef.current = { x: newPanX, y: newPanY };
+      setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
     };
 
     wrapper.addEventListener('wheel', handleWheel, { passive: false });
@@ -730,7 +757,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Touch state for pinch-zoom
-  const touchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const touchStartRef = useRef<{ dist: number; zoom: number; pan: Point; midX: number; midY: number } | null>(null);
   const touchDragRef = useRef<{ id: number; startX: number; startY: number } | null>(null);
 
   const toFakeMouse = (t: React.Touch) => ({
@@ -741,9 +768,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
       e.preventDefault();
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      animFrameIdRef.current = null;
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      touchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom };
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const wrapper = wrapperRef.current;
+      const wRect = wrapper?.getBoundingClientRect();
+      const localCenterX = wRect ? wRect.left + wRect.width / 2 : 0;
+      const localCenterY = wRect ? wRect.top + wRect.height / 2 : 0;
+      touchStartRef.current = {
+        dist: Math.sqrt(dx * dx + dy * dy),
+        zoom,
+        pan: { x: animPanRef.current.x, y: animPanRef.current.y },
+        midX: midX - localCenterX,
+        midY: midY - localCenterY
+      };
       return;
     }
     if (e.touches.length === 1) {
@@ -757,12 +798,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2 && touchStartRef.current) {
       e.preventDefault();
+      const ts = touchStartRef.current;
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const scale = dist / touchStartRef.current.dist;
-      const newZoom = Math.max(0.1, Math.min(5, touchStartRef.current.zoom * scale));
+      const scale = dist / ts.dist;
+      const newZoom = Math.max(0.1, Math.min(5, ts.zoom * scale));
+      if (newZoom === ts.zoom) return;
+      // アンカーは 2 本指の中点（wrapper 中心からの相対位置）
+      // screenX = 0 + newZoom * (mapX - 800) + newPan.x
+      //   => mapX = 800 + (ts.midX - newPan.x) / ts.zoom
+      //   => newPan.x = ts.midX - newZoom * (mapX - 800)
+      //                = ts.midX - newZoom * ((ts.midX - ts.pan.x) / ts.zoom)
+      const newPanX = ts.midX - (newZoom / ts.zoom) * (ts.midX - ts.pan.x);
+      const newPanY = ts.midY - (newZoom / ts.zoom) * (ts.midY - ts.pan.y);
+      animZoomRef.current = newZoom;
+      animPanRef.current = { x: newPanX, y: newPanY };
+      targetZoomRef.current = newZoom;
+      targetPanRef.current = { x: newPanX, y: newPanY };
       setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
       return;
     }
     if (e.touches.length === 1) {
@@ -1305,11 +1360,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleZoom = (factor: number) => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-    setZoom(prev => {
-      const nz = Math.max(0.1, Math.min(4, prev * factor));
-      targetZoomRef.current = nz;
-      return nz;
-    });
+    const prevZoom = animZoomRef.current;
+    const prevPan = animPanRef.current;
+    const newZoom = Math.max(0.1, Math.min(4, prevZoom * factor));
+    if (prevZoom === newZoom) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      setZoom(newZoom);
+      return;
+    }
+    const wRect = wrapper.getBoundingClientRect();
+    const anchorX = wRect.left + wRect.width / 2;
+    const anchorY = wRect.top + wRect.height / 2;
+    const localCenterX = anchorX;
+    const localCenterY = anchorY;
+    const mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom;
+    const mapY = 2275 + (anchorY - localCenterY - prevPan.y) / prevZoom;
+    const newPanX = anchorX - localCenterX - newZoom * (mapX - 800);
+    const newPanY = anchorY - localCenterY - newZoom * (mapY - 2275);
+    animZoomRef.current = newZoom;
+    animPanRef.current = { x: newPanX, y: newPanY };
+    targetZoomRef.current = newZoom;
+    targetPanRef.current = { x: newPanX, y: newPanY };
+    setZoom(newZoom);
+    setPan({ x: newPanX, y: newPanY });
   };
 
   const resetView = () => {
