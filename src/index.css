@@ -581,6 +581,26 @@ select.input-cyber {
   box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
 }
 
+/* Route Plan Fields: display-mode (presentation) styling */
+.route-plan-fields.display-mode > label {
+  color: #5d8a8e;
+}
+.route-plan-fields.display-mode .input-cyber,
+.route-plan-fields.display-mode .textarea-cyber {
+  border-color: rgba(93, 138, 142, 0.35);
+  color: #b8d4d6;
+  background: rgba(5, 7, 10, 0.5);
+}
+.route-plan-fields.display-mode .input-cyber::placeholder,
+.route-plan-fields.display-mode .textarea-cyber::placeholder {
+  color: rgba(120, 140, 145, 0.5);
+}
+.route-plan-fields.display-mode .input-cyber:focus,
+.route-plan-fields.display-mode .textarea-cyber:focus {
+  border-color: var(--cyan-neon);
+  color: var(--text-primary);
+}
+
 /* Route Saves List */
 .saves-list {
   display: flex;

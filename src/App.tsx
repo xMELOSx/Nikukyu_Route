@@ -1968,7 +1968,10 @@ export default function App() {
                 />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                className={isEditMode ? 'route-plan-fields' : 'route-plan-fields display-mode'}
+                style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+              >
                 <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>プラン名</label>
                 <input
                   type="text"
@@ -2063,7 +2066,7 @@ export default function App() {
                     <input
                       type="text"
                       className="input-cyber"
-                      style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: 'var(--cyan-neon)' }}
+                      style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: isEditMode ? 'var(--cyan-neon)' : '#b8d4d6' }}
                       defaultValue={(() => {
                         const sec = parseInt(route.targetDuration || '0');
                         return isNaN(sec) ? '0' : String(sec);
