@@ -176,7 +176,7 @@ button, select, input {
 .main-content {
   display: grid;
   grid-template-columns: 280px 1fr 340px;
-  height: calc(100vh - 60px);
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -716,25 +716,7 @@ select.input-cyber {
   border-color: #39ff14;
 }
 
-/* All Map Markers hover tooltip showing data-note */
-.map-marker[data-note]:not([data-note=""]):hover::after {
-  content: attr(data-note);
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(5, 7, 10, 0.95);
-  border: 1px solid var(--theme-color, var(--cyan-neon));
-  color: #fff;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-  pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
-  font-family: var(--font-cyber);
-  z-index: 50;
-}
+/* Tooltip handled via portal in MapCanvas.tsx */
 
 /* Info Pin (ⓘ) Marker Detail Popup */
 .info-marker-popup {

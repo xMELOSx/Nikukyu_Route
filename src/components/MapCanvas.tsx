@@ -338,6 +338,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Note Popover State
   const [activeNoteMarkerId, setActiveNoteMarkerId] = useState<string | null>(null);
+  const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
   const [infoLabel, setInfoLabel] = useState('');
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
@@ -349,6 +351,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [textFixedPosition, setTextFixedPosition] = useState(false);
   const [textDescription, setTextDescription] = useState('');
   const [textTooltip, setTextTooltip] = useState(false);
+  const [textGlow, setTextGlow] = useState(false);
   const [warpLinkTargetId, setWarpLinkTargetId] = useState<string>('');
   const [warpLinkMode, setWarpLinkMode] = useState<'idle' | 'selecting-bi' | 'selecting-oneway'>('idle');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
@@ -407,18 +410,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     prevRightCollapsedRef.current = rightSidebarCollapsed;
 
     const currentMarkers = markersRef.current;
-    const vpCenterX = window.innerWidth / 2;
 
     onMarkersChange(
       currentMarkers.map(m => {
         if (!m.textFixedPosition || m.floor !== floor) return m;
-        const isCloserToLeft = m.x < vpCenterX;
+        const side = m.trackSide || 'left';
 
-        if (prevLeft !== leftSidebarCollapsed && isCloserToLeft) {
+        if (prevLeft !== leftSidebarCollapsed && side === 'left') {
           const shift = leftSidebarCollapsed ? -280 : 280;
           return { ...m, x: m.x + shift };
         }
-        if (prevRight !== rightSidebarCollapsed && !isCloserToLeft) {
+        if (prevRight !== rightSidebarCollapsed && side === 'right') {
           const shift = rightSidebarCollapsed ? 340 : -340;
           return { ...m, x: m.x + shift };
         }
@@ -1263,6 +1265,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setTextFixedPosition(!!m.textFixedPosition);
     setTextDescription(m.textDescription || '');
     setTextTooltip(!!m.textTooltip);
+    setTextGlow(!!m.textGlow);
     setBossDrops(m.bossDrops || []);
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
@@ -1341,6 +1344,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.textFixedPosition = textFixedPosition;
               updated.textDescription = textDescription;
               updated.textTooltip = textTooltip;
+              updated.textGlow = textGlow;
             }
             if (m.type === 'boss') {
               updated.bossDrops = bossDrops;
@@ -1672,14 +1676,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const displayScaleWithMap = isEditing ? textScaleWithMap : !!m.textScaleWithMap;
                 const displayDesc = isEditing ? textDescription : (m.textDescription || '');
                 const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
-                const tooltipNote = showTooltip
+                const displayGlow = isEditing ? textGlow : !!m.textGlow;
+                const tooltipText = showTooltip
                   ? (displayDesc || m.note || 'Text')
                   : '';
                 return (
                   <div
                     key={m.id}
                     className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
-                    data-note={tooltipNote}
+                    onMouseEnter={tooltipText ? (e) => { setHoveredMarkerId(m.id); setHoverPos({ x: e.clientX, y: e.clientY }); } : undefined}
+                    onMouseMove={tooltipText ? (e) => setHoverPos({ x: e.clientX, y: e.clientY }) : undefined}
+                    onMouseLeave={tooltipText ? () => setHoveredMarkerId(null) : undefined}
                     style={{
                       position: 'absolute',
                       left: `${m.x}px`,
@@ -1688,7 +1695,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       color: displayColor,
                       fontSize: `${displayScaleWithMap ? displaySize * scaleMultiplier : displaySize}px`,
                       fontWeight: 'bold',
-                      textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                textShadow: displayGlow
+                  ? `0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5), 0 0 12px ${displayColor}, 0 0 20px ${displayColor}`
+                  : '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
                       whiteSpace: 'pre',
                       textAlign: 'center',
                       cursor: 'move',
@@ -1705,11 +1714,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 );
               }
+              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '');
               return (
                 <div
                   key={m.id}
                    className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
-                    data-note={isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '')}
+                   onMouseEnter={nonTextTooltip ? (e) => { setHoveredMarkerId(m.id); setHoverPos({ x: e.clientX, y: e.clientY }); } : undefined}
+                   onMouseMove={nonTextTooltip ? (e) => setHoverPos({ x: e.clientX, y: e.clientY }) : undefined}
+                   onMouseLeave={nonTextTooltip ? () => setHoveredMarkerId(null) : undefined}
                   style={{
                      left: `${m.x}px`,
                      top: `${m.y}px`,
@@ -2379,6 +2391,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const displaySize = isEditing ? textSize : (m.textSize || 14);
             const displayDesc = isEditing ? textDescription : (m.textDescription || '');
             const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
+            const displayGlow = isEditing ? textGlow : !!m.textGlow;
             const tooltipNote = showTooltip
               ? (displayDesc || m.note || 'Text')
               : '';
@@ -2386,7 +2399,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               <div
                 key={`fixed-${m.id}`}
                 className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
-                data-note={tooltipNote}
+                onMouseEnter={tooltipNote ? (e) => { setHoveredMarkerId(m.id); setHoverPos({ x: e.clientX, y: e.clientY }); } : undefined}
+                onMouseMove={tooltipNote ? (e) => setHoverPos({ x: e.clientX, y: e.clientY }) : undefined}
+                onMouseLeave={tooltipNote ? () => setHoveredMarkerId(null) : undefined}
                 style={{
                   position: 'fixed',
                   left: `${m.x}px`,
@@ -2394,7 +2409,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   transform: 'translate(-50%, -50%)',
                   color: displayColor,
                   fontWeight: 'bold',
-                  textShadow: '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                textShadow: displayGlow
+                  ? `0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5), 0 0 12px ${displayColor}, 0 0 20px ${displayColor}`
+                  : '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
                   whiteSpace: 'pre',
                   textAlign: 'center',
                   cursor: 'move',
@@ -2411,6 +2428,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </div>
             );
           }),
+        document.body
+      )}
+
+      {/* Tooltip rendered via portal */}
+      {hoveredMarkerId && ReactDOM.createPortal(
+        (() => {
+          const hm = markers.find(mk => mk.id === hoveredMarkerId);
+          if (!hm) return null;
+          const isEditing = activeNoteMarkerId === hm.id;
+          let text = '';
+          if (isTextType(hm.type)) {
+            const desc = isEditing ? textDescription : (hm.textDescription || '');
+            const showTT = isEditing ? textTooltip : !!hm.textTooltip;
+            if (showTT) text = desc || hm.note || 'Text';
+          } else {
+            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? 'Boss (Mamon)' : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : '');
+          }
+          if (!text) return null;
+          const pad = 14;
+          const ttW = Math.min(text.length * 7 + 16, 260);
+          const ttH = 28;
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          let tx = hoverPos.x - ttW / 2;
+          let ty = hoverPos.y - ttH - pad;
+          if (ty < 4) ty = hoverPos.y + pad;
+          if (tx < 4) tx = 4;
+          if (tx + ttW > vw - 4) tx = vw - ttW - 4;
+          return (
+            <div style={{
+              position: 'fixed',
+              left: `${tx}px`,
+              top: `${ty}px`,
+              background: 'rgba(5,7,10,0.95)',
+              border: '1px solid var(--theme-color, var(--cyan-neon))',
+              color: '#fff',
+              fontSize: '11px',
+              padding: '3px 8px',
+              borderRadius: '4px',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.8)',
+              zIndex: 9500,
+              maxWidth: '260px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              fontFamily: 'var(--font-cyber)',
+            }}>
+              {text}
+            </div>
+          );
+        })(),
         document.body
       )}
 
@@ -2592,11 +2661,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           if (!rect) return m;
                           const vpX = rect.left + (m.x / 1600) * rect.width;
                           const vpY = rect.top + (m.y / 4550) * rect.height;
-                          return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(vpX), y: Math.round(vpY), textFixedPosition: true };
+                          const side: 'left' | 'right' = vpX < window.innerWidth / 2 ? 'left' : 'right';
+                          return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(vpX), y: Math.round(vpY), textFixedPosition: true, trackSide: side };
                         } else {
                           const origX = m.fixedOriginX ?? m.x;
                           const origY = m.fixedOriginY ?? m.y;
-                          return { ...m, x: origX, y: origY, fixedOriginX: undefined, fixedOriginY: undefined, textFixedPosition: false };
+                          return { ...m, x: origX, y: origY, fixedOriginX: undefined, fixedOriginY: undefined, textFixedPosition: false, trackSide: undefined };
                         }
                       }));
                     }
@@ -2623,6 +2693,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                 />
                 マウスオーバーでツールチップ表示
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#b0b0b0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={textGlow}
+                  onChange={(e) => setTextGlow(e.target.checked)}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                />
+                文字を光らせる
               </label>
             </div>
           )}

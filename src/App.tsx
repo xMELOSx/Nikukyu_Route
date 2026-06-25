@@ -344,8 +344,9 @@ export default function App() {
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
 
   // Sidebar Collapse Configurations
-  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
+  const isMobile = window.innerWidth < 768;
 
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
@@ -363,6 +364,7 @@ export default function App() {
   const [presetEditorAuthor, setPresetEditorAuthor] = useState('');
   const [presetEditorOrigAuthor, setPresetEditorOrigAuthor] = useState('');
   const [presetListVisible, setPresetListVisible] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
 
   // Smooth scroll room focus state
@@ -1134,94 +1136,10 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Top Application Header */}
-      <header className="app-header glass-panel">
-        <div className="app-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>🐾</span> にくきゅう大強盗（大強奪） マップ
-          <button
-            className="btn-cyber"
-            onClick={() => setShowHelpModal(true)}
-            style={{
-              padding: '2px 8px',
-              fontSize: '11px',
-              borderRadius: '4px',
-              border: '1px solid var(--cyan-neon)',
-              background: 'rgba(0, 240, 255, 0.1)',
-              color: 'var(--cyan-neon)',
-              cursor: 'pointer',
-              marginLeft: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              clipPath: 'none'
-            }}
-          >
-            ❓ ヘルプ
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          {/* Undo / Redo Buttons */}
-          <button
-            className="btn-cyber"
-            onClick={undo}
-            disabled={pastHistory.length === 0}
-            title="Undo (Ctrl+Z)"
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              opacity: pastHistory.length === 0 ? 0.4 : 1,
-              cursor: pastHistory.length === 0 ? 'not-allowed' : 'pointer',
-              clipPath: 'none'
-            }}
-          >
-            <Undo size={14} />
-          </button>
-          <button
-            className="btn-cyber"
-            onClick={redo}
-            disabled={futureHistory.length === 0}
-            title="Redo (Ctrl+Y)"
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              opacity: futureHistory.length === 0 ? 0.4 : 1,
-              cursor: futureHistory.length === 0 ? 'not-allowed' : 'pointer',
-              clipPath: 'none',
-              marginRight: '10px'
-            }}
-          >
-            <Redo size={14} />
-          </button>
-
-          {/* Edit / View Presentation Toggle */}
-          <button
-            className={`btn-cyber ${isEditMode ? 'active' : 'success'}`}
-            onClick={() => {
-              setIsEditMode(!isEditMode);
-              if (isEditMode) {
-                setToolMode('pan'); // Auto switch to pan tool when switching to presentation
-              }
-            }}
-            style={{ minWidth: '150px' }}
-          >
-            {isEditMode ? (isLocal ? '⚙ EDIT MODE' : '⚙ INDIVIDUAL EDIT') : '👁 PRESENTATION'}
-          </button>
-
-          <button className="btn-cyber success" onClick={handleSaveToLocal} title="Save to local browser storage">
-            <Save size={16} /> Save Plan
-          </button>
-          <button className="btn-cyber" onClick={handleSaveAsCopy} title="Save a copy of the current plan">
-            <Copy size={16} /> Save as Copy
-          </button>
-          <button className="btn-cyber success" onClick={handleExportPNG} title="Save map drawing as PNG Image">
-            <ImageIcon size={16} /> Save Map Image
-          </button>
-        </div>
-      </header>
+      {/* Header removed */}
 
       {saveNotification && (
-        <div style={{ position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0, 200, 100, 0.9)', color: '#fff', padding: '8px 20px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, zIndex: 9999, boxShadow: '0 0 12px rgba(0, 200, 100, 0.5)' }}>
+        <div style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0, 200, 100, 0.9)', color: '#fff', padding: '8px 20px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, zIndex: 9999, boxShadow: '0 0 12px rgba(0, 200, 100, 0.5)' }}>
           {saveNotification}
         </div>
       )}
@@ -1262,6 +1180,17 @@ export default function App() {
               </button>
             </div>
 
+          </div>
+
+          {/* Help Button */}
+          <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
+            <button
+              className="btn-cyber"
+              onClick={() => setShowHelpModal(true)}
+              style={{ width: '100%', padding: '6px', fontSize: '12px', clipPath: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+            >
+              ❓ ヘルプ
+            </button>
           </div>
 
           {/* Pin and Label Sizing Adjuster + Marker Visibility */}
@@ -1925,6 +1854,11 @@ export default function App() {
                   style={{ display: 'none' }}
                 />
               </div>
+              <div style={{ marginBottom: '6px' }}>
+                <button className="btn-cyber success" style={{ width: '100%', padding: '4px', fontSize: '10px' }} onClick={handleExportPNG}>
+                  <ImageIcon size={12} /> Save Map Image
+                </button>
+              </div>
 
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1979,12 +1913,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                  <div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', width: '100%', marginLeft: '-12px', marginRight: '-12px', paddingLeft: '12px', paddingRight: '12px' }}>
+                  <div style={{ width: '100%' }}>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>作者名</label>
                     <input
                       type="text"
                       className="input-cyber"
+                      style={{ width: '100%', boxSizing: 'border-box' }}
                       value={xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt))}
                       onChange={(e) => setRoute({ ...route, author: xorEncrypt(e.target.value, getAuthorKey(route.id, route.createdAt)) })}
                       disabled={!isEditMode}
@@ -1992,11 +1927,12 @@ export default function App() {
                     />
                   </div>
                   {isLocal && (
-                    <div>
+                    <div style={{ width: '100%' }}>
                       <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>原作者名</label>
                       <input
                         type="text"
                         className="input-cyber"
+                        style={{ width: '100%', boxSizing: 'border-box' }}
                         value={xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt))}
                         onChange={(e) => setRoute({ ...route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(route.id, route.createdAt)) })}
                         disabled={!isEditMode || !!route.originalAuthor}
@@ -2052,14 +1988,45 @@ export default function App() {
             </div>
 
             <div className="panel-section">
-              <div className="panel-title">TACTICS & NOTES</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div className="panel-title" style={{ flex: 1 }}>マーカー編集履歴</div>
+                <button
+                  className="btn-cyber"
+                  onClick={() => setShowHistoryModal(true)}
+                  style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none' }}
+                >
+                  全履歴
+                </button>
+                <button
+                  className="btn-cyber"
+                  onClick={undo}
+                  disabled={pastHistory.length === 0}
+                  title="Undo (Ctrl+Z)"
+                  style={{ padding: '2px 6px', fontSize: '10px', opacity: pastHistory.length === 0 ? 0.4 : 1, cursor: pastHistory.length === 0 ? 'not-allowed' : 'pointer', clipPath: 'none' }}
+                >
+                  <Undo size={12} />
+                </button>
+                <button
+                  className="btn-cyber"
+                  onClick={redo}
+                  disabled={futureHistory.length === 0}
+                  title="Redo (Ctrl+Y)"
+                  style={{ padding: '2px 6px', fontSize: '10px', opacity: futureHistory.length === 0 ? 0.4 : 1, cursor: futureHistory.length === 0 ? 'not-allowed' : 'pointer', clipPath: 'none' }}
+                >
+                  <Redo size={12} />
+                </button>
+              </div>
               <div className="placed-notes-list">
-                {[...globalMarkers, ...route.markers].length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
-                    No markers placed on this map yet.
-                  </div>
-                ) : (
-                  [...globalMarkers, ...route.markers]
+                {(() => {
+                  const historyMarkers = isLocal
+                    ? [...globalMarkers, ...route.markers]
+                    : [...route.markers];
+                  return historyMarkers.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
+                      マーカーがありません
+                    </div>
+                  ) : (
+                    historyMarkers.reverse().slice(0, 50)
                     .map(m => {
                       const meta = MARKER_META[m.type];
                       return (
@@ -2088,7 +2055,8 @@ export default function App() {
                         </div>
                       );
                     })
-                )}
+                  )
+                })()}
               </div>
             </div>
           </>)}
@@ -2153,7 +2121,6 @@ export default function App() {
                         {p.originalAuthor && <span>原作者: {p.originalAuthor}</span>}
                         {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
                       </div>
-                      {isLocal && isEditMode && (
                         <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                           {presetDeleteConfirmId === p.id ? (
                             <>
@@ -2164,7 +2131,6 @@ export default function App() {
                             <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除</button>
                           )}
                         </div>
-                      )}
                     </div>
                   ))}
 
@@ -2173,40 +2139,42 @@ export default function App() {
                     <div key={s.id} style={{ padding: '10px 12px', background: route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
                       onClick={() => { handleLoadFromLocal(s.id); setPresetListVisible(false); }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
-                        {isLocal && isEditMode && (
-                          deleteConfirmId === s.id ? (
-                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          {deleteConfirmId === s.id ? (
+                            <>
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}>削除する</button>
                               <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}>キャンセル</button>
-                            </div>
+                            </>
                           ) : (
-                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }} onClick={(e) => {
-                                e.stopPropagation();
-                                const save = DataManager.loadFromLocalStorage(s.id);
-                                if (!save) return;
-                                const routeToSave = { ...save, mapVersion: 2, markerScale: markerScale };
-                                const newPreset: PresetData = {
-                                  id: `preset_${Date.now()}`,
-                                  name: save.title,
-                                  description: save.description || '',
-                                  targetCash: save.targetCash || '',
-                                  targetCoins: save.targetCoins || '',
-                                  author: xorDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt)),
-                                  originalAuthor: xorDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt)),
-                                  updatedAt: Date.now(),
-                                  routeData: routeToSave
-                                };
-                                savePresetsToServer([...presets, newPreset]);
-                                setSaveNotification(`プリセット追加: ${newPreset.name}`);
-                                setTimeout(() => setSaveNotification(null), 2000);
-                              }}>プリセット登録</button>
+                            <>
+                              {isLocal && isEditMode && (
+                                <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }} onClick={(e) => {
+                                  e.stopPropagation();
+                                  const save = DataManager.loadFromLocalStorage(s.id);
+                                  if (!save) return;
+                                  const routeToSave = { ...save, mapVersion: 2, markerScale: markerScale };
+                                  const newPreset: PresetData = {
+                                    id: `preset_${Date.now()}`,
+                                    name: save.title,
+                                    description: save.description || '',
+                                    targetCash: save.targetCash || '',
+                                    targetCoins: save.targetCoins || '',
+                                    author: xorDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt)),
+                                    originalAuthor: xorDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt)),
+                                    updatedAt: Date.now(),
+                                    routeData: routeToSave
+                                  };
+                                  savePresetsToServer([...presets, newPreset]);
+                                  setSaveNotification(`プリセット追加: ${newPreset.name}`);
+                                  setTimeout(() => setSaveNotification(null), 2000);
+                                }}>プリセット登録</button>
+                              )}
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}>削除</button>
-                            </div>
-                          )
-                        )}
+                            </>
+                          )}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash || '-'} / 🪙{s.targetCoins || '-'}</span></span>
@@ -2536,6 +2504,60 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Full History Modal */}
+      {showHistoryModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowHistoryModal(false)}>
+          <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>マーカー編集履歴（全件）</div>
+              <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => setShowHistoryModal(false)}>✕ 閉じる</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+              <div className="placed-notes-list" style={{ maxHeight: 'none' }}>
+                {(() => {
+                  const allMarkers = isLocal
+                    ? [...globalMarkers, ...route.markers]
+                    : [...route.markers];
+                  if (allMarkers.length === 0) {
+                    return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>履歴はありません</div>;
+                  }
+                  return allMarkers.reverse().map(m => {
+                    const meta = MARKER_META[m.type];
+                    const isGlobal = globalMarkers.some(gm => gm.id === m.id);
+                    return (
+                      <div
+                        key={`hist-${m.id}`}
+                        className="placed-note-item"
+                        style={{ borderLeft: `3px solid ${meta.color}`, cursor: m.scrollConfig ? 'pointer' : 'default' }}
+                        onClick={() => { m.scrollConfig && setFocusTrigger({ id: m.id, timestamp: Date.now() }); setShowHistoryModal(false); }}
+                      >
+                        <div className="placed-note-item-header">
+                          <span className="placed-note-type" style={{ color: meta.color }}>
+                            {meta.emoji} {isGlobal ? 'G:' : ''}{meta.label}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                            X:{m.x} Y:{m.y}
+                          </span>
+                        </div>
+                        <div className="placed-note-text">
+                          {m.note.trim() ? m.note : <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>詳細なし</span>}
+                        </div>
+                        {m.scrollConfig && (
+                          <div style={{ fontSize: '9px', color: 'var(--cyan-neon)', marginTop: '2px', textAlign: 'right' }}>
+                            Click to Pan ➔
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -104,8 +104,10 @@ export interface HeistMarker {
   textFixedPosition?: boolean; // For text markers: fixed to viewport, not affected by pan/zoom
   fixedOriginX?: number;      // For text markers: original map X before fixing to viewport
   fixedOriginY?: number;      // For text markers: original map Y before fixing to viewport
+  trackSide?: 'left' | 'right'; // For fixed text markers: which sidebar side to track for collapse shift
   textDescription?: string;   // For text markers: description text shown below label
   textTooltip?: boolean;      // For text markers: show mouseover tooltip
+  textGlow?: boolean;         // For text markers: show glow effect
   mediaItems?: MediaItem[]; // For info/eh/boss/battle markers: multiple media attachments
 }
 
