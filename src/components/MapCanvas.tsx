@@ -1,12 +1,11 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { 
-  type FloorType, 
-  type DrawingStroke, 
-  type HeistMarker, 
-  type MarkerType, 
+import {
+  type FloorType,
+  type DrawingStroke,
+  type HeistMarker,
+  type MarkerType,
   type Point,
-  type MediaItem,
   MARKER_META,
   PRESET_MAPS_META
 } from '../utils/DataManager';

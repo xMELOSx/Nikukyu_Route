@@ -144,6 +144,12 @@ export default function App() {
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [strokeColor, setStrokeColor] = useState('#ff0055');
   const [strokeWidth, setStrokeWidth] = useState(3);
@@ -559,7 +565,9 @@ export default function App() {
       <main
         className="main-content"
         style={{
-          gridTemplateColumns: `${leftSidebarCollapsed ? '0px' : '280px'} 1fr ${rightSidebarCollapsed ? '0px' : '340px'}`
+          gridTemplateColumns: isMobile
+            ? '0 1fr 0'
+            : `${leftSidebarCollapsed ? '0px' : '280px'} 1fr ${rightSidebarCollapsed ? '0px' : '340px'}`
         }}
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
         onDrop={async (e) => {
@@ -573,7 +581,19 @@ export default function App() {
         {/* Left Sidebar */}
         <section
           className="sidebar glass-panel"
-          style={{ display: leftSidebarCollapsed ? 'none' : 'flex' }}
+          data-collapsed={leftSidebarCollapsed}
+          style={isMobile ? {
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: 'min(85vw, 320px)',
+            zIndex: 200,
+            transform: leftSidebarCollapsed ? 'translateX(-100%)' : 'translateX(0)',
+            transition: 'transform 0.25s ease',
+            display: 'flex',
+            borderRight: '1px solid var(--border-color)',
+          } : { display: leftSidebarCollapsed ? 'none' : 'flex' }}
         >
           <div className="sidebar-fixed">
             <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
@@ -1009,12 +1029,14 @@ export default function App() {
             followCamera={autoRoute.followCamera}
             targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
           />
-          {/* Sidebar collapse buttons */}
+          {/* Sidebar collapse buttons — zIndex 300 keeps them above the
+              mobile overlay panes (zIndex 200) so users can always reach
+              a close button, even when a pane is open. */}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
             style={{
               position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-              zIndex: 100, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
+              zIndex: 300, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
               borderLeft: 'none', color: 'var(--cyan-neon)', padding: '12px 4px', borderRadius: '0 8px 8px 0',
               cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '2px 0 10px rgba(0, 240, 255, 0.2)'
             }}
@@ -1026,7 +1048,7 @@ export default function App() {
             onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
             style={{
               position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-              zIndex: 100, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
+              zIndex: 300, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
               borderRight: 'none', color: 'var(--cyan-neon)', padding: '12px 4px', borderRadius: '8px 0 0 8px',
               cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '-2px 0 10px rgba(0, 240, 255, 0.2)'
             }}
@@ -1039,7 +1061,19 @@ export default function App() {
         {/* Right Sidebar */}
         <section
           className="sidebar-right glass-panel"
-          style={{ display: rightSidebarCollapsed ? 'none' : 'flex' }}
+          data-collapsed={rightSidebarCollapsed}
+          style={isMobile ? {
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            right: 0,
+            width: 'min(85vw, 320px)',
+            zIndex: 200,
+            transform: rightSidebarCollapsed ? 'translateX(100%)' : 'translateX(0)',
+            transition: 'transform 0.25s ease',
+            display: 'flex',
+            borderLeft: '1px solid var(--border-color)',
+          } : { display: rightSidebarCollapsed ? 'none' : 'flex' }}
         >
           <div className="sidebar-fixed">
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
