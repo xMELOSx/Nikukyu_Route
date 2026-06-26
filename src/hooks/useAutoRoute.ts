@@ -40,7 +40,7 @@ export interface AutoRouteCommand {
 export interface AutoRouteSettings {
   waitEnabled: boolean;
   waitSeconds: number;
-  speedMultiplier: 1 | 2 | 3 | 5;
+  speedMultiplier: 1 | 2 | 3 | 5 | 10;
   followCamera: boolean;
 }
 
@@ -56,7 +56,7 @@ export function useAutoRoute() {
   const [command, setCommand] = useState<AutoRouteCommand | null>(null);
   const [waitEnabled, setWaitEnabled] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(5);
-  const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3 | 5>(1);
+  const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3 | 5 | 10>(1);
   const [followCamera, setFollowCamera] = useState(true);
   const [collapsed, setCollapsed] = useState<boolean>(() => loadAutoRouteCollapsed());
 

@@ -156,6 +156,13 @@ export default function App() {
   const [strokeType, setStrokeType] = useState<'solid' | 'dashed'>('solid');
   const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('smooth');
   const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true);
+  const [textPinPassThrough, setTextPinPassThrough] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_text_pin_pass_through');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_text_pin_pass_through', String(textPinPassThrough));
+  }, [textPinPassThrough]);
 
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
@@ -688,6 +695,16 @@ export default function App() {
                     </div>
                   </div>
 
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={textPinPassThrough}
+                      onChange={(e) => setTextPinPassThrough(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    🖱️ 表示モードでテキストピンのクリックを透過
+                  </label>
+
                   <div style={{ marginTop: '8px' }}>
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0' }} />
                     <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
@@ -1009,6 +1026,7 @@ export default function App() {
             longPickingCustomDurations={routeApi.route.longPickingCustomDurations}
             onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
             disablePinsDuringDraw={disablePinsDuringDraw}
+            textPinPassThrough={textPinPassThrough}
             onMarkersDragStart={historyApi.startDragSnapshot}
             onMarkersDragEnd={historyApi.commitDragSnapshot}
             stopMarkerThreshold={stopMarkerThreshold}
@@ -1365,7 +1383,7 @@ export default function App() {
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
                           <span>倍速:</span>
-                          {([1, 2, 3, 5] as const).map(m => (
+                          {([1, 2, 3, 5, 10] as const).map(m => (
                             <button key={m} className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '10px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
                           ))}
                         </div>

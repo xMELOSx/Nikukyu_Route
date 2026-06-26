@@ -44,6 +44,7 @@ interface MapCanvasProps {
   longPickingCustomDurations?: { [markerId: string]: number };
   onLongPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
   disablePinsDuringDraw?: boolean;
+  textPinPassThrough?: boolean;
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
   markerScale?: number;
@@ -80,7 +81,7 @@ interface MapCanvasProps {
   autoRouteSettings?: {
     waitEnabled: boolean;
     waitSeconds: number;
-    speedMultiplier: 1 | 2 | 3 | 5;
+    speedMultiplier: 1 | 2 | 3 | 5 | 10;
     followCamera: boolean;
   };
   // Follow camera state — when true, the view scrolls to keep the current
@@ -117,6 +118,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   longPickingCustomDurations = {},
   onLongPickingCustomDurationChange,
   disablePinsDuringDraw = true,
+  textPinPassThrough = true,
   onMarkersDragStart,
   onMarkersDragEnd,
   markerScale = 30,
@@ -1940,6 +1942,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const tooltipText = showTooltip
                   ? (displayDesc || m.note || 'Text')
                   : '';
+                // 表示モード中はクリック判定を透過させ、UI 操作の邪魔にならないようにする。
+                // 編集モードではドラッグ・選択のため従来通りクリックを拾う。
+                const passThrough = !isEditMode && textPinPassThrough;
                 return (
                   <div
                     key={m.id}
@@ -1961,14 +1966,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       whiteSpace: 'pre',
                       textAlign: 'center',
                       cursor: 'move',
-                      pointerEvents: 'auto',
+                      pointerEvents: passThrough ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : 1,
                       filter: isHidden ? 'grayscale(90%)' : 'none',
                       zIndex: 20,
                       userSelect: 'none'
                     } as React.CSSProperties}
-                    onMouseDown={(e) => handleMarkerMouseDown(e, m)}
-                    onClick={(e) => handleMarkerClick(e, m)}
+                    onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
+                    onClick={passThrough ? undefined : (e) => handleMarkerClick(e, m)}
                   >
                     {m.note || 'Text'}
                   </div>
@@ -2686,6 +2691,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const tooltipNote = showTooltip
               ? (displayDesc || m.note || 'Text')
               : '';
+            // 表示モード中はクリック判定を透過させる
+            const passThrough = !isEditMode && textPinPassThrough;
             return (
               <div
                 key={`fixed-${m.id}`}
@@ -2706,14 +2713,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   whiteSpace: 'pre',
                   textAlign: 'center',
                   cursor: 'move',
-                  pointerEvents: 'auto',
+                  pointerEvents: passThrough ? 'none' : 'auto',
                   opacity: isHidden ? 0.35 : 1,
                   filter: isHidden ? 'grayscale(90%)' : 'none',
                   zIndex: 9000,
                   userSelect: 'none'
                 } as React.CSSProperties}
-                onMouseDown={(e) => handleMarkerMouseDown(e, m)}
-                onClick={(e) => handleMarkerClick(e, m)}
+                onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
+                onClick={passThrough ? undefined : (e) => handleMarkerClick(e, m)}
               >
                 <div style={{ fontSize: `${displaySize}px` }}>{m.note || 'Text'}</div>
               </div>
