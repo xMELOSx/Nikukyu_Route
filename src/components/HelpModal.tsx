@@ -75,7 +75,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   } : undefined;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 7, 10, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 7, 10, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <div className="glass-panel" style={{ width: '900px', maxWidth: '95%', height: '85vh', maxHeight: '90%', padding: '25px', borderRadius: '8px', border: '1.5px solid var(--cyan-neon)', boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)', background: 'rgba(10, 15, 28, 0.98)', display: 'flex', flexDirection: 'column', gap: '0', pointerEvents: 'auto', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px', marginBottom: '0' }}>
