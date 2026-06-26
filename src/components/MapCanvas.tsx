@@ -103,7 +103,7 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-display';
+  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker';
   activeMarkerType: MarkerType | null;
   strokeColor: string;
   strokeWidth: number;
@@ -291,20 +291,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
   const isTextType = (type: string) => type === 'text' || type === 'itext';
 
-  const toggleDisplayState = (m: HeistMarker): HeistMarker => {
-    if (isInfoType(m.type)) return { ...m, infoExpanded: !m.infoExpanded };
-    if (isNoteType(m.type)) return { ...m, noteExpanded: !m.noteExpanded };
-    if (m.type === 'boss') return { ...m, bossExpanded: !m.bossExpanded };
-    if (m.type === 'battle' || m.type === 'gbattle') return { ...m, battleExpanded: !m.battleExpanded };
-    if (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') return { ...m, pickingExpanded: !m.pickingExpanded };
-    if (m.type === 'phone') {
-      if (m.phoneLocked) return m;
-      return { ...m, phoneActive: !m.phoneActive };
-    }
-    if (m.type === 'checkpoint') return { ...m, checkpointExpanded: !m.checkpointExpanded };
-    return m;
-  };
-
   const detectMediaType = (url: string): MediaItem['type'] => {
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
     if (url.includes('x.com') || url.includes('twitter.com')) return 'x-embed';
@@ -313,6 +299,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   const [mediaUrlInputs, setMediaUrlInputs] = useState<Record<string, string>>({});
+  const [mediaUrlEditInputs, setMediaUrlEditInputs] = useState<Record<string, string>>({});
 
   const renderMediaManager = (m: HeistMarker) => {
     const inputVal = mediaUrlInputs[m.id] || '';
@@ -332,60 +319,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const items = m.mediaItems || [];
     return (
       <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(79, 195, 247, 0.2)', paddingTop: '6px' }}>
-        {items.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '4px', marginBottom: '6px' }}>
-            {items.map((item, idx) => {
-              const swap = (a: number, b: number) => {
-                const next = [...items];
-                [next[a], next[b]] = [next[b], next[a]];
-                updateMarkerMedia(next);
-              };
-              const isImg = item.type === 'image' || item.url.startsWith('data:');
-              const thumbStyle: React.CSSProperties = {
-                width: '100%',
-                height: '60px',
-                objectFit: 'cover',
-                borderRadius: '3px',
-                background: 'rgba(0,0,0,0.3)',
-                display: 'block',
-                cursor: 'pointer',
-              };
-              return (
-                <div key={item.id} style={{ position: 'relative', background: 'rgba(79,195,247,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: '1px', left: '1px', zIndex: 1, display: 'flex', gap: '2px' }}>
-                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', textTransform: 'uppercase' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
-                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', cursor: 'pointer', opacity: idx === 0 ? 0.3 : 1 }} onClick={() => idx > 0 && swap(idx, idx - 1)}>▲</span>
-                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', cursor: 'pointer', opacity: idx === items.length - 1 ? 0.3 : 1 }} onClick={() => idx < items.length - 1 && swap(idx, idx + 1)}>▼</span>
-                  </div>
-                  <span style={{ position: 'absolute', top: '1px', right: '1px', zIndex: 1, cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px', background: 'rgba(0,0,0,0.6)', width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px' }} onClick={() => {
-                    const removed = items[idx];
-                    const next = items.filter((_, i) => i !== idx);
-                    updateMarkerMedia(next);
-                    if (removed && removed.url && removed.url.includes('/uploads/')) {
-                      const filename = removed.url.split('/uploads/').pop() || '';
-                      if (filename) fetch('/api/upload-media', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }).catch(() => {});
-                    }
-                  }}>×</span>
-                  {isImg ? (
-                    <img src={item.url} alt="" style={thumbStyle} onClick={() => window.open(item.url, '_blank')} />
-                  ) : item.type === 'youtube' ? (
-                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', cursor: 'pointer' }} onClick={() => window.open(item.url, '_blank')}>▶</div>
-                  ) : item.type === 'x-embed' ? (
-                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => window.open(item.url, '_blank')}>𝕏</div>
-                  ) : (
-                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#7ec8e3', cursor: 'pointer', padding: '4px', wordBreak: 'break-all', lineHeight: 1.2 }} onClick={() => window.open(item.url, '_blank')}>{item.type.toUpperCase()}</div>
-                  )}
-                  <input type="text" className="input-cyber" style={{ width: '100%', boxSizing: 'border-box', fontSize: '8px', padding: '2px 4px', border: 'none', background: 'transparent', color: '#90caf9' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
-                    const next = [...items];
-                    next[idx] = { ...next[idx], description: e.target.value };
-                    updateMarkerMedia(next);
-                  }} />
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
           {isLocal && (
             <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
               const input = document.createElement('input');
@@ -443,6 +377,69 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }}>📋 貼り付け</button>
           )}
         </div>
+        {items.map((item, idx) => {
+          const swap = (a: number, b: number) => {
+            const next = [...items];
+            [next[a], next[b]] = [next[b], next[a]];
+            updateMarkerMedia(next);
+          };
+          const isImg = item.type === 'image' || item.url.startsWith('data:');
+          const thumbStyle: React.CSSProperties = {
+            width: '100%',
+            height: '80px',
+            objectFit: 'cover',
+            borderRadius: '3px',
+            background: 'rgba(0,0,0,0.3)',
+            display: 'block',
+            cursor: 'pointer',
+          };
+          const editVal = mediaUrlEditInputs[item.id] ?? item.url;
+          return (
+            <div key={item.id} style={{ background: 'rgba(79,195,247,0.06)', borderRadius: '4px', padding: '4px', marginBottom: '4px' }}>
+              <div style={{ position: 'relative', marginBottom: '4px' }}>
+                {isImg ? (
+                  <img src={item.url} alt="" style={thumbStyle} onClick={() => window.open(item.url, '_blank')} />
+                ) : item.type === 'youtube' ? (
+                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', cursor: 'pointer' }} onClick={() => window.open(item.url, '_blank')}>▶</div>
+                ) : item.type === 'x-embed' ? (
+                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => window.open(item.url, '_blank')}>𝕏</div>
+                ) : (
+                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#7ec8e3', cursor: 'pointer', padding: '4px', wordBreak: 'break-all', lineHeight: 1.2 }} onClick={() => window.open(item.url, '_blank')}>{item.type.toUpperCase()}</div>
+                )}
+                <span style={{ position: 'absolute', top: '2px', left: '2px', zIndex: 1, fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', textTransform: 'uppercase' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '2px', marginBottom: '3px' }}>
+                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '8px', padding: '2px 4px' }} placeholder="URL" value={editVal} onChange={(e) => setMediaUrlEditInputs(prev => ({ ...prev, [item.id]: e.target.value }))} />
+                <button type="button" className="btn-cyber" style={{ padding: '2px 6px', fontSize: '8px', clipPath: 'none' }} onClick={() => {
+                  const newUrl = (mediaUrlEditInputs[item.id] ?? '').trim();
+                  if (!newUrl || newUrl === item.url) return;
+                  const next = [...items];
+                  next[idx] = { ...next[idx], url: newUrl, type: detectMediaType(newUrl) };
+                  updateMarkerMedia(next);
+                }}>更新</button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '7px', color: '#7ec8e3', cursor: 'pointer', opacity: idx === 0 ? 0.3 : 1 }} onClick={() => idx > 0 && swap(idx, idx - 1)}>▲</span>
+                <span style={{ fontSize: '7px', color: '#7ec8e3', cursor: 'pointer', opacity: idx === items.length - 1 ? 0.3 : 1 }} onClick={() => idx < items.length - 1 && swap(idx, idx + 1)}>▼</span>
+                <span style={{ flex: 1 }} />
+                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '8px', padding: '2px 4px' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
+                  const next = [...items];
+                  next[idx] = { ...next[idx], description: e.target.value };
+                  updateMarkerMedia(next);
+                }} />
+                <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px', background: 'rgba(0,0,0,0.3)', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px' }} onClick={() => {
+                  const removed = items[idx];
+                  const next = items.filter((_: MediaItem, i: number) => i !== idx);
+                  updateMarkerMedia(next);
+                  if (removed && removed.url && removed.url.includes('/uploads/')) {
+                    const filename = removed.url.split('/uploads/').pop() || '';
+                    if (filename) fetch('/api/upload-media', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }).catch(() => {});
+                  }
+                }}>×</span>
+              </div>
+            </div>
+          );
+        })}
         <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
           <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [markerId]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
           <button type="button" className="btn-cyber" style={{ padding: '3px 8px', fontSize: '9px', clipPath: 'none' }} onClick={submitUrl}>追加</button>
@@ -477,7 +474,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
   const lightboxDragRef = useRef(false);
-  const toggledMarkerIdsRef = useRef<Set<string>>(new Set());
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -555,6 +551,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     };
   }, []);
+
+  // Close all popups and reset expanded states on mode switch
+  useEffect(() => {
+    setActiveNoteMarkerId(null);
+    const hasExpanded = markers.some(
+      m => m.infoExpanded || m.noteExpanded || m.bossExpanded || m.battleExpanded || m.pickingExpanded || m.checkpointExpanded
+    );
+    if (hasExpanded) {
+      onMarkersChange(
+        markers.map(m => ({
+          ...m,
+          infoExpanded: false,
+          noteExpanded: false,
+          bossExpanded: false,
+          battleExpanded: false,
+          pickingExpanded: false,
+          checkpointExpanded: false,
+        }))
+      );
+    }
+  }, [isEditMode]);
 
   // On desktop (or any layout where the left pane starts open), markers were
   // saved with the left pane open, so opening the page on mobile (where the
@@ -1528,12 +1545,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDrawing(true);
       return;
     }
-
-    if (toolMode === 'toggle-display') {
-      setIsDrawing(true);
-      toggledMarkerIdsRef.current = new Set();
-      return;
-    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1648,7 +1659,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'toggle-display');
+    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase');
     if (!isEditMode && !isDrawingOrErasing) return;
 
     if (isDrawing && toolMode === 'draw') {
@@ -1702,27 +1713,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       eraseStrokesAtPoint(coords);
       return;
     }
-
-    if (isDrawing && toolMode === 'toggle-display') {
-      const TOGGLE_RADIUS = 22;
-      const toggledSet = toggledMarkerIdsRef.current;
-      const updatedMarkers = [...markers];
-      let changed = false;
-      for (let i = 0; i < updatedMarkers.length; i++) {
-        const mk = updatedMarkers[i];
-        const dx = mk.x - coords.x;
-        const dy = mk.y - coords.y;
-        if (dx * dx + dy * dy < TOGGLE_RADIUS * TOGGLE_RADIUS && !toggledSet.has(mk.id)) {
-          toggledSet.add(mk.id);
-          updatedMarkers[i] = toggleDisplayState(mk);
-          changed = true;
-        }
-      }
-      if (changed) {
-        onMarkersChange(updatedMarkers);
-      }
-      return;
-    }
   };
 
   const handleMouseUp = () => {
@@ -1742,9 +1732,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDrawing) {
       setIsDrawing(false);
-      if (toolMode === 'toggle-display') {
-        toggledMarkerIdsRef.current = new Set();
-      }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
@@ -1806,13 +1793,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
     
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' || toolMode === 'toggle-display' ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
     if (!canInteract) return;
-
-    if (toolMode === 'toggle-display') {
-      onMarkersChange(markers.map(mk => mk.id === m.id ? toggleDisplayState(mk) : mk));
-      return;
-    }
 
     if (toolMode === 'erase') {
       // Eraser mode always actually deletes from the current view, regardless
@@ -1976,8 +1958,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    // 個人編集モード: グローバルマーカーの編集を禁止（内容・位置の変更を防ぐ）
-    if (isEditMode && !isLocal && !isIndiv(m.type)) return;
+    // 個人編集モード: グローバルマーカーは表示トグルのみ（編集ポップアップを開かない）
+    if (isEditMode && !isLocal && !isIndiv(m.type)) {
+      const toggleExpanded = (field: string): HeistMarker => ({
+        ...m,
+        [field]: !(m as any)[field]
+      });
+      const isInfo = isInfoType(m.type);
+      const isNote = isNoteType(m.type);
+      if (isInfo || isNote || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle'
+        || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'
+        || m.type === 'checkpoint' || m.type === 'phone') {
+        const field = isInfo ? 'infoExpanded' : isNote ? 'noteExpanded'
+          : m.type === 'boss' ? 'bossExpanded'
+          : m.type === 'battle' || m.type === 'gbattle' ? 'battleExpanded'
+          : m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' ? 'pickingExpanded'
+          : m.type === 'phone' ? 'phoneActive'
+          : 'checkpointExpanded';
+        if (m.type === 'phone' && m.phoneLocked) return;
+        onMarkersChange(markers.map(mk => mk.id === m.id ? toggleExpanded(field) : mk));
+      }
+      return;
+    }
 
     // If popover is already open for a different marker, save that one first
     if (activeNoteMarkerId && activeNoteMarkerId !== m.id) {
@@ -2239,9 +2241,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const activeNoteMarker = markers.find(m => m.id === activeNoteMarkerId);
 
   let cursorClass = '';
-  if (toolMode === 'toggle-display') {
-    cursorClass = 'pointer';
-  } else if (toolMode === 'pan' || !isEditMode) {
+  if (toolMode === 'pan' || !isEditMode) {
     cursorClass = isPanning ? 'grabbing' : 'grab';
   }
 
@@ -2382,11 +2382,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
 
-              const canToggleInEdit = !isLocal && !isIndiv(m.type);
-              const isVisible = (isInfoType(m.type) && ((!isEditMode && m.infoExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.infoExpanded)))))
-                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.bossExpanded)))))
-                || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.battleExpanded)))))
-                || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.pickingExpanded)))));
+              const isVisible = (isInfoType(m.type) && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
+                || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
 
               if (!isVisible) return null;
 
@@ -2561,7 +2560,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
-                     opacity: isHidden ? 0.35 : 1,
+                      opacity: isHidden ? 0.35 : 1,
                      filter: isHidden ? 'grayscale(90%)' : 'none'
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
@@ -2654,11 +2653,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isHidden = hiddenMarkers.includes(m.id);
               if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
-              const canToggleInEdit = !isLocal && !isIndiv(m.type);
               return (
                 <React.Fragment key={`popups-${m.id}`}>
-                  {/* Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && isInfoType(m.type) && m.infoExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.infoExpanded)) && isInfoType(m.type))) && (
+                  {/* Details Popup in Presentation Mode */}
+                  {((!isEditMode && isInfoType(m.type) && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && isInfoType(m.type))) && (
                     <div 
                       className="info-marker-popup"
                       style={getPopupStyle(
@@ -2703,7 +2701,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {m.note}
                           </div>
                         )}
-                        {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
+                        {isEditMode && renderMediaManager(m)}
+                        {!isEditMode && m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                             {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'webm' })} />}
@@ -2716,7 +2715,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && renderMediaManager(m)}
                       </div>
                     </div>
                   )}
@@ -2816,7 +2814,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Note (MEMO) inline editing popup near the pin */}
-                  {isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.noteExpanded)) && isNoteType(m.type) && (
+                  {isEditMode && activeNoteMarkerId === m.id && isNoteType(m.type) && (
                     <div
                       className="info-marker-popup"
                       style={{
@@ -2876,7 +2874,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Boss Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.bossExpanded)) && m.type === 'boss')) && (
+                  {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'boss')) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
@@ -3005,7 +3003,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Battle Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && (m.type === 'battle' || m.type === 'gbattle') && m.battleExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.battleExpanded)) && (m.type === 'battle' || m.type === 'gbattle'))) && (
+                  {((!isEditMode && (m.type === 'battle' || m.type === 'gbattle') && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id && (m.type === 'battle' || m.type === 'gbattle'))) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
@@ -3117,7 +3115,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                   {/* Picking / Long Picking Details Popup in Presentation Mode or Preview in Edit Mode */}
                   {((!isEditMode && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.pickingExpanded) || 
-                    (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.pickingExpanded)) && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'))) && (
+                    (isEditMode && activeNoteMarkerId === m.id && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'))) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(

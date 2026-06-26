@@ -34,7 +34,6 @@ import {
   Upload,
   Image as ImageIcon,
   Eraser,
-  Eye,
   Paintbrush,
   Move,
   RotateCcw,
@@ -140,7 +139,7 @@ export default function App() {
   });
   const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-display'>('pan');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('pan');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
@@ -758,9 +757,6 @@ export default function App() {
                   </button>
                   <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
                     <Eraser size={18} /><span>Eraser</span>
-                  </button>
-                  <button className={`tool-btn ${toolMode === 'toggle-display' ? 'active' : ''}`} onClick={() => setToolMode('toggle-display')} id="tool-toggle-btn">
-                    <Eye size={18} /><span>表示切替</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
                     <Move size={18} /><span>Pan Map</span>
