@@ -219,6 +219,7 @@ export default function App() {
       hiddenMarkerTypes: gd.hiddenMarkerTypes || []
     }));
   });
+  const defaultsLoaded = globalDefaults.loaded;
 
   const memoizedStrokes = useMemo(
     () => normalizeStrokes(routeApi.route.strokes[currentFloor]),
@@ -451,10 +452,20 @@ export default function App() {
     }
   }, [routeApi.route.targetDuration]);
 
-  // Startup focus: auto-pan to a configured marker on app load
+  // Startup focus: auto-pan to a configured marker on app load.
+  // Note: `globalDefaultsRef.current.startupFocusMarkerId` is a ref, so the
+  // effect must also depend on `defaultsLoaded` — otherwise, when
+  // `global_markers.json` resolves BEFORE `global_defaults.json` (common in
+  // production with slower/cached responses), the effect runs once with
+  // markers present but the target ID still undefined, returns early, and
+  // never re-runs after the defaults arrive (the ref change doesn't trigger
+  // a re-render, and `route.markers` reference is unchanged by the
+  // onLoad → setRouteWithGlobalDefaults path).
   const startupFocusedRef = useRef(false);
   useEffect(() => {
-    if (startupFocusedRef.current || globalMarkersStore.globalMarkers.length === 0) return;
+    if (startupFocusedRef.current) return;
+    if (!defaultsLoaded) return;
+    if (globalMarkersStore.globalMarkers.length === 0) return;
     const targetId = globalDefaultsRef.current.startupFocusMarkerId;
     if (!targetId) return;
     const exists =
@@ -463,7 +474,7 @@ export default function App() {
     if (!exists) return;
     startupFocusedRef.current = true;
     setTimeout(() => setFocusTrigger({ id: targetId, timestamp: Date.now() }), 300);
-  }, [globalMarkersStore.globalMarkers, routeApi.route.markers]);
+  }, [globalMarkersStore.globalMarkers, routeApi.route.markers, defaultsLoaded]);
 
   // --- DnD handlers (window-level) ---
   const fileIORef = useRef(fileIO);
