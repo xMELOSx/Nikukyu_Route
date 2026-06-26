@@ -454,19 +454,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
-  // Viewport size for culling off-screen markers
-  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-    const update = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   // Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -480,20 +467,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [activeNoteMarkerId, setActiveNoteMarkerId] = useState<string | null>(null);
 
   // Viewport culling: only render markers visible in the current viewport + margin for popups.
-  // This prevents creating hundreds of DOM nodes for off-screen markers.
+  // Uses getBoundingClientRect() on both wrapper (viewport clip) and container (transformed canvas)
+  // to correctly map visible bounds back to canvas coordinates regardless of zoom/pan.
   const PIN_MARGIN = 350;
   const visibleMarkers = useMemo(() => {
-    if (viewportSize.width === 0 || viewportSize.height === 0) return markers;
-    const left = -pan.x / zoom - PIN_MARGIN;
-    const top = -pan.y / zoom - PIN_MARGIN;
-    const right = (viewportSize.width - pan.x) / zoom + PIN_MARGIN;
-    const bottom = (viewportSize.height - pan.y) / zoom + PIN_MARGIN;
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+    if (!containerRect || !wrapperRect) return markers;
+    const viewLeft = ((wrapperRect.left - containerRect.left) / containerRect.width) * 1600 - PIN_MARGIN;
+    const viewTop = ((wrapperRect.top - containerRect.top) / containerRect.height) * 4550 - PIN_MARGIN;
+    const viewRight = ((wrapperRect.right - containerRect.left) / containerRect.width) * 1600 + PIN_MARGIN;
+    const viewBottom = ((wrapperRect.bottom - containerRect.top) / containerRect.height) * 4550 + PIN_MARGIN;
     return markers.filter(m => {
       if (m.floor !== floor) return false;
       if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
-      return m.x >= left && m.x <= right && m.y >= top && m.y <= bottom;
+      return m.x >= viewLeft && m.x <= viewRight && m.y >= viewTop && m.y <= viewBottom;
     });
-  }, [markers, floor, zoom, pan, viewportSize, draggingMarkerId, activeNoteMarkerId]);
+  }, [markers, floor, draggingMarkerId, activeNoteMarkerId, zoom, pan]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
