@@ -16,9 +16,16 @@ export interface AutoRouteStatus {
 }
 
 const INITIAL_STATUS: AutoRouteStatus = {
-  active: false, running: false, elapsed: 0,
-  totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0,
-  error: null, nextMarkerLabel: '', waitRemaining: 0,
+  active: false,
+  running: false,
+  elapsed: 0,
+  totalTime: 0,
+  totalDistance: 0,
+  totalStopTime: 0,
+  speed: 0,
+  error: null,
+  nextMarkerLabel: '',
+  waitRemaining: 0,
   checkpoints: []
 };
 
@@ -30,10 +37,19 @@ export interface AutoRouteCommand {
   seekTo?: number;
 }
 
+export interface AutoRouteSettings {
+  waitEnabled: boolean;
+  waitSeconds: number;
+  speedMultiplier: 1 | 2 | 3 | 5;
+  followCamera: boolean;
+}
+
 /**
- * State and command bus for the auto-route animation running inside
- * MapCanvas. Status is mirrored up from the canvas via onStatusChange;
- * commands are sent down via sendCommand.
+ * Controller hook for the auto-route feature. Owns the UI state
+ * (status mirror, command bus, settings, collapse state) that the
+ * App-level panel binds to. The actual animation engine lives in
+ * `useAutoRouteEngine`, which is invoked inside MapCanvas and
+ * reports status back via `onAutoRouteStatusChange` (set to `setStatus`).
  */
 export function useAutoRoute() {
   const [status, setStatus] = useState<AutoRouteStatus>(INITIAL_STATUS);
@@ -57,12 +73,19 @@ export function useAutoRoute() {
   }, []);
 
   return {
-    status, setStatus,
-    command, sendCommand,
-    waitEnabled, setWaitEnabled,
-    waitSeconds, setWaitSeconds,
-    speedMultiplier, setSpeedMultiplier,
-    followCamera, setFollowCamera,
-    collapsed, toggleCollapsed
+    status,
+    setStatus,
+    command,
+    sendCommand,
+    waitEnabled,
+    setWaitEnabled,
+    waitSeconds,
+    setWaitSeconds,
+    speedMultiplier,
+    setSpeedMultiplier,
+    followCamera,
+    setFollowCamera,
+    collapsed,
+    toggleCollapsed
   } as const;
 }

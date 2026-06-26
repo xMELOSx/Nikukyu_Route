@@ -180,6 +180,86 @@ button, select, input {
   overflow: hidden;
 }
 
+/* Mobile Responsive Layout */
+@media (max-width: 767px) {
+  .main-content {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    position: fixed;
+    top: 60px;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 320px;
+    height: calc(100vh - 60px);
+    z-index: 200;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-right {
+    grid-column: 1;
+    grid-row: 3;
+    position: fixed;
+    top: 60px;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 320px;
+    height: calc(100vh - 60px);
+    z-index: 200;
+    border-left: none;
+    border-bottom: 1px solid var(--border-color);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .sidebar-right.open {
+    transform: translateX(0);
+  }
+
+  .canvas-area {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  /* Hide the inline toggle buttons on mobile since sidebars are overlays */
+  .main-content > section[style*="position: absolute"] button[style*="left: 0"],
+  .main-content > section[style*="position: absolute"] button[style*="right: 0"] {
+    display: none;
+  }
+
+  /* Mobile sidebar backdrop overlay */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 150;
+  }
+
+  .sidebar-backdrop.visible {
+    display: block;
+  }
+}
+
 /* Sidebar Styling */
 .sidebar {
   grid-column: 1;

@@ -11,7 +11,7 @@ import {
   PRESET_MAPS_META
 } from '../utils/DataManager';
 import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
-import { buildAutoRoute, computeRouteTiming, interpolateRoute, playCheckpointSound, prewarmAudio, speakCheckpointTime, type RouteSegment } from '../utils/AutoRoute';
+import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
@@ -295,33 +295,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
 
-  // Auto-route state
-  const [autoRouteActive, setAutoRouteActive] = useState(false);
-  const [autoRouteRunning, setAutoRouteRunning] = useState(false);
-  const [autoRouteElapsed, setAutoRouteElapsed] = useState(0);
-  const [autoRouteSegments, setAutoRouteSegments] = useState<RouteSegment[]>([]);
-  const [autoRouteTiming, setAutoRouteTiming] = useState<{ totalTime: number; totalDistance: number; totalStopTime: number; speed: number }>({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
-  const [autoRouteBaseTiming, setAutoRouteBaseTiming] = useState<{ speed: number; totalTime: number; totalDistance: number; totalStopTime: number }>({ speed: 0, totalTime: 0, totalDistance: 0, totalStopTime: 0 });
-  const [autoRouteError, setAutoRouteError] = useState<string | null>(null);
-  const autoRouteStartTimeRef = useRef<number>(0);
-  const autoRouteElapsedAtStartRef = useRef<number>(0);
-  const autoRouteAnimRef = useRef<number | null>(null);
-  const autoRouteWaitUntilRef = useRef<number>(0);
-  const autoRoutePrevSegmentIdRef = useRef<string>('');
-
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
   const targetZoomRef = useRef<number>(1);
   const targetPanRef = useRef<Point>({ x: 0, y: 0 });
   const animFrameIdRef = useRef<number | null>(null);
   const animPanRef = useRef<Point>({ x: 0, y: 0 });
   const animZoomRef = useRef<number>(1);
-  // Latest followCamera value — read by the tick so toggling follow during
-  // playback takes effect immediately (avoids stale closure).
-  const followCameraRef = useRef<boolean>(false);
-  // Sync state to anim refs whenever state changes
   animPanRef.current = pan;
   animZoomRef.current = zoom;
-  followCameraRef.current = followCamera;
+
+  // Auto-route engine
+  useAutoRouteEngine({
+    markers,
+    strokes,
+    floor,
+    stopMarkerThreshold,
+    movementMarkerThreshold,
+    warpMarkerThreshold,
+    hiddenMarkers,
+    targetDurationSeconds,
+    autoRouteSettings,
+    followCamera,
+    autoRouteCommand,
+    onAutoRouteStatusChange,
+    checkpointVoiceOn,
+    wrapperRef,
+    animZoomRef,
+    animPanRef,
+    targetPanRef,
+    setPan,
+    setCurrentPosition,
+    zoom,
+  });
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -575,349 +580,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     startSmoothScroll(tgtPan, tgtZoom);
   }, [currentPosTrigger]);
 
-  // ---- Auto-route logic ----
-  const startAutoRoute = () => {
-    setAutoRouteError(null);
-    // Pre-warm the AudioContext on this user gesture so checkpoint sounds
-    // can play without a separate click later (browsers block audio until
-    // a user interaction resumes the context).
-    prewarmAudio();
-    const startMarker = markers.find(m => m.type === 'start');
-    if (!startMarker) {
-      setAutoRouteError('スタートマーカー (🐾) が見つかりません。マーカーを配置してください。');
-      return;
-    }
-    const routeSegments = buildAutoRoute(strokes, markers, startMarker, {
-      stopMarkerThreshold,
-      movementMarkerThreshold,
-      warpMarkerThreshold
-    }, hiddenMarkers || []);
-    if (routeSegments.length === 0) {
-      setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
-      return;
-    }
-    const targetDur = targetDurationSeconds && targetDurationSeconds > 0 ? targetDurationSeconds : undefined;
-    const baseTiming = computeRouteTiming(routeSegments, targetDur);
-    setAutoRouteBaseTiming(baseTiming);
-    if (baseTiming.ignoredCheckpoint) {
-      setAutoRouteError(`⚠ チェックポイント目標が無効: ${baseTiming.ignoredCheckpoint.reason} (目標 ${baseTiming.ignoredCheckpoint.target}秒 / 停止 ${baseTiming.ignoredCheckpoint.stopTime}秒)`);
-    }
-    const mult = autoRouteSettings?.speedMultiplier ?? 1;
-    // Multiplier scales the speed only; totalTime stays at base so the
-    // displayed total is always the natural route duration. Elapsed is
-    // advanced in route-time units (mult × wall-clock) so it matches
-    // the base total when the route completes.
-    const timing = { ...baseTiming, speed: baseTiming.speed * mult, totalTime: baseTiming.totalTime };
-    const waitEnabled = autoRouteSettings?.waitEnabled ?? false;
-    const waitSeconds = autoRouteSettings?.waitSeconds ?? 0;
-    setAutoRouteSegments(routeSegments);
-    setAutoRouteTiming(timing);
-    setAutoRouteElapsed(0);
-    setAutoRouteActive(true);
-    setAutoRouteRunning(!waitEnabled); // Paused during initial wait
-    autoRouteStartTimeRef.current = performance.now();
-    autoRouteElapsedAtStartRef.current = 0;
-    autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
-    setCurrentPosition({ x: startMarker.x, y: startMarker.y });
-    // Snap the view to the start marker immediately. The tick's follow
-    // camera keeps it correct afterwards (when followCamera is on).
-    if (followCamera && wrapperRef.current) {
-      const W_v = wrapperRef.current.clientWidth;
-      const H_v = wrapperRef.current.clientHeight;
-      const tgtZoom = zoom || 1;
-      const tgtPan = {
-        x: W_v * 0.5 - 800 - (startMarker.x - 800) * tgtZoom,
-        y: H_v * 0.6 - 2275 - (startMarker.y - 2275) * tgtZoom
-      };
-      setPan(tgtPan);
-      animPanRef.current = tgtPan;
-    }
-  };
-
-  const pauseAutoRoute = () => {
-    setAutoRouteRunning(false);
-  };
-
-  const resumeAutoRoute = () => {
-    if (!autoRouteActive) return;
-    setAutoRouteRunning(true);
-    autoRouteStartTimeRef.current = performance.now();
-    autoRouteElapsedAtStartRef.current = autoRouteElapsed;
-  };
-
-  const resetAutoRoute = () => {
-    setAutoRouteRunning(false);
-    setAutoRouteActive(false);
-    setAutoRouteElapsed(0);
-    setAutoRouteSegments([]);
-    setAutoRouteTiming({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
-    if (autoRouteAnimRef.current) cancelAnimationFrame(autoRouteAnimRef.current);
-  };
-
-  // Auto-route animation loop
-  // We use `autoRouteActive` (not `autoRouteRunning`) as the gate so the
-  // tick keeps running during the initial wait — this is what updates the
-  // countdown UI, and it lets the loop auto-resume once the wait ends
-  // without needing to call setAutoRouteRunning(true) (which would re-fire
-  // this effect and cancel the in-flight frame).
-  useEffect(() => {
-    if (!autoRouteActive || autoRouteSegments.length === 0) {
-      if (autoRouteAnimRef.current) {
-        cancelAnimationFrame(autoRouteAnimRef.current);
-        autoRouteAnimRef.current = null;
-      }
-      return;
-    }
-
-    const tick = () => {
-      const now = performance.now();
-
-      // Initial-wait countdown: don't advance the position yet, but keep
-      // ticking so the countdown UI can update.
-      if (autoRouteWaitUntilRef.current > 0 && now < autoRouteWaitUntilRef.current) {
-        autoRouteAnimRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      if (autoRouteWaitUntilRef.current > 0 && now >= autoRouteWaitUntilRef.current) {
-        // Wait finished — start the actual animation now
-        autoRouteWaitUntilRef.current = 0;
-        autoRouteStartTimeRef.current = now;
-        autoRouteElapsedAtStartRef.current = 0;
-        // Auto-resume after the wait completes. setAutoRouteRunning will
-        // re-fire this effect's cleanup, but the new tick is already
-        // scheduled below — the cleanup just cancels any older frame.
-        setAutoRouteRunning(true);
-      }
-
-      // If the user paused, just keep ticking so we can resume seamlessly.
-      if (!autoRouteRunning) {
-        autoRouteAnimRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      const realElapsed = (now - autoRouteStartTimeRef.current) / 1000;
-      // Advance elapsed in route-time units so the display matches totalTime.
-      // Multiplier = current speed / base speed (1, 2, or 3).
-      const baseSpd = autoRouteBaseTiming.speed || autoRouteTiming.speed || 1;
-      const mult = autoRouteTiming.speed / baseSpd;
-      const elapsed = autoRouteElapsedAtStartRef.current + realElapsed * mult;
-      if (elapsed >= autoRouteTiming.totalTime) {
-        setAutoRouteElapsed(autoRouteTiming.totalTime);
-        const last = autoRouteSegments[autoRouteSegments.length - 1];
-        setCurrentPosition({ x: last.end.x, y: last.end.y });
-        setAutoRouteRunning(false);
-        return;
-      }
-      setAutoRouteElapsed(elapsed);
-      const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, elapsed);
-      if (interp) {
-        setCurrentPosition({ x: interp.position.x, y: interp.position.y });
-
-        // Checkpoint pass: when the current segment transitions and the
-        // PREVIOUS segment ended at a checkpoint, play the configured sound.
-        // (The speed is calculated from the first checkpoint's target, so
-        //  arrival is always on-time by construction — we don't compare
-        //  against the target here.)
-        const segId = `${interp.segment.markerId || interp.segment.start.x},${interp.segment.start.y}`;
-        if (autoRoutePrevSegmentIdRef.current && autoRoutePrevSegmentIdRef.current !== segId) {
-          const prev = autoRouteSegments.find(s =>
-            `${s.markerId || s.start.x},${s.start.y}` === autoRoutePrevSegmentIdRef.current
-          );
-          if (prev?.markerId && prev.markerType === 'checkpoint') {
-            const passedMarker = markers.find(m => m.id === prev.markerId);
-            if (passedMarker?.type === 'checkpoint') {
-              const cpTarget = (prev as any)._checkpointTarget as number;
-              if (passedMarker.checkpointSoundOn) {
-                playCheckpointSound(true);
-              }
-              // Voice announcement: "X秒地点です" — uses the global
-              // checkpointVoiceOn flag (default ON) so the user can disable
-              // it separately from the beep sound.
-              if (cpTarget > 0 && checkpointVoiceOn) {
-                speakCheckpointTime(cpTarget, passedMarker.note?.trim() || undefined);
-              }
-            }
-          }
-        }
-        autoRoutePrevSegmentIdRef.current = segId;
-
-        // Follow camera: scroll the view to keep the current position
-        // slightly below center (60% from top).
-        // Read followCamera from a ref so toggling follow during playback
-        // takes effect on the very next frame.
-        if (followCameraRef.current) {
-          const wrapper = wrapperRef.current;
-          if (wrapper) {
-            const W_v = wrapper.clientWidth;
-            const H_v = wrapper.clientHeight;
-            // Use animZoomRef to avoid stale closure (zoom state can lag
-            // when the user changes zoom mid-animation).
-            const tgtZoom = (animZoomRef.current && isFinite(animZoomRef.current)) ? animZoomRef.current : 1;
-            const tgtPan = {
-              x: W_v * 0.5 - 800 - (interp.position.x - 800) * tgtZoom,
-              y: H_v * 0.6 - 2275 - (interp.position.y - 2275) * tgtZoom
-            };
-            if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
-              targetPanRef.current = tgtPan;
-              animPanRef.current = tgtPan;
-              setPan(tgtPan);
-            }
-          }
-        }
-      }
-      autoRouteAnimRef.current = requestAnimationFrame(tick);
-    };
-    autoRouteAnimRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      if (autoRouteAnimRef.current) {
-        cancelAnimationFrame(autoRouteAnimRef.current);
-        autoRouteAnimRef.current = null;
-      }
-    };
-  }, [autoRouteActive, autoRouteRunning, autoRouteSegments, autoRouteTiming]);
-
-  // Cleanup auto-route on floor change
-  useEffect(() => {
-    resetAutoRoute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [floor]);
-
-  // Listen for auto-route commands from parent (e.g. プレイデータ tab)
-  useEffect(() => {
-    if (!autoRouteCommand) return;
-    if (autoRouteCommand.action === 'start') startAutoRoute();
-    else if (autoRouteCommand.action === 'pause') pauseAutoRoute();
-    else if (autoRouteCommand.action === 'resume') resumeAutoRoute();
-    else if (autoRouteCommand.action === 'reset') resetAutoRoute();
-    else if (autoRouteCommand.action === 'seek' && autoRouteCommand.seekTo !== undefined) {
-      // Jump the animation to a specific elapsed time (timeline click).
-      // Update the visual position immediately so there is no perceptible
-      // lag between the click and the marker moving on the map.
-      // Guard against: no segments built yet, invalid seekTo (NaN), zero totalTime.
-      if (!isFinite(autoRouteCommand.seekTo)) return;
-      if (autoRouteSegments.length === 0 || autoRouteTiming.totalTime <= 0) return;
-      const t = Math.max(0, Math.min(autoRouteTiming.totalTime, autoRouteCommand.seekTo));
-      setAutoRouteElapsed(t);
-      autoRouteStartTimeRef.current = performance.now();
-      autoRouteElapsedAtStartRef.current = t;
-      autoRoutePrevSegmentIdRef.current = '';
-      try {
-        const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, t);
-        if (interp && interp.position && isFinite(interp.position.x) && isFinite(interp.position.y)) {
-          setCurrentPosition({ x: interp.position.x, y: interp.position.y });
-          if (followCamera && wrapperRef.current) {
-            const W_v = wrapperRef.current.clientWidth;
-            const H_v = wrapperRef.current.clientHeight;
-            // Use the ref for zoom to avoid stale closure issues when zoom
-            // changes mid-animation. animZoomRef is synced every render.
-            const tgtZoom = (animZoomRef.current && isFinite(animZoomRef.current)) ? animZoomRef.current : 1;
-            // Place current position at 50% horizontal, 60% vertical (center-bottom)
-            const tgtPan = {
-              x: W_v * 0.5 - 800 - (interp.position.x - 800) * tgtZoom,
-              y: H_v * 0.6 - 2275 - (interp.position.y - 2275) * tgtZoom
-            };
-            if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
-              targetPanRef.current = tgtPan;
-              animPanRef.current = tgtPan;
-              setPan(tgtPan);
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[seek] interpolation failed:', e);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRouteCommand]);
-
-  // Push auto-route status updates to parent for the プレイデータ tab UI
-  useEffect(() => {
-    if (!onAutoRouteStatusChange) return;
-    const sendStatus = () => {
-      const waitRemaining = autoRouteWaitUntilRef.current > 0
-        ? Math.max(0, (autoRouteWaitUntilRef.current - performance.now()) / 1000)
-        : 0;
-      // Build checkpoint list with their elapsed times for timeline display.
-      // Use the checkpoint's TARGET time directly (set by the user) so the
-      // timeline line is at the correct position regardless of per-segment
-      // speed variations. Fall back to distance-based estimate if no target.
-      const cpList: { elapsed: number; label: string; passed: boolean }[] = [];
-      for (const seg of autoRouteSegments) {
-        if (seg.markerType === 'checkpoint') {
-          const m = markers.find(mk => mk.id === seg.markerId);
-          const cpTarget = (seg as any)._checkpointTarget as number;
-          // Use the user-set target time directly. This is the "contract":
-          // the auto-route promises to reach this point in exactly this time.
-          const elapsedAt = cpTarget > 0
-            ? cpTarget
-            : seg.cumulativeDistance / Math.max(1, autoRouteTiming.speed) + seg.cumulativeStopTime;
-          cpList.push({
-            elapsed: elapsedAt,
-            label: m?.note || 'Checkpoint',
-            passed: autoRouteElapsed >= elapsedAt
-          });
-        }
-      }
-
-      onAutoRouteStatusChange({
-        active: autoRouteActive,
-        running: autoRouteRunning,
-        elapsed: autoRouteElapsed,
-        totalTime: autoRouteTiming.totalTime,
-        totalDistance: autoRouteTiming.totalDistance,
-        totalStopTime: autoRouteTiming.totalTime - autoRouteTiming.totalDistance / Math.max(1, autoRouteTiming.speed),
-        speed: autoRouteTiming.speed,
-        error: autoRouteError,
-        nextMarkerLabel: nextMarkerLabel(autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed),
-        waitRemaining,
-        checkpoints: cpList
-      });
-    };
-    sendStatus();
-    // While the auto-route is active, poll every 100ms so the wait
-    // countdown and elapsed time stay fresh in the parent UI.
-    const interval = setInterval(sendStatus, 100);
-    return () => clearInterval(interval);
-  }, [autoRouteActive, autoRouteRunning, autoRouteElapsed, autoRouteTiming, autoRouteError, autoRouteSegments, onAutoRouteStatusChange]);
-
-  // Spacebar toggles pause/resume while the auto-route is active.
-  // Skips when focus is in an input/textarea so typing is unaffected.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return;
-      const tag = (document.activeElement as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (!autoRouteActive) return;
-      e.preventDefault();
-      if (autoRouteRunning) pauseAutoRoute();
-      else resumeAutoRoute();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRouteActive, autoRouteRunning]);
-
-  // Apply speed multiplier changes mid-animation. Only the speed changes;
-  // totalTime/stopTime stay at base so the displayed totals never change.
-  // Elapsed is preserved so the current position is maintained.
-  useEffect(() => {
-    if (!autoRouteActive) return;
-    if (autoRouteBaseTiming.speed === 0) return;
-    const mult = autoRouteSettings?.speedMultiplier ?? 1;
-    const newSpeed = autoRouteBaseTiming.speed * mult;
-    setAutoRouteTiming({
-      speed: newSpeed,
-      totalTime: autoRouteBaseTiming.totalTime,
-      totalDistance: autoRouteBaseTiming.totalDistance,
-      totalStopTime: autoRouteBaseTiming.totalStopTime
-    });
-    // Keep elapsed time the same so the current position is preserved
-    autoRouteStartTimeRef.current = performance.now();
-    autoRouteElapsedAtStartRef.current = autoRouteElapsed;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRouteSettings?.speedMultiplier, autoRouteActive]);
-
   // Extract SVG string for PNG export
   useEffect(() => {
     if (svgWrapperRef.current) {
@@ -1085,29 +747,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     clientX: t.clientX, clientY: t.clientY, button: 0,
     preventDefault: () => {}, shiftKey: false
   } as React.MouseEvent<HTMLDivElement>);
-
-  // Auto-route helper: label of the next marker (for status display)
-  const nextMarkerLabel = (segments: RouteSegment[], elapsed: number, speed: number): string => {
-    if (segments.length === 0) return '';
-    let remaining = elapsed;
-    for (const seg of segments) {
-      // Use the per-segment speed (if set) to match the actual auto-route timing.
-      const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
-      const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-      if (remaining <= travelTime) return '';
-      remaining -= travelTime;
-      if (remaining <= seg.stopDuration) {
-        // Currently stopping at this marker
-        if (seg.markerType && MARKER_META[seg.markerType as keyof typeof MARKER_META]) {
-          const meta = MARKER_META[seg.markerType as keyof typeof MARKER_META];
-          return `${meta.emoji} ${meta.label} (停止中)`;
-        }
-        return seg.markerType || '';
-      }
-      remaining -= seg.stopDuration;
-    }
-    return '';
-  };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
