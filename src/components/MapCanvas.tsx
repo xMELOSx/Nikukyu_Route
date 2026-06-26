@@ -371,8 +371,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const prevLeft = prevLeftCollapsedRef.current;
     const prevRight = prevRightCollapsedRef.current;
 
-    // Only run when the sidebar state actually changed. This avoids
-    // re-shifting markers on every unrelated re-render.
     if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
 
     const currentMarkers = markersRef.current;

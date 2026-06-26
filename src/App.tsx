@@ -998,6 +998,8 @@ export default function App() {
             isEditMode={isEditMode}
             showMarkerLabels={showMarkerLabels}
             markerScale={markerScale}
+            leftSidebarCollapsed={leftSidebarCollapsed}
+            rightSidebarCollapsed={rightSidebarCollapsed}
             bossCustomDurations={routeApi.route.bossCustomDurations}
             onBossCustomDurationChange={(id, dur) => routeApi.setBossCustomDuration(id, dur)}
             battleCustomDurations={routeApi.route.battleCustomDurations}
