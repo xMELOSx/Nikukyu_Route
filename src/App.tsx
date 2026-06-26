@@ -270,7 +270,7 @@ export default function App() {
       historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
     }
     const isIndivType = (type: string) =>
-      ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
+      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
     const incomingGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
     if (options.isDelete) {
@@ -356,7 +356,7 @@ export default function App() {
       }
     }
 
-    // Fetch presets with fallback to old default_preset.json
+    // Fetch presets: try dev server API first, then static file, then legacy fallback
     fetch(`${import.meta.env.BASE_URL}api/presets`)
       .then(res => res.ok ? res.json() : [])
       .then((data: PresetData[]) => {
@@ -364,28 +364,28 @@ export default function App() {
           routeApi.setPresets(data);
           return;
         }
-        fetch(`${import.meta.env.BASE_URL}api/default-preset`)
-          .then(res => res.ok ? res.json() : null)
-          .then((oldPreset: RouteData | null) => {
-            if (oldPreset) {
-              const migratedPreset: PresetData = {
-                id: 'preset_migrated',
-                name: oldPreset.title || 'Default Preset',
-                description: '',
-                targetCash: oldPreset.targetCash || '',
-                targetCoins: oldPreset.targetCoins || '',
-                author: '',
-                originalAuthor: '',
-                updatedAt: Date.now(),
-                routeData: oldPreset
-              };
-              routeApi.saveAsPreset({
-                name: migratedPreset.name,
-                description: '',
-                author: '',
-                originalAuthor: ''
-              });
+        // Fallback: try loading from static presets.json (shipped with dist build)
+        fetch(`${import.meta.env.BASE_URL}presets.json`)
+          .then(res => res.ok ? res.json() : [])
+          .then((staticPresets: PresetData[]) => {
+            if (Array.isArray(staticPresets) && staticPresets.length > 0) {
+              routeApi.setPresets(staticPresets);
+              return;
             }
+            // Legacy fallback: try old default_preset.json (single route)
+            fetch(`${import.meta.env.BASE_URL}api/default-preset`)
+              .then(res => res.ok ? res.json() : null)
+              .then((oldPreset: RouteData | null) => {
+                if (oldPreset) {
+                  routeApi.saveAsPreset({
+                    name: oldPreset.title || 'Default Preset',
+                    description: '',
+                    author: '',
+                    originalAuthor: ''
+                  });
+                }
+              })
+              .catch(() => { });
           })
           .catch(() => { });
         const savesList = DataManager.getSavesList();
@@ -656,20 +656,20 @@ export default function App() {
                       <div style={{ display: 'flex', gap: '3px' }}>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                           onClick={() => {
-                            (['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                            (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
                               if ((routeApi.route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
                             });
                           }}>ALL ON</button>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                           onClick={() => {
-                            (['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                            (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
                               if (!(routeApi.route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
                             });
                           }}>ALL OFF</button>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                      {(['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                      {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
                         const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                         return (
@@ -701,7 +701,7 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
+                  {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
                         const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                         return (
@@ -837,7 +837,7 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">マーカー(グローバル)</div>
                 <div className="marker-list">
-                  {(['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                  {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
                     return (
                       <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
@@ -856,14 +856,14 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">マーカー</div>
                 <div className="marker-list">
-                  {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
+                  {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
                     return (
                       <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
                         onClick={() => { setToolMode('add-marker'); setActiveMarkerType(t); }}
                         style={{ '--theme-color': meta.color } as React.CSSProperties}>
                         <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{t === 'iwarp' ? 'I-WARP' : meta.label}</span>
+                        <span>{t === 'start' ? 'START' : t === 'iwarp' ? 'I-WARP' : meta.label}</span>
                       </button>
                     );
                   })}

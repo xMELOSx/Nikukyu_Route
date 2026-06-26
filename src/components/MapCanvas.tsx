@@ -285,7 +285,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
+  const isIndiv = (type: string) => ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -806,7 +806,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     prewarmAudio();
     const startMarker = markers.find(m => m.type === 'start');
     if (!startMarker) {
-      setAutoRouteError('スタートマーカー (🐾) が見つかりません。グローバルマーカーに追加してください。');
+      setAutoRouteError('スタートマーカー (🐾) が見つかりません。マーカーを配置してください。');
       return;
     }
     const routeSegments = buildAutoRoute(strokes, markers, startMarker, {
@@ -2478,10 +2478,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
-              // The START marker (🐾) is always visible — it's required for
-              // the auto-route to work, so we never hide it even if the
-              // user toggled its type in the visibility settings.
-              const isHidden = m.type !== 'start' && (hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type));
+              const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
               if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
 

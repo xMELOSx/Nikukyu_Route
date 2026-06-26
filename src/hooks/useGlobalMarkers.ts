@@ -1,20 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { type HeistMarker } from '../utils/DataManager';
 
-const START_MARKER_ID = 'marker_start_global_001';
-const START_MARKER: HeistMarker = {
-  id: START_MARKER_ID,
-  type: 'start',
-  x: 693,
-  y: 4500,
-  note: 'スタート',
-  floor: 'main',
-  popupDirection: 'top',
-  popupWidth: 300,
-  popupHeight: 0,
-  popupOffset: { x: 0, y: -100 }
-};
-
 function backfillDefaults(m: HeistMarker): HeistMarker {
   const updated: HeistMarker = { ...m };
   if (m.type === 'boss') {
@@ -44,11 +30,6 @@ function filterLegacyAndClean(markers: HeistMarker[]): HeistMarker[] {
       }
       return backfillDefaults(cleaned);
     });
-}
-
-function ensureStart(markers: HeistMarker[]): HeistMarker[] {
-  if (markers.some(m => m.id === START_MARKER_ID)) return markers;
-  return [...markers, { ...START_MARKER }];
 }
 
 function persist(markers: HeistMarker[], isLocal: boolean) {
@@ -116,7 +97,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
         const existingIds = new Set(prev.map(m => m.id));
         const newOnes = cleaned.filter(m => !existingIds.has(m.id));
         if (newOnes.length === 0) return prev;
-        return ensureStart([...prev, ...newOnes]);
+        return [...prev, ...newOnes];
       });
     };
 
@@ -168,13 +149,12 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
             });
 
         const cleaned = filterLegacyAndClean(scrollFixed);
-        const withStart = ensureStart(cleaned);
         // Persist the migrated/cleaned version back so we don't redo the
         // migration on every load, and to surface the file via the API.
-        localStorage.setItem('heist_global_markers', JSON.stringify(withStart));
+        localStorage.setItem('heist_global_markers', JSON.stringify(cleaned));
         localStorage.setItem('heist_global_markers_migrated_v2', 'true');
         localStorage.setItem('heist_global_markers_scroll_fixed_v4', 'true');
-        return withStart;
+        return cleaned;
       } catch (e) {
         console.error('Failed to load global markers from localStorage:', e);
         return null;
@@ -204,13 +184,12 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
         }
       } catch { /* fall through */ }
 
-      // Last resort: nothing in localStorage, API, or file. Create just the
-      // START marker so the user has at least a valid empty state.
+      // Last resort: nothing in localStorage, API, or file. Start with an
+      // empty list — the user can add markers manually.
       if (!cancelled) {
-        const startOnly = ensureStart([]);
-        setGlobalMarkers(startOnly);
+        setGlobalMarkers([]);
         if (isLocalRef.current) {
-          localStorage.setItem('heist_global_markers', JSON.stringify(startOnly));
+          localStorage.setItem('heist_global_markers', '[]');
         }
       }
     };
@@ -234,15 +213,6 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
 
     return () => { cancelled = true; };
   }, []);
-
-  // Ensure START exists if the list is mutated externally
-  useEffect(() => {
-    if (globalMarkers.some(m => m.id === START_MARKER_ID)) return;
-    setGlobalMarkers(prev => {
-      if (prev.some(m => m.id === START_MARKER_ID)) return prev;
-      return [...prev, { ...START_MARKER }];
-    });
-  }, [globalMarkers]);
 
   // Debounced persist: レンダリングをブロックしないよう setTimeout で遅延させ、
   // 高速な連続変更は最後の1回にまとめる。
@@ -296,7 +266,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       if (newOnes.length === 0 && updated.every((m, i) => m === prev[i])) {
         return prev;
       }
-      return ensureStart([...updated, ...newOnes]);
+      return [...updated, ...newOnes];
     });
   }, []);
 

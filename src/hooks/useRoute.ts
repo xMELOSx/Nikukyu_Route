@@ -20,7 +20,7 @@ import type { UseGlobalMarkersApi } from './useGlobalMarkers';
 // + メタ情報。グローバルマーカーの実体は globalMarkersStore が保持する。
 // グローバルタイプが route.markers に混入した場合はここで必ず弾く。
 const ROUTE_INDIV_TYPES = new Set<string>([
-  'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
+  'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
   'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'
 ]);
 const stripGlobalMarkersFromRoute = (markers: HeistMarker[] | undefined): HeistMarker[] => {
@@ -246,10 +246,10 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
     // Strip legacy fields, backfill defaults, ensure floor/main, split global/individual
     data.markers = (data.markers || []).filter(
-      m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)
+      m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
     );
     const isIndiv = (t: string) =>
-      ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(t);
+      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(t);
     const planIndiv = data.markers
       .filter(m => isIndiv(m.type))
       .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));

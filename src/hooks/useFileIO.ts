@@ -34,12 +34,12 @@ export interface UseFileIOApi {
 }
 
 const GLOBAL_TYPES = new Set([
-  'start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'phone',
+  'eh', 'rare', 'cardkey', 'vault', 'boss', 'phone',
   'warp', 'stairs', 'info', 'note', 'text', 'room',
   'gbattle', 'gpicking', 'glong_picking'
 ]);
 const INDIV_TYPES = new Set([
-  'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
+  'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
   'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'
 ]);
 const isGlobalType = (t: string) => GLOBAL_TYPES.has(t);
@@ -126,7 +126,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         data.strokes = { main: merged as any };
       }
       data.markers = (data.markers || []).filter(
-        m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)
+        m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
       );
       const { indiv, global } = splitMarkers(data.markers.map(m => backfillMarker({ ...m, floor: 'main' as FloorType })));
       if (global.length > 0) {

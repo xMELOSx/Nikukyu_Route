@@ -247,6 +247,17 @@ export default defineConfig({
           console.log('Copied default_preset.json to dist/ during build');
         }
 
+        const presetsSrcPath = path.resolve(__dirname, 'presets.json');
+        const presetsDestPath = path.resolve(__dirname, 'dist/presets.json');
+        if (fs.existsSync(presetsSrcPath)) {
+          const distDir = path.dirname(presetsDestPath);
+          if (!fs.existsSync(distDir)) {
+            fs.mkdirSync(distDir, { recursive: true });
+          }
+          fs.copyFileSync(presetsSrcPath, presetsDestPath);
+          console.log('Copied presets.json to dist/ during build');
+        }
+
         const helpSrcPath = path.resolve(__dirname, 'public/global_help.json');
         const helpDestPath = path.resolve(__dirname, 'dist/global_help.json');
         if (fs.existsSync(helpSrcPath)) {
@@ -298,6 +309,8 @@ export default defineConfig({
         '**/global_markers.json',
         path.resolve(__dirname, 'default_preset.json'),
         '**/default_preset.json',
+        path.resolve(__dirname, 'presets.json'),
+        '**/presets.json',
         path.resolve(__dirname, 'public/global_help.json'),
         '**/public/global_help.json',
         path.resolve(__dirname, 'public/global_defaults.json'),
