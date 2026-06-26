@@ -997,6 +997,7 @@ export default function App() {
               followCamera: autoRoute.followCamera
             }}
             followCamera={autoRoute.followCamera}
+            targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
           />
           {/* Sidebar collapse buttons */}
           <button
