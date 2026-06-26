@@ -17,20 +17,24 @@ import {
   BIWEEKLY_COINS_CAP,
   FANS_PER_NIKUKYUU_POINT
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X, List } from 'lucide-react';
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
+  routeTitle?: string;
 }
 
 type CumulativeField = 'recordedFans' | 'recordedCoins' | 'recordedNikukyuu';
 
-export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
+const RECORDS_INLINE_LIMIT = 5;
+
+export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps) {
   const [state, setState] = useState<PlayDataState>(() => checkAutoReset(loadPlayData()));
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingLocation, setEditingLocation] = useState<string>('');
   const [editingCumulative, setEditingCumulative] = useState<CumulativeField | null>(null);
   const [editingCumulativeValue, setEditingCumulativeValue] = useState<string>('');
+  const [showAllRecords, setShowAllRecords] = useState<boolean>(false);
 
   useEffect(() => {
     savePlayData(state);
@@ -105,12 +109,15 @@ export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
     const addedCoins = Math.min(state.currentCoins, Math.max(0, BIWEEKLY_COINS_CAP - post.recordedCoins));
     const addedNikukyuu = nikukyuuCurrent;
 
+    // When the 記録名 field is empty, fall back to the loaded plan title
+    const finalLocation = state.recordedLocation.trim() || routeTitle.trim();
+
     const newRecord: PlayDataRecord = {
       id: generateRecordId(),
       timestamp: now,
       fans: state.currentFans,
       coins: state.currentCoins,
-      location: state.recordedLocation.trim(),
+      location: finalLocation,
       requiem15: state.requiem15,
       requiem20: state.requiem20,
       excluded: false
@@ -118,6 +125,9 @@ export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
 
     setState({
       ...post,
+      // Reset current run inputs so the next run starts fresh
+      currentFans: 0,
+      currentCoins: 0,
       recordedFans: post.recordedFans + addedFans,
       recordedCoins: post.recordedCoins + addedCoins,
       recordedNikukyuu: post.recordedNikukyuu + addedNikukyuu,
@@ -512,13 +522,27 @@ export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
           </div>
         </div>
 
+        {/* 記録名 — placed directly above 脱出 */}
+        <div style={{ marginTop: '10px' }}>
+          <input
+            type="text"
+            className="input-cyber"
+            style={inputStyle}
+            value={state.recordedLocation}
+            onChange={(e) => setRecordedLocation(e.target.value)}
+            placeholder={routeTitle
+              ? `📍 記録名 (空なら「${routeTitle}」を使用)`
+              : '📍 記録名 (例: 本日 1回目)'}
+          />
+        </div>
+
         {/* 🚪 Escape + 現在値リセット — placed AFTER the current values */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '10px' }}>
+        <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
           <button
             className="btn-cyber success"
             style={{ flex: 2, padding: '7px', fontSize: '13px', fontWeight: 700 }}
             onClick={handleEscape}
-            title="現在の値を記録値に加算してリストに追加"
+            title="現在の値を記録値に加算してリストに追加 (現在値は自動リセット)"
           >
             🚪 脱出 (加算)
           </button>
@@ -526,26 +550,11 @@ export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
             className="btn-cyber"
             style={{ flex: 1, padding: '7px', fontSize: '10px' }}
             onClick={handleResetCurrent}
-            title="入力中の現在値のみリセット"
+            title="入力中の現在値のみリセット (加算しない)"
           >
             現在値リセット
           </button>
         </div>
-      </div>
-
-      {/* ====================================================== */}
-      {/* 記録名 (next record)                                     */}
-      {/* ====================================================== */}
-      <div style={sectionStyle}>
-        <label style={labelBaseStyle}>📍 記録名 (次の脱出記録用)</label>
-        <input
-          type="text"
-          className="input-cyber"
-          style={inputStyle}
-          value={state.recordedLocation}
-          onChange={(e) => setRecordedLocation(e.target.value)}
-          placeholder="例: 本日 1回目"
-        />
       </div>
 
       {/* ====================================================== */}
@@ -636,138 +645,207 @@ export function PlayDataPanel({ onNotify }: PlayDataPanelProps) {
           </div>
         ) : (
           <>
-            {/* Average summary */}
+            {/* Average summary (compact) */}
             <div
               style={{
                 background: 'rgba(0, 240, 255, 0.08)',
                 border: '1px solid rgba(0, 240, 255, 0.2)',
                 borderRadius: '4px',
-                padding: '6px',
+                padding: '5px 6px',
                 marginBottom: '6px',
-                fontSize: '11px'
+                fontSize: '10px'
               }}
             >
-              <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, marginBottom: '2px' }}>
-                平均 (除外 {state.records.filter(r => r.excluded).length}件除く)
-              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>ファンス/回:</span>
-                <span style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{average.fans.toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>コイン/回:</span>
-                <span style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{average.coins.toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>にくきゅうpt/回:</span>
-                <span style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{average.nikukyuu}</span>
+                <span style={{ color: 'var(--text-muted)' }}>平均 (除外 {state.records.filter(r => r.excluded).length}件除く):</span>
+                <span style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>
+                  {average.fans.toLocaleString()}f / 🪙{average.coins.toLocaleString()} / {average.nikukyuu}pt
+                </span>
               </div>
             </div>
 
-            {/* CSV Export */}
-            <button
-              className="btn-cyber"
-              style={{ width: '100%', padding: '4px', fontSize: '10px', marginBottom: '6px' }}
-              onClick={handleExportCSV}
-            >
-              <Download size={10} /> CSVエクスポート
-            </button>
-
-            {/* Records list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto' }}>
-              {state.records.slice().reverse().map(rec => (
-                <div
+            {/* Records list — inline shows only the latest RECORDS_INLINE_LIMIT */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {state.records.slice().reverse().slice(0, RECORDS_INLINE_LIMIT).map(rec => (
+                <RecordRow
                   key={rec.id}
-                  style={{
-                    background: rec.excluded ? 'rgba(100,100,100,0.1)' : 'rgba(79,195,247,0.05)',
-                    border: rec.excluded ? '1px solid rgba(100,100,100,0.3)' : '1px solid rgba(79,195,247,0.2)',
-                    borderRadius: '4px',
-                    padding: '4px 6px',
-                    fontSize: '10px',
-                    opacity: rec.excluded ? 0.55 : 1
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input
-                      type="checkbox"
-                      checked={!rec.excluded}
-                      onChange={() => handleToggleExcluded(rec.id)}
-                      title="一時的に平均計算から除外"
-                      style={{ cursor: 'pointer', accentColor: 'var(--cyan-neon)' }}
-                    />
-                    <span style={{ flex: 1, color: 'var(--text-muted)' }}>
-                      {new Date(rec.timestamp).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    {(rec.requiem15 || rec.requiem20) && (
-                      <span style={{ color: '#ff9500', fontSize: '9px' }}>
-                        {rec.requiem20 ? '+20%' : '+15%'}
-                      </span>
-                    )}
-                    <button
-                      className="btn-cyber danger"
-                      style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
-                      onClick={() => handleDeleteRecord(rec.id)}
-                      title="この記録を削除"
-                    >
-                      <Trash2 size={9} />
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                    {editingRecordId === rec.id ? (
-                      <>
-                        <input
-                          type="text"
-                          className="input-cyber"
-                          style={{ flex: 1, fontSize: '10px', padding: '1px 4px' }}
-                          value={editingLocation}
-                          onChange={(e) => setEditingLocation(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveLocation(rec.id);
-                            if (e.key === 'Escape') handleCancelEditLocation();
-                          }}
-                          autoFocus
-                        />
-                        <button
-                          className="btn-cyber success"
-                          style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
-                          onClick={() => handleSaveLocation(rec.id)}
-                        >保存</button>
-                        <button
-                          className="btn-cyber"
-                          style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
-                          onClick={handleCancelEditLocation}
-                        >×</button>
-                      </>
-                    ) : (
-                      <span
-                        style={{ color: rec.location ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: rec.location ? 'normal' : 'italic', cursor: 'pointer', flex: 1 }}
-                        onClick={() => handleStartEditLocation(rec)}
-                        title="クリックで記録名を編集"
-                      >
-                        {rec.location || '(記録名なし - クリックで追加)'}
-                      </span>
-                    )}
-                    <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginLeft: '4px' }}>
-                      {rec.fans.toLocaleString()} / 🪙{rec.coins.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
+                  rec={rec}
+                  editingRecordId={editingRecordId}
+                  editingLocation={editingLocation}
+                  setEditingLocation={setEditingLocation}
+                  onToggleExcluded={handleToggleExcluded}
+                  onDelete={handleDeleteRecord}
+                  onStartEdit={handleStartEditLocation}
+                  onSaveEdit={handleSaveLocation}
+                  onCancelEdit={handleCancelEditLocation}
+                />
               ))}
             </div>
+
+            {/* 一覧表示 — opens a modal with all records, CSV export, and full reset */}
+            <button
+              className="btn-cyber"
+              style={{ width: '100%', padding: '5px', fontSize: '11px', marginTop: '6px' }}
+              onClick={() => setShowAllRecords(true)}
+            >
+              <List size={11} /> 一覧表示 (全{state.records.length}件)
+            </button>
           </>
         )}
+      </div>
 
-        {/* 全リセット — placed in the records history section */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-          <button
-            className="btn-cyber danger"
-            style={{ flex: 1, padding: '4px', fontSize: '10px', clipPath: 'none' }}
-            onClick={handleManualResetPeriod}
-            title="累計値・現在値・記録履歴を全てリセット"
+      {/* ====================================================== */}
+      {/* 脱出記録 一覧モーダル                                     */}
+      {/* ====================================================== */}
+      {showAllRecords && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowAllRecords(false)}
+        >
+          <div
+            style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <AlertTriangle size={10} /> 全リセット
-          </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cyan-neon)' }}>
+                脱出記録 一覧 ({state.records.length}件)
+              </div>
+              <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '10px' }} onClick={() => setShowAllRecords(false)}>
+                ✕ 閉じる
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {state.records.slice().reverse().map(rec => (
+                <RecordRow
+                  key={rec.id}
+                  rec={rec}
+                  editingRecordId={editingRecordId}
+                  editingLocation={editingLocation}
+                  setEditingLocation={setEditingLocation}
+                  onToggleExcluded={handleToggleExcluded}
+                  onDelete={handleDeleteRecord}
+                  onStartEdit={handleStartEditLocation}
+                  onSaveEdit={handleSaveLocation}
+                  onCancelEdit={handleCancelEditLocation}
+                />
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', padding: '10px 14px', borderTop: '1px solid rgba(79,195,247,0.2)' }}>
+              <button
+                className="btn-cyber"
+                style={{ flex: 1, padding: '6px', fontSize: '11px' }}
+                onClick={handleExportCSV}
+              >
+                <Download size={11} /> CSVエクスポート
+              </button>
+              <button
+                className="btn-cyber danger"
+                style={{ flex: 1, padding: '6px', fontSize: '11px' }}
+                onClick={handleManualResetPeriod}
+                title="累計値・現在値・記録履歴を全てリセット"
+              >
+                <AlertTriangle size={11} /> 全リセット
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+interface RecordRowProps {
+  rec: PlayDataRecord;
+  editingRecordId: string | null;
+  editingLocation: string;
+  setEditingLocation: (v: string) => void;
+  onToggleExcluded: (id: string) => void;
+  onDelete: (id: string) => void;
+  onStartEdit: (rec: PlayDataRecord) => void;
+  onSaveEdit: (id: string) => void;
+  onCancelEdit: () => void;
+}
+
+function RecordRow({
+  rec, editingRecordId, editingLocation, setEditingLocation,
+  onToggleExcluded, onDelete, onStartEdit, onSaveEdit, onCancelEdit
+}: RecordRowProps) {
+  return (
+    <div
+      style={{
+        background: rec.excluded ? 'rgba(100,100,100,0.1)' : 'rgba(79,195,247,0.05)',
+        border: rec.excluded ? '1px solid rgba(100,100,100,0.3)' : '1px solid rgba(79,195,247,0.2)',
+        borderRadius: '4px',
+        padding: '4px 6px',
+        fontSize: '10px',
+        opacity: rec.excluded ? 0.55 : 1
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <input
+          type="checkbox"
+          checked={!rec.excluded}
+          onChange={() => onToggleExcluded(rec.id)}
+          title="一時的に平均計算から除外"
+          style={{ cursor: 'pointer', accentColor: 'var(--cyan-neon)' }}
+        />
+        <span style={{ flex: 1, color: 'var(--text-muted)' }}>
+          {new Date(rec.timestamp).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+        </span>
+        {(rec.requiem15 || rec.requiem20) && (
+          <span style={{ color: '#ff9500', fontSize: '9px' }}>
+            {rec.requiem20 ? '+20%' : '+15%'}
+          </span>
+        )}
+        <button
+          className="btn-cyber danger"
+          style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
+          onClick={() => onDelete(rec.id)}
+          title="この記録を削除"
+        >
+          <Trash2 size={9} />
+        </button>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+        {editingRecordId === rec.id ? (
+          <>
+            <input
+              type="text"
+              className="input-cyber"
+              style={{ flex: 1, fontSize: '10px', padding: '1px 4px' }}
+              value={editingLocation}
+              onChange={(e) => setEditingLocation(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveEdit(rec.id);
+                if (e.key === 'Escape') onCancelEdit();
+              }}
+              autoFocus
+            />
+            <button
+              className="btn-cyber success"
+              style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
+              onClick={() => onSaveEdit(rec.id)}
+            >保存</button>
+            <button
+              className="btn-cyber"
+              style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
+              onClick={onCancelEdit}
+            >×</button>
+          </>
+        ) : (
+          <span
+            style={{ color: rec.location ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: rec.location ? 'normal' : 'italic', cursor: 'pointer', flex: 1 }}
+            onClick={() => onStartEdit(rec)}
+            title="クリックで記録名を編集"
+          >
+            {rec.location || '(記録名なし - クリックで追加)'}
+          </span>
+        )}
+        <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginLeft: '4px' }}>
+          {rec.fans.toLocaleString()} / 🪙{rec.coins.toLocaleString()}
+        </span>
       </div>
     </div>
   );

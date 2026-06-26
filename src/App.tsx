@@ -475,6 +475,7 @@ export default function App() {
 
   // Smooth scroll room focus state
   const [focusTrigger, setFocusTrigger] = useState<{ id: string; timestamp: number } | null>(null);
+  const [currentPosTrigger, setCurrentPosTrigger] = useState<number>(0);
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1688,7 +1689,17 @@ export default function App() {
 
           {/* Rooms and Zones List */}
           <div className="panel-section">
-            <div className="panel-title">階層移動</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="panel-title" style={{ marginBottom: 0 }}>階層移動</div>
+              <button
+                className="btn-cyber"
+                style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }}
+                onClick={() => setCurrentPosTrigger(Date.now())}
+                title="現在の自動ルート位置にカメラを移動"
+              >
+                📍 現在位置に移動
+              </button>
+            </div>
 
             <div className="saves-list" style={{ maxHeight: '175px' }}>
               {globalMarkers.filter(m => m.type === 'room').length === 0 ? (
@@ -2066,6 +2077,7 @@ export default function App() {
             onSvgStringReady={setSvgString}
             canvasRef={canvasRef}
             focusTrigger={focusTrigger}
+            currentPosTrigger={currentPosTrigger}
             onClearFocusTrigger={() => setFocusTrigger(null)}
             isEditMode={isEditMode}
             showMarkerLabels={showMarkerLabels}
@@ -2719,6 +2731,7 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">プレイデータ</div>
                 <PlayDataPanel
+                  routeTitle={route.title}
                   onNotify={(msg) => {
                     setSaveNotification(msg);
                     setTimeout(() => setSaveNotification(null), 2000);

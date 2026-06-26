@@ -114,6 +114,7 @@ interface MapCanvasProps {
   onSvgStringReady: (svgStr: string) => void;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   focusTrigger?: { id: string; timestamp: number } | null;
+  currentPosTrigger?: number;
   onClearFocusTrigger?: () => void;
   isEditMode?: boolean;
   showMarkerLabels?: boolean;
@@ -186,6 +187,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onSvgStringReady,
   canvasRef,
   focusTrigger,
+  currentPosTrigger,
   onClearFocusTrigger,
   isEditMode = true,
   showMarkerLabels = true,
@@ -465,9 +467,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const animFrameIdRef = useRef<number | null>(null);
   const animPanRef = useRef<Point>({ x: 0, y: 0 });
   const animZoomRef = useRef<number>(1);
+  // Latest followCamera value — read by the tick so toggling follow during
+  // playback takes effect immediately (avoids stale closure).
+  const followCameraRef = useRef<boolean>(false);
   // Sync state to anim refs whenever state changes
   animPanRef.current = pan;
   animZoomRef.current = zoom;
+  followCameraRef.current = followCamera;
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -649,6 +655,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [focusTrigger, markers]);
 
+  // Handle "現在位置に移動" button — scroll to the current route position
+  // using the same warp-scroll formula that already works correctly.
+  useEffect(() => {
+    if (!currentPosTrigger) return;
+    if (!currentPosition) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const W_v = wrapper.clientWidth;
+    const H_v = wrapper.clientHeight;
+    const tgtZoom = zoom || 1;
+    const tgtPan = {
+      x: W_v * 0.5 - 800 - (currentPosition.x - 800) * tgtZoom,
+      y: H_v * 0.6 - 2275 - (currentPosition.y - 2275) * tgtZoom
+    };
+    startSmoothScroll(tgtPan, tgtZoom);
+  }, [currentPosTrigger]);
+
   // ---- Auto-route logic ----
   const startAutoRoute = () => {
     setAutoRouteError(null);
@@ -693,9 +716,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     autoRouteElapsedAtStartRef.current = 0;
     autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
     setCurrentPosition({ x: startMarker.x, y: startMarker.y });
-    // Immediately scroll the camera to the start marker so the view is
-    // correct even during the initial wait period (the tick's follow
-    // camera only runs after the wait ends).
+    // Snap the view to the start marker immediately. The tick's follow
+    // camera keeps it correct afterwards (when followCamera is on).
     if (followCamera && wrapperRef.current) {
       const W_v = wrapperRef.current.clientWidth;
       const H_v = wrapperRef.current.clientHeight;
@@ -704,9 +726,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         x: W_v * 0.5 - 800 - (startMarker.x - 800) * tgtZoom,
         y: H_v * 0.6 - 2275 - (startMarker.y - 2275) * tgtZoom
       };
-      // Use the smooth-scroll animator so the pan/zoom animates instead
-      // of snapping (mirrors how warp-point focus works).
-      startSmoothScroll(tgtPan, tgtZoom);
+      setPan(tgtPan);
+      animPanRef.current = tgtPan;
     }
   };
 
@@ -810,7 +831,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
         // Follow camera: scroll the view to keep the current position
         // slightly below center (60% from top).
-        if (followCamera) {
+        // Read followCamera from a ref so toggling follow during playback
+        // takes effect on the very next frame.
+        if (followCameraRef.current) {
           const wrapper = wrapperRef.current;
           if (wrapper) {
             const W_v = wrapper.clientWidth;
