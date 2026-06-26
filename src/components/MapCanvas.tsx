@@ -578,22 +578,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (prevZoom === newZoom) return;
 
       const wRect = wrapper.getBoundingClientRect();
-      // アンカー: 可視エリア中央（wrapper 中心）。画面基準の座標。
-      const anchorX = wRect.left + wRect.width / 2;
-      const anchorY = wRect.top + wRect.height / 2;
-      // wrapper 中心を基準としたアンカーオフセット
-      const localCenterX = anchorX;
-      const localCenterY = anchorY;
+      // アンカー: wrapper の中心（wrapper 相対座標 = 要素ローカル座標と一致）。
+      // レンダリングは transform-origin: center center 付きの
+      //   screenX = (mapX - 800) * zoom + pan.x + 800
+      // なので、+800 の transform-origin 定数を数式側で反映する必要がある。
+      const anchorX = wRect.width / 2;
+      const anchorY = wRect.height / 2;
       // アンカー位置にある map 座標を逆算
-      //   screenX = localCenterX + prevZoom * (mapX - 800) + prevPan.x
-      //   => mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom
-      const mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom;
-      const mapY = 2275 + (anchorY - localCenterY - prevPan.y) / prevZoom;
+      //   anchorX = (mapX - 800) * prevZoom + prevPan.x + 800
+      //   => mapX = 800 + (anchorX - prevPan.x - 800) / prevZoom
+      const mapX = 800 + (anchorX - prevPan.x - 800) / prevZoom;
+      const mapY = 2275 + (anchorY - prevPan.y - 2275) / prevZoom;
       // 同じ map 座標が新しい zoom でもアンカー位置に来るように newPan を計算
-      //   anchorX = localCenterX + newZoom * (mapX - 800) + newPan.x
-      //   => newPan.x = anchorX - localCenterX - newZoom * (mapX - 800)
-      const newPanX = anchorX - localCenterX - newZoom * (mapX - 800);
-      const newPanY = anchorY - localCenterY - newZoom * (mapY - 2275);
+      //   anchorX = (mapX - 800) * newZoom + newPan.x + 800
+      //   => newPan.x = anchorX - 800 - (mapX - 800) * newZoom
+      const newPanX = anchorX - 800 - (mapX - 800) * newZoom;
+      const newPanY = anchorY - 2275 - (mapY - 2275) * newZoom;
 
       animZoomRef.current = newZoom;
       animPanRef.current = { x: newPanX, y: newPanY };
@@ -1250,14 +1250,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       const wrapper = wrapperRef.current;
       const wRect = wrapper?.getBoundingClientRect();
-      const localCenterX = wRect ? wRect.left + wRect.width / 2 : 0;
-      const localCenterY = wRect ? wRect.top + wRect.height / 2 : 0;
+      const wLeft = wRect ? wRect.left : 0;
+      const wTop = wRect ? wRect.top : 0;
       touchStartRef.current = {
         dist: Math.sqrt(dx * dx + dy * dy),
         zoom,
         pan: { x: animPanRef.current.x, y: animPanRef.current.y },
-        midX: midX - localCenterX,
-        midY: midY - localCenterY
+        midX: midX - wLeft,
+        midY: midY - wTop
       };
       return;
     }
@@ -1279,13 +1279,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const scale = dist / ts.dist;
       const newZoom = Math.max(0.1, Math.min(5, ts.zoom * scale));
       if (newZoom === ts.zoom) return;
-      // アンカーは 2 本指の中点（wrapper 中心からの相対位置）
-      // screenX = 0 + newZoom * (mapX - 800) + newPan.x
-      //   => mapX = 800 + (ts.midX - newPan.x) / ts.zoom
-      //   => newPan.x = ts.midX - newZoom * (mapX - 800)
-      //                = ts.midX - newZoom * ((ts.midX - ts.pan.x) / ts.zoom)
-      const newPanX = ts.midX - (newZoom / ts.zoom) * (ts.midX - ts.pan.x);
-      const newPanY = ts.midY - (newZoom / ts.zoom) * (ts.midY - ts.pan.y);
+      // アンカーは 2 本指の中点（wrapper 左上からの相対座標）。
+      // ホイールと同じく transform-origin 定数 (800, 2275) を反映した二段階数式を使う。
+      //   anchorX = (mapX - 800) * ts.zoom + ts.pan.x + 800
+      //   => mapX = 800 + (anchorX - ts.pan.x - 800) / ts.zoom
+      //   newPan.x = anchorX - 800 - (mapX - 800) * newZoom
+      const anchorX = ts.midX;
+      const anchorY = ts.midY;
+      const mapX = 800 + (anchorX - ts.pan.x - 800) / ts.zoom;
+      const mapY = 2275 + (anchorY - ts.pan.y - 2275) / ts.zoom;
+      const newPanX = anchorX - 800 - (mapX - 800) * newZoom;
+      const newPanY = anchorY - 2275 - (mapY - 2275) * newZoom;
       animZoomRef.current = newZoom;
       animPanRef.current = { x: newPanX, y: newPanY };
       targetZoomRef.current = newZoom;
@@ -1922,14 +1926,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
     const wRect = wrapper.getBoundingClientRect();
-    const anchorX = wRect.left + wRect.width / 2;
-    const anchorY = wRect.top + wRect.height / 2;
-    const localCenterX = anchorX;
-    const localCenterY = anchorY;
-    const mapX = 800 + (anchorX - localCenterX - prevPan.x) / prevZoom;
-    const mapY = 2275 + (anchorY - localCenterY - prevPan.y) / prevZoom;
-    const newPanX = anchorX - localCenterX - newZoom * (mapX - 800);
-    const newPanY = anchorY - localCenterY - newZoom * (mapY - 2275);
+    const anchorX = wRect.width / 2;
+    const anchorY = wRect.height / 2;
+    const mapX = 800 + (anchorX - prevPan.x - 800) / prevZoom;
+    const mapY = 2275 + (anchorY - prevPan.y - 2275) / prevZoom;
+    const newPanX = anchorX - 800 - (mapX - 800) * newZoom;
+    const newPanY = anchorY - 2275 - (mapY - 2275) * newZoom;
     animZoomRef.current = newZoom;
     animPanRef.current = { x: newPanX, y: newPanY };
     targetZoomRef.current = newZoom;

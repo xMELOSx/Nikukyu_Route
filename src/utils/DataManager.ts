@@ -335,26 +335,7 @@ export class DataManager {
   static loadFromLocalStorage(id: string): RouteData | null {
     const dataStr = localStorage.getItem(`heist_route_${id}`);
     if (!dataStr) return null;
-    const parsed = JSON.parse(dataStr) as RouteData;
-    // Migrate legacy 'arrow' stroke type to 'solid' on load and persist the
-    // normalized form so subsequent loads don't need to re-migrate.
-    if (parsed.strokes) {
-      let needsPersist = false;
-      const normalized: RouteData['strokes'] = { ...parsed.strokes };
-      (Object.keys(parsed.strokes) as (keyof RouteData['strokes'])[]).forEach(k => {
-        const before = parsed.strokes[k];
-        const after = normalizeStrokes(before);
-        if (after !== before) {
-          normalized[k] = after;
-          needsPersist = true;
-        }
-      });
-      if (needsPersist) {
-        parsed.strokes = normalized;
-        localStorage.setItem(`heist_route_${id}`, JSON.stringify(parsed));
-      }
-    }
-    return parsed;
+    return JSON.parse(dataStr) as RouteData;
   }
 
   // Delete route from localStorage
@@ -362,6 +343,30 @@ export class DataManager {
     localStorage.removeItem(`heist_route_${id}`);
     const saves = this.getSavesList().filter(s => s.id !== id);
     localStorage.setItem('heist_routes_list', JSON.stringify(saves));
+  }
+
+  // Presets are normally persisted to the server (presets.json) but we also
+  // keep a localStorage mirror so the list survives an offline startup or a
+  // transient server failure and the user never sees a "temporarily empty"
+  // preset list.
+  static loadPresetsFromLocalStorage(): PresetData[] {
+    const raw = localStorage.getItem('heist_presets');
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed as PresetData[] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  static savePresetsToLocalStorage(presets: PresetData[]): void {
+    try {
+      localStorage.setItem('heist_presets', JSON.stringify(presets));
+    } catch {
+      // Ignore quota / serialization errors — the server copy is the source
+      // of truth and the list will be refreshed on the next successful sync.
+    }
   }
 
   // Strip legacy/unknown fields and backfill defaults so exported payloads
