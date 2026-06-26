@@ -113,8 +113,6 @@ export interface HeistMarker {
   linkedWarpId?: string; // For warp pairs: ID of the linked warp marker
   phoneActive?: boolean;  // For phone markers: true = 📞 (active), false/undefined = ☎ (inactive)
   phoneLocked?: boolean;  // For phone markers: always active, not affected by reset/toggle
-  infoMediaUrl?: string;  // For info markers: URL to image, webm or X post
-  infoMediaType?: 'image' | 'webm' | 'x-embed' | 'youtube'; // For info markers: type of media
   infoExpanded?: boolean; // For info markers: whether details are expanded in presentation mode
   noteExpanded?: boolean; // For note markers: whether popup is expanded in presentation mode
   infoLabel?: string;     // For info markers: short label displayed under the pin
@@ -335,7 +333,7 @@ export class DataManager {
   static loadFromLocalStorage(id: string): RouteData | null {
     const dataStr = localStorage.getItem(`heist_route_${id}`);
     if (!dataStr) return null;
-    return JSON.parse(dataStr) as RouteData;
+    return DataManager.migrateMediaFields(JSON.parse(dataStr) as RouteData);
   }
 
   // Delete route from localStorage
@@ -369,6 +367,33 @@ export class DataManager {
     }
   }
 
+  // 旧 infoMediaUrl (単一 URL) / infoMediaType 形式のデータがあれば
+  // mediaItems 形式に変換する。
+  static migrateMarkerMediaFields = (m: any): any => {
+    if (!m || typeof m !== 'object') return m;
+    const next: any = { ...m };
+    if (Array.isArray(next.mediaItems)) return next;
+    if (typeof next.infoMediaUrl === 'string' && next.infoMediaUrl.trim()) {
+      next.mediaItems = [{
+        id: `media_migrated_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        url: next.infoMediaUrl.trim(),
+        type: next.infoMediaType || 'image',
+        description: ''
+      }];
+    } else {
+      next.mediaItems = [];
+    }
+    delete next.infoMediaUrl;
+    delete next.infoMediaType;
+    return next;
+  };
+
+  static migrateMediaFields(route: RouteData | any): RouteData {
+    if (!route || typeof route !== 'object') return route;
+    if (!Array.isArray(route.markers)) return route;
+    return { ...route, markers: route.markers.map(DataManager.migrateMarkerMediaFields) };
+  }
+
   // Strip legacy/unknown fields and backfill defaults so exported payloads
   // match the current RouteData schema (e.g. remove `difficulty` from older
   // builds, ensure `targetDuration` is always present, and keep only the
@@ -389,7 +414,9 @@ export class DataManager {
       strokes: route?.strokes && typeof route.strokes === 'object'
         ? route.strokes
         : def.strokes,
-      markers: Array.isArray(route?.markers) ? route.markers : def.markers,
+      markers: Array.isArray(route?.markers)
+        ? route.markers.map(DataManager.migrateMarkerMediaFields)
+        : def.markers,
       customBg: route?.customBg && typeof route.customBg === 'object'
         ? route.customBg
         : def.customBg,

@@ -16,6 +16,18 @@ import {
 import type { GlobalDefaults } from './useGlobalDefaults';
 import type { UseGlobalMarkersApi } from './useGlobalMarkers';
 
+// Route は DISPLAY STATE のみを保持する: indiv マーカー + hidden リスト + 線
+// + メタ情報。グローバルマーカーの実体は globalMarkersStore が保持する。
+// グローバルタイプが route.markers に混入した場合はここで必ず弾く。
+const ROUTE_INDIV_TYPES = new Set<string>([
+  'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
+  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'
+]);
+const stripGlobalMarkersFromRoute = (markers: HeistMarker[] | undefined): HeistMarker[] => {
+  if (!Array.isArray(markers) || markers.length === 0) return [];
+  return markers.filter(m => ROUTE_INDIV_TYPES.has(m.type));
+};
+
 export interface SaveInfo {
   id: string;
   title: string;
@@ -115,8 +127,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       setRouteRaw(prev => {
         const next = typeof action === 'function' ? action(prev) : action;
         const gd = globalDefaultsRefRef.current.current;
+        // SAFETY GUARD: route は display state のみ保持する。万一グローバル
+        // タイプが混入していても (旧 export / 手編集JSON等) ここで必ず弾く。
+        // グローバルマーカーは globalMarkersStore が source of truth。
         return {
           ...next,
+          markers: stripGlobalMarkersFromRoute(next.markers),
           hiddenMarkers: gd.hiddenMarkers || [],
           hiddenMarkerTypes: gd.hiddenMarkerTypes || []
         };
@@ -127,18 +143,29 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   // Debounced auto-save: any change to `route` triggers a 1.5s-delayed
   // localStorage write so the user never loses work between explicit saves.
+  //
+  // SAFETY: the route carries only DISPLAY STATE (indiv markers + hidden
+  // lists + meta). Global marker data is owned by globalMarkersStore and
+  // must NEVER be persisted via the route — otherwise an auto-save of a
+  // merged snapshot would re-write the global state from a possibly
+  // stale prop, and on the next reload the "original" creation position
+  // would clobber the user's move. Strip globals defensively before save.
   const autoSaveTimerRef = useRef<number | null>(null);
   const lastSavedSnapshotRef = useRef<string>('');
   useEffect(() => {
     if (!route || !route.id) return;
-    const snapshot = JSON.stringify(route);
+    const safeRoute: RouteData = {
+      ...route,
+      markers: stripGlobalMarkersFromRoute(route.markers)
+    };
+    const snapshot = JSON.stringify(safeRoute);
     if (snapshot === lastSavedSnapshotRef.current) return;
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
     }
     autoSaveTimerRef.current = window.setTimeout(() => {
       try {
-        DataManager.saveToLocalStorage(route);
+        DataManager.saveToLocalStorage(safeRoute);
         lastSavedSnapshotRef.current = snapshot;
       } catch (e) {
         console.error('Auto-save failed:', e);

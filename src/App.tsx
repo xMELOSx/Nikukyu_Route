@@ -265,15 +265,27 @@ export default function App() {
     }));
   };
 
-  const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false) => {
+  const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false, options: { isDelete?: boolean } = {}) => {
     if (shouldPushHistory) {
       historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
     }
     const isIndivType = (type: string) =>
       ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
-    const newGlobal = newMarkers.filter(m => !isIndivType(m.type));
+    const incomingGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
-    globalMarkersStore.replace(newGlobal);
+    if (options.isDelete) {
+      // Eraser: 受け取ったリストを「正」とみなしてそのまま反映 (削除込み)。
+      // mergeOrUpdate は partial な更新にしか使えないので、ここだけ replace。
+      globalMarkersStore.replace(incomingGlobal);
+    } else {
+      // 通常編集: グローバル側は globalMarkersStore が source of truth。
+      // incoming は「マージ元」であり「置き換え元」ではない: mergeOrUpdate
+      // は現在のグローバル状態をベースに、ID 一致分のみ上書きし、存在しない
+      // ID は追加し、incoming に載っていない既存マーカーは保持する。これで
+      // 「ドラッグした瞬間の位置」しか残らない問題を根治する。
+      globalMarkersStore.mergeOrUpdate(incomingGlobal);
+    }
+    // ルートは display state (indiv マーカー + hidden リスト) のみ保持。
     routeApi.setRoute(prev => ({ ...prev, markers: newIndividual }));
   };
 
@@ -949,6 +961,7 @@ export default function App() {
             onSvgStringReady={setSvgString}
             canvasRef={canvasRef}
             focusTrigger={focusTrigger}
+            onClearFocusTrigger={() => setFocusTrigger(null)}
             currentPosTrigger={currentPosTrigger}
             isEditMode={isEditMode}
             showMarkerLabels={showMarkerLabels}

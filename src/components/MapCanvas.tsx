@@ -110,7 +110,7 @@ interface MapCanvasProps {
   strokeType: 'solid' | 'dashed';
   drawMode?: 'free' | 'smooth' | 'straight';
   onStrokesChange: (strokes: DrawingStroke[]) => void;
-  onMarkersChange: (markers: HeistMarker[], shouldPushHistory?: boolean) => void;
+  onMarkersChange: (markers: HeistMarker[], shouldPushHistory?: boolean, options?: { isDelete?: boolean }) => void;
   onSvgStringReady: (svgStr: string) => void;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   focusTrigger?: { id: string; timestamp: number } | null;
@@ -345,31 +345,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </div>
         )}
         <div style={{ display: 'flex', gap: '4px' }}>
-          <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'image/*,video/webm';
-            input.multiple = true;
-            input.onchange = async () => {
-              if (!input.files) return;
-              for (const file of Array.from(input.files)) {
-                const formData = new FormData();
-                formData.append('file', file);
-                try {
-                  const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
-                  const data = await res.json();
-                  if (data.url) {
-                    const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
-                    const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: data.url, type: isVideo ? 'webm' : 'image', description: '' };
-                    const next = [...(m.mediaItems || []), newItem];
-                    onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
-                    setMediaItems(next);
-                  }
-                } catch (err) { console.error('Upload failed:', err); }
-              }
-            };
-            input.click();
-          }}>📎 添付</button>
+          {/* ファイル添付はグローバル編集 (isLocal) のみ。個人モードでは URL 直入力のみ。 */}
+          {isLocal && (
+            <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = 'image/*,video/webm';
+              input.multiple = true;
+              input.onchange = async () => {
+                if (!input.files) return;
+                for (const file of Array.from(input.files)) {
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  try {
+                    const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (data.url) {
+                      const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
+                      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: data.url, type: isVideo ? 'webm' : 'image', description: '' };
+                      const next = [...(m.mediaItems || []), newItem];
+                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+                      setMediaItems(next);
+                    }
+                  } catch (err) { console.error('Upload failed:', err); }
+                }
+              };
+              input.click();
+            }}>📎 添付</button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
           <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [m.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
@@ -400,8 +403,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
   const [infoLabel, setInfoLabel] = useState('');
-  const [infoMediaUrl, setInfoMediaUrl] = useState('');
-  const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed' | 'youtube'>('image');
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [zoomedMedia, setZoomedMedia] = useState<{ url: string; type: 'image' | 'webm' | 'youtube' } | null>(null);
   const [lightboxZoom, setLightboxZoom] = useState(1);
@@ -657,9 +658,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Handle focusTrigger updates
+  // NOTE: Uses markersRef (not `markers`) to avoid re-triggering on every
+  // render when the parent creates a new array reference (e.g. spread).
+  // Without this fix, the effect re-runs on every render while focusTrigger
+  // is non-null, cancelling and restarting the smooth scroll → infinite loop.
   useEffect(() => {
     if (focusTrigger) {
-      const marker = markers.find(m => m.id === focusTrigger.id);
+      const marker = markersRef.current.find(m => m.id === focusTrigger.id);
       if (marker) {
         // Update current position indicator
         setCurrentPosition({ x: marker.x, y: marker.y });
@@ -686,7 +691,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
     }
-  }, [focusTrigger, markers]);
+  }, [focusTrigger]);
 
   // Handle "現在位置に移動" button — scroll to the current route position
   // using the same warp-scroll formula that already works correctly.
@@ -1334,15 +1339,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    // When popover is open, allow panning but block placing new markers or drawing.
-    // The popover stays open so the user can navigate then set a scroll target.
+    // When popover is open, allow panning freely so the user can navigate the
+    // map to set a scroll target. Block placing new markers or drawing.
     if (activeNoteMarkerId) {
-      // Allow pan (shift or pan tool)
-      if (toolMode === 'pan' || e.shiftKey) {
-        if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
-        setIsPanning(true);
-        setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-      }
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
     }
 
@@ -1387,8 +1389,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.warpWaypoints = [];
       }
       if (activeMarkerType === 'info') {
-        newMarker.infoMediaUrl = '';
-        newMarker.infoMediaType = 'image';
+        newMarker.mediaItems = [];
         newMarker.infoExpanded = false;
       }
       if (activeMarkerType === 'text') {
@@ -1417,8 +1418,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       onMarkersChange([...markers, newMarker], true);
       setActiveNoteMarkerId(newMarker.id);
       setNoteText(newMarker.note);
-      setInfoMediaUrl('');
-      setInfoMediaType('image');
       setBossDrops([]);
       setBossDurationSeconds(60);
       setBattleDurationSeconds(20);
@@ -1489,6 +1488,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isIndivWarp = dm && isIndiv(dm.type);
       const canEditWaypoint = isEditMode && (isLocal ? true : isIndivWarp);
       if (canEditWaypoint) {
+        // EDIT GUARD: ドラッグ中の waypoint が現在の markers に居ることを確認。
+        // stale な参照なら no-op (App 側の mergeOrUpdate は無いものを保持する)。
+        if (!dm) {
+          console.warn('[edit guard] dragging waypoint marker not found, skipping', draggingWaypoint.markerId);
+          return;
+        }
         onMarkersChange(
           markers.map(mk => {
             if (dm) {
@@ -1501,7 +1506,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   const targetIdx = conn.isReversed
                     ? nextWaypoints.length - 1 - draggingWaypoint.index
                     : draggingWaypoint.index;
-                  
+
                   nextWaypoints[targetIdx] = {
                     x: Math.max(0, Math.min(1600, coords.x)),
                     y: Math.max(0, Math.min(4550, coords.y))
@@ -1532,7 +1537,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isIndivMarker = marker && isIndiv(marker.type);
       const canDrag = isEditMode && (isLocal ? true : isIndivMarker);
       if (canDrag) {
-        if (marker?.textFixedPosition) {
+        // EDIT GUARD: ドラッグ対象が現在の markers リストに居ることを確認。
+        // 万一 stale な参照 (直前の state で削除済み等) なら no-op。
+        // mergeOrUpdate 側で既存マーカーは保持されるので、ここでは単に
+        // 「この ID の更新だけ反映する」形にすれば十分。
+        if (!marker) {
+          console.warn('[edit guard] dragging marker not found in current snapshot, skipping', draggingMarkerId);
+          return;
+        }
+        if (marker.textFixedPosition) {
           const targetX = e.clientX - dragStartOffset.x;
           const targetY = e.clientY - dragStartOffset.y;
           onMarkersChange(
@@ -1703,6 +1716,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // this session the marker is gone — matching the user's mental model
       // of "the eraser removed this pin". A history snapshot is pushed so the
       // user can undo with Ctrl+Z.
+      //
+      // 削除の意味論: incoming をそのまま正として反映 (マージではなく
+      // 置換) したいので isDelete フラグを渡し、App 側で replace させる。
       onMarkersChange(
         markers
           .filter(item => item.id !== m.id)
@@ -1713,7 +1729,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             return item;
           }),
-        true
+        true,
+        { isDelete: true }
       );
       if (activeNoteMarkerId === m.id) {
         setActiveNoteMarkerId(null);
@@ -1861,8 +1878,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setActiveNoteMarkerId(m.id);
     setNoteText(m.note);
     setInfoLabel(m.infoLabel || '');
-    setInfoMediaUrl(m.infoMediaUrl || '');
-    setInfoMediaType(m.infoMediaType || 'image');
     setTextColor(m.textColor || '#ffffff');
     setTextSize(m.textSize || 14);
     setTextScaleWithMap(!!m.textScaleWithMap);
@@ -1961,21 +1976,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.popupHeight = popupHeight;
             }
             if (isInfoType(m.type)) {
-              // If the infoMediaUrl changed and the old one was an uploaded
-              // file, delete it from the server to avoid orphaned files.
-              if (m.infoMediaUrl && m.infoMediaUrl !== infoMediaUrl && m.infoMediaUrl.includes('/uploads/')) {
-                const oldFilename = m.infoMediaUrl.split('/uploads/').pop() || '';
-                if (oldFilename) {
-                  fetch('/api/upload-media', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: oldFilename })
-                  }).catch(() => { /* ignore */ });
-                }
-              }
               updated.infoLabel = infoLabel;
-              updated.infoMediaUrl = infoMediaUrl;
-              updated.infoMediaType = infoMediaType;
+              // 旧 infoMediaUrl / infoMediaType は廃止
+              delete updated.infoMediaUrl;
+              delete updated.infoMediaType;
             }
             if (isTextType(m.type)) {
               updated.textColor = textColor;
@@ -2576,40 +2580,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {m.note}
                           </div>
                         )}
-                        {m.infoMediaUrl && m.infoMediaUrl.trim() && (
-                          <div className="info-popup-media">
-                            {m.infoMediaType === 'image' && (
-                              <img
-                                src={m.infoMediaUrl}
-                                alt="Media Attachment"
-                                style={{ cursor: 'zoom-in' }}
-                                onClick={() => setZoomedMedia({ url: m.infoMediaUrl!, type: 'image' })}
-                                onError={(e) => { (e.target as any).style.display = 'none'; }}
-                              />
-                            )}
-                            {m.infoMediaType === 'webm' && (
-                              <video
-                                src={m.infoMediaUrl}
-                                controls
-                                loop
-                                muted
-                                autoPlay
-                                playsInline
-                                style={{ cursor: 'zoom-in' }}
-                                onClick={() => setZoomedMedia({ url: m.infoMediaUrl!, type: 'webm' })}
-                                onError={(e) => { (e.target as any).style.display = 'none'; }}
-                              />
-                            )}
-                            {m.infoMediaType === 'x-embed' && (
-                              <TweetEmbed url={m.infoMediaUrl} />
-                            )}
-                            {m.infoMediaType === 'youtube' && (() => {
-                              const ytMatch = m.infoMediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
-                              const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
-                            })()}
-                          </div>
-                        )}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
@@ -2623,7 +2593,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && isLocal && renderMediaManager(m)}
+                        {isEditMode && renderMediaManager(m)}
                       </div>
                     </div>
                   )}
@@ -2856,7 +2826,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && isLocal && renderMediaManager(m)}
+                        {isEditMode && renderMediaManager(m)}
 
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
@@ -2966,7 +2936,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && isLocal && renderMediaManager(m)}
+                        {isEditMode && renderMediaManager(m)}
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const isGlobalPin = m.type === 'gbattle';
@@ -3910,7 +3880,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   出現率が高い (High Spawn Rate) - 強調表示する
                 </label>
               </div>
-              {isLocal && activeNoteMarker && renderMediaManager(activeNoteMarker)}
+              {activeNoteMarker && renderMediaManager(activeNoteMarker)}
+            </div>
+          )}
+
+          {/* I-MEMO (inote) marker media manager - personal memo with media URLs */}
+          {activeNoteMarker.type === 'inote' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(57, 255, 20, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold' }}>📝 I-MEMO 添付メディア</div>
+              {activeNoteMarker && renderMediaManager(activeNoteMarker)}
             </div>
           )}
 

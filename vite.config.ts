@@ -268,6 +268,24 @@ export default defineConfig({
           fs.copyFileSync(defaultsSrcPath, defaultsDestPath);
           console.log('Copied global_defaults.json to dist/ during build');
         }
+
+        // public/uploads/ → dist/uploads/ を同期。
+        // デフォルトでも public/ はコピーされるが、アップロード後の再ビルド忘れで
+        // 個人編集モード (dist 配信) から画像が見えなくなる事故を防ぐため明示的に同期する。
+        const uploadsSrcDir = path.resolve(__dirname, 'public/uploads');
+        const uploadsDestDir = path.resolve(__dirname, 'dist/uploads');
+        if (fs.existsSync(uploadsSrcDir)) {
+          if (!fs.existsSync(uploadsDestDir)) {
+            fs.mkdirSync(uploadsDestDir, { recursive: true });
+          }
+          for (const entry of fs.readdirSync(uploadsSrcDir, { withFileTypes: true })) {
+            if (!entry.isFile()) continue;
+            const srcFile = path.join(uploadsSrcDir, entry.name);
+            const destFile = path.join(uploadsDestDir, entry.name);
+            fs.copyFileSync(srcFile, destFile);
+          }
+          console.log('Synced public/uploads/ to dist/uploads/ during build');
+        }
       }
     }
   ],

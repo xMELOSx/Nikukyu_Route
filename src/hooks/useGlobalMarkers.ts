@@ -74,6 +74,15 @@ export interface UseGlobalMarkersApi {
   /** Merge incoming markers into the current set. Existing IDs are kept as-is
    *  (user edits preserved); only IDs that don't exist locally are added. */
   mergeFromImport: (incoming: HeistMarker[]) => void;
+  /** SAFE edit path. The current global state is the BASE. The incoming
+   *  list only overrides matching IDs; new IDs are appended. Markers that
+   *  exist in the global state but are NOT in the incoming list are
+   *  PRESERVED. Use this for any update that comes from a merged prop
+   *  snapshot (drag/edit) to avoid losing markers due to a stale prop
+   *  or a race condition. The previous `replace` pattern blindly
+   *  overwrote the entire list, which made it easy for a partial snapshot
+   *  to wipe out markers that were in flight elsewhere. */
+  mergeOrUpdate: (markers: HeistMarker[]) => void;
 }
 
 /**
@@ -114,27 +123,46 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       try {
         const parsed: HeistMarker[] = JSON.parse(saved);
 
-        // Legacy 2x coordinate migration
+        // Legacy 2x coordinate migration (marker positions only)
+        // scrollConfig stores CSS transform pan values (viewport pixel offsets),
+        // NOT map coordinates — it must NOT be multiplied.
         const migrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true'
           ? parsed
           : parsed.map(m => {
               const updated: HeistMarker = { ...m, x: m.x * 2, y: m.y * 2 };
-              if (updated.scrollConfig) {
-                updated.scrollConfig = {
-                  ...updated.scrollConfig,
-                  x: updated.scrollConfig.x * 2,
-                  y: updated.scrollConfig.y * 2
-                };
-              }
               return updated;
             });
 
-        const cleaned = filterLegacyAndClean(migrated);
+        // Reverse-migration: fix scrollConfig that was incorrectly multiplied by 2
+        // in the v2 migration. The corrupted pan values need to be corrected to
+        // preserve the marker's screen position after both marker coords and pan
+        // were doubled:
+        //   screenPos = markerCoord * zoom + panY
+        //   old: screenPos = (marker/2) * zoom + (pan/2)  [before doubling]
+        //   new: screenPos = marker * zoom + correctedPan
+        //   ∴ correctedPan = (pan - marker * zoom) / 2
+        const scrollFixed = localStorage.getItem('heist_global_markers_scroll_fixed_v3') === 'true'
+          ? migrated
+          : migrated.map(m => {
+              if (!m.scrollConfig) return m;
+              const sc = m.scrollConfig;
+              return {
+                ...m,
+                scrollConfig: {
+                  x: (sc.x - m.x * sc.zoom) / 2,
+                  y: (sc.y - m.y * sc.zoom) / 2,
+                  zoom: sc.zoom
+                }
+              };
+            });
+
+        const cleaned = filterLegacyAndClean(scrollFixed);
         const withStart = ensureStart(cleaned);
         // Persist the migrated/cleaned version back so we don't redo the
         // migration on every load, and to surface the file via the API.
         localStorage.setItem('heist_global_markers', JSON.stringify(withStart));
         localStorage.setItem('heist_global_markers_migrated_v2', 'true');
+        localStorage.setItem('heist_global_markers_scroll_fixed_v3', 'true');
         if (isLocalRef.current) persist(withStart, true);
         return withStart;
       } catch (e) {
@@ -217,7 +245,39 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     });
   }, []);
 
+  /**
+   * Safe update path for edits (drag/move/edit properties). The current
+   * global state is the BASE — incoming markers only override matching
+   * IDs, new IDs are appended, and any markers that exist in the global
+   * state but are NOT in the incoming list are preserved. This guarantees
+   * that the global state is never silently shrunk by a partial snapshot
+   * (which is what `replace` used to do and is the most likely cause of
+   * "moves don't stick" bugs).
+   */
+  const mergeOrUpdate = useCallback((incoming: HeistMarker[]) => {
+    setGlobalMarkers(prev => {
+      if (incoming.length === 0) return prev;
+      const incomingById = new Map(incoming.map(m => [m.id, m]));
+      // Update existing markers with the incoming data; keep order stable
+      // so React keys / drag handles don't get reshuffled.
+      const updated = prev.map(m => {
+        const next = incomingById.get(m.id);
+        return next ? { ...m, ...next } : m;
+      });
+      // Append any IDs that weren't already present.
+      const existingIds = new Set(prev.map(m => m.id));
+      const newOnes = incoming.filter(m => !existingIds.has(m.id));
+      // No-op fast path: nothing changed.
+      if (newOnes.length === 0 && updated.every((m, i) => m === prev[i])) {
+        return prev;
+      }
+      const merged = ensureStart([...updated, ...newOnes]);
+      persist(merged, isLocalRef.current);
+      return merged;
+    });
+  }, []);
+
   return {
-    globalMarkers, setGlobalMarkers, replace, mergeFromImport
+    globalMarkers, setGlobalMarkers, replace, mergeFromImport, mergeOrUpdate
   };
 }
