@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   type FloorType, 
@@ -454,6 +454,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
+  // Viewport size for culling off-screen markers
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const update = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -465,6 +478,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Note Popover State
   const [activeNoteMarkerId, setActiveNoteMarkerId] = useState<string | null>(null);
+
+  // Viewport culling: only render markers visible in the current viewport + margin for popups.
+  // This prevents creating hundreds of DOM nodes for off-screen markers.
+  const PIN_MARGIN = 350;
+  const visibleMarkers = useMemo(() => {
+    if (viewportSize.width === 0 || viewportSize.height === 0) return markers;
+    const left = -pan.x / zoom - PIN_MARGIN;
+    const top = -pan.y / zoom - PIN_MARGIN;
+    const right = (viewportSize.width - pan.x) / zoom + PIN_MARGIN;
+    const bottom = (viewportSize.height - pan.y) / zoom + PIN_MARGIN;
+    return markers.filter(m => {
+      if (m.floor !== floor) return false;
+      if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
+      return m.x >= left && m.x <= right && m.y >= top && m.y <= bottom;
+    });
+  }, [markers, floor, zoom, pan, viewportSize, draggingMarkerId, activeNoteMarkerId]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
@@ -1453,6 +1482,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (toolMode === 'add-marker' && activeMarkerType) {
       if (!isLocal && !isIndiv(activeMarkerType)) {
+        return;
+      }
+      if (markers.length >= 500) {
         return;
       }
       const newMarker: HeistMarker = {
@@ -2506,8 +2538,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
-          {markers
-            .filter(m => m.floor === floor)
+          {visibleMarkers
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
               if (isHidden && !isEditMode) return null;
@@ -2625,8 +2656,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             })}
 
           {/* Render draggable waypoint handles for the active warp/stairs pin in Edit Mode */}
-          {markers
-            .filter(m => m.floor === floor)
+          {visibleMarkers
             .map(m => {
               if (isEditMode && activeNoteMarkerId === m.id) {
                 const isIndivMarker = isIndiv(m.type);
@@ -2675,8 +2705,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             })}
 
           {/* Details Popups rendered in flat layer at the end to stay on top of everything */}
-          {markers
-            .filter(m => m.floor === floor)
+          {visibleMarkers
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id);
               if (isHidden && !isEditMode) return null;

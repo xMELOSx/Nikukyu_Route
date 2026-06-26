@@ -341,6 +341,16 @@ export default function App() {
 
   // --- Background effects: initial load, help data, target duration sync, startup focus ---
 
+  const MAX_MARKERS_WARN = 300;
+  const prevMarkerCountRef = useRef(0);
+  useEffect(() => {
+    const total = routeApi.route.markers.length + globalMarkersStore.globalMarkers.length;
+    if (total > MAX_MARKERS_WARN && prevMarkerCountRef.current <= MAX_MARKERS_WARN) {
+      notification.show(`⚠ ピン数が${total}個あります。負荷が高くなる可能性があります`, 4000);
+    }
+    prevMarkerCountRef.current = total;
+  }, [routeApi.route.markers.length, globalMarkersStore.globalMarkers.length]);
+
   // Load presets, help data, and auto-load last route on startup.
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
