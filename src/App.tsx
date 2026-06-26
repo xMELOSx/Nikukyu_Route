@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
+import { PlayDataPanel } from './components/PlayDataPanel';
+import { loadAutoRouteCollapsed, saveAutoRouteCollapsed } from './utils/PlayDataManager';
 import {
   type FloorType,
   type MarkerType,
@@ -446,6 +448,17 @@ export default function App() {
   const [autoRouteWaitSeconds, setAutoRouteWaitSeconds] = useState(5);
   const [autoRouteSpeedMultiplier, setAutoRouteSpeedMultiplier] = useState<1 | 2 | 3 | 5>(1);
   const [autoRouteFollowCamera, setAutoRouteFollowCamera] = useState<boolean>(true);
+
+  // Auto-route panel collapsed state (saved individually so users who don't
+  // use the auto-route can keep it out of the way)
+  const [autoRouteCollapsed, setAutoRouteCollapsed] = useState<boolean>(() => loadAutoRouteCollapsed());
+  const toggleAutoRouteCollapsed = () => {
+    setAutoRouteCollapsed(prev => {
+      const next = !prev;
+      saveAutoRouteCollapsed(next);
+      return next;
+    });
+  };
 
   const formatTime = (seconds: number): string => {
     if (!isFinite(seconds) || seconds < 0) return '--:--';
@@ -2521,167 +2534,198 @@ export default function App() {
 
           {/* Play Data Tab Content */}
           {rightTab === 'play' && (
-            <div className="panel-section">
-              <div className="panel-title">プレイデータ</div>
+            <>
+              {/* Auto-route control panel — moved ABOVE the プレイデータ label and made collapsible
+                  so users who don't use auto-route can hide it. Collapse state is saved individually. */}
+              <div className="panel-section">
+                <button
+                  type="button"
+                  onClick={toggleAutoRouteCollapsed}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    background: 'rgba(0, 240, 255, 0.05)',
+                    border: '1px solid rgba(0, 240, 255, 0.2)',
+                    borderRadius: '4px',
+                    color: 'var(--cyan-neon)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontWeight: 'bold',
+                    marginBottom: autoRouteCollapsed ? 0 : '8px'
+                  }}
+                  title="自動ルート案内を使わない場合は畳んで非表示にできます"
+                >
+                  <span>🐾 自動ルート案内</span>
+                  <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>
+                    {autoRouteCollapsed ? '▶ 展開' : '▼ 折りたたむ'}
+                  </span>
+                </button>
 
-              {/* Auto-route control panel */}
-              <div style={{
-                background: 'rgba(10, 15, 28, 0.6)',
-                border: '1px solid rgba(0, 240, 255, 0.3)',
-                borderRadius: '6px',
-                padding: '8px',
-                marginBottom: '8px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '14px' }}>🐾</span>
-                  <span style={{ fontWeight: 700, color: 'var(--cyan-neon)', flex: 1, fontSize: '12px' }}>自動ルート案内</span>
-                </div>
-                {autoRouteStatus.error && (
-                  <div style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', padding: '4px', background: 'rgba(255,0,85,0.1)', borderRadius: '3px', marginBottom: '4px' }}>
-                    ⚠ {autoRouteStatus.error}
-                  </div>
-                )}
+                {!autoRouteCollapsed && (
+                  <div style={{
+                    background: 'rgba(10, 15, 28, 0.6)',
+                    border: '1px solid rgba(0, 240, 255, 0.3)',
+                    borderRadius: '6px',
+                    padding: '8px'
+                  }}>
+                    {autoRouteStatus.error && (
+                      <div style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', padding: '4px', background: 'rgba(255,0,85,0.1)', borderRadius: '3px', marginBottom: '4px' }}>
+                        ⚠ {autoRouteStatus.error}
+                      </div>
+                    )}
 
-                {/* Single unified auto-route panel — layout is the same before and after start; only the main button + timeline change. */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                    <input
-                      type="checkbox"
-                      checked={autoRouteWaitEnabled}
-                      onChange={(e) => setAutoRouteWaitEnabled(e.target.checked)}
-                      style={{ accentColor: 'var(--cyan-neon)' }}
-                    />
-                    開始前に待機 (
-                    <input
-                      type="number"
-                      min="0"
-                      max="60"
-                      value={autoRouteWaitSeconds}
-                      onChange={(e) => setAutoRouteWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
-                      disabled={!autoRouteWaitEnabled}
-                      style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }}
-                    />
-                    秒)
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={autoRouteFollowCamera}
-                      onChange={(e) => setAutoRouteFollowCamera(e.target.checked)}
-                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                    />
-                    🎥 カメラ追従
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                    <span>倍速:</span>
-                    {([1, 2, 3, 5] as const).map(m => (
+                    {/* Single unified auto-route panel — layout is the same before and after start; only the main button + timeline change. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={autoRouteWaitEnabled}
+                          onChange={(e) => setAutoRouteWaitEnabled(e.target.checked)}
+                          style={{ accentColor: 'var(--cyan-neon)' }}
+                        />
+                        開始前に待機 (
+                        <input
+                          type="number"
+                          min="0"
+                          max="60"
+                          value={autoRouteWaitSeconds}
+                          onChange={(e) => setAutoRouteWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
+                          disabled={!autoRouteWaitEnabled}
+                          style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }}
+                        />
+                        秒)
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={autoRouteFollowCamera}
+                          onChange={(e) => setAutoRouteFollowCamera(e.target.checked)}
+                          style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                        />
+                        🎥 カメラ追従
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <span>倍速:</span>
+                        {([1, 2, 3, 5] as const).map(m => (
+                          <button
+                            key={m}
+                            className={`btn-cyber ${autoRouteSpeedMultiplier === m ? 'active' : ''}`}
+                            style={{ flex: 1, padding: '2px', fontSize: '10px' }}
+                            onClick={() => setAutoRouteSpeedMultiplier(m)}
+                          >
+                            x{m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Main control row — button content swaps based on state, but the row itself is always here. */}
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                      {autoRouteStatus.waitRemaining > 0 ? (
+                        <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>
+                          待機中... {autoRouteStatus.waitRemaining.toFixed(1)}s
+                        </div>
+                      ) : !autoRouteStatus.active ? (
+                        <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('start')}>
+                          <Play size={12} /> スタート
+                        </button>
+                      ) : autoRouteStatus.running ? (
+                        <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('pause')}>
+                          <Pause size={11} /> 一時停止
+                        </button>
+                      ) : (
+                        <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('resume')}>
+                          <Play size={11} /> 再開
+                        </button>
+                      )}
                       <button
-                        key={m}
-                        className={`btn-cyber ${autoRouteSpeedMultiplier === m ? 'active' : ''}`}
-                        style={{ flex: 1, padding: '2px', fontSize: '10px' }}
-                        onClick={() => setAutoRouteSpeedMultiplier(m)}
+                        className={`btn-cyber ${autoRouteStatus.active ? 'danger' : ''}`}
+                        style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRouteStatus.active ? 1 : 0.4 }}
+                        disabled={!autoRouteStatus.active}
+                        onClick={() => sendAutoRouteCommand('reset')}
                       >
-                        x{m}
+                        <Square size={11} /> 停止
                       </button>
-                    ))}
+                    </div>
+
+                    {/* Timeline + elapsed/total — only when active */}
+                    {autoRouteStatus.active && (
+                      <>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>
+                          Space キーで一時停止 / 再開
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>
+                            <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.elapsed)}</span>
+                          </div>
+                          <div style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '0 4px' }}>/</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>合計</span>
+                            <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.totalTime)}</span>
+                          </div>
+                        </div>
+                        <div
+                          style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px', cursor: 'pointer', position: 'relative' }}
+                          title="クリックでシーク"
+                          onClick={(e) => {
+                            if (!autoRouteStatus.active || autoRouteStatus.totalTime <= 0) return;
+                            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                            if (rect.width <= 0) return;
+                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            const target = ratio * autoRouteStatus.totalTime;
+                            if (!isFinite(target) || isNaN(target)) return;
+                            setAutoRouteCommand({ action: 'seek', ts: Date.now(), seekTo: target });
+                          }}
+                        >
+                          <div style={{ height: '100%', width: `${Math.min(100, (autoRouteStatus.elapsed / Math.max(autoRouteStatus.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
+                          {/* Checkpoint position lines */}
+                          {autoRouteStatus.checkpoints.map((cp, i) => {
+                            if (autoRouteStatus.totalTime <= 0) return null;
+                            const ratio = cp.elapsed / autoRouteStatus.totalTime;
+                            return (
+                              <div
+                                key={`cp-line-${i}`}
+                                title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`}
+                                style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  bottom: 0,
+                                  left: `${Math.min(100, Math.max(0, ratio * 100))}%`,
+                                  width: '2px',
+                                  background: cp.passed ? '#39ff14' : '#ff9500',
+                                  opacity: 0.85,
+                                  pointerEvents: 'none',
+                                  boxShadow: '0 0 3px rgba(255,149,0,0.8)'
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                          <span>停止 {formatTime(autoRouteStatus.totalStopTime)}</span>
+                          {autoRouteStatus.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRouteStatus.nextMarkerLabel}</span>}
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-
-                {/* Main control row — button content swaps based on state, but the row itself is always here. */}
-                <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                  {autoRouteStatus.waitRemaining > 0 ? (
-                    <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>
-                      待機中... {autoRouteStatus.waitRemaining.toFixed(1)}s
-                    </div>
-                  ) : !autoRouteStatus.active ? (
-                    <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('start')}>
-                      <Play size={12} /> スタート
-                    </button>
-                  ) : autoRouteStatus.running ? (
-                    <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('pause')}>
-                      <Pause size={11} /> 一時停止
-                    </button>
-                  ) : (
-                    <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('resume')}>
-                      <Play size={11} /> 再開
-                    </button>
-                  )}
-                  <button
-                    className={`btn-cyber ${autoRouteStatus.active ? 'danger' : ''}`}
-                    style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRouteStatus.active ? 1 : 0.4 }}
-                    disabled={!autoRouteStatus.active}
-                    onClick={() => sendAutoRouteCommand('reset')}
-                  >
-                    <Square size={11} /> 停止
-                  </button>
-                </div>
-
-                {/* Timeline + elapsed/total — only when active */}
-                {autoRouteStatus.active && (
-                  <>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>
-                      Space キーで一時停止 / 再開
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>
-                        <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.elapsed)}</span>
-                      </div>
-                      <div style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '0 4px' }}>/</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>合計</span>
-                        <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.totalTime)}</span>
-                      </div>
-                    </div>
-                    <div
-                      style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px', cursor: 'pointer', position: 'relative' }}
-                      title="クリックでシーク"
-                      onClick={(e) => {
-                        if (!autoRouteStatus.active || autoRouteStatus.totalTime <= 0) return;
-                        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                        if (rect.width <= 0) return;
-                        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                        const target = ratio * autoRouteStatus.totalTime;
-                        if (!isFinite(target) || isNaN(target)) return;
-                        setAutoRouteCommand({ action: 'seek', ts: Date.now(), seekTo: target });
-                      }}
-                    >
-                      <div style={{ height: '100%', width: `${Math.min(100, (autoRouteStatus.elapsed / Math.max(autoRouteStatus.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
-                      {/* Checkpoint position lines */}
-                      {autoRouteStatus.checkpoints.map((cp, i) => {
-                        if (autoRouteStatus.totalTime <= 0) return null;
-                        const ratio = cp.elapsed / autoRouteStatus.totalTime;
-                        return (
-                          <div
-                            key={`cp-line-${i}`}
-                            title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              bottom: 0,
-                              left: `${Math.min(100, Math.max(0, ratio * 100))}%`,
-                              width: '2px',
-                              background: cp.passed ? '#39ff14' : '#ff9500',
-                              opacity: 0.85,
-                              pointerEvents: 'none',
-                              boxShadow: '0 0 3px rgba(255,149,0,0.8)'
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                      <span>停止 {formatTime(autoRouteStatus.totalStopTime)}</span>
-                      {autoRouteStatus.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRouteStatus.nextMarkerLabel}</span>}
-                    </div>
-                  </>
                 )}
               </div>
 
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '8px', textAlign: 'center' }}>
-                クリア記録やプレイメモをここに記入予定
+              {/* プレイデータ label + new features below */}
+              <div className="panel-section">
+                <div className="panel-title">プレイデータ</div>
+                <PlayDataPanel
+                  onNotify={(msg) => {
+                    setSaveNotification(msg);
+                    setTimeout(() => setSaveNotification(null), 2000);
+                  }}
+                />
               </div>
-            </div>
+            </>
           )}
 
 

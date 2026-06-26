@@ -635,14 +635,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           // Default scroll: center marker horizontally, place slightly below center
           const wrapper = wrapperRef.current;
           if (wrapper) {
+            const W_v = wrapper.clientWidth;
             const H_v = wrapper.clientHeight;
             const tgtZoom = 2;
-            // CSS transform: screenPos = wrapperCenter + (markerLocal - containerCenter) * zoom + pan
-            // To center horizontally: pan.x = (800 - marker.x) * zoom
-            // To place at 60% down:   pan.y = H_v * 0.1 - (marker.y - 2275) * zoom
             const tgtPan = {
-              x: (800 - marker.x) * tgtZoom,
-              y: H_v * 0.1 - (marker.y - 2275) * tgtZoom
+              x: W_v * 0.5 - 800 - (marker.x - 800) * tgtZoom,
+              y: H_v * 0.6 - 2275 - (marker.y - 2275) * tgtZoom
             };
             startSmoothScroll(tgtPan, tgtZoom);
           }
@@ -702,8 +700,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const H_v = wrapperRef.current.clientHeight;
       const tgtZoom = zoom || 1;
       setPan({
-        x: W_v * 0.5 - startMarker.x * tgtZoom,
-        y: H_v * 0.6 - startMarker.y * tgtZoom
+        x: W_v * 0.5 - 800 - (startMarker.x - 800) * tgtZoom,
+        y: H_v * 0.6 - 2275 - (startMarker.y - 2275) * tgtZoom
       });
     }
   };
@@ -815,8 +813,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const H_v = wrapper.clientHeight;
             const tgtZoom = zoom || 1;
             const tgtPan = {
-              x: W_v * 0.5 - interp.position.x * tgtZoom,
-              y: H_v * 0.6 - (interp.position.y - 2275) * tgtZoom
+              x: W_v * 0.5 - 800 - (interp.position.x - 800) * tgtZoom,
+              y: H_v * 0.6 - 2275 - (interp.position.y - 2275) * tgtZoom
             };
             targetPanRef.current = tgtPan;
             setPan(tgtPan);
@@ -872,8 +870,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const tgtZoom = (animZoomRef.current && isFinite(animZoomRef.current)) ? animZoomRef.current : 1;
             // Place current position at 50% horizontal, 60% vertical (center-bottom)
             const tgtPan = {
-              x: W_v * 0.5 - interp.position.x * tgtZoom,
-              y: H_v * 0.6 - interp.position.y * tgtZoom
+              x: W_v * 0.5 - 800 - (interp.position.x - 800) * tgtZoom,
+              y: H_v * 0.6 - 2275 - (interp.position.y - 2275) * tgtZoom
             };
             if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
               targetPanRef.current = tgtPan;
@@ -1768,8 +1766,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const W_v = wrapper.clientWidth;
               const H_v = wrapper.clientHeight;
               const tgtZoom = zoom;
-              const tgtPanX = W_v * 0.5 - partner.x * tgtZoom;
-              const tgtPanY = H_v * 0.6 - (partner.y - 1137.5) * tgtZoom;
+              const tgtPanX = W_v * 0.5 - 800 - (partner.x - 800) * tgtZoom;
+              const tgtPanY = H_v * 0.6 - 2275 - (partner.y - 2275) * tgtZoom;
               startSmoothScroll({ x: tgtPanX, y: tgtPanY }, tgtZoom);
             }
           }
@@ -3560,7 +3558,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                   <input
                     type="range"
-                    min={60}
+                    min={0}
                     max={720}
                     step={1}
                     value={Math.max(0, Math.min(720, bossDurationSeconds))}
@@ -3568,7 +3566,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     style={{ accentColor: '#ff6b9d', cursor: 'pointer', width: '100%' }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                    <span>1分</span>
+                    <span>0秒</span>
                     <span>12分</span>
                   </div>
                 </div>
@@ -3603,7 +3601,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                       <input
                         type="range"
-                        min={60}
+                        min={0}
                         max={720}
                         step={1}
                         value={Math.max(0, Math.min(720, bossCustomDurationVal ?? 0))}
@@ -3611,7 +3609,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         style={{ accentColor: 'var(--red-neon)', cursor: 'pointer', width: '100%' }}
                       />
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                        <span>1分</span>
+                        <span>0秒</span>
                         <span>12分</span>
                       </div>
                     </div>
@@ -3641,7 +3639,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         </div>
                         <input
                           type="range"
-                          min={60}
+                          min={0}
                           max={720}
                           step={1}
                           value={Math.max(0, Math.min(720, battleDurationSeconds))}
@@ -3649,7 +3647,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           style={{ accentColor: '#7ec8e3', cursor: 'pointer', width: '100%' }}
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                          <span>1分</span>
+                          <span>0秒</span>
                           <span>12分</span>
                         </div>
                       </div>
@@ -3684,7 +3682,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             </div>
                             <input
                               type="range"
-                              min={60}
+                              min={0}
                               max={720}
                               step={1}
                               value={Math.max(0, Math.min(720, battleCustomDurationVal ?? 0))}
@@ -3692,7 +3690,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                             />
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                              <span>1分</span>
+                              <span>0秒</span>
                               <span>12分</span>
                             </div>
                           </div>
@@ -3710,15 +3708,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                       <input
                         type="range"
-                        min={60}
+                        min={0}
                         max={720}
                         step={1}
-                        value={Math.max(60, Math.min(720, battleDurationSeconds))}
+                        value={Math.max(0, Math.min(720, battleDurationSeconds))}
                         onChange={(e) => setBattleDurationSeconds(parseInt(e.target.value))}
                         style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                       />
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                        <span>1分</span>
+                        <span>0秒</span>
                         <span>12分</span>
                       </div>
                     </div>
