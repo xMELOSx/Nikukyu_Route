@@ -768,6 +768,37 @@ export default function App() {
     }
   }, []);
 
+  // Debounced auto-save: persist the current route (including strokes and
+  // markers) to localStorage whenever it changes. Without this, `updateStrokes`
+  // and `updateMarkers` only update React state, and the work lives only in
+  // memory until the user explicitly clicks セーブ. A reload, new plan, or
+  // route load would silently drop all stroke/marker work.
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const lastSavedSnapshotRef = useRef<string>('');
+  useEffect(() => {
+    if (!route || !route.id) return;
+    const snapshot = JSON.stringify(route);
+    if (snapshot === lastSavedSnapshotRef.current) return;
+
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      try {
+        DataManager.saveToLocalStorage(route);
+        lastSavedSnapshotRef.current = snapshot;
+      } catch (e) {
+        console.error('Auto-save failed:', e);
+      }
+    }, 1500);
+    return () => {
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [route]);
+
   // Startup focus: auto-pan to a configured marker on app load
   const startupFocusedRef = useRef(false);
   useEffect(() => {
@@ -1386,17 +1417,21 @@ export default function App() {
         setTimeout(() => setSaveNotification(null), 3000);
         return;
       }
+      // Strip legacy fields and backfill defaults before re-encrypting
+      // author names, so the import never carries `difficulty` or other
+      // obsolete schema fields forward into localStorage.
+      const clean = DataManager.sanitizeRouteForExport(data);
       // Re-encrypt author names with new keys since id/createdAt change
       const newId = `route_${Date.now()}`;
       const newCreatedAt = Date.now();
-      const plainAuthor = xorDecrypt(data.author || '', getAuthorKey(data.id, data.createdAt));
-      const plainOriginalAuthor = xorDecrypt(data.originalAuthor || '', getOriginalAuthorKey(data.id, data.createdAt));
+      const plainAuthor = xorDecrypt(clean.author || '', getAuthorKey(clean.id, clean.createdAt));
+      const plainOriginalAuthor = xorDecrypt(clean.originalAuthor || '', getOriginalAuthorKey(clean.id, clean.createdAt));
       // Filter out global-type markers (they're loaded from global_markers.json)
       const isGlobalType = (t: string) =>
         ['start','eh','rare','cardkey','vault','boss','phone','warp','stairs','info','note','text','room','gbattle','gpicking','glong_picking'].includes(t);
-      const individualMarkers = (data.markers || []).filter(m => !isGlobalType(m.type));
+      const individualMarkers = (clean.markers || []).filter(m => !isGlobalType(m.type));
       const importedRoute: RouteData = {
-        ...data,
+        ...clean,
         id: newId,
         createdAt: newCreatedAt,
         markers: individualMarkers,
@@ -1482,31 +1517,35 @@ export default function App() {
           className="sidebar glass-panel"
           style={{ display: leftSidebarCollapsed ? 'none' : 'flex' }}
         >
-          {/* Segmented Mode Selector Toggle */}
-          <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', background: 'rgba(5, 7, 10, 0.6)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <button
-                className={`btn-cyber ${isEditMode ? 'active' : ''}`}
-                style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
-                onClick={() => {
-                  setIsEditMode(true);
-                }}
-              >
-                {isLocal ? '⚙ EDIT' : '⚙ INDIV EDIT'}
-              </button>
-              <button
-                className={`btn-cyber ${!isEditMode ? 'active success' : ''}`}
-                style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
-                onClick={() => {
-                  setIsEditMode(false);
-                  setToolMode('pan'); // Auto switch to pan tool when entering presentation mode
-                }}
-              >
-                👁 PRESENT
-              </button>
+          {/* Segmented Mode Selector Toggle — fixed at top */}
+          <div className="sidebar-fixed">
+            <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', background: 'rgba(5, 7, 10, 0.6)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <button
+                  className={`btn-cyber ${isEditMode ? 'active' : ''}`}
+                  style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
+                  onClick={() => {
+                    setIsEditMode(true);
+                  }}
+                >
+                  ✏️ 編集モード
+                </button>
+                <button
+                  className={`btn-cyber ${!isEditMode ? 'active success' : ''}`}
+                  style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
+                  onClick={() => {
+                    setIsEditMode(false);
+                    setToolMode('pan'); // Auto switch to pan tool when entering presentation mode
+                  }}
+                >
+                  👁 表示モード
+                </button>
+              </div>
             </div>
-
           </div>
+
+          {/* Scrollable area: everything below the mode selector */}
+          <div className="sidebar-scroll">
 
           {/* Help Button */}
           <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
@@ -1515,7 +1554,7 @@ export default function App() {
               onClick={() => setShowHelpModal(true)}
               style={{ width: '100%', padding: '6px', fontSize: '12px', clipPath: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
             >
-              ❓ ヘルプ
+              ❓ ヘルプ・設定
             </button>
           </div>
 
@@ -2059,6 +2098,8 @@ export default function App() {
             <div>• Drawing lines: {currentStrokesCount}</div>
             <div>• Markers & notes: {currentMarkersCount}</div>
           </div>
+
+          </div>{/* end .sidebar-scroll */}
         </section>
 
         {/* Center Canvas Workspace */}
@@ -2178,11 +2219,16 @@ export default function App() {
           className="sidebar-right glass-panel"
           style={{ display: rightSidebarCollapsed ? 'none' : 'flex' }}
         >
-          {/* Tab Bar */}
-          <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
-            <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>ルート計画</button>
-            <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>プレイデータ</button>
+          {/* Tab Bar — fixed at top */}
+          <div className="sidebar-fixed">
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>ルート計画</button>
+              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>プレイデータ</button>
+            </div>
           </div>
+
+          {/* Scrollable area: tab content below the tab bar */}
+          <div className="sidebar-scroll">
 
           {/* Route Tab Content */}
           {rightTab === 'route' && (<>
@@ -2755,6 +2801,7 @@ export default function App() {
           )}
 
 
+          </div>{/* end .sidebar-scroll */}
         </section>
       </main>
 

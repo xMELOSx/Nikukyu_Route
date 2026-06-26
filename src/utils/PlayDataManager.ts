@@ -196,9 +196,12 @@ export function checkAutoReset(state: PlayDataState, now: number = Date.now()): 
   if (now >= next.getTime()) {
     return {
       ...state,
-      // Only recordedFans is reset on the biweekly tick.
-      // recordedCoins and recordedNikukyuu persist across periods.
+      // Biweekly Monday tick:
+      //   - recordedFans is reset (capped to 1,000,000)
+      //   - goals (今週の目標) are cleared
+      //   - recordedCoins and recordedNikukyuu persist across periods
       recordedFans: 0,
+      goals: [],
       periodStart: next.getTime()
     };
   }

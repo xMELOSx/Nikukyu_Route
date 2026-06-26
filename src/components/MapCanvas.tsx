@@ -406,6 +406,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [zoomedMedia, setZoomedMedia] = useState<{ url: string; type: 'image' | 'webm' | 'youtube' } | null>(null);
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
+  const lightboxDragRef = useRef(false);
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -512,31 +513,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const sidebarStateChanged = prevLeft !== leftSidebarCollapsed || prevRight !== rightSidebarCollapsed;
     if (hasAppliedInitialShiftRef.current && !sidebarStateChanged) return;
 
+    const midX = window.innerWidth / 2;
+
+    // Compute the shifted markers. Track whether any marker actually
+    // changed so we only call `onMarkersChange` when a real shift occurred.
+    // Otherwise the call would re-enter `updateMarkers` in App.tsx and
+    // overwrite `globalMarkers` (and its localStorage entry) with whatever
+    // subset the current markers cover — wiping data on initial mount.
+    let anyChanged = false;
+    const next = currentMarkers.map(m => {
+      if (!m.textFixedPosition || m.floor !== floor) return m;
+      const side: 'left' | 'right' =
+        m.trackSide === 'auto' || !m.trackSide
+          ? (m.x < midX ? 'left' : 'right')
+          : m.trackSide;
+
+      if (prevLeft !== leftSidebarCollapsed && side === 'left') {
+        const shift = leftSidebarCollapsed ? -280 : 280;
+        anyChanged = true;
+        return { ...m, x: m.x + shift };
+      }
+      if (prevRight !== rightSidebarCollapsed && side === 'right') {
+        const shift = rightSidebarCollapsed ? 340 : -340;
+        anyChanged = true;
+        return { ...m, x: m.x + shift };
+      }
+      return m;
+    });
+
     prevLeftCollapsedRef.current = leftSidebarCollapsed;
     prevRightCollapsedRef.current = rightSidebarCollapsed;
     hasAppliedInitialShiftRef.current = true;
 
-    const midX = window.innerWidth / 2;
-
-    onMarkersChange(
-      currentMarkers.map(m => {
-        if (!m.textFixedPosition || m.floor !== floor) return m;
-        const side: 'left' | 'right' =
-          m.trackSide === 'auto' || !m.trackSide
-            ? (m.x < midX ? 'left' : 'right')
-            : m.trackSide;
-
-        if (prevLeft !== leftSidebarCollapsed && side === 'left') {
-          const shift = leftSidebarCollapsed ? -280 : 280;
-          return { ...m, x: m.x + shift };
-        }
-        if (prevRight !== rightSidebarCollapsed && side === 'right') {
-          const shift = rightSidebarCollapsed ? 340 : -340;
-          return { ...m, x: m.x + shift };
-        }
-        return m;
-      })
-    );
+    if (!anyChanged) return;
+    onMarkersChange(next);
   }, [leftSidebarCollapsed, rightSidebarCollapsed, markers.length]);
 
   // Sync state to anim refs whenever state changes
@@ -1683,32 +1693,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!canInteract) return;
 
     if (toolMode === 'erase') {
-      const isGlobal = globalMarkerIds.includes(m.id);
-      if (!isGlobal || isLocal) {
-        onMarkersChange(
-          markers
-            .filter(item => item.id !== m.id)
-            .map(item => {
-              if (item.linkedWarpId === m.id) {
-                const { linkedWarpId, ...rest } = item;
-                return rest;
-              }
-              return item;
-            }),
-          true
-        );
-      } else {
-        const isHidden = hiddenMarkers.includes(m.id);
-        if (isHidden) {
-          if (onShowGlobalMarker) {
-            onShowGlobalMarker(m.id);
-          }
-        } else {
-          if (onHideGlobalMarker) {
-            onHideGlobalMarker(m.id);
-          }
-        }
-      }
+      // Eraser mode always actually deletes from the current view, regardless
+      // of whether the marker is global or local. Global markers will be
+      // re-merged from global_markers.json on the next page load, but during
+      // this session the marker is gone — matching the user's mental model
+      // of "the eraser removed this pin". A history snapshot is pushed so the
+      // user can undo with Ctrl+Z.
+      onMarkersChange(
+        markers
+          .filter(item => item.id !== m.id)
+          .map(item => {
+            if (item.linkedWarpId === m.id) {
+              const { linkedWarpId, ...rest } = item;
+              return rest;
+            }
+            return item;
+          }),
+        true
+      );
       if (activeNoteMarkerId === m.id) {
         setActiveNoteMarkerId(null);
       }
@@ -3402,6 +3404,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <Trash2 size={14} />
                     </button>
                   )}
+                  {isGlobal && !isLocal && (
+                    <button
+                      className="delete-btn"
+                      style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
+                      onClick={() => {
+                        // The popover stays in sync with the markers prop, so
+                        // the user can always hit Undo (Ctrl+Z) to bring the
+                        // global marker back if it was deleted by mistake.
+                        handleDeleteMarker(activeNoteMarker.id);
+                      }}
+                      title="このマップからこのグローバルマーカーを削除 (次回ロード時に再表示)"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               );
             })()}
@@ -4402,6 +4419,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (lightboxDragRef.current) {
+                  lightboxDragRef.current = false;
+                  return;
+                }
                 if (lightboxZoom === 1) {
                   setLightboxZoom(2.5);
                 } else {
@@ -4413,9 +4434,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 if (lightboxZoom <= 1) return;
                 e.preventDefault();
                 e.stopPropagation();
+                lightboxDragRef.current = false;
                 const startX = e.clientX - lightboxPan.x;
                 const startY = e.clientY - lightboxPan.y;
+                const originX = e.clientX;
+                const originY = e.clientY;
                 const onMove = (ev: MouseEvent) => {
+                  if (Math.abs(ev.clientX - originX) > 3 || Math.abs(ev.clientY - originY) > 3) {
+                    lightboxDragRef.current = true;
+                  }
                   setLightboxPan({ x: ev.clientX - startX, y: ev.clientY - startY });
                 };
                 const onUp = () => {
@@ -4460,6 +4487,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </span>
               <button onClick={() => setLightboxZoom(z => Math.min(8, z * 1.3))} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>+</button>
               <button onClick={() => { setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px' }}>リセット</button>
+              <button onClick={() => { setZoomedMedia(null); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }} style={{ background: 'rgba(255,80,80,0.25)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px' }}>閉じる</button>
             </div>
           )}
           <div style={{

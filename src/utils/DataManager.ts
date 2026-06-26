@@ -369,18 +369,66 @@ export class DataManager {
     localStorage.setItem('heist_routes_list', JSON.stringify(saves));
   }
 
+  // Strip legacy/unknown fields and backfill defaults so exported payloads
+  // match the current RouteData schema (e.g. remove `difficulty` from older
+  // builds, ensure `targetDuration` is always present, and keep only the
+  // custom-duration maps that the schema actually declares).
+  static sanitizeRouteForExport(route: RouteData | any): RouteData {
+    const def = DEFAULT_ROUTE(route?.id);
+    return {
+      id: typeof route?.id === 'string' ? route.id : def.id,
+      title: typeof route?.title === 'string' ? route.title : def.title,
+      description: typeof route?.description === 'string' ? route.description : def.description,
+      targetCash: typeof route?.targetCash === 'string' ? route.targetCash : def.targetCash,
+      targetCoins: typeof route?.targetCoins === 'string' ? route.targetCoins : def.targetCoins,
+      targetDuration:
+        typeof route?.targetDuration === 'string' ? route.targetDuration : def.targetDuration,
+      author: typeof route?.author === 'string' ? route.author : def.author,
+      originalAuthor:
+        typeof route?.originalAuthor === 'string' ? route.originalAuthor : def.originalAuthor,
+      strokes: route?.strokes && typeof route.strokes === 'object'
+        ? route.strokes
+        : def.strokes,
+      markers: Array.isArray(route?.markers) ? route.markers : def.markers,
+      customBg: route?.customBg && typeof route.customBg === 'object'
+        ? route.customBg
+        : def.customBg,
+      createdAt: typeof route?.createdAt === 'number' ? route.createdAt : def.createdAt,
+      bossCustomDurations:
+        route?.bossCustomDurations && typeof route.bossCustomDurations === 'object'
+          ? route.bossCustomDurations
+          : def.bossCustomDurations,
+      battleCustomDurations:
+        route?.battleCustomDurations && typeof route.battleCustomDurations === 'object'
+          ? route.battleCustomDurations
+          : def.battleCustomDurations,
+      pickingCustomDurations:
+        route?.pickingCustomDurations && typeof route.pickingCustomDurations === 'object'
+          ? route.pickingCustomDurations
+          : def.pickingCustomDurations,
+      longPickingCustomDurations:
+        route?.longPickingCustomDurations && typeof route.longPickingCustomDurations === 'object'
+          ? route.longPickingCustomDurations
+          : def.longPickingCustomDurations,
+      mapVersion: typeof route?.mapVersion === 'number' ? route.mapVersion : def.mapVersion,
+      markerScale: typeof route?.markerScale === 'number' ? route.markerScale : def.markerScale,
+      hiddenMarkers: Array.isArray(route?.hiddenMarkers) ? route.hiddenMarkers : def.hiddenMarkers,
+      hiddenMarkerTypes: Array.isArray(route?.hiddenMarkerTypes) ? route.hiddenMarkerTypes : def.hiddenMarkerTypes
+    };
+  }
+
   // Export route to JSON file
   static exportToJSON(route: RouteData): void {
-    const dataStr = JSON.stringify(route, null, 2);
+    const dataStr = JSON.stringify(DataManager.sanitizeRouteForExport(route), null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = `${route.title.replace(/\s+/g, '_')}_route_plan.json`;
     document.body.appendChild(a);
     a.click();
-    
+
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
@@ -637,7 +685,7 @@ export class DataManager {
 
       // Draw pixel-encoded JSON data bar at bottom
       // Format: [8 magenta pixels][4 magic N-K-N-Y][4 length BE][JSON data][8 magenta end]
-      const jsonStr = JSON.stringify(route);
+      const jsonStr = JSON.stringify(DataManager.sanitizeRouteForExport(route));
       const dataBytes = new TextEncoder().encode(jsonStr);
       const MAGIC = [0x4E, 0x4B, 0x4E, 0x59]; // "N K N Y"
       const HEADER_SIZE = 8 + 4 + 4; // 8 marker + 4 magic + 4 length
@@ -695,17 +743,20 @@ export class DataManager {
   static decodePngData(image: HTMLImageElement): Promise<RouteData | null> {
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
-      const maxDataRows = 40;
+      // The encoder writes a data bar at the bottom whose height scales
+      // with the JSON size — anything beyond ~40 rows used to be invisible
+      // to the decoder. Read the full image so we can find the start
+      // marker regardless of how tall the data bar is.
       const w = image.naturalWidth;
       const h = image.naturalHeight;
       canvas.width = w;
-      canvas.height = maxDataRows;
+      canvas.height = h;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) { resolve(null); return; }
-      ctx.drawImage(image, 0, h - maxDataRows, w, maxDataRows, 0, 0, w, maxDataRows);
-      const imgData = ctx.getImageData(0, 0, w, maxDataRows);
+      ctx.drawImage(image, 0, 0, w, h, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
       const pixels = imgData.data;
-      
+
       // Scan for magenta marker (R=255, B=255 in same pixel, G≈0)
       // We look for 4 consecutive magenta pixels
       let markerStart = -1;
@@ -721,33 +772,39 @@ export class DataManager {
         }
       }
       if (markerStart < 0) { resolve(null); return; }
-      
+
       // Skip 8 marker pixels (32 bytes in pixel data)
       const afterMarker = markerStart + 32;
-      
+
       // Read magic "N K N Y" from G channel
       const rMagic = [];
       for (let j = 0; j < 4; j++) rMagic.push(pixels[afterMarker + j*4 + 1]);
       if (rMagic[0] !== 0x4E || rMagic[1] !== 0x4B || rMagic[2] !== 0x4E || rMagic[3] !== 0x59) {
         resolve(null); return;
       }
-      
+
       // Read 4-byte length (big-endian) from G channel
       const afterMagic = afterMarker + 16; // 4 magic bytes = 16 pixel bytes
       const lenG = [pixels[afterMagic+1], pixels[afterMagic+5], pixels[afterMagic+9], pixels[afterMagic+13]];
       const view = new DataView(new Uint8Array(lenG).buffer);
       const dataLen = view.getUint32(0, false);
-      if (dataLen === 0 || dataLen > 500000) { resolve(null); return; }
-      
+      // Sanity cap: refuse anything obviously broken. The encoder writes
+      // the route JSON, so well-formed exports stay well under this.
+      if (dataLen === 0 || dataLen > 50_000_000) { resolve(null); return; }
+
       // Read data from G channel
       const afterLen = afterMagic + 16; // 4 length bytes = 16 pixel bytes
       const dataBytes = new Uint8Array(dataLen);
+      let read = 0;
       for (let i = 0; i < dataLen; i++) {
         const pixelOffset = afterLen + i * 4 + 1; // +1 for G channel
         if (pixelOffset >= pixels.length) break;
         dataBytes[i] = pixels[pixelOffset];
+        read = i + 1;
       }
-      
+      // If we couldn't read the full payload, treat as failure.
+      if (read < dataLen) { resolve(null); return; }
+
       try {
         const jsonStr = new TextDecoder().decode(dataBytes);
         const clean = jsonStr.replace(/\0+$/, '');
