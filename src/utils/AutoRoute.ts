@@ -357,6 +357,7 @@ export function computeRouteTiming(segments: RouteSegment[], targetDuration?: nu
   totalTime: number;
   speed: number; // px / sec
   speedSource: 'targetDuration' | 'default';
+  ignoredCheckpoint?: { reason: string; target: number; stopTime: number };
 } {
   const totalDistance = segments.length > 0 ? segments[segments.length - 1].cumulativeDistance : 0;
   const totalStopTime = segments.length > 0 ? segments[segments.length - 1].cumulativeStopTime : 0;

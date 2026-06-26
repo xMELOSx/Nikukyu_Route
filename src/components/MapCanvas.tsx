@@ -3227,7 +3227,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const ttW = Math.min(text.length * 7 + 16, 260);
           const ttH = 28;
           const vw = window.innerWidth;
-          const vh = window.innerHeight;
           let tx = hoverPos.x - ttW / 2;
           let ty = hoverPos.y - ttH - pad;
           if (ty < 4) ty = hoverPos.y + pad;

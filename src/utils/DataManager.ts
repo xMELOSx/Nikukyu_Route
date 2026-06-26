@@ -54,12 +54,8 @@ export interface DrawingStroke {
   type: 'solid' | 'dashed';
 }
 
-/**
- * Migrate legacy DrawingStroke data. The 'arrow' type was removed and is now
- * equivalent to 'solid'. This helper normalizes any persisted data on load.
- */
 export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
-  return strokes.map(s => s.type === 'arrow' ? { ...s, type: 'solid' } : s);
+  return strokes;
 }
 
 /**
@@ -155,7 +151,6 @@ export interface HeistMarker {
   checkpointSoundOn?: boolean;    // Play a beep when the auto-route passes this checkpoint
   checkpointVoiceOn?: boolean;   // Voice announcement "X秒地点です" when passing
   checkpointExpanded?: boolean;  // Whether the popup is expanded in presentation mode
-  checkpointExpanded?: boolean;   // Whether the popup is expanded in presentation mode
 }
 
 export interface RouteData {

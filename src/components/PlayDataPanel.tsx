@@ -17,10 +17,9 @@ import {
   generateRecordId,
   generateGoalId,
   BIWEEKLY_FANS_CAP,
-  BIWEEKLY_COINS_CAP,
-  FANS_PER_NIKUKYUU_POINT
+  BIWEEKLY_COINS_CAP
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, FileText, X, Type } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type } from 'lucide-react';
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
@@ -40,6 +39,7 @@ function NumberInput({
   onChange,
   min = 0,
   step = 1,
+  bigStep,
   width = 80,
   accent = 'var(--cyan-neon)',
   align = 'right'
@@ -48,6 +48,7 @@ function NumberInput({
   onChange: (v: number) => void;
   min?: number;
   step?: number;
+  bigStep?: number;
   width?: number;
   accent?: string;
   align?: 'right' | 'center' | 'left';
@@ -66,10 +67,13 @@ function NumberInput({
   };
   const cancel = () => setEditing(false);
 
-  // Mouse-wheel adjustment on the displayed value (Shift=×10, Ctrl=×100)
+  // Mouse-wheel adjustment on the displayed value. Without modifiers use
+  // `bigStep` if provided (e.g. bigStep=100 for large currency amounts
+  // where the default step=1 would take forever). Shift=×10, Ctrl=×100.
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const wheelStep = e.ctrlKey ? step * 100 : (e.shiftKey ? step * 10 : step);
+    const baseStep = bigStep ?? step;
+    const wheelStep = e.ctrlKey ? step * 100 : (e.shiftKey ? step * 10 : baseStep);
     const delta = e.deltaY < 0 ? wheelStep : -wheelStep;
     onChange(Math.max(min, value + delta));
   };

@@ -21,7 +21,7 @@ import {
   getAuthorKey,
   getOriginalAuthorKey
 } from './utils/DataManager';
-import { HELP_TABS, type HelpData, fetchHelpData, saveHelpData } from './utils/HelpDataManager';
+import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import {
   Save,
   Download,
@@ -35,13 +35,10 @@ import {
   Redo,
   ChevronLeft,
   ChevronRight,
-  Copy,
-  Star,
   FilePlus,
   Play,
   Pause,
-  Square,
-  Gauge
+  Square
 } from 'lucide-react';
 
 interface HistoryState {
@@ -244,10 +241,7 @@ export default function App() {
     setGlobalMarkers(previous.globalMarkers);
     localStorage.setItem('heist_global_markers', JSON.stringify(previous.globalMarkers));
 
-    // If the undo brings back a deleted marker, clear the active note marker
-    // and reset tool mode so the user can place new markers normally.
-    const restored = [...previous.individualMarkers, ...previous.globalMarkers];
-    setActiveNoteMarkerId(prev => prev && restored.some(m => m.id === prev) ? prev : null);
+    // Reset tool mode so the user can place new markers normally after undo.
     setToolMode('pan');
     setActiveMarkerType(null);
   };
@@ -274,10 +268,7 @@ export default function App() {
     setGlobalMarkers(next.globalMarkers);
     localStorage.setItem('heist_global_markers', JSON.stringify(next.globalMarkers));
 
-    // If the redo brings back a deleted marker, clear the active note marker
-    // and reset tool mode so the user can place new markers normally.
-    const restored = [...next.individualMarkers, ...next.globalMarkers];
-    setActiveNoteMarkerId(prev => prev && restored.some(m => m.id === prev) ? prev : null);
+    // Reset tool mode so the user can place new markers normally after redo.
     setToolMode('pan');
     setActiveMarkerType(null);
   };
@@ -416,7 +407,6 @@ export default function App() {
   // Sidebar Collapse Configurations
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
-  const isMobile = window.innerWidth < 768;
 
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
@@ -426,11 +416,10 @@ export default function App() {
   const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true); // default true
 
   // App UI lists
-  const [saves, setSaves] = useState<{ id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; updatedAt: number }[]>([]);
+  const [saves, setSaves] = useState<{ id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; createdAt: number; updatedAt: number }[]>([]);
   const [presets, setPresets] = useState<PresetData[]>([]);
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
   const [svgString, setSvgString] = useState<string>('');
-  const [presetEditorName, setPresetEditorName] = useState('');
 
   // Auto-route state mirror — populated by MapCanvas via onAutoRouteStatusChange
   const [autoRouteStatus, setAutoRouteStatus] = useState<{
@@ -480,9 +469,6 @@ export default function App() {
     const s = Math.floor(seconds % 60);
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
-  const [presetEditorDesc, setPresetEditorDesc] = useState('');
-  const [presetEditorAuthor, setPresetEditorAuthor] = useState('');
-  const [presetEditorOrigAuthor, setPresetEditorOrigAuthor] = useState('');
   const [presetListVisible, setPresetListVisible] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
@@ -936,29 +922,6 @@ export default function App() {
     setTimeout(() => setSaveNotification(null), 2000);
   };
 
-  const handleSaveAsCopy = () => {
-    const newId = `route_${Date.now()}`;
-    const newCreatedAt = Date.now();
-    const copyRoute = {
-      ...route,
-      id: newId,
-      title: `${route.title} (COPY)`,
-      createdAt: newCreatedAt
-    };
-    if (copyRoute.author) {
-      const plainAuthor = xorDecrypt(copyRoute.author, getAuthorKey(route.id, route.createdAt));
-      copyRoute.author = xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt));
-      if (!copyRoute.originalAuthor) {
-        copyRoute.originalAuthor = xorEncrypt(plainAuthor, getOriginalAuthorKey(newId, newCreatedAt));
-      }
-    }
-    DataManager.saveToLocalStorage(copyRoute);
-    setRoute(copyRoute);
-    refreshSavesList();
-    setSaveNotification(`コピー保存: ${copyRoute.title}`);
-    setTimeout(() => setSaveNotification(null), 2000);
-  };
-
   const savePresetsToServer = (next: PresetData[]) => {
     setPresets(next);
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
@@ -966,33 +929,6 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(next)
     }).catch(() => { });
-  };
-
-  const handleSaveAsPreset = () => {
-    const routeToSave = {
-      ...route,
-      mapVersion: 2,
-      markerScale: markerScale
-    };
-    const newPreset: PresetData = {
-      id: `preset_${Date.now()}`,
-      name: presetEditorName.trim() || route.title,
-      description: presetEditorDesc,
-      targetCash: route.targetCash,
-      targetCoins: route.targetCoins,
-      author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
-      originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
-      updatedAt: Date.now(),
-      routeData: routeToSave
-    };
-    const next = [...presets, newPreset];
-    savePresetsToServer(next);
-    setPresetEditorName('');
-    setPresetEditorDesc('');
-    setPresetEditorAuthor('');
-    setPresetEditorOrigAuthor('');
-    setSaveNotification(`プリセット追加: ${newPreset.name}`);
-    setTimeout(() => setSaveNotification(null), 2000);
   };
 
   const handleDeletePreset = (presetId: string) => {
@@ -1480,8 +1416,6 @@ export default function App() {
   };
 
   // DnD handlers for map and sidebar — window level to avoid MapCanvas interception
-  const pngFileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
       e.preventDefault();
@@ -1503,14 +1437,6 @@ export default function App() {
       window.removeEventListener('drop', handleDrop);
     };
   }, []);
-
-  // Brush Preset Helper
-  const setBrushPreset = (color: string, width: number, type: 'solid' | 'dashed') => {
-    setToolMode('draw');
-    setStrokeColor(color);
-    setStrokeWidth(width);
-    setStrokeType(type);
-  };
 
   // Count elements
   const currentStrokesCount = route.strokes[currentFloor]?.length || 0;
