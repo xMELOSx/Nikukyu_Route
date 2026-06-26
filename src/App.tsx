@@ -1426,10 +1426,16 @@ export default function App() {
       const newCreatedAt = Date.now();
       const plainAuthor = xorDecrypt(clean.author || '', getAuthorKey(clean.id, clean.createdAt));
       const plainOriginalAuthor = xorDecrypt(clean.originalAuthor || '', getOriginalAuthorKey(clean.id, clean.createdAt));
-      // Filter out global-type markers (they're loaded from global_markers.json)
+      // Split markers: individual types go into the imported route, global
+      // types get merged into the user's current global marker set so the
+      // user's per-marker edit state (e.g. ReroRero phone toggles, hidden
+      // markers, popup layout) is preserved while still picking up new
+      // markers from the PNG that didn't exist locally.
       const isGlobalType = (t: string) =>
         ['start','eh','rare','cardkey','vault','boss','phone','warp','stairs','info','note','text','room','gbattle','gpicking','glong_picking'].includes(t);
-      const individualMarkers = (clean.markers || []).filter(m => !isGlobalType(m.type));
+      const allImportedMarkers = clean.markers || [];
+      const individualMarkers = allImportedMarkers.filter(m => !isGlobalType(m.type));
+      const importedGlobals = allImportedMarkers.filter(m => isGlobalType(m.type));
       const importedRoute: RouteData = {
         ...clean,
         id: newId,
@@ -1442,6 +1448,29 @@ export default function App() {
       setRouteWithGlobalDefaults(importedRoute);
       localStorage.setItem('heist_last_used_route_id', importedRoute.id);
       refreshSavesList();
+
+      // Merge global markers from the PNG into the current set:
+      // - Existing markers (same id) are kept untouched → user edits win
+      // - New markers (id not in current set) are appended
+      // - Removed markers (in current set but not in import) are kept
+      if (importedGlobals.length > 0) {
+        setGlobalMarkers(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newGlobals = importedGlobals.filter(m => !existingIds.has(m.id));
+          if (newGlobals.length === 0) return prev;
+          const merged = [...prev, ...newGlobals];
+          localStorage.setItem('heist_global_markers', JSON.stringify(merged));
+          if (isLocal) {
+            fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(merged)
+            }).catch(err => console.error('Failed to sync global markers:', err));
+          }
+          return merged;
+        });
+      }
+
       setSaveNotification(`PNGインポート完了: ${importedRoute.title}`);
       setTimeout(() => setSaveNotification(null), 2000);
     } catch (err) {
