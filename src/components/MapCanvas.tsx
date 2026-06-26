@@ -355,41 +355,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [isEditMode]);
 
-  // On desktop (or any layout where the left pane starts open), markers were
-  // saved with the left pane open, so opening the page on mobile (where the
-  // left pane starts closed) leaves them visually offset by the pane width.
-  // Initializing the prev ref to `false` makes the shift useEffect run on
-  // mount and pull those markers left by 280px to compensate.
-  // The right pane ref still matches the current state, so its shift only
-  // fires on subsequent toggles (preserving the original behavior).
+  // Fixed text-pin pane tracking.
+  // prevLeftCollapsedRef is initialized to `false` so the very first effect
+  // run on mount counts as a "change" — this compensates for markers that
+  // were saved with the left pane open, when the page is opened on mobile
+  // (where the left pane starts closed).
+  // prevRightCollapsedRef is initialized to the current value so it only
+  // fires on subsequent right-pane toggles.
   const prevLeftCollapsedRef = useRef(false);
   const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
   const markersRef = useRef(markers);
   markersRef.current = markers;
-  // Tracks whether the initial shift for the current sidebar layout has been
-  // applied. Global markers are loaded asynchronously in App.tsx, so on the
-  // first useEffect run `markersRef.current` is still empty. The effect must
-  // re-run once the markers are populated; `hasAppliedInitialShiftRef`
-  // ensures we shift exactly once per layout, not on every re-render.
-  const hasAppliedInitialShiftRef = useRef(false);
 
   useEffect(() => {
     const prevLeft = prevLeftCollapsedRef.current;
     const prevRight = prevRightCollapsedRef.current;
 
+    // Only run when the sidebar state actually changed. This avoids
+    // re-shifting markers on every unrelated re-render.
+    if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
+
     const currentMarkers = markersRef.current;
     if (currentMarkers.length === 0) return;
 
-    const sidebarStateChanged = prevLeft !== leftSidebarCollapsed || prevRight !== rightSidebarCollapsed;
-    if (hasAppliedInitialShiftRef.current && !sidebarStateChanged) return;
-
     const midX = window.innerWidth / 2;
 
-    // Compute the shifted markers. Track whether any marker actually
-    // changed so we only call `onMarkersChange` when a real shift occurred.
-    // Otherwise the call would re-enter `updateMarkers` in App.tsx and
-    // overwrite `globalMarkers` (and its localStorage entry) with whatever
-    // subset the current markers cover — wiping data on initial mount.
     let anyChanged = false;
     const next = currentMarkers.map(m => {
       if (!m.textFixedPosition || m.floor !== floor) return m;
@@ -413,7 +403,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     prevLeftCollapsedRef.current = leftSidebarCollapsed;
     prevRightCollapsedRef.current = rightSidebarCollapsed;
-    hasAppliedInitialShiftRef.current = true;
 
     if (!anyChanged) return;
     onMarkersChange(next);
