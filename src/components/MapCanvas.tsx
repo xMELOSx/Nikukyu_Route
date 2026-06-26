@@ -12,91 +12,9 @@ import {
 } from '../utils/DataManager';
 import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
 import { buildAutoRoute, computeRouteTiming, interpolateRoute, playCheckpointSound, prewarmAudio, speakCheckpointTime, type RouteSegment } from '../utils/AutoRoute';
-
-// TweetEmbed Component using official Twitter widgets SDK
-const TweetEmbed: React.FC<{ url: string }> = ({ url }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [sdkReady, setSdkReady] = useState(!!(window as any).twttr);
-
-  useEffect(() => {
-    if ((window as any).twttr) {
-      setSdkReady(true);
-      return;
-    }
-
-    let script = document.querySelector('script[src="https://platform.twitter.com/widgets.js"]') as HTMLScriptElement;
-    if (!script) {
-      script = document.createElement('script');
-      script.setAttribute('src', 'https://platform.twitter.com/widgets.js');
-      script.setAttribute('charset', 'utf-8');
-      script.setAttribute('async', 'true');
-      document.head.appendChild(script);
-    }
-
-    const handleLoad = () => setSdkReady(true);
-    script.addEventListener('load', handleLoad);
-    return () => {
-      script.removeEventListener('load', handleLoad);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    if (!containerRef.current) return;
-
-    containerRef.current.innerHTML = '';
-
-    if (sdkReady && (window as any).twttr) {
-      const tweetId = url.split('/status/')[1]?.split('?')[0];
-      if (tweetId) {
-        (window as any).twttr.widgets.createTweet(tweetId, containerRef.current, {
-          theme: 'dark',
-          align: 'center'
-        }).then((el: any) => {
-          if (!active && el) {
-            el.remove();
-          }
-        }).catch((err: any) => {
-          console.error('Failed to create tweet widget:', err);
-        });
-      } else {
-        renderFallback();
-      }
-    } else {
-      renderFallback();
-    }
-
-    function renderFallback() {
-      if (!containerRef.current) return;
-      const placeholder = document.createElement('div');
-      placeholder.className = 'twitter-tweet-placeholder';
-      placeholder.style.padding = '16px';
-      placeholder.style.textAlign = 'center';
-      placeholder.style.color = 'var(--text-muted, #888)';
-      placeholder.style.fontSize = '12px';
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'View Tweet on X / Twitter';
-      link.style.color = 'var(--accent-cyan, #00f0ff)';
-      link.style.textDecoration = 'underline';
-      link.style.display = 'block';
-      link.style.marginTop = '4px';
-
-      placeholder.textContent = 'Loading Tweet...';
-      placeholder.appendChild(link);
-      containerRef.current.appendChild(placeholder);
-    }
-
-    return () => {
-      active = false;
-    };
-  }, [url, sdkReady]);
-
-  return <div ref={containerRef} className="twitter-tweet-container" />;
-};
+import TweetEmbed from './TweetEmbed';
+import MediaManager from './MediaManager';
+import MediaLightbox from './MediaLightbox';
 
 interface MapCanvasProps {
   floor: FloorType;
@@ -291,162 +209,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
   const isTextType = (type: string) => type === 'text' || type === 'itext';
 
-  const detectMediaType = (url: string): MediaItem['type'] => {
-    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
-    if (url.includes('x.com') || url.includes('twitter.com')) return 'x-embed';
-    if (url.includes('.webm') || url.includes('video/webm')) return 'webm';
-    return 'image';
-  };
 
-  const [mediaUrlInputs, setMediaUrlInputs] = useState<Record<string, string>>({});
-  const [mediaUrlEditInputs, setMediaUrlEditInputs] = useState<Record<string, string>>({});
-
-  const renderMediaManager = (m: HeistMarker) => {
-    const inputVal = mediaUrlInputs[m.id] || '';
-    const markerId = m.id;
-    const submitUrl = () => {
-      if (!inputVal.trim()) return;
-      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: inputVal.trim(), type: detectMediaType(inputVal.trim()), description: '' };
-      const next = [...(m.mediaItems || []), newItem];
-      onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
-      setMediaItems(next);
-      setMediaUrlInputs(prev => ({ ...prev, [markerId]: '' }));
-    };
-    const updateMarkerMedia = (next: MediaItem[]) => {
-      onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
-      setMediaItems(next);
-    };
-    const items = m.mediaItems || [];
-    return (
-      <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(79, 195, 247, 0.2)', paddingTop: '6px' }}>
-        <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-          {isLocal && (
-            <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = 'image/*,video/webm';
-              input.multiple = true;
-              input.onchange = async () => {
-                if (!input.files) return;
-                for (const file of Array.from(input.files)) {
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  try {
-                    const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    if (data.url) {
-                      const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
-                      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: data.url, type: isVideo ? 'webm' : 'image', description: '' };
-                      updateMarkerMedia([...items, newItem]);
-                    }
-                  } catch (err) { console.error('Upload failed:', err); }
-                }
-              };
-              input.click();
-            }}>📎 添付</button>
-          )}
-          {!isIndiv(m.type) && (
-            <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={async () => {
-              try {
-                const clipboardItems = await navigator.clipboard.read();
-                for (const ci of clipboardItems) {
-                  for (const type of ci.types) {
-                    if (type.startsWith('image/')) {
-                      const blob = await ci.getType(type);
-                      const dataUrl = await new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result as string);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
-                      });
-                      if (!dataUrl) continue;
-                      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: dataUrl, type: 'image', description: '' };
-                      const cur = markersRef.current;
-                      const curM = cur.find(mk => mk.id === markerId);
-                      if (!curM) continue;
-                      const curItems = curM.mediaItems || [];
-                      const next = [...curItems, newItem];
-                      onMarkersChange(cur.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
-                      setMediaItems(next);
-                    }
-                  }
-                }
-              } catch (err) {
-                console.error('Clipboard paste failed:', err);
-              }
-            }}>📋 貼り付け</button>
-          )}
-        </div>
-        {items.map((item, idx) => {
-          const swap = (a: number, b: number) => {
-            const next = [...items];
-            [next[a], next[b]] = [next[b], next[a]];
-            updateMarkerMedia(next);
-          };
-          const isImg = item.type === 'image' || item.url.startsWith('data:');
-          const thumbStyle: React.CSSProperties = {
-            width: '100%',
-            height: '80px',
-            objectFit: 'cover',
-            borderRadius: '3px',
-            background: 'rgba(0,0,0,0.3)',
-            display: 'block',
-            cursor: 'pointer',
-          };
-          const editVal = mediaUrlEditInputs[item.id] ?? item.url;
-          return (
-            <div key={item.id} style={{ background: 'rgba(79,195,247,0.06)', borderRadius: '4px', padding: '4px', marginBottom: '4px' }}>
-              <div style={{ position: 'relative', marginBottom: '4px' }}>
-                {isImg ? (
-                  <img src={item.url} alt="" style={thumbStyle} onClick={() => window.open(item.url, '_blank')} />
-                ) : item.type === 'youtube' ? (
-                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', cursor: 'pointer' }} onClick={() => window.open(item.url, '_blank')}>▶</div>
-                ) : item.type === 'x-embed' ? (
-                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => window.open(item.url, '_blank')}>𝕏</div>
-                ) : (
-                  <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#7ec8e3', cursor: 'pointer', padding: '4px', wordBreak: 'break-all', lineHeight: 1.2 }} onClick={() => window.open(item.url, '_blank')}>{item.type.toUpperCase()}</div>
-                )}
-                <span style={{ position: 'absolute', top: '2px', left: '2px', zIndex: 1, fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', textTransform: 'uppercase' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '2px', marginBottom: '3px' }}>
-                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '8px', padding: '2px 4px' }} placeholder="URL" value={editVal} onChange={(e) => setMediaUrlEditInputs(prev => ({ ...prev, [item.id]: e.target.value }))} />
-                <button type="button" className="btn-cyber" style={{ padding: '2px 6px', fontSize: '8px', clipPath: 'none' }} onClick={() => {
-                  const newUrl = (mediaUrlEditInputs[item.id] ?? '').trim();
-                  if (!newUrl || newUrl === item.url) return;
-                  const next = [...items];
-                  next[idx] = { ...next[idx], url: newUrl, type: detectMediaType(newUrl) };
-                  updateMarkerMedia(next);
-                }}>更新</button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ fontSize: '7px', color: '#7ec8e3', cursor: 'pointer', opacity: idx === 0 ? 0.3 : 1 }} onClick={() => idx > 0 && swap(idx, idx - 1)}>▲</span>
-                <span style={{ fontSize: '7px', color: '#7ec8e3', cursor: 'pointer', opacity: idx === items.length - 1 ? 0.3 : 1 }} onClick={() => idx < items.length - 1 && swap(idx, idx + 1)}>▼</span>
-                <span style={{ flex: 1 }} />
-                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '8px', padding: '2px 4px' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
-                  const next = [...items];
-                  next[idx] = { ...next[idx], description: e.target.value };
-                  updateMarkerMedia(next);
-                }} />
-                <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px', background: 'rgba(0,0,0,0.3)', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px' }} onClick={() => {
-                  const removed = items[idx];
-                  const next = items.filter((_: MediaItem, i: number) => i !== idx);
-                  updateMarkerMedia(next);
-                  if (removed && removed.url && removed.url.includes('/uploads/')) {
-                    const filename = removed.url.split('/uploads/').pop() || '';
-                    if (filename) fetch('/api/upload-media', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }).catch(() => {});
-                  }
-                }}>×</span>
-              </div>
-            </div>
-          );
-        })}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-          <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [markerId]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
-          <button type="button" className="btn-cyber" style={{ padding: '3px 8px', fontSize: '9px', clipPath: 'none' }} onClick={submitUrl}>追加</button>
-        </div>
-      </div>
-    );
-  };
 
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(1);
@@ -488,11 +251,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
   const [infoLabel, setInfoLabel] = useState('');
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [zoomedMedia, setZoomedMedia] = useState<{ url: string; type: 'image' | 'webm' | 'youtube' } | null>(null);
-  const [lightboxZoom, setLightboxZoom] = useState(1);
-  const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
-  const lightboxDragRef = useRef(false);
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -2089,7 +1848,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
     setPopupHeight(m.popupHeight || 0);
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
-    setMediaItems((m.mediaItems || []).map(item => ({ ...item, description: item.description || '' })));
   };
 
   const handleZoom = (factor: number) => {
@@ -2188,9 +1946,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.checkpointTargetTime = checkpointTargetTime;
               updated.checkpointSoundOn = checkpointSoundOn;
               updated.checkpointVoiceOn = checkpointVoiceOn;
-            }
-            if (isInfoType(m.type) || m.type === 'eh' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle') {
-              updated.mediaItems = mediaItems;
             }
             return updated;
           }
@@ -2748,7 +2503,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {m.note}
                           </div>
                         )}
-                        {isEditMode && renderMediaManager(m)}
+                        {isEditMode && <MediaManager marker={m} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
                         {!isEditMode && m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
                             {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
@@ -2993,7 +2748,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && renderMediaManager(m)}
+                        {isEditMode && <MediaManager marker={m} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
 
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
@@ -3099,7 +2854,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
-                        {isEditMode && renderMediaManager(m)}
+                        {isEditMode && <MediaManager marker={m} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const isGlobalPin = m.type === 'gbattle';
@@ -4002,7 +3757,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   出現率が高い (High Spawn Rate) - 強調表示する
                 </label>
               </div>
-              {activeNoteMarker && renderMediaManager(activeNoteMarker)}
+              {activeNoteMarker && <MediaManager marker={activeNoteMarker} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
             </div>
           )}
 
@@ -4010,7 +3765,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {activeNoteMarker.type === 'inote' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(57, 255, 20, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold' }}>📝 I-MEMO 添付メディア</div>
-              {activeNoteMarker && renderMediaManager(activeNoteMarker)}
+              {activeNoteMarker && <MediaManager marker={activeNoteMarker} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
             </div>
           )}
 
@@ -4475,138 +4230,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       </div>
 
       {/* Media lightbox — click on image/video to enlarge */}
-      {zoomedMedia && ReactDOM.createPortal(
-        <div
-          onClick={() => { setZoomedMedia(null); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}
-          onWheel={(e) => {
-            if (zoomedMedia.type !== 'image') return;
-            e.preventDefault();
-            const delta = e.deltaY < 0 ? 1.1 : 1/1.1;
-            setLightboxZoom(z => Math.max(0.5, Math.min(8, z * delta)));
-          }}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'rgba(0, 0, 0, 0.9)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-            cursor: lightboxZoom > 1 ? 'grab' : 'zoom-out',
-            padding: '40px',
-            boxSizing: 'border-box',
-            overflow: 'hidden'
-          }}
-        >
-          {zoomedMedia.type === 'image' && (
-            <img
-              src={zoomedMedia.url}
-              alt="Zoomed"
-              draggable={false}
-              style={{
-                maxWidth: lightboxZoom > 1 ? 'none' : '100%',
-                maxHeight: lightboxZoom > 1 ? 'none' : '100%',
-                width: lightboxZoom > 1 ? `${lightboxZoom * 80}%` : 'auto',
-                height: 'auto',
-                objectFit: 'contain',
-                borderRadius: '6px',
-                boxShadow: '0 0 30px rgba(0, 240, 255, 0.3)',
-                transform: `translate(${lightboxPan.x}px, ${lightboxPan.y}px)`,
-                transition: lightboxZoom === 1 ? 'transform 0.2s' : 'none',
-                cursor: lightboxZoom > 1 ? 'grab' : 'zoom-in'
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (lightboxDragRef.current) {
-                  lightboxDragRef.current = false;
-                  return;
-                }
-                if (lightboxZoom === 1) {
-                  setLightboxZoom(2.5);
-                } else {
-                  setLightboxZoom(1);
-                  setLightboxPan({ x: 0, y: 0 });
-                }
-              }}
-              onMouseDown={(e) => {
-                if (lightboxZoom <= 1) return;
-                e.preventDefault();
-                e.stopPropagation();
-                lightboxDragRef.current = false;
-                const startX = e.clientX - lightboxPan.x;
-                const startY = e.clientY - lightboxPan.y;
-                const originX = e.clientX;
-                const originY = e.clientY;
-                const onMove = (ev: MouseEvent) => {
-                  if (Math.abs(ev.clientX - originX) > 3 || Math.abs(ev.clientY - originY) > 3) {
-                    lightboxDragRef.current = true;
-                  }
-                  setLightboxPan({ x: ev.clientX - startX, y: ev.clientY - startY });
-                };
-                const onUp = () => {
-                  window.removeEventListener('mousemove', onMove);
-                  window.removeEventListener('mouseup', onUp);
-                };
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onUp);
-              }}
-            />
-          )}
-          {zoomedMedia.type === 'webm' && (
-            <video
-              src={zoomedMedia.url}
-              controls
-              autoPlay
-              loop
-              style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '6px', boxShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
-          {/* Zoom controls for images */}
-          {zoomedMedia.type === 'image' && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                bottom: '20px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                gap: '8px',
-                background: 'rgba(0,0,0,0.7)',
-                padding: '8px 12px',
-                borderRadius: '20px',
-                alignItems: 'center'
-              }}
-            >
-              <button onClick={() => setLightboxZoom(z => Math.max(0.5, z / 1.3))} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>−</button>
-              <span style={{ color: '#fff', fontSize: '13px', minWidth: '60px', textAlign: 'center', fontFamily: 'monospace' }}>
-                {Math.round(lightboxZoom * 100)}%
-              </span>
-              <button onClick={() => setLightboxZoom(z => Math.min(8, z * 1.3))} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>+</button>
-              <button onClick={() => { setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px' }}>リセット</button>
-              <button onClick={() => { setZoomedMedia(null); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }} style={{ background: 'rgba(255,80,80,0.25)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px' }}>閉じる</button>
-            </div>
-          )}
-          <div style={{
-            position: 'absolute',
-            top: '12px',
-            right: '12px',
-            color: '#fff',
-            fontSize: '14px',
-            background: 'rgba(0,0,0,0.6)',
-            padding: '6px 12px',
-            borderRadius: '4px',
-            userSelect: 'none'
-          }}>
-            ✕ 閉じる (ESC)
-          </div>
-        </div>,
-        document.body
-      )}
+      <MediaLightbox media={zoomedMedia} onClose={() => setZoomedMedia(null)} />
     </div>
   );
 };
