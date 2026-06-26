@@ -693,16 +693,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     autoRouteElapsedAtStartRef.current = 0;
     autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
     setCurrentPosition({ x: startMarker.x, y: startMarker.y });
-    // Immediately scroll the camera to the start position so the route
-    // begins visible on screen (not off-screen).
+    // Immediately scroll the camera to the start marker so the view is
+    // correct even during the initial wait period (the tick's follow
+    // camera only runs after the wait ends).
     if (followCamera && wrapperRef.current) {
       const W_v = wrapperRef.current.clientWidth;
       const H_v = wrapperRef.current.clientHeight;
       const tgtZoom = zoom || 1;
-      setPan({
+      const tgtPan = {
         x: W_v * 0.5 - 800 - (startMarker.x - 800) * tgtZoom,
         y: H_v * 0.6 - 2275 - (startMarker.y - 2275) * tgtZoom
-      });
+      };
+      // Use the smooth-scroll animator so the pan/zoom animates instead
+      // of snapping (mirrors how warp-point focus works).
+      startSmoothScroll(tgtPan, tgtZoom);
     }
   };
 
@@ -811,13 +815,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           if (wrapper) {
             const W_v = wrapper.clientWidth;
             const H_v = wrapper.clientHeight;
-            const tgtZoom = zoom || 1;
+            // Use animZoomRef to avoid stale closure (zoom state can lag
+            // when the user changes zoom mid-animation).
+            const tgtZoom = (animZoomRef.current && isFinite(animZoomRef.current)) ? animZoomRef.current : 1;
             const tgtPan = {
               x: W_v * 0.5 - 800 - (interp.position.x - 800) * tgtZoom,
               y: H_v * 0.6 - 2275 - (interp.position.y - 2275) * tgtZoom
             };
-            targetPanRef.current = tgtPan;
-            setPan(tgtPan);
+            if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
+              targetPanRef.current = tgtPan;
+              animPanRef.current = tgtPan;
+              setPan(tgtPan);
+            }
           }
         }
       }
@@ -875,6 +884,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             };
             if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
               targetPanRef.current = tgtPan;
+              animPanRef.current = tgtPan;
               setPan(tgtPan);
             }
           }

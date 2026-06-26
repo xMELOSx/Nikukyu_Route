@@ -421,6 +421,16 @@ export function computeRouteTiming(segments: RouteSegment[], targetDuration?: nu
     if (seg.speed === undefined) seg.speed = speed;
   }
 
+  // Recalculate totalTravelTime using the actual per-segment speeds
+  // (which may differ from the route-wide speed when checkpoints are set).
+  totalTravelTime = 0;
+  for (const seg of segments) {
+    const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+    if (segSpeed > 0 && seg.distance > 0) {
+      totalTravelTime += seg.distance / segSpeed;
+    }
+  }
+
   return {
     totalDistance,
     totalStopTime,
