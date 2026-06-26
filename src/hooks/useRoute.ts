@@ -133,8 +133,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         return {
           ...next,
           markers: stripGlobalMarkersFromRoute(next.markers),
-          hiddenMarkers: gd.hiddenMarkers || [],
-          hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+          hiddenMarkers: [...new Set([...(next.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
+          hiddenMarkerTypes: [...new Set([...(next.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])]
         };
       });
     },

@@ -103,7 +103,7 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker';
+  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-vis';
   activeMarkerType: MarkerType | null;
   strokeColor: string;
   strokeWidth: number;
@@ -137,8 +137,8 @@ interface MapCanvasProps {
   stopMarkerThreshold?: number;
   movementMarkerThreshold?: number;
   warpMarkerThreshold?: number;
-  globalMarkerIds?: string[];
   onShowGlobalMarker?: (id: string) => void;
+  onToggleMarkerVisibility?: (id: string) => void;
   leftSidebarCollapsed?: boolean;
   rightSidebarCollapsed?: boolean;
   targetDurationSeconds?: number;
@@ -210,8 +210,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   stopMarkerThreshold = 12,
   movementMarkerThreshold = 20,
   warpMarkerThreshold = 12,
-  globalMarkerIds = [],
   onShowGlobalMarker,
+  onToggleMarkerVisibility,
   leftSidebarCollapsed = false,
   rightSidebarCollapsed = false,
   targetDurationSeconds,
@@ -1545,6 +1545,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDrawing(true);
       return;
     }
+
+    if (toolMode === 'toggle-vis') {
+      toggledIdsRef.current = new Set();
+      toggleVisibilityAtPoint(coords);
+      setIsDrawing(true);
+      return;
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1659,7 +1666,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase');
+    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'toggle-vis');
     if (!isEditMode && !isDrawingOrErasing) return;
 
     if (isDrawing && toolMode === 'draw') {
@@ -1713,6 +1720,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       eraseStrokesAtPoint(coords);
       return;
     }
+
+    if (isDrawing && toolMode === 'toggle-vis') {
+      toggleVisibilityAtPoint(coords);
+      return;
+    }
   };
 
   const handleMouseUp = () => {
@@ -1732,6 +1744,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDrawing) {
       setIsDrawing(false);
+      if (toolMode === 'toggle-vis') {
+        toggledIdsRef.current.clear();
+      }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
@@ -1788,12 +1803,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
+  const toggledIdsRef = useRef<Set<string>>(new Set());
+
+  const toggleVisibilityAtPoint = (pt: Point) => {
+    if (!onToggleMarkerVisibility) return;
+    const threshold = 20;
+    markers.forEach(m => {
+      if (m.floor !== floor) return;
+      if (m.type === 'start') return;
+      const dist = Math.hypot(m.x - pt.x, m.y - pt.y);
+      if (dist <= threshold && !toggledIdsRef.current.has(m.id)) {
+        toggledIdsRef.current.add(m.id);
+        onToggleMarkerVisibility(m.id);
+      }
+    });
+  };
+
   const handleMarkerMouseDown = (e: React.MouseEvent, m: HeistMarker) => {
     if (e.button === 1) return;
     e.stopPropagation();
     
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : ((toolMode === 'erase' || toolMode === 'toggle-vis') ? true : isIndivMarker));
     if (!canInteract) return;
 
     if (toolMode === 'erase') {
@@ -3423,58 +3454,35 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               {MARKER_META[activeNoteMarker.type].label}
             </span>
             {(() => {
-              const isGlobal = globalMarkerIds.includes(activeNoteMarker.id);
               const isHidden = hiddenMarkers.includes(activeNoteMarker.id);
 
               return (
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {isGlobal && (
-                    isHidden ? (
-                      <button 
-                        className="delete-btn"
-                         style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
-                        onClick={() => {
-                          if (onShowGlobalMarker) {
-                            onShowGlobalMarker(activeNoteMarker.id);
-                          }
-                        }}
-                        title="Show this global marker in this plan"
-                      >
-                        表示
-                      </button>
-                    ) : (
-                      <button 
-                        className="delete-btn"
-                        style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
-                        onClick={() => {
-                          if (onHideGlobalMarker) {
-                            onHideGlobalMarker(activeNoteMarker.id);
-                          }
-                        }}
-                        title="Hide this global marker in this plan only"
-                      >
-                        非表示
-                      </button>
-                    )
-                  )}
-                  {activeNoteMarker.type === 'checkpoint' && !hiddenMarkers.includes(activeNoteMarker.id) && (
-                    <button
+                  {isHidden ? (
+                    <button 
                       className="delete-btn"
-                      style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
-                      onClick={() => { onHideGlobalMarker?.(activeNoteMarker.id); }}
-                      title="このチェックポイントを非表示"
-                    >
-                      非表示
-                    </button>
-                  )}
-                  {activeNoteMarker.type === 'checkpoint' && hiddenMarkers.includes(activeNoteMarker.id) && (
-                    <button
-                      className="delete-btn"
-                      style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
-                      onClick={() => { onShowGlobalMarker?.(activeNoteMarker.id); }}
-                      title="Show this checkpoint"
+                       style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      onClick={() => {
+                        if (onShowGlobalMarker) {
+                          onShowGlobalMarker(activeNoteMarker.id);
+                        }
+                      }}
+                      title="このマーカーを表示"
                     >
                       表示
+                    </button>
+                  ) : (
+                    <button 
+                      className="delete-btn"
+                      style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      onClick={() => {
+                        if (onHideGlobalMarker) {
+                          onHideGlobalMarker(activeNoteMarker.id);
+                        }
+                      }}
+                      title="このマーカーを非表示"
+                    >
+                      非表示
                     </button>
                   )}
                   <button

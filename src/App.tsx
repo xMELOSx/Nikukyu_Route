@@ -44,7 +44,8 @@ import {
   FilePlus,
   Play,
   Pause,
-  Square
+  Square,
+  EyeOff
 } from 'lucide-react';
 
 const migrateRouteCoordinates = (data: RouteData): RouteData => {
@@ -139,7 +140,7 @@ export default function App() {
   });
   const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker'>('pan');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-vis'>('pan');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
@@ -310,6 +311,15 @@ export default function App() {
   const handleShowGlobalMarker = (markerId: string) => {
     const current = routeApi.route.hiddenMarkers || [];
     const nextHidden = current.filter(id => id !== markerId);
+    const nextHiddenTypes = routeApi.route.hiddenMarkerTypes || [];
+    postGlobalDefaults(nextHidden, nextHiddenTypes);
+    routeApi.setRoute(prev => ({ ...prev, hiddenMarkers: nextHidden }));
+  };
+  const handleToggleMarkerVisibility = (markerId: string) => {
+    const current = routeApi.route.hiddenMarkers || [];
+    const nextHidden = current.includes(markerId)
+      ? current.filter(id => id !== markerId)
+      : [...current, markerId];
     const nextHiddenTypes = routeApi.route.hiddenMarkerTypes || [];
     postGlobalDefaults(nextHidden, nextHiddenTypes);
     routeApi.setRoute(prev => ({ ...prev, hiddenMarkers: nextHidden }));
@@ -761,6 +771,9 @@ export default function App() {
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
                     <Move size={18} /><span>Pan Map</span>
                   </button>
+                  <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
+                    <EyeOff size={18} /><span>表示切替</span>
+                  </button>
                   {!resetTarget ? (
                     <button className="tool-btn" onClick={() => setResetTarget('both')} id="tool-reset-btn">
                       <RotateCcw size={18} /><span>Reset Map</span>
@@ -972,9 +985,9 @@ export default function App() {
             showDetectionRanges={showDetectionRanges}
             hiddenMarkers={routeApi.route.hiddenMarkers || []}
             hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
-            globalMarkerIds={globalMarkersStore.globalMarkers.map(m => m.id)}
             onHideGlobalMarker={handleHideGlobalMarker}
             onShowGlobalMarker={handleShowGlobalMarker}
+            onToggleMarkerVisibility={handleToggleMarkerVisibility}
             onAutoRouteStatusChange={autoRoute.setStatus}
             autoRouteCommand={autoRoute.command}
             autoRouteSettings={{
