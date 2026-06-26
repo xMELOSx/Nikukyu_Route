@@ -52,13 +52,17 @@ function ensureStart(markers: HeistMarker[]): HeistMarker[] {
 }
 
 function persist(markers: HeistMarker[], isLocal: boolean) {
-  localStorage.setItem('heist_global_markers', JSON.stringify(markers));
-  if (isLocal) {
+  if (!isLocal) return;
+  try {
+    const json = JSON.stringify(markers);
+    localStorage.setItem('heist_global_markers', json);
     fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(markers)
-    }).catch(err => console.error('Failed to sync global markers:', err));
+      body: json
+    }).catch(() => {});
+  } catch (_err) {
+    // localStorage が利用不可の場合も無視
   }
 }
 
@@ -94,6 +98,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
   const [globalMarkers, setGlobalMarkers] = useState<HeistMarker[]>([]);
   const isLocalRef = useRef(isLocal);
   isLocalRef.current = isLocal;
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load on mount. The priority is localStorage-first: once the user has
   // markers in their browser, that is the source of truth. The API and the
@@ -111,9 +116,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
         const existingIds = new Set(prev.map(m => m.id));
         const newOnes = cleaned.filter(m => !existingIds.has(m.id));
         if (newOnes.length === 0) return prev;
-        const merged = ensureStart([...prev, ...newOnes]);
-        persist(merged, isLocalRef.current);
-        return merged;
+        return ensureStart([...prev, ...newOnes]);
       });
     };
 
@@ -133,15 +136,23 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
               return updated;
             });
 
-        // Reverse-migration: fix scrollConfig that was incorrectly multiplied by 2
-        // in the v2 migration. The corrupted pan values need to be corrected to
-        // preserve the marker's screen position after both marker coords and pan
-        // were doubled:
-        //   screenPos = markerCoord * zoom + panY
-        //   old: screenPos = (marker/2) * zoom + (pan/2)  [before doubling]
-        //   new: screenPos = marker * zoom + correctedPan
-        //   ∴ correctedPan = (pan - marker * zoom) / 2
-        const scrollFixed = localStorage.getItem('heist_global_markers_scroll_fixed_v3') === 'true'
+        // Reverse-migration: fix scrollConfig that was incorrectly
+        // left unchanged while marker coords were doubled by v2 migration.
+        // Screen position formula:
+        //   screenPos = (markerCoord + pan) * zoom + center * (1 - zoom)
+        // After doubling marker coords, restore the original screen position
+        // by adjusting pan (scrollConfig). The zoom term cancels out:
+        //   old: (X_orig + pan_old) * Z
+        //   new: (2*X_orig + pan_new) * Z
+        //   ∴ pan_new = pan_old - X_orig = pan_old - X_curr / 2
+        //
+        // v3 (broken) applied (sc.x - m.x * sc.zoom) / 2 which is wrong when zoom≠1.
+        // If v3 flag is set, first undo the v3 corruption, then apply the correct v4 fix:
+        //   P_v3 = (P0 - m.x * Z) / 2  →  P0 = 2*P_v3 + m.x*Z
+        //   P_v4 = P0 - m.x / 2       = 2*P_v3 + m.x*(Z - 0.5)
+        // If v3 was NOT applied (clean), just apply P_v4 = P_orig - m.x / 2
+        const wasV3Applied = localStorage.getItem('heist_global_markers_scroll_fixed_v3') === 'true';
+        const scrollFixed = localStorage.getItem('heist_global_markers_scroll_fixed_v4') === 'true'
           ? migrated
           : migrated.map(m => {
               if (!m.scrollConfig) return m;
@@ -149,8 +160,8 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
               return {
                 ...m,
                 scrollConfig: {
-                  x: (sc.x - m.x * sc.zoom) / 2,
-                  y: (sc.y - m.y * sc.zoom) / 2,
+                  x: wasV3Applied ? 2 * sc.x + m.x * (sc.zoom - 0.5) : sc.x - m.x / 2,
+                  y: wasV3Applied ? 2 * sc.y + m.y * (sc.zoom - 0.5) : sc.y - m.y / 2,
                   zoom: sc.zoom
                 }
               };
@@ -162,8 +173,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
         // migration on every load, and to surface the file via the API.
         localStorage.setItem('heist_global_markers', JSON.stringify(withStart));
         localStorage.setItem('heist_global_markers_migrated_v2', 'true');
-        localStorage.setItem('heist_global_markers_scroll_fixed_v3', 'true');
-        if (isLocalRef.current) persist(withStart, true);
+        localStorage.setItem('heist_global_markers_scroll_fixed_v4', 'true');
         return withStart;
       } catch (e) {
         console.error('Failed to load global markers from localStorage:', e);
@@ -199,20 +209,27 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       if (!cancelled) {
         const startOnly = ensureStart([]);
         setGlobalMarkers(startOnly);
-        localStorage.setItem('heist_global_markers', JSON.stringify(startOnly));
+        if (isLocalRef.current) {
+          localStorage.setItem('heist_global_markers', JSON.stringify(startOnly));
+        }
       }
     };
 
-    const local = loadFromLocalStorage();
-    if (local && local.length > 0) {
-      // localStorage is authoritative. Surface the data immediately and
-      // asynchronously merge any new markers from the API/file (additive only).
-      if (cancelled) return;
-      setGlobalMarkers(local);
+    if (!isLocalRef.current) {
+      // 個人編集モード: localStorage を信用せず、常にサーバー/ファイルから取得する。
+      // 個人モードでの編集がグローバルデータを汚染するのを防ぐ。
       seedFromApiOrFile();
     } else {
-      // First visit (or localStorage was wiped): seed from API/file.
-      seedFromApiOrFile();
+      // ローカル編集モード: localStorage が正。サーバー/ファイルから新しい
+      // マーカーのみを非同期マージする (既存は上書きしない)。
+      const local = loadFromLocalStorage();
+      if (local && local.length > 0) {
+        if (cancelled) return;
+        setGlobalMarkers(local);
+        seedFromApiOrFile();
+      } else {
+        seedFromApiOrFile();
+      }
     }
 
     return () => { cancelled = true; };
@@ -223,15 +240,25 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     if (globalMarkers.some(m => m.id === START_MARKER_ID)) return;
     setGlobalMarkers(prev => {
       if (prev.some(m => m.id === START_MARKER_ID)) return prev;
-      const next = [...prev, { ...START_MARKER }];
-      persist(next, isLocalRef.current);
-      return next;
+      return [...prev, { ...START_MARKER }];
     });
+  }, [globalMarkers]);
+
+  // Debounced persist: レンダリングをブロックしないよう setTimeout で遅延させ、
+  // 高速な連続変更は最後の1回にまとめる。
+  useEffect(() => {
+    if (globalMarkers.length === 0) return;
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persist(globalMarkers, isLocalRef.current);
+    }, 50);
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
   }, [globalMarkers]);
 
   const replace = useCallback((markers: HeistMarker[]) => {
     setGlobalMarkers(markers);
-    persist(markers, isLocalRef.current);
   }, []);
 
   const mergeFromImport = useCallback((incoming: HeistMarker[]) => {
@@ -239,9 +266,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       const existingIds = new Set(prev.map(m => m.id));
       const newOnes = incoming.filter(m => !existingIds.has(m.id));
       if (newOnes.length === 0) return prev;
-      const merged = [...prev, ...newOnes];
-      persist(merged, isLocalRef.current);
-      return merged;
+      return [...prev, ...newOnes];
     });
   }, []);
 
@@ -271,9 +296,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       if (newOnes.length === 0 && updated.every((m, i) => m === prev[i])) {
         return prev;
       }
-      const merged = ensureStart([...updated, ...newOnes]);
-      persist(merged, isLocalRef.current);
-      return merged;
+      return ensureStart([...updated, ...newOnes]);
     });
   }, []);
 

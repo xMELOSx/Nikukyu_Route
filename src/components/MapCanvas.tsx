@@ -103,7 +103,7 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker';
+  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-display';
   activeMarkerType: MarkerType | null;
   strokeColor: string;
   strokeWidth: number;
@@ -291,6 +291,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
   const isTextType = (type: string) => type === 'text' || type === 'itext';
 
+  const toggleDisplayState = (m: HeistMarker): HeistMarker => {
+    if (isInfoType(m.type)) return { ...m, infoExpanded: !m.infoExpanded };
+    if (isNoteType(m.type)) return { ...m, noteExpanded: !m.noteExpanded };
+    if (m.type === 'boss') return { ...m, bossExpanded: !m.bossExpanded };
+    if (m.type === 'battle' || m.type === 'gbattle') return { ...m, battleExpanded: !m.battleExpanded };
+    if (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') return { ...m, pickingExpanded: !m.pickingExpanded };
+    if (m.type === 'phone') {
+      if (m.phoneLocked) return m;
+      return { ...m, phoneActive: !m.phoneActive };
+    }
+    if (m.type === 'checkpoint') return { ...m, checkpointExpanded: !m.checkpointExpanded };
+    return m;
+  };
+
   const detectMediaType = (url: string): MediaItem['type'] => {
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
     if (url.includes('x.com') || url.includes('twitter.com')) return 'x-embed';
@@ -302,50 +316,76 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const renderMediaManager = (m: HeistMarker) => {
     const inputVal = mediaUrlInputs[m.id] || '';
+    const markerId = m.id;
     const submitUrl = () => {
       if (!inputVal.trim()) return;
       const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: inputVal.trim(), type: detectMediaType(inputVal.trim()), description: '' };
       const next = [...(m.mediaItems || []), newItem];
-      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
+      onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
       setMediaItems(next);
-      setMediaUrlInputs(prev => ({ ...prev, [m.id]: '' }));
+      setMediaUrlInputs(prev => ({ ...prev, [markerId]: '' }));
     };
+    const updateMarkerMedia = (next: MediaItem[]) => {
+      onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
+      setMediaItems(next);
+    };
+    const items = m.mediaItems || [];
     return (
       <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(79, 195, 247, 0.2)', paddingTop: '6px' }}>
-        {m.mediaItems && m.mediaItems.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '6px' }}>
-            {m.mediaItems.map((item, idx) => (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', background: 'rgba(79,195,247,0.05)', borderRadius: '3px' }}>
-                <span style={{ fontSize: '8px', color: '#7ec8e3', textTransform: 'uppercase', minWidth: '24px' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
-                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '1px 4px' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
-                  const next = [...(m.mediaItems || [])];
-                  next[idx] = { ...next[idx], description: e.target.value };
-                  onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
-                  setMediaItems(next);
-                }} />
-                <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px' }} onClick={() => {
-                  const removed = (m.mediaItems || [])[idx];
-                  const next = (m.mediaItems || []).filter((_, i) => i !== idx);
-                  onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
-                  setMediaItems(next);
-                  // If the media was uploaded to the server, delete the file too
-                  if (removed && removed.url && removed.url.includes('/uploads/')) {
-                    const filename = removed.url.split('/uploads/').pop() || '';
-                    if (filename) {
-                      fetch('/api/upload-media', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ filename })
-                      }).catch(() => { /* ignore */ });
+        {items.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '4px', marginBottom: '6px' }}>
+            {items.map((item, idx) => {
+              const swap = (a: number, b: number) => {
+                const next = [...items];
+                [next[a], next[b]] = [next[b], next[a]];
+                updateMarkerMedia(next);
+              };
+              const isImg = item.type === 'image' || item.url.startsWith('data:');
+              const thumbStyle: React.CSSProperties = {
+                width: '100%',
+                height: '60px',
+                objectFit: 'cover',
+                borderRadius: '3px',
+                background: 'rgba(0,0,0,0.3)',
+                display: 'block',
+                cursor: 'pointer',
+              };
+              return (
+                <div key={item.id} style={{ position: 'relative', background: 'rgba(79,195,247,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: '1px', left: '1px', zIndex: 1, display: 'flex', gap: '2px' }}>
+                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', textTransform: 'uppercase' }}>{item.type === 'youtube' ? 'YT' : item.type === 'x-embed' ? 'X' : item.type}</span>
+                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', cursor: 'pointer', opacity: idx === 0 ? 0.3 : 1 }} onClick={() => idx > 0 && swap(idx, idx - 1)}>▲</span>
+                    <span style={{ fontSize: '7px', color: '#7ec8e3', background: 'rgba(0,0,0,0.6)', padding: '0 3px', borderRadius: '2px', cursor: 'pointer', opacity: idx === items.length - 1 ? 0.3 : 1 }} onClick={() => idx < items.length - 1 && swap(idx, idx + 1)}>▼</span>
+                  </div>
+                  <span style={{ position: 'absolute', top: '1px', right: '1px', zIndex: 1, cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px', background: 'rgba(0,0,0,0.6)', width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px' }} onClick={() => {
+                    const removed = items[idx];
+                    const next = items.filter((_, i) => i !== idx);
+                    updateMarkerMedia(next);
+                    if (removed && removed.url && removed.url.includes('/uploads/')) {
+                      const filename = removed.url.split('/uploads/').pop() || '';
+                      if (filename) fetch('/api/upload-media', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }).catch(() => {});
                     }
-                  }
-                }}>×</span>
-              </div>
-            ))}
+                  }}>×</span>
+                  {isImg ? (
+                    <img src={item.url} alt="" style={thumbStyle} onClick={() => window.open(item.url, '_blank')} />
+                  ) : item.type === 'youtube' ? (
+                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', cursor: 'pointer' }} onClick={() => window.open(item.url, '_blank')}>▶</div>
+                  ) : item.type === 'x-embed' ? (
+                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => window.open(item.url, '_blank')}>𝕏</div>
+                  ) : (
+                    <div style={{ ...thumbStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#7ec8e3', cursor: 'pointer', padding: '4px', wordBreak: 'break-all', lineHeight: 1.2 }} onClick={() => window.open(item.url, '_blank')}>{item.type.toUpperCase()}</div>
+                  )}
+                  <input type="text" className="input-cyber" style={{ width: '100%', boxSizing: 'border-box', fontSize: '8px', padding: '2px 4px', border: 'none', background: 'transparent', color: '#90caf9' }} placeholder="説明" value={item.description || ''} onChange={(e) => {
+                    const next = [...items];
+                    next[idx] = { ...next[idx], description: e.target.value };
+                    updateMarkerMedia(next);
+                  }} />
+                </div>
+              );
+            })}
           </div>
         )}
         <div style={{ display: 'flex', gap: '4px' }}>
-          {/* ファイル添付はグローバル編集 (isLocal) のみ。個人モードでは URL 直入力のみ。 */}
           {isLocal && (
             <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={() => {
               const input = document.createElement('input');
@@ -363,9 +403,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     if (data.url) {
                       const isVideo = file.type === 'video/webm' || file.name.endsWith('.webm');
                       const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: data.url, type: isVideo ? 'webm' : 'image', description: '' };
-                      const next = [...(m.mediaItems || []), newItem];
-                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
-                      setMediaItems(next);
+                      updateMarkerMedia([...items, newItem]);
                     }
                   } catch (err) { console.error('Upload failed:', err); }
                 }
@@ -373,9 +411,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               input.click();
             }}>📎 添付</button>
           )}
+          {!isIndiv(m.type) && (
+            <button type="button" className="btn-cyber" style={{ flex: 1, padding: '3px', fontSize: '9px', clipPath: 'none' }} onClick={async () => {
+              try {
+                const clipboardItems = await navigator.clipboard.read();
+                for (const ci of clipboardItems) {
+                  for (const type of ci.types) {
+                    if (type.startsWith('image/')) {
+                      const blob = await ci.getType(type);
+                      const dataUrl = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                      });
+                      if (!dataUrl) continue;
+                      const newItem: MediaItem = { id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, url: dataUrl, type: 'image', description: '' };
+                      const cur = markersRef.current;
+                      const curM = cur.find(mk => mk.id === markerId);
+                      if (!curM) continue;
+                      const curItems = curM.mediaItems || [];
+                      const next = [...curItems, newItem];
+                      onMarkersChange(cur.map(mk => mk.id === markerId ? { ...mk, mediaItems: next } : mk));
+                      setMediaItems(next);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error('Clipboard paste failed:', err);
+              }
+            }}>📋 貼り付け</button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-          <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [m.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
+          <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '9px', padding: '3px 4px' }} placeholder="画像/動画/X/YouTube URL" value={inputVal} onChange={(e) => setMediaUrlInputs(prev => ({ ...prev, [markerId]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }} />
           <button type="button" className="btn-cyber" style={{ padding: '3px 8px', fontSize: '9px', clipPath: 'none' }} onClick={submitUrl}>追加</button>
         </div>
       </div>
@@ -408,6 +477,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
   const lightboxDragRef = useRef(false);
+  const toggledMarkerIdsRef = useRef<Set<string>>(new Set());
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -1458,6 +1528,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDrawing(true);
       return;
     }
+
+    if (toolMode === 'toggle-display') {
+      setIsDrawing(true);
+      toggledMarkerIdsRef.current = new Set();
+      return;
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1572,7 +1648,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase');
+    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'toggle-display');
     if (!isEditMode && !isDrawingOrErasing) return;
 
     if (isDrawing && toolMode === 'draw') {
@@ -1626,6 +1702,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       eraseStrokesAtPoint(coords);
       return;
     }
+
+    if (isDrawing && toolMode === 'toggle-display') {
+      const TOGGLE_RADIUS = 22;
+      const toggledSet = toggledMarkerIdsRef.current;
+      const updatedMarkers = [...markers];
+      let changed = false;
+      for (let i = 0; i < updatedMarkers.length; i++) {
+        const mk = updatedMarkers[i];
+        const dx = mk.x - coords.x;
+        const dy = mk.y - coords.y;
+        if (dx * dx + dy * dy < TOGGLE_RADIUS * TOGGLE_RADIUS && !toggledSet.has(mk.id)) {
+          toggledSet.add(mk.id);
+          updatedMarkers[i] = toggleDisplayState(mk);
+          changed = true;
+        }
+      }
+      if (changed) {
+        onMarkersChange(updatedMarkers);
+      }
+      return;
+    }
   };
 
   const handleMouseUp = () => {
@@ -1645,6 +1742,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDrawing) {
       setIsDrawing(false);
+      if (toolMode === 'toggle-display') {
+        toggledMarkerIdsRef.current = new Set();
+      }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
@@ -1706,8 +1806,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
     
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' || toolMode === 'toggle-display' ? true : isIndivMarker));
     if (!canInteract) return;
+
+    if (toolMode === 'toggle-display') {
+      onMarkersChange(markers.map(mk => mk.id === m.id ? toggleDisplayState(mk) : mk));
+      return;
+    }
 
     if (toolMode === 'erase') {
       // Eraser mode always actually deletes from the current view, regardless
@@ -1871,6 +1976,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    // 個人編集モード: グローバルマーカーの編集を禁止（内容・位置の変更を防ぐ）
+    if (isEditMode && !isLocal && !isIndiv(m.type)) return;
+
     // If popover is already open for a different marker, save that one first
     if (activeNoteMarkerId && activeNoteMarkerId !== m.id) {
       handleSaveNote();
@@ -1962,6 +2070,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleSaveNote = (closePanel = true) => {
     if (activeNoteMarkerId) {
+      // 個人編集モード: グローバルマーカーの内容変更を保存しない
+      const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) {
+        if (closePanel) setActiveNoteMarkerId(null);
+        return;
+      }
       onMarkersChange(
         markers.map(m => {
           if (m.id === activeNoteMarkerId) {
@@ -2082,13 +2196,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
           return m;
         }),
-      true
+      true,
+      { isDelete: true }
     );
     setActiveNoteMarkerId(null);
   };
 
   const handleSetScrollTarget = () => {
     if (activeNoteMarkerId) {
+      // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
+      const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
       // Save the CURRENT view position (pan & zoom) as the scroll target.
       // When the user clicks "Go" in the sidebar, it restores this exact view.
       onMarkersChange(
@@ -2103,11 +2221,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleClearScrollTarget = () => {
     if (activeNoteMarkerId) {
+      // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
+      const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
       onMarkersChange(
         markers.map(m => {
           if (m.id === activeNoteMarkerId) {
-            const { scrollConfig, ...rest } = m;
-            return rest;
+            return { ...m, scrollConfig: undefined };
           }
           return m;
         }),
@@ -2119,7 +2239,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const activeNoteMarker = markers.find(m => m.id === activeNoteMarkerId);
 
   let cursorClass = '';
-  if (toolMode === 'pan' || !isEditMode) {
+  if (toolMode === 'toggle-display') {
+    cursorClass = 'pointer';
+  } else if (toolMode === 'pan' || !isEditMode) {
     cursorClass = isPanning ? 'grabbing' : 'grab';
   }
 
@@ -2260,10 +2382,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
               if (!offset) return null;
 
-              const isVisible = (isInfoType(m.type) && ((!isEditMode && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
-                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
-                || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id)))
-                || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && activeNoteMarkerId === m.id)));
+              const canToggleInEdit = !isLocal && !isIndiv(m.type);
+              const isVisible = (isInfoType(m.type) && ((!isEditMode && m.infoExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.infoExpanded)))))
+                || (m.type === 'boss' && ((!isEditMode && m.bossExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.bossExpanded)))))
+                || ((m.type === 'battle' || m.type === 'gbattle') && ((!isEditMode && m.battleExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.battleExpanded)))))
+                || ((m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && ((!isEditMode && m.pickingExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.pickingExpanded)))));
 
               if (!isVisible) return null;
 
@@ -2531,10 +2654,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isHidden = hiddenMarkers.includes(m.id);
               if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
+              const canToggleInEdit = !isLocal && !isIndiv(m.type);
               return (
                 <React.Fragment key={`popups-${m.id}`}>
                   {/* Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && isInfoType(m.type) && m.infoExpanded) || (isEditMode && activeNoteMarkerId === m.id && isInfoType(m.type))) && (
+                  {((!isEditMode && isInfoType(m.type) && m.infoExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.infoExpanded)) && isInfoType(m.type))) && (
                     <div 
                       className="info-marker-popup"
                       style={getPopupStyle(
@@ -2555,19 +2679,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           <span>ⓘ</span> {meta.label}
                           {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
-                        {!isEditMode && (
-                          <button 
-                            className="info-popup-close"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, infoExpanded: false } : mk)
-                              );
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
+                        <button 
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeNoteMarkerId === m.id) setActiveNoteMarkerId(null);
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, infoExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                       <div className="info-popup-content">
                         {m.infoLabel?.trim() && (
@@ -2588,7 +2711,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -2693,7 +2816,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Note (MEMO) inline editing popup near the pin */}
-                  {isEditMode && activeNoteMarkerId === m.id && isNoteType(m.type) && (
+                  {isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.noteExpanded)) && isNoteType(m.type) && (
                     <div
                       className="info-marker-popup"
                       style={{
@@ -2753,7 +2876,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Boss Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && activeNoteMarkerId === m.id && m.type === 'boss')) && (
+                  {((!isEditMode && m.type === 'boss' && m.bossExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.bossExpanded)) && m.type === 'boss')) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
@@ -2774,19 +2897,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           <span>😈</span> {m.note.trim() ? m.note : 'BOSS STATUS'}
                           {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
-                        {!isEditMode && (
-                          <button 
-                            className="info-popup-close"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, bossExpanded: false } : mk)
-                              );
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
+                        <button 
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeNoteMarkerId === m.id) setActiveNoteMarkerId(null);
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, bossExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                       <div className="info-popup-content">
                         {/* Boss description display */}
@@ -2821,7 +2943,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -2852,7 +2974,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 <button 
                                   className="btn-cyber danger" 
                                   style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                                  disabled={!isEditMode}
                                   onClick={() => handleValChange(Math.max(0, currentVal - 10))}
                                 >
                                   -10s
@@ -2861,7 +2982,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                   type="number"
                                   min="0"
                                   className="input-cyber"
-                                  disabled={!isEditMode}
                                   style={{ width: '70px', fontSize: '11px', padding: '4px', textAlign: 'center', color: '#ff0055', borderColor: 'rgba(255, 0, 85, 0.4)' }}
                                   value={currentVal}
                                   onChange={(e) => handleValChange(Math.max(0, parseInt(e.target.value) || 0))}
@@ -2869,7 +2989,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 <button 
                                   className="btn-cyber success" 
                                   style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none' }}
-                                  disabled={!isEditMode}
                                   onClick={() => handleValChange(currentVal + 10)}
                                 >
                                   +10s
@@ -2886,7 +3005,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   )}
 
                   {/* Battle Details Popup in Presentation Mode or Preview in Edit Mode */}
-                  {((!isEditMode && (m.type === 'battle' || m.type === 'gbattle') && m.battleExpanded) || (isEditMode && activeNoteMarkerId === m.id && (m.type === 'battle' || m.type === 'gbattle'))) && (
+                  {((!isEditMode && (m.type === 'battle' || m.type === 'gbattle') && m.battleExpanded) || (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.battleExpanded)) && (m.type === 'battle' || m.type === 'gbattle'))) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
@@ -2907,19 +3026,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           <span>⚔️</span> {m.note.trim() ? m.note : 'BATTLE STATUS'}
                           {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
-                        {!isEditMode && (
-                          <button 
-                            className="info-popup-close"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, battleExpanded: false } : mk)
-                              );
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
+                        <button 
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeNoteMarkerId === m.id) setActiveNoteMarkerId(null);
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, battleExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                       <div className="info-popup-content">
                         {/* Battle media items */}
@@ -2931,7 +3049,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -2940,7 +3058,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {/* Duration settings - editable in presentation mode (saved as plan-specific override) */}
                         {(() => {
                           const isGlobalPin = m.type === 'gbattle';
-                          const canEditDuration = isEditMode;
+                          const canEditDuration = true;
                           const currentVal = (isGlobalPin && !isLocal && battleCustomDurations[m.id] !== undefined)
                             ? battleCustomDurations[m.id]
                             : (m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
@@ -2999,7 +3117,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                   {/* Picking / Long Picking Details Popup in Presentation Mode or Preview in Edit Mode */}
                   {((!isEditMode && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.pickingExpanded) || 
-                    (isEditMode && activeNoteMarkerId === m.id && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'))) && (
+                    (isEditMode && (activeNoteMarkerId === m.id || (canToggleInEdit && m.pickingExpanded)) && (m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'))) && (
                     <div 
                       className="boss-marker-popup"
                       style={getPopupStyle(
@@ -3020,25 +3138,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           <span>{meta.emoji}</span> {m.note.trim() ? m.note : `${meta.label} STATUS`}
                           {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
                         </span>
-                        {!isEditMode && (
-                          <button 
-                            className="info-popup-close"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, pickingExpanded: false } : mk)
-                              );
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
+                        <button 
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeNoteMarkerId === m.id) setActiveNoteMarkerId(null);
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, pickingExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                       <div className="info-popup-content">
                         {/* Picky Checkbox - editable directly in presentation mode */}
                         {(() => {
                           const isGlobalPin = m.type === 'gpicking' || m.type === 'glong_picking';
-                          const canEditDuration = isEditMode;
+                          const canEditDuration = true;
                           const isPicky = (isGlobalPin && !isLocal && pickingCustomDurations[m.id] !== undefined)
                             ? (pickingCustomDurations[m.id] === 0)
                             : (isGlobalPin && !isLocal && longPickingCustomDurations[m.id] !== undefined)
@@ -3365,31 +3482,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       表示
                     </button>
                   )}
-                  {(!isGlobal || isLocal) && (
-                    <button
-                      className="delete-btn"
-                      style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
-                      onClick={() => handleDeleteMarker(activeNoteMarker.id)}
-                      title="Delete Marker"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                  {isGlobal && !isLocal && (
-                    <button
-                      className="delete-btn"
-                      style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
-                      onClick={() => {
-                        // The popover stays in sync with the markers prop, so
-                        // the user can always hit Undo (Ctrl+Z) to bring the
-                        // global marker back if it was deleted by mistake.
-                        handleDeleteMarker(activeNoteMarker.id);
-                      }}
-                      title="このマップからこのグローバルマーカーを削除 (次回ロード時に再表示)"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+                  <button
+                    className="delete-btn"
+                    style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
+                    onClick={() => handleDeleteMarker(activeNoteMarker.id)}
+                    title="Delete Marker"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               );
             })()}
