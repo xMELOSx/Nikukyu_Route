@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
@@ -12,6 +12,8 @@ import {
   DEFAULT_ROUTE,
   MARKER_META,
   DataManager,
+  normalizeStrokes,
+  smoothStrokePoints,
   xorEncrypt,
   xorDecrypt,
   getAuthorKey,
@@ -33,7 +35,11 @@ import {
   ChevronRight,
   Copy,
   Star,
-  FilePlus
+  FilePlus,
+  Play,
+  Pause,
+  Square,
+  Gauge
 } from 'lucide-react';
 
 interface HistoryState {
@@ -97,6 +103,22 @@ export default function App() {
   // Global State: Current Active Heist Plan
   const [route, setRoute] = useState<RouteData>(DEFAULT_ROUTE());
   const currentFloor: FloorType = 'main';
+
+  // Memoize the strokes prop so MapCanvas's useEffect on [strokes] doesn't
+  // re-fire (clearing the canvas) every time the parent re-renders.
+  const memoizedStrokes = useMemo(
+    () => normalizeStrokes(route.strokes[currentFloor]),
+    [route.strokes, currentFloor]
+  );
+
+  // Auto-load last used route on startup (default ON)
+  const [autoLoadLastRoute, setAutoLoadLastRoute] = useState<boolean>(() => {
+    const stored = localStorage.getItem('heist_auto_load_last');
+    return stored === null ? true : stored === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_auto_load_last', String(autoLoadLastRoute));
+  }, [autoLoadLastRoute]);
 
   // Global default hidden markers/types (loaded from global_defaults.json at startup)
   const globalDefaultsRef = useRef<{ hiddenMarkers: string[]; hiddenMarkerTypes: string[]; startupFocusMarkerId?: string }>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
@@ -353,7 +375,8 @@ export default function App() {
   // Brush Configurations
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
   const [strokeWidth, setStrokeWidth] = useState(3); // line default 3px
-  const [strokeType, setStrokeType] = useState<'solid' | 'dashed' | 'arrow'>('arrow');
+  const [strokeType, setStrokeType] = useState<'solid' | 'dashed'>('solid');
+  const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('free');
   const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true); // default true
 
   // App UI lists
@@ -362,6 +385,42 @@ export default function App() {
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
   const [svgString, setSvgString] = useState<string>('');
   const [presetEditorName, setPresetEditorName] = useState('');
+
+  // Auto-route state mirror — populated by MapCanvas via onAutoRouteStatusChange
+  const [autoRouteStatus, setAutoRouteStatus] = useState<{
+    active: boolean;
+    running: boolean;
+    elapsed: number;
+    totalTime: number;
+    totalDistance: number;
+    totalStopTime: number;
+    speed: number;
+    error: string | null;
+    nextMarkerLabel: string;
+    waitRemaining: number;
+  }>({
+    active: false, running: false, elapsed: 0,
+    totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0,
+    error: null, nextMarkerLabel: '', waitRemaining: 0
+  });
+  // Auto-route command to MapCanvas — bump ts to trigger
+  const [autoRouteCommand, setAutoRouteCommand] = useState<{ action: 'start' | 'pause' | 'resume' | 'reset' | 'seek'; ts: number; seekTo?: number } | null>(null);
+  const sendAutoRouteCommand = (action: 'start' | 'pause' | 'resume' | 'reset' | 'seek', seekTo?: number) => {
+    setAutoRouteCommand({ action, ts: Date.now(), seekTo });
+  };
+
+  // Auto-route settings — sent to MapCanvas so the animation loop can use them
+  const [autoRouteWaitEnabled, setAutoRouteWaitEnabled] = useState(false);
+  const [autoRouteWaitSeconds, setAutoRouteWaitSeconds] = useState(5);
+  const [autoRouteSpeedMultiplier, setAutoRouteSpeedMultiplier] = useState<1 | 2 | 3>(1);
+  const [autoRouteFollowCamera, setAutoRouteFollowCamera] = useState<boolean>(true);
+
+  const formatTime = (seconds: number): string => {
+    if (!isFinite(seconds) || seconds < 0) return '--:--';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
   const [presetEditorDesc, setPresetEditorDesc] = useState('');
   const [presetEditorAuthor, setPresetEditorAuthor] = useState('');
   const [presetEditorOrigAuthor, setPresetEditorOrigAuthor] = useState('');
@@ -376,12 +435,73 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
+  const targetDurationSliderRef = useRef<HTMLInputElement | null>(null);
+  const targetDurationTextRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync target duration slider DOM value with state when the user is NOT
+  // actively interacting with the slider. The slider is uncontrolled
+  // (defaultValue) so the drag itself isn't interrupted by React reconciliation.
+  useEffect(() => {
+    if (targetDurationSliderRef.current &&
+        document.activeElement !== targetDurationSliderRef.current) {
+      const v = route.targetDuration || '0';
+      if (targetDurationSliderRef.current.value !== v) {
+        targetDurationSliderRef.current.value = v;
+      }
+    }
+  }, [route.targetDuration]);
+
+  // Ensure the global START marker (🐾) exists. Older builds filtered it out,
+  // so this back-fills it on first load if missing. Check by ID (not just
+  // type) to avoid duplicate-key crashes when other code paths also add it.
+  useEffect(() => {
+    if (globalMarkers.some(m => m.id === 'marker_start_global_001')) return;
+    setGlobalMarkers(prev => {
+      if (prev.some(m => m.id === 'marker_start_global_001')) return prev;
+      return [
+        ...prev,
+        {
+          id: 'marker_start_global_001',
+          type: 'start',
+          x: 693,
+          y: 4500,
+          note: 'スタート',
+          floor: 'main',
+          popupDirection: 'top',
+          popupWidth: 300,
+          popupHeight: 0,
+          popupOffset: { x: 0, y: -100 }
+        } as HeistMarker
+      ];
+    });
+  }, [globalMarkers]);
 
   // Load Saved list and Global Markers on start
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     refreshSavesList();
     fetchHelpData().then(data => setHelpTexts(data));
+
+    // Auto-load the last used route if enabled
+    if (autoLoadLastRoute) {
+      const lastId = localStorage.getItem('heist_last_used_route_id');
+      if (lastId) {
+        const data = DataManager.loadFromLocalStorage(lastId);
+        if (data) {
+          const migrated = migrateRouteCoordinates(data);
+          if (migrated.mapVersion !== data.mapVersion) {
+            DataManager.saveToLocalStorage(migrated);
+          }
+          setRouteWithGlobalDefaults(migrated);
+          if (migrated.markerScale !== undefined) {
+            setMarkerScale(migrated.markerScale);
+            localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
+          }
+          setSaveNotification(`前回データを読み込みました: ${migrated.title}`);
+          setTimeout(() => setSaveNotification(null), 2000);
+        }
+      }
+    }
 
     // Fetch presets on start
     fetch(`${import.meta.env.BASE_URL}api/presets`)
@@ -438,12 +558,27 @@ export default function App() {
       })
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
-          const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+          const filtered = data.filter(m => m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
             if (m.warpWaypoints) {
               return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
             }
             return m;
           });
+          // Ensure the global START marker (🐾) exists in loaded data
+          if (!filtered.some(m => m.type === 'start')) {
+            filtered.push({
+              id: 'marker_start_global_001',
+              type: 'start',
+              x: 693,
+              y: 4500,
+              note: 'スタート',
+              floor: 'main',
+              popupDirection: 'top',
+              popupWidth: 300,
+              popupHeight: 0,
+              popupOffset: { x: 0, y: -100 }
+            } as HeistMarker);
+          }
           setGlobalMarkers(filtered);
           localStorage.setItem('heist_global_markers', JSON.stringify(filtered));
           localStorage.setItem('heist_global_markers_migrated_v2', 'true');
@@ -460,7 +595,7 @@ export default function App() {
           })
           .then(data => {
             if (Array.isArray(data) && data.length > 0) {
-              const filtered = data.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+              const filtered = data.filter(m => m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
                 if (m.warpWaypoints) {
                   return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
                 }
@@ -484,7 +619,7 @@ export default function App() {
       if (savedGlobal) {
         try {
           let parsed: HeistMarker[] = JSON.parse(savedGlobal);
-          parsed = parsed.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
+          parsed = parsed.filter(m => m.type !== ('camera' as any) && m.type !== ('guard' as any)).map(m => {
             if (m.warpWaypoints) {
               return { ...m, warpWaypoints: m.warpWaypoints.filter((wp: any) => wp !== null && wp !== undefined) };
             }
@@ -538,6 +673,25 @@ export default function App() {
             }
             return m;
           });
+          setGlobalMarkers(migrated);
+
+          // Ensure the global START marker (🐾) exists. Older builds filtered
+          // it out, so back-fill on load and persist.
+          if (!migrated.some(m => m.type === 'start')) {
+            migrated.push({
+              id: 'marker_start_global_001',
+              type: 'start',
+              x: 693,
+              y: 4500,
+              note: 'スタート',
+              floor: 'main',
+              popupDirection: 'top',
+              popupWidth: 300,
+              popupHeight: 0,
+              popupOffset: { x: 0, y: -100 }
+            } as HeistMarker);
+            localStorage.setItem('heist_global_markers', JSON.stringify(migrated));
+          }
           setGlobalMarkers(migrated);
 
           if (isLocal) {
@@ -629,7 +783,7 @@ export default function App() {
     if (shouldPushHistory) {
       pushHistory(route.strokes, route.markers, globalMarkers);
     }
-    const isIndivType = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+    const isIndivType = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
     const newGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
 
@@ -686,6 +840,7 @@ export default function App() {
     }
     DataManager.saveToLocalStorage(routeToSave);
     refreshSavesList();
+    localStorage.setItem('heist_last_used_route_id', routeToSave.id);
     setSaveNotification(`保存完了: ${route.title}`);
     setTimeout(() => setSaveNotification(null), 2000);
   };
@@ -798,7 +953,7 @@ export default function App() {
       }
       if (routeData.markers) {
         data.markers = data.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+        const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
         const planIndiv = data.markers.filter(m => isIndiv(m.type)).map(m => {
           const updated = { ...m, floor: 'main' as FloorType };
           if (updated.type === 'boss') {
@@ -899,6 +1054,7 @@ export default function App() {
         data.hiddenMarkerTypes = [...new Set([...(data.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])];
       }
       setRouteWithGlobalDefaults(data);
+      localStorage.setItem('heist_last_used_route_id', data.id);
       if (data.markerScale !== undefined) {
         setMarkerScale(data.markerScale);
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
@@ -912,9 +1068,13 @@ export default function App() {
     e.stopPropagation();
     if (deleteConfirmId === id) {
       DataManager.deleteFromLocalStorage(id);
+      if (localStorage.getItem('heist_last_used_route_id') === id) {
+        localStorage.removeItem('heist_last_used_route_id');
+      }
       refreshSavesList();
       if (route.id === id) {
         setRouteWithGlobalDefaults(DEFAULT_ROUTE(`route_${Date.now()}`));
+        localStorage.setItem('heist_last_used_route_id', `route_${Date.now()}`);
       }
       setDeleteConfirmId(null);
     } else {
@@ -940,6 +1100,7 @@ export default function App() {
       newRoute.originalAuthor = xorEncrypt(plainAuthor, getOriginalAuthorKey(newId, newCreatedAt));
     }
     setRouteWithGlobalDefaults(newRoute);
+    localStorage.setItem('heist_last_used_route_id', newId);
   };
 
   // JSON Import / Export
@@ -975,7 +1136,7 @@ export default function App() {
           }
 
           importedData.markers = importedData.markers.filter(m => m.type !== ('start' as any) && m.type !== ('camera' as any) && m.type !== ('guard' as any));
-          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+          const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
           const planIndiv = importedData.markers.filter(m => isIndiv(m.type)).map(m => {
             const updated = { ...m, floor: 'main' as FloorType };
             if (updated.type === 'boss') {
@@ -1078,6 +1239,7 @@ export default function App() {
             importedData.hiddenMarkerTypes = [...new Set([...importedData.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
           }
           setRouteWithGlobalDefaults(importedData);
+          localStorage.setItem('heist_last_used_route_id', importedData.id);
           if (importedData.markerScale !== undefined) {
             setMarkerScale(importedData.markerScale);
             localStorage.setItem('heist_marker_scale', String(importedData.markerScale));
@@ -1171,7 +1333,7 @@ export default function App() {
       const plainOriginalAuthor = xorDecrypt(data.originalAuthor || '', getOriginalAuthorKey(data.id, data.createdAt));
       // Filter out global-type markers (they're loaded from global_markers.json)
       const isGlobalType = (t: string) =>
-        ['eh','rare','cardkey','vault','boss','phone','warp','stairs','info','note','text','room','gbattle','gpicking','glong_picking'].includes(t);
+        ['start','eh','rare','cardkey','vault','boss','phone','warp','stairs','info','note','text','room','gbattle','gpicking','glong_picking'].includes(t);
       const individualMarkers = (data.markers || []).filter(m => !isGlobalType(m.type));
       const importedRoute: RouteData = {
         ...data,
@@ -1183,6 +1345,7 @@ export default function App() {
       };
       DataManager.saveToLocalStorage(importedRoute);
       setRouteWithGlobalDefaults(importedRoute);
+      localStorage.setItem('heist_last_used_route_id', importedRoute.id);
       refreshSavesList();
       setSaveNotification(`PNGインポート完了: ${importedRoute.title}`);
       setTimeout(() => setSaveNotification(null), 2000);
@@ -1218,7 +1381,7 @@ export default function App() {
   }, []);
 
   // Brush Preset Helper
-  const setBrushPreset = (color: string, width: number, type: 'solid' | 'dashed' | 'arrow') => {
+  const setBrushPreset = (color: string, width: number, type: 'solid' | 'dashed') => {
     setToolMode('draw');
     setStrokeColor(color);
     setStrokeWidth(width);
@@ -1371,7 +1534,7 @@ export default function App() {
                         className="btn-cyber"
                         style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                         onClick={() => {
-                          (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                          (['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
                             if ((route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
                           });
                         }}
@@ -1380,7 +1543,7 @@ export default function App() {
                         className="btn-cyber"
                         style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                         onClick={() => {
-                          (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
+                          (['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
                             if (!(route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
                           });
                         }}
@@ -1388,7 +1551,7 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                    {(['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                       const meta = MARKER_META[t];
                       const isTypeHidden = (route.hiddenMarkerTypes || []).includes(t);
                       return (
@@ -1428,7 +1591,7 @@ export default function App() {
                         className="btn-cyber"
                         style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                         onClick={() => {
-                          (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).forEach(t => {
+                          (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).forEach(t => {
                             if ((route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
                           });
                         }}
@@ -1437,7 +1600,7 @@ export default function App() {
                         className="btn-cyber"
                         style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                         onClick={() => {
-                          (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).forEach(t => {
+                          (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).forEach(t => {
                             if (!(route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
                           });
                         }}
@@ -1445,7 +1608,7 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                    {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
                       const meta = MARKER_META[t];
                       const isTypeHidden = (route.hiddenMarkerTypes || []).includes(t);
                       return (
@@ -1585,31 +1748,6 @@ export default function App() {
             <div className="panel-section">
               <div className="panel-title">3. BRUSH CONFIG</div>
 
-              {/* Presets */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                <button
-                  className="btn-cyber"
-                  style={{ padding: '3px 6px', fontSize: '10px' }}
-                  onClick={() => setBrushPreset('#ffe600', 3, 'dashed')}
-                >
-                  Patrol Path
-                </button>
-                <button
-                  className="btn-cyber danger"
-                  style={{ padding: '3px 6px', fontSize: '10px' }}
-                  onClick={() => setBrushPreset('#ff0055', 3, 'arrow')}
-                >
-                  Heist Route
-                </button>
-                <button
-                  className="btn-cyber success"
-                  style={{ padding: '3px 6px', fontSize: '10px' }}
-                  onClick={() => setBrushPreset('#39ff14', 3, 'solid')}
-                >
-                  Safety Run
-                </button>
-              </div>
-
               {/* Color dots */}
               <div className="color-picker">
                 {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
@@ -1624,17 +1762,51 @@ export default function App() {
 
               {/* Line Type */}
               <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                {(['solid', 'dashed', 'arrow'] as const).map(t => (
+                {(['solid', 'dashed'] as const).map(t => (
                   <button
                     key={t}
                     className={`btn-cyber ${strokeType === t ? 'active' : ''}`}
                     style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }}
                     onClick={() => setStrokeType(t)}
                   >
-                    {t.toUpperCase()}
+                    {t === 'solid' ? '進行ルート' : '分岐ルート'}
                   </button>
                 ))}
               </div>
+
+              {/* Draw Tool (free / smooth / straight) */}
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                {(['free', 'smooth', 'straight'] as const).map(m => (
+                  <button
+                    key={m}
+                    className={`btn-cyber ${drawMode === m ? 'active' : ''}`}
+                    style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }}
+                    onClick={() => setDrawMode(m)}
+                    title={m === 'free' ? '通常描画 (全ポイント記録)' : m === 'smooth' ? '間引き描画 (滑らかな線)' : '直線ツール (始点→終点のみ)'}
+                  >
+                    {m === 'free' ? 'FREE' : m === 'smooth' ? 'SMOOTH' : '直線'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Smooth last stroke */}
+              <button
+                className="btn-cyber"
+                style={{ width: '100%', marginTop: '6px', padding: '5px', fontSize: '10px' }}
+                onClick={() => {
+                  if (route.strokes[currentFloor] && route.strokes[currentFloor].length > 0) {
+                    const lastIdx = route.strokes[currentFloor].length - 1;
+                    const last = route.strokes[currentFloor][lastIdx];
+                    const smoothed = smoothStrokePoints(last.points, 3, 1500);
+                    updateStrokes([
+                      ...route.strokes[currentFloor].slice(0, lastIdx),
+                      { ...last, points: smoothed }
+                    ]);
+                  }
+                }}
+              >
+                ✨ 最後の線を平滑化
+              </button>
 
               {/* Width Slider */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
@@ -1668,7 +1840,7 @@ export default function App() {
               <div className="panel-title">マーカー(グローバル)</div>
 
               <div className="marker-list">
-                {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                {(['start', 'eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1681,7 +1853,7 @@ export default function App() {
                       style={{ '--theme-color': meta.color } as React.CSSProperties}
                     >
                       <span className="marker-icon-preview">{meta.emoji}</span>
-                      <span>{t === 'cardkey' ? 'CARD KEY' : meta.label.split(' ')[0]}</span>
+                      <span>{t === 'start' ? 'START' : t === 'cardkey' ? 'CARD KEY' : meta.label.split(' ')[0]}</span>
                     </button>
                   );
                 })}
@@ -1695,7 +1867,7 @@ export default function App() {
               <div className="panel-title">マーカー</div>
 
               <div className="marker-list">
-                {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                {(['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
                   const meta = MARKER_META[t];
                   return (
                     <button
@@ -1823,7 +1995,7 @@ export default function App() {
         <section className="canvas-area">
           <MapCanvas
             floor={currentFloor}
-            strokes={route.strokes[currentFloor]}
+            strokes={memoizedStrokes}
             markers={(() => {
               const combined = [...globalMarkers, ...route.markers];
               const seen = new Set<string>();
@@ -1839,6 +2011,7 @@ export default function App() {
             strokeColor={strokeColor}
             strokeWidth={strokeWidth}
             strokeType={strokeType}
+            drawMode={drawMode}
             onStrokesChange={updateStrokes}
             onMarkersChange={updateMarkers}
             onSvgStringReady={setSvgString}
@@ -1862,6 +2035,16 @@ export default function App() {
             onShowGlobalMarker={handleShowGlobalMarker}
             leftSidebarCollapsed={leftSidebarCollapsed}
             rightSidebarCollapsed={rightSidebarCollapsed}
+            targetDurationSeconds={(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) && s > 0 ? s : undefined; })()}
+            onAutoRouteStatusChange={setAutoRouteStatus}
+            autoRouteCommand={autoRouteCommand}
+            autoRouteSettings={{
+              waitEnabled: autoRouteWaitEnabled,
+              waitSeconds: autoRouteWaitSeconds,
+              speedMultiplier: autoRouteSpeedMultiplier,
+              followCamera: autoRouteFollowCamera
+            }}
+            followCamera={autoRouteFollowCamera}
           />
 
           {/* Left Sidebar Collapse Handle */}
@@ -2060,25 +2243,29 @@ export default function App() {
 
                 <div style={{ marginTop: '6px' }}>
                   <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
-                    目標所要時間
+                    目標所要時間 <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                      {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                    </span>
                   </label>
                   {isEditMode ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                       <input
+                        ref={targetDurationSliderRef}
                         type="range"
-                        style={{ flex: 1, accentColor: 'var(--cyan-neon)', height: '24px' }}
+                        style={{ flex: 1, accentColor: 'var(--cyan-neon)', height: '24px', cursor: 'pointer' }}
                         min="0" max="720" step="1"
-                        value={route.targetDuration || '0'}
-                        onChange={(e) => setRoute({ ...route, targetDuration: e.target.value })}
+                        defaultValue={route.targetDuration || '0'}
+                        onChange={(e) => setRoute(prev => ({ ...prev, targetDuration: e.target.value }))}
                         onWheel={(e) => {
                           if (!isEditMode) return;
                           e.preventDefault();
                           const cur = parseInt(route.targetDuration || '0');
                           const next = Math.min(720, Math.max(0, cur + (e.deltaY < 0 ? 1 : -1)));
-                          setRoute({ ...route, targetDuration: String(next) });
+                          setRoute(prev => ({ ...prev, targetDuration: String(next) }));
                         }}
                       />
                       <input
+                        ref={targetDurationTextRef}
                         type="text"
                         className="input-cyber"
                         style={{ width: '56px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', padding: '3px 2px', color: 'var(--cyan-neon)' }}
@@ -2094,7 +2281,7 @@ export default function App() {
                           const v = e.target.value.replace(/[^0-9]/g, '');
                           const num = parseInt(v) || 0;
                           const total = v.length >= 4 ? Math.floor(num / 100) * 60 + (num % 100) : num;
-                          setRoute({ ...route, targetDuration: String(Math.min(720, Math.max(0, total))) });
+                          setRoute(prev => ({ ...prev, targetDuration: String(Math.min(720, Math.max(0, total))) }));
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -2298,6 +2485,139 @@ export default function App() {
           {rightTab === 'play' && (
             <div className="panel-section">
               <div className="panel-title">プレイデータ</div>
+
+              {/* Auto-route control panel */}
+              <div style={{
+                background: 'rgba(10, 15, 28, 0.6)',
+                border: '1px solid rgba(0, 240, 255, 0.3)',
+                borderRadius: '6px',
+                padding: '8px',
+                marginBottom: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '14px' }}>🐾</span>
+                  <span style={{ fontWeight: 700, color: 'var(--cyan-neon)', flex: 1, fontSize: '12px' }}>自動ルート案内</span>
+                </div>
+                {autoRouteStatus.error && (
+                  <div style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', padding: '4px', background: 'rgba(255,0,85,0.1)', borderRadius: '3px', marginBottom: '4px' }}>
+                    ⚠ {autoRouteStatus.error}
+                  </div>
+                )}
+
+                {/* Single unified auto-route panel — layout is the same before and after start; only the main button + timeline change. */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoRouteWaitEnabled}
+                      onChange={(e) => setAutoRouteWaitEnabled(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)' }}
+                    />
+                    開始前に待機 (
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      value={autoRouteWaitSeconds}
+                      onChange={(e) => setAutoRouteWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
+                      disabled={!autoRouteWaitEnabled}
+                      style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }}
+                    />
+                    秒)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoRouteFollowCamera}
+                      onChange={(e) => setAutoRouteFollowCamera(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    🎥 カメラ追従
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    <span>倍速:</span>
+                    {([1, 2, 3] as const).map(m => (
+                      <button
+                        key={m}
+                        className={`btn-cyber ${autoRouteSpeedMultiplier === m ? 'active' : ''}`}
+                        style={{ flex: 1, padding: '2px', fontSize: '10px' }}
+                        onClick={() => setAutoRouteSpeedMultiplier(m)}
+                      >
+                        x{m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Main control row — button content swaps based on state, but the row itself is always here. */}
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                  {autoRouteStatus.waitRemaining > 0 ? (
+                    <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>
+                      待機中... {autoRouteStatus.waitRemaining.toFixed(1)}s
+                    </div>
+                  ) : !autoRouteStatus.active ? (
+                    <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('start')}>
+                      <Play size={12} /> スタート
+                    </button>
+                  ) : autoRouteStatus.running ? (
+                    <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('pause')}>
+                      <Pause size={11} /> 一時停止
+                    </button>
+                  ) : (
+                    <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => sendAutoRouteCommand('resume')}>
+                      <Play size={11} /> 再開
+                    </button>
+                  )}
+                  <button
+                    className={`btn-cyber ${autoRouteStatus.active ? 'danger' : ''}`}
+                    style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRouteStatus.active ? 1 : 0.4 }}
+                    disabled={!autoRouteStatus.active}
+                    onClick={() => sendAutoRouteCommand('reset')}
+                  >
+                    <Square size={11} /> 停止
+                  </button>
+                </div>
+
+                {/* Timeline + elapsed/total — only when active */}
+                {autoRouteStatus.active && (
+                  <>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>
+                      Space キーで一時停止 / 再開
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>
+                        <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.elapsed)}</span>
+                      </div>
+                      <div style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '0 4px' }}>/</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>合計</span>
+                        <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRouteStatus.totalTime)}</span>
+                      </div>
+                    </div>
+                    <div
+                      style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px', cursor: 'pointer', position: 'relative' }}
+                      title="クリックでシーク"
+                      onClick={(e) => {
+                        if (!autoRouteStatus.active || autoRouteStatus.totalTime <= 0) return;
+                        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                        if (rect.width <= 0) return;
+                        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        const target = ratio * autoRouteStatus.totalTime;
+                        if (!isFinite(target) || isNaN(target)) return;
+                        setAutoRouteCommand({ action: 'seek', ts: Date.now(), seekTo: target });
+                      }}
+                    >
+                      <div style={{ height: '100%', width: `${Math.min(100, (autoRouteStatus.elapsed / Math.max(autoRouteStatus.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span>停止 {formatTime(autoRouteStatus.totalStopTime)}</span>
+                      {autoRouteStatus.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRouteStatus.nextMarkerLabel}</span>}
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '8px', textAlign: 'center' }}>
                 クリア記録やプレイメモをここに記入予定
               </div>
@@ -2461,6 +2781,8 @@ export default function App() {
           setSaveNotification('原作者名をクリアしました');
           setTimeout(() => setSaveNotification(null), 2000);
         }}
+        autoLoadLastRoute={autoLoadLastRoute}
+        onSetAutoLoadLastRoute={setAutoLoadLastRoute}
       />
 
       {/* Full History Modal */}

@@ -11,6 +11,7 @@ import {
   PRESET_MAPS_META
 } from '../utils/DataManager';
 import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
+import { buildAutoRoute, computeRouteTiming, interpolateRoute, playCheckpointSound, prewarmAudio, type RouteSegment } from '../utils/AutoRoute';
 
 // TweetEmbed Component using official Twitter widgets SDK
 const TweetEmbed: React.FC<{ url: string }> = ({ url }) => {
@@ -106,7 +107,8 @@ interface MapCanvasProps {
   activeMarkerType: MarkerType | null;
   strokeColor: string;
   strokeWidth: number;
-  strokeType: 'solid' | 'dashed' | 'arrow';
+  strokeType: 'solid' | 'dashed';
+  drawMode?: 'free' | 'smooth' | 'straight';
   onStrokesChange: (strokes: DrawingStroke[]) => void;
   onMarkersChange: (markers: HeistMarker[], shouldPushHistory?: boolean) => void;
   onSvgStringReady: (svgStr: string) => void;
@@ -134,6 +136,33 @@ interface MapCanvasProps {
   onShowGlobalMarker?: (id: string) => void;
   leftSidebarCollapsed?: boolean;
   rightSidebarCollapsed?: boolean;
+  targetDurationSeconds?: number;
+  // Auto-route status callback — fired when status changes. Parent uses this
+  // to render the auto-route UI (e.g. in the プレイデータ tab).
+  onAutoRouteStatusChange?: (status: {
+    active: boolean;
+    running: boolean;
+    elapsed: number;
+    totalTime: number;
+    totalDistance: number;
+    totalStopTime: number;
+    speed: number;
+    error: string | null;
+    nextMarkerLabel: string;
+    waitRemaining: number; // seconds left in initial wait (0 when not waiting)
+  }) => void;
+  // Auto-route command from parent — when the ts changes, the action is run.
+  autoRouteCommand?: { action: 'start' | 'pause' | 'resume' | 'reset' | 'seek'; ts: number; seekTo?: number } | null;
+  // Auto-route settings — read at the moment a command is processed
+  autoRouteSettings?: {
+    waitEnabled: boolean;
+    waitSeconds: number;
+    speedMultiplier: 1 | 2 | 3;
+    followCamera: boolean;
+  };
+  // Follow camera state — when true, the view scrolls to keep the current
+  // position slightly below center during the auto-route animation.
+  followCamera?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -146,6 +175,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   strokeColor,
   strokeWidth,
   strokeType,
+  drawMode = 'free',
   onStrokesChange,
   onMarkersChange,
   onSvgStringReady,
@@ -172,7 +202,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   globalMarkerIds = [],
   onShowGlobalMarker,
   leftSidebarCollapsed = false,
-  rightSidebarCollapsed = false
+  rightSidebarCollapsed = false,
+  targetDurationSeconds,
+  onAutoRouteStatusChange,
+  autoRouteCommand,
+  autoRouteSettings,
+  followCamera = false
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -239,7 +274,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'].includes(type);
+  const isIndiv = (type: string) => ['p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -371,6 +406,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [pickingCustomDurationVal, setPickingCustomDurationVal] = useState<number | undefined>(undefined);
   const [useLongPickingCustomDuration, setUseLongPickingCustomDuration] = useState(false);
   const [longPickingCustomDurationVal, setLongPickingCustomDurationVal] = useState<number | undefined>(undefined);
+
+  // Checkpoint-specific state
+  const [checkpointTargetTime, setCheckpointTargetTime] = useState(60);
+  const [checkpointSoundOn, setCheckpointSoundOn] = useState(false);
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
@@ -380,6 +419,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
+
+  // Auto-route state
+  const [autoRouteActive, setAutoRouteActive] = useState(false);
+  const [autoRouteRunning, setAutoRouteRunning] = useState(false);
+  const [autoRouteElapsed, setAutoRouteElapsed] = useState(0);
+  const [autoRouteSegments, setAutoRouteSegments] = useState<RouteSegment[]>([]);
+  const [autoRouteTiming, setAutoRouteTiming] = useState<{ totalTime: number; totalDistance: number; totalStopTime: number; speed: number }>({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
+  const [autoRouteBaseTiming, setAutoRouteBaseTiming] = useState<{ speed: number; totalTime: number; totalDistance: number; totalStopTime: number }>({ speed: 0, totalTime: 0, totalDistance: 0, totalStopTime: 0 });
+  const [autoRouteError, setAutoRouteError] = useState<string | null>(null);
+  const autoRouteStartTimeRef = useRef<number>(0);
+  const autoRouteElapsedAtStartRef = useRef<number>(0);
+  const autoRouteAnimRef = useRef<number | null>(null);
+  const autoRouteWaitUntilRef = useRef<number>(0);
+  const autoRoutePrevSegmentIdRef = useRef<string>('');
 
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
   const targetZoomRef = useRef<number>(1);
@@ -573,6 +626,287 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [focusTrigger, markers]);
 
+  // ---- Auto-route logic ----
+  const startAutoRoute = () => {
+    setAutoRouteError(null);
+    // Pre-warm the AudioContext on this user gesture so checkpoint sounds
+    // can play without a separate click later (browsers block audio until
+    // a user interaction resumes the context).
+    prewarmAudio();
+    const startMarker = markers.find(m => m.type === 'start');
+    if (!startMarker) {
+      setAutoRouteError('スタートマーカー (🐾) が見つかりません。グローバルマーカーに追加してください。');
+      return;
+    }
+    const routeSegments = buildAutoRoute(strokes, markers, startMarker, {}, hiddenMarkers || []);
+    if (routeSegments.length === 0) {
+      setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
+      return;
+    }
+    const targetDur = targetDurationSeconds && targetDurationSeconds > 0 ? targetDurationSeconds : undefined;
+    const baseTiming = computeRouteTiming(routeSegments, targetDur);
+    setAutoRouteBaseTiming(baseTiming);
+    if (baseTiming.ignoredCheckpoint) {
+      setAutoRouteError(`⚠ チェックポイント目標が無効: ${baseTiming.ignoredCheckpoint.reason} (目標 ${baseTiming.ignoredCheckpoint.target}秒 / 停止 ${baseTiming.ignoredCheckpoint.stopTime}秒)`);
+    }
+    const mult = autoRouteSettings?.speedMultiplier ?? 1;
+    // Multiplier scales the speed only; totalTime stays at base so the
+    // displayed total is always the natural route duration. Elapsed is
+    // advanced in route-time units (mult × wall-clock) so it matches
+    // the base total when the route completes.
+    const timing = { ...baseTiming, speed: baseTiming.speed * mult, totalTime: baseTiming.totalTime };
+    const waitEnabled = autoRouteSettings?.waitEnabled ?? false;
+    const waitSeconds = autoRouteSettings?.waitSeconds ?? 0;
+    setAutoRouteSegments(routeSegments);
+    setAutoRouteTiming(timing);
+    setAutoRouteElapsed(0);
+    setAutoRouteActive(true);
+    setAutoRouteRunning(!waitEnabled); // Paused during initial wait
+    autoRouteStartTimeRef.current = performance.now();
+    autoRouteElapsedAtStartRef.current = 0;
+    autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
+    setCurrentPosition({ x: startMarker.x, y: startMarker.y });
+  };
+
+  const pauseAutoRoute = () => {
+    setAutoRouteRunning(false);
+  };
+
+  const resumeAutoRoute = () => {
+    if (!autoRouteActive) return;
+    setAutoRouteRunning(true);
+    autoRouteStartTimeRef.current = performance.now();
+    autoRouteElapsedAtStartRef.current = autoRouteElapsed;
+  };
+
+  const resetAutoRoute = () => {
+    setAutoRouteRunning(false);
+    setAutoRouteActive(false);
+    setAutoRouteElapsed(0);
+    setAutoRouteSegments([]);
+    setAutoRouteTiming({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
+    if (autoRouteAnimRef.current) cancelAnimationFrame(autoRouteAnimRef.current);
+  };
+
+  // Auto-route animation loop
+  // We use `autoRouteActive` (not `autoRouteRunning`) as the gate so the
+  // tick keeps running during the initial wait — this is what updates the
+  // countdown UI, and it lets the loop auto-resume once the wait ends
+  // without needing to call setAutoRouteRunning(true) (which would re-fire
+  // this effect and cancel the in-flight frame).
+  useEffect(() => {
+    if (!autoRouteActive || autoRouteSegments.length === 0) {
+      if (autoRouteAnimRef.current) {
+        cancelAnimationFrame(autoRouteAnimRef.current);
+        autoRouteAnimRef.current = null;
+      }
+      return;
+    }
+
+    const tick = () => {
+      const now = performance.now();
+
+      // Initial-wait countdown: don't advance the position yet, but keep
+      // ticking so the countdown UI can update.
+      if (autoRouteWaitUntilRef.current > 0 && now < autoRouteWaitUntilRef.current) {
+        autoRouteAnimRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      if (autoRouteWaitUntilRef.current > 0 && now >= autoRouteWaitUntilRef.current) {
+        // Wait finished — start the actual animation now
+        autoRouteWaitUntilRef.current = 0;
+        autoRouteStartTimeRef.current = now;
+        autoRouteElapsedAtStartRef.current = 0;
+        // Auto-resume after the wait completes. setAutoRouteRunning will
+        // re-fire this effect's cleanup, but the new tick is already
+        // scheduled below — the cleanup just cancels any older frame.
+        setAutoRouteRunning(true);
+      }
+
+      // If the user paused, just keep ticking so we can resume seamlessly.
+      if (!autoRouteRunning) {
+        autoRouteAnimRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const realElapsed = (now - autoRouteStartTimeRef.current) / 1000;
+      // Advance elapsed in route-time units so the display matches totalTime.
+      // Multiplier = current speed / base speed (1, 2, or 3).
+      const baseSpd = autoRouteBaseTiming.speed || autoRouteTiming.speed || 1;
+      const mult = autoRouteTiming.speed / baseSpd;
+      const elapsed = autoRouteElapsedAtStartRef.current + realElapsed * mult;
+      if (elapsed >= autoRouteTiming.totalTime) {
+        setAutoRouteElapsed(autoRouteTiming.totalTime);
+        const last = autoRouteSegments[autoRouteSegments.length - 1];
+        setCurrentPosition({ x: last.end.x, y: last.end.y });
+        setAutoRouteRunning(false);
+        return;
+      }
+      setAutoRouteElapsed(elapsed);
+      const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, elapsed);
+      if (interp) {
+        setCurrentPosition({ x: interp.position.x, y: interp.position.y });
+
+        // Checkpoint pass: when the current segment transitions and the
+        // PREVIOUS segment ended at a checkpoint, play the configured sound.
+        // (The speed is calculated from the first checkpoint's target, so
+        //  arrival is always on-time by construction — we don't compare
+        //  against the target here.)
+        const segId = `${interp.segment.markerId || interp.segment.start.x},${interp.segment.start.y}`;
+        if (autoRoutePrevSegmentIdRef.current && autoRoutePrevSegmentIdRef.current !== segId) {
+          const prev = autoRouteSegments.find(s =>
+            `${s.markerId || s.start.x},${s.start.y}` === autoRoutePrevSegmentIdRef.current
+          );
+          if (prev?.markerId && prev.markerType === 'checkpoint') {
+            const passedMarker = markers.find(m => m.id === prev.markerId);
+            if (passedMarker?.type === 'checkpoint' && passedMarker.checkpointSoundOn) {
+              playCheckpointSound(true);
+            }
+          }
+        }
+        autoRoutePrevSegmentIdRef.current = segId;
+
+        // Follow camera: scroll the view to keep the current position
+        // slightly below center (60% from top).
+        if (followCamera) {
+          const wrapper = wrapperRef.current;
+          if (wrapper) {
+            const H_v = wrapper.clientHeight;
+            const tgtZoom = zoom || 1;
+            const tgtPan = {
+              x: (800 - interp.position.x) * tgtZoom,
+              y: H_v * 0.1 - (interp.position.y - 2275) * tgtZoom
+            };
+            targetPanRef.current = tgtPan;
+            setPan(tgtPan);
+          }
+        }
+      }
+      autoRouteAnimRef.current = requestAnimationFrame(tick);
+    };
+    autoRouteAnimRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (autoRouteAnimRef.current) {
+        cancelAnimationFrame(autoRouteAnimRef.current);
+        autoRouteAnimRef.current = null;
+      }
+    };
+  }, [autoRouteActive, autoRouteRunning, autoRouteSegments, autoRouteTiming]);
+
+  // Cleanup auto-route on floor change
+  useEffect(() => {
+    resetAutoRoute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floor]);
+
+  // Listen for auto-route commands from parent (e.g. プレイデータ tab)
+  useEffect(() => {
+    if (!autoRouteCommand) return;
+    if (autoRouteCommand.action === 'start') startAutoRoute();
+    else if (autoRouteCommand.action === 'pause') pauseAutoRoute();
+    else if (autoRouteCommand.action === 'resume') resumeAutoRoute();
+    else if (autoRouteCommand.action === 'reset') resetAutoRoute();
+    else if (autoRouteCommand.action === 'seek' && autoRouteCommand.seekTo !== undefined) {
+      // Jump the animation to a specific elapsed time (timeline click).
+      // Update the visual position immediately so there is no perceptible
+      // lag between the click and the marker moving on the map.
+      // Guard against: no segments built yet, invalid seekTo (NaN), zero totalTime.
+      if (!isFinite(autoRouteCommand.seekTo)) return;
+      if (autoRouteSegments.length === 0 || autoRouteTiming.totalTime <= 0) return;
+      const t = Math.max(0, Math.min(autoRouteTiming.totalTime, autoRouteCommand.seekTo));
+      setAutoRouteElapsed(t);
+      autoRouteStartTimeRef.current = performance.now();
+      autoRouteElapsedAtStartRef.current = t;
+      autoRoutePrevSegmentIdRef.current = '';
+      try {
+        const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, t);
+        if (interp && interp.position && isFinite(interp.position.x) && isFinite(interp.position.y)) {
+          setCurrentPosition({ x: interp.position.x, y: interp.position.y });
+          if (autoRouteFollowCamera && wrapperRef.current) {
+            const H_v = wrapperRef.current.clientHeight;
+            const tgtZoom = (zoom && isFinite(zoom)) ? zoom : 1;
+            const tgtPan = {
+              x: (800 - interp.position.x) * tgtZoom,
+              y: H_v * 0.1 - (interp.position.y - 2275) * tgtZoom
+            };
+            if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
+              targetPanRef.current = tgtPan;
+              setPan(tgtPan);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[seek] interpolation failed:', e);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRouteCommand]);
+
+  // Push auto-route status updates to parent for the プレイデータ tab UI
+  useEffect(() => {
+    if (!onAutoRouteStatusChange) return;
+    const sendStatus = () => {
+      const waitRemaining = autoRouteWaitUntilRef.current > 0
+        ? Math.max(0, (autoRouteWaitUntilRef.current - performance.now()) / 1000)
+        : 0;
+      onAutoRouteStatusChange({
+        active: autoRouteActive,
+        running: autoRouteRunning,
+        elapsed: autoRouteElapsed,
+        totalTime: autoRouteTiming.totalTime,
+        totalDistance: autoRouteTiming.totalDistance,
+        totalStopTime: autoRouteTiming.totalStopTime,
+        speed: autoRouteTiming.speed,
+        error: autoRouteError,
+        nextMarkerLabel: nextMarkerLabel(autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed),
+        waitRemaining
+      });
+    };
+    sendStatus();
+    // While the auto-route is active, poll every 100ms so the wait
+    // countdown and elapsed time stay fresh in the parent UI.
+    const interval = setInterval(sendStatus, 100);
+    return () => clearInterval(interval);
+  }, [autoRouteActive, autoRouteRunning, autoRouteElapsed, autoRouteTiming, autoRouteError, autoRouteSegments, onAutoRouteStatusChange]);
+
+  // Spacebar toggles pause/resume while the auto-route is active.
+  // Skips when focus is in an input/textarea so typing is unaffected.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (!autoRouteActive) return;
+      e.preventDefault();
+      if (autoRouteRunning) pauseAutoRoute();
+      else resumeAutoRoute();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRouteActive, autoRouteRunning]);
+
+  // Apply speed multiplier changes mid-animation. Only the speed changes;
+  // totalTime/stopTime stay at base so the displayed totals never change.
+  // Elapsed is preserved so the current position is maintained.
+  useEffect(() => {
+    if (!autoRouteActive) return;
+    if (autoRouteBaseTiming.speed === 0) return;
+    const mult = autoRouteSettings?.speedMultiplier ?? 1;
+    const newSpeed = autoRouteBaseTiming.speed * mult;
+    setAutoRouteTiming({
+      speed: newSpeed,
+      totalTime: autoRouteBaseTiming.totalTime,
+      totalDistance: autoRouteBaseTiming.totalDistance,
+      totalStopTime: autoRouteBaseTiming.totalStopTime
+    });
+    // Keep elapsed time the same so the current position is preserved
+    autoRouteStartTimeRef.current = performance.now();
+    autoRouteElapsedAtStartRef.current = autoRouteElapsed;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRouteSettings?.speedMultiplier, autoRouteActive]);
+
   // Extract SVG string for PNG export
   useEffect(() => {
     if (svgWrapperRef.current) {
@@ -653,8 +987,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     strokes.forEach(stroke => {
       ctx.strokeStyle = stroke.color;
       ctx.lineWidth = stroke.width;
-      
-      if (stroke.type === 'dashed') {
+
+      const isDashed = stroke.type === 'dashed';
+
+      if (isDashed) {
         ctx.setLineDash([8, 6]);
       } else {
         ctx.setLineDash([]);
@@ -666,40 +1002,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         else ctx.lineTo(pt.x, pt.y);
       });
       ctx.stroke();
-
-      // Draw arrowhead if needed
-      if (stroke.type === 'arrow' && stroke.points.length >= 2) {
-        const p1 = stroke.points[stroke.points.length - 2];
-        const p2 = stroke.points[stroke.points.length - 1];
-        drawArrowhead(ctx, p1, p2, stroke.color, stroke.width);
-      }
+      // No arrowhead drawn. Direction is conveyed by line continuity and the
+      // auto-route animation, not by an arrow tip at the end of each line.
     });
-  };
-
-  const drawArrowhead = (
-    ctx: CanvasRenderingContext2D,
-    from: Point,
-    to: Point,
-    color: string,
-    width: number
-  ) => {
-    const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const headLength = Math.max(width * 3, 12);
-    
-    ctx.setLineDash([]);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(to.x, to.y);
-    ctx.lineTo(
-      to.x - headLength * Math.cos(angle - Math.PI / 6),
-      to.y - headLength * Math.sin(angle - Math.PI / 6)
-    );
-    ctx.lineTo(
-      to.x - headLength * Math.cos(angle + Math.PI / 6),
-      to.y - headLength * Math.sin(angle + Math.PI / 6)
-    );
-    ctx.closePath();
-    ctx.fill();
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
@@ -764,6 +1069,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     clientX: t.clientX, clientY: t.clientY, button: 0,
     preventDefault: () => {}, shiftKey: false
   } as React.MouseEvent<HTMLDivElement>);
+
+  // Auto-route helper: label of the next marker (for status display)
+  const nextMarkerLabel = (segments: RouteSegment[], elapsed: number, speed: number): string => {
+    if (segments.length === 0) return '';
+    let remaining = elapsed;
+    for (const seg of segments) {
+      const travelTime = seg.distance / Math.max(speed, 0.0001);
+      if (remaining <= travelTime) return '';
+      remaining -= travelTime;
+      if (remaining <= seg.stopDuration) {
+        // Currently stopping at this marker
+        if (seg.markerType && MARKER_META[seg.markerType as keyof typeof MARKER_META]) {
+          const meta = MARKER_META[seg.markerType as keyof typeof MARKER_META];
+          return `${meta.emoji} ${meta.label} (停止中)`;
+        }
+        return seg.markerType || '';
+      }
+      remaining -= seg.stopDuration;
+    }
+    return '';
+  };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
@@ -895,7 +1221,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         y: coords.y,
         note: activeMarkerType === 'vault' ? 'マルチドロップポイント' :
               activeMarkerType === 'eh' ? 'エターナルハート発見地点' :
-              activeMarkerType === 'cardkey' ? 'カードキー発見ポイント' : '',
+              activeMarkerType === 'cardkey' ? 'カードキー発見ポイント' :
+              activeMarkerType === 'start' ? 'スタート' : '',
         floor: floor
       };
       if (activeMarkerType === 'eh') {
@@ -955,6 +1282,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setPickingCustomDurationVal(5);
       setUseLongPickingCustomDuration(false);
       setLongPickingCustomDurationVal(7);
+      setCheckpointTargetTime(60);
+      setCheckpointSoundOn(false);
       return;
     }
 
@@ -1082,11 +1411,47 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!isEditMode && !isDrawingOrErasing) return;
 
     if (isDrawing && toolMode === 'draw') {
-      const newPoints = [...currentPoints, coords];
+      // 'straight' mode: only record the start and end points; intermediate
+      // mouse moves are drawn but not stored.
+      if (drawMode === 'straight') {
+        setCurrentPoints([currentPoints[0], coords]);
+        const ctx = ctxRef.current;
+        if (ctx) {
+          ctx.beginPath();
+          ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+          ctx.lineTo(coords.x, coords.y);
+          ctx.stroke();
+        }
+        return;
+      }
+      // 'smooth' mode: real-time jitter reduction.
+      // - Skip micro-movements (< 6px) to avoid recording hand jitter
+      // - Average the new point with the previous 2 to smooth out
+      //   larger wobbles (exponential-style moving average)
+      let effectiveCoord = coords;
+      if (drawMode === 'smooth' && currentPoints.length > 0) {
+        const last = currentPoints[currentPoints.length - 1];
+        const dx = coords.x - last.x;
+        const dy = coords.y - last.y;
+        if (dx * dx + dy * dy < 36) {
+          // Less than ~6px movement — treat as jitter, skip
+          return;
+        }
+        // 3-point moving average: (prev2 + prev1*2 + new) / 4
+        if (currentPoints.length >= 2) {
+          const prev2 = currentPoints[currentPoints.length - 2];
+          const prev1 = last;
+          effectiveCoord = {
+            x: (prev2.x + prev1.x * 2 + coords.x) / 4,
+            y: (prev2.y + prev1.y * 2 + coords.y) / 4
+          };
+        }
+      }
+      const newPoints = [...currentPoints, effectiveCoord];
       setCurrentPoints(newPoints);
       const ctx = ctxRef.current;
       if (ctx) {
-        ctx.lineTo(coords.x, coords.y);
+        ctx.lineTo(effectiveCoord.x, effectiveCoord.y);
         ctx.stroke();
       }
       return;
@@ -1116,8 +1481,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isDrawing) {
       setIsDrawing(false);
       if (toolMode === 'draw' && currentPoints.length >= 2) {
+        let points = currentPoints;
+        // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
+        // to maintain a connected route network.
+        if (strokeType === 'solid') {
+          const SNAP_THRESHOLD = 25;
+          const first = points[0];
+          const last = points[points.length - 1];
+          const snap = (pt: Point): Point => {
+            let best = pt;
+            let bestDist = SNAP_THRESHOLD;
+            for (const s of strokes) {
+              if (s.type === 'dashed') continue;
+              if (s.points.length < 2) continue;
+              const candidates = [s.points[0], s.points[s.points.length - 1]];
+              for (const c of candidates) {
+                const d = Math.hypot(c.x - pt.x, c.y - pt.y);
+                if (d < bestDist) {
+                  bestDist = d;
+                  best = c;
+                }
+              }
+            }
+            return best;
+          };
+          const snappedFirst = snap(first);
+          const snappedLast = snap(last);
+          points = [
+            snappedFirst,
+            ...points.slice(1, -1),
+            snappedLast
+          ];
+        }
         const newStroke: DrawingStroke = {
-          points: currentPoints,
+          points,
           color: strokeColor,
           width: strokeWidth,
           type: strokeType
@@ -1270,6 +1667,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
         return;
       }
+      // Checkpoint toggle in presentation mode
+      if (m.type === 'checkpoint') {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, checkpointExpanded: !mk.checkpointExpanded } : mk)
+        );
+        return;
+      }
       // Warp/stairs navigation: use partner's scrollConfig if available (manual setting priority)
       const isLinkable = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
       if (isLinkable && m.linkedWarpId) {
@@ -1350,6 +1754,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const hasLongPickingCustom = longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined;
     setUseLongPickingCustomDuration(hasLongPickingCustom);
     setLongPickingCustomDurationVal(hasLongPickingCustom ? longPickingCustomDurations[m.id] : m.longPickingDurationSeconds || 7);
+
+    // Checkpoint fields
+    setCheckpointTargetTime(m.checkpointTargetTime ?? 60);
+    setCheckpointSoundOn(m.checkpointSoundOn ?? false);
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
@@ -1440,6 +1848,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             if (m.type === 'cardkey') {
               updated.cardkeyHighRate = cardkeyHighRate;
+            }
+            if (m.type === 'checkpoint') {
+              updated.checkpointTargetTime = checkpointTargetTime;
+              updated.checkpointSoundOn = checkpointSoundOn;
             }
             if (isInfoType(m.type) || m.type === 'eh' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle') {
               updated.mediaItems = mediaItems;
@@ -1724,7 +2136,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {markers
             .filter(m => m.floor === floor)
             .map(m => {
-              const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
+              // The START marker (🐾) is always visible — it's required for
+              // the auto-route to work, so we never hide it even if the
+              // user toggled its type in the visibility settings.
+              const isHidden = m.type !== 'start' && (hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type));
               if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
 
@@ -1788,7 +2203,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 );
               }
-              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : '');
+              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : '');
               return (
                 <div
                   key={m.id}
@@ -2020,6 +2435,57 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {m.note}
                           </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Checkpoint inline popup (presentation mode) */}
+                  {m.type === 'checkpoint' && m.checkpointExpanded && (
+                    <div
+                      className="info-marker-popup"
+                      style={getPopupStyle(
+                        m,
+                        m.popupOffset || { x: 0, y: -100 },
+                        220,
+                        0,
+                        '#ff9500'
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div className="info-popup-header">
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ff9500' }}>
+                          <span>🏁</span> チェックポイント
+                        </span>
+                        <button
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, checkpointExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="info-popup-content" style={{ padding: '8px 10px' }}>
+                        <div style={{ fontSize: '13px', color: '#ffffff', marginBottom: '8px' }}>
+                          目標時間: <strong style={{ color: '#ffb84d' }}>{(m.checkpointTargetTime ?? 0) === 0 ? '未設定' : `${m.checkpointTargetTime}秒`}</strong>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#ffffff', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!m.checkpointSoundOn}
+                            onChange={(e) => {
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, checkpointSoundOn: e.target.checked } : mk)
+                              );
+                            }}
+                            style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                          />
+                          🔔 通過時に音を鳴らす
+                        </label>
                       </div>
                     </div>
                   )}
@@ -2551,6 +3017,68 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               fontFamily: 'var(--font-cyber)',
             }}>
               {text}
+            </div>
+          );
+        })(),
+        document.body
+      )}
+
+      {/* Checkpoint hover tooltip — presentation mode shows target time + sound toggle */}
+      {!isEditMode && hoveredMarkerId && ReactDOM.createPortal(
+        (() => {
+          const hm = markers.find(mk => mk.id === hoveredMarkerId);
+          if (!hm || hm.type !== 'checkpoint') return null;
+          const target = hm.checkpointTargetTime ?? 0;
+          const soundOn = !!hm.checkpointSoundOn;
+          const pad = 14;
+          const ttW = 200;
+          const ttH = 70;
+          const vw = window.innerWidth;
+          let tx = hoverPos.x - ttW / 2;
+          let ty = hoverPos.y - ttH - pad;
+          if (ty < 4) ty = hoverPos.y + pad;
+          if (tx < 4) tx = 4;
+          if (tx + ttW > vw - 4) tx = vw - ttW - 4;
+          return (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                left: `${tx}px`,
+                top: `${ty}px`,
+                background: 'rgba(5,7,10,0.95)',
+                border: '1px solid #ff9500',
+                color: '#fff',
+                fontSize: '12px',
+                padding: '8px 10px',
+                borderRadius: '4px',
+                pointerEvents: 'auto',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.8)',
+                zIndex: 9500,
+                minWidth: '180px',
+                fontFamily: 'var(--font-cyber)',
+              }}>
+              <div style={{ fontSize: '11px', color: '#ff9500', fontWeight: 'bold', marginBottom: '4px' }}>🏁 チェックポイント</div>
+              <div style={{ fontSize: '12px', color: '#ffffff', marginBottom: '4px' }}>
+                目標時間: <strong style={{ color: '#ffb84d' }}>{target === 0 ? '未設定' : `${target}秒`}</strong>
+              </div>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#ffffff', cursor: 'pointer', userSelect: 'none' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={soundOn}
+                  onChange={(e) => {
+                    onMarkersChange(
+                      markers.map(mk => mk.id === hm.id ? { ...mk, checkpointSoundOn: e.target.checked } : mk)
+                    );
+                  }}
+                  style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                />
+                🔔 通過時に音を鳴らす
+              </label>
             </div>
           );
         })(),
@@ -3095,6 +3623,83 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   出現率が高い (High Spawn Rate) - 強調表示する
                 </label>
               </div>
+            </div>
+          )}
+
+          {/* Checkpoint marker: target time + sound */}
+          {activeNoteMarker && activeNoteMarker.type === 'checkpoint' && (
+            <div style={{ marginTop: '10px', borderTop: '1px dashed rgba(255, 149, 0, 0.4)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '14px', color: '#ff9500', fontWeight: 'bold' }}>🏁 チェックポイント設定</div>
+
+              {/* Target arrival time */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
+                  目標到達時間 (秒)
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="range"
+                    min="0" max="720" step="1"
+                    value={checkpointTargetTime}
+                    onChange={(e) => setCheckpointTargetTime(parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: '#ff9500', height: '22px' }}
+                  />
+                  <input
+                    type="number"
+                    min="0" max="720"
+                    value={checkpointTargetTime}
+                    onChange={(e) => setCheckpointTargetTime(Math.max(0, Math.min(720, parseInt(e.target.value) || 0)))}
+                    style={{ width: '64px', fontSize: '13px', textAlign: 'center', padding: '3px 4px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(255,149,0,0.4)', color: '#ff9500', borderRadius: '3px' }}
+                  />
+                </div>
+                <div style={{ fontSize: '13px', color: '#ffffff', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '3px' }}>
+                  設定した秒数に自動追従がこの場所へ辿り着くよう、<br />
+                  <strong style={{ color: '#ffb84d' }}>移動速度が自動で調整</strong>されます。<br />
+                  <span style={{ color: '#e0e0e0', fontSize: '12px' }}>
+                    ※ 0 = 速度調整なし (デフォルト 200 px/s)
+                  </span>
+                </div>
+                {checkpointTargetTime > 0 && checkpointTargetTime < 1 && (
+                  <div style={{ fontSize: '12px', color: '#ff4444', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(255,0,0,0.1)', border: '1px solid rgba(255,68,68,0.4)', borderRadius: '3px' }}>
+                    ⚠ 目標時間が1秒未満です。無視されます。
+                  </div>
+                )}
+              </div>
+
+              {/* Sound on pass */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', background: 'rgba(255,149,0,0.08)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,149,0,0.25)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  id="checkpoint-sound-cb"
+                  checked={checkpointSoundOn}
+                  onChange={(e) => setCheckpointSoundOn(e.target.checked)}
+                  style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                />
+                <label htmlFor="checkpoint-sound-cb" style={{ fontSize: '13px', color: '#ff9500', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none', flex: 1 }}>
+                  🔔 通過時に音を鳴らす
+                </label>
+              </label>
+
+              {/* Temporarily ignore this checkpoint */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(128,128,128,0.08)', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(128,128,128,0.25)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  id="checkpoint-hide-cb"
+                  checked={hiddenMarkers.includes(activeNoteMarker.id)}
+                  onChange={(e) => {
+                    const isHidden = hiddenMarkers.includes(activeNoteMarker.id);
+                    if (e.target.checked && !isHidden) {
+                      onHideGlobalMarker?.(activeNoteMarker.id);
+                    } else if (!e.target.checked && isHidden) {
+                      onShowGlobalMarker?.(activeNoteMarker.id);
+                    }
+                  }}
+                  style={{ accentColor: '#888', cursor: 'pointer' }}
+                />
+                <label htmlFor="checkpoint-hide-cb" style={{ fontSize: '12px', color: '#cccccc', cursor: 'pointer', userSelect: 'none', flex: 1 }}>
+                  🙈 このチェックポイントを無視 (一時的に非表示)
+                </label>
+              </label>
             </div>
           )}
 

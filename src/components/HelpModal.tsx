@@ -24,6 +24,8 @@ interface HelpModalProps {
   startupFocusMarkerId?: string;
   onSetStartupFocus: (markerId: string | null) => void;
   onClearOriginalAuthor?: () => void;
+  autoLoadLastRoute?: boolean;
+  onSetAutoLoadLastRoute?: (enabled: boolean) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -35,7 +37,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   globalMarkers, route,
   onHideGlobalMarker, onShowGlobalMarker,
   startupFocusMarkerId, onSetStartupFocus,
-  onClearOriginalAuthor
+  onClearOriginalAuthor,
+  autoLoadLastRoute,
+  onSetAutoLoadLastRoute
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -46,8 +50,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   const tabs = HELP_TABS.filter(t => t.id !== 'debug' || isLocal);
   const currentTabData = tabs.find(t => t.id === helpActiveTab) || tabs[0];
   const isDebugTab = currentTabData.id === 'debug';
-  const currentText = isDebugTab ? '' : (helpTexts[currentTabData.id] || '');
-  const setCurrentText = (!isDebugTab && isLocal) ? (val: string) => {
+  const isSettingsTab = currentTabData.id === 'settings';
+  const currentText = (isDebugTab || isSettingsTab) ? '' : (helpTexts[currentTabData.id] || '');
+  const setCurrentText = (!isDebugTab && !isSettingsTab && isLocal) ? (val: string) => {
     const next = { ...helpTexts, [currentTabData.id]: val };
     setHelpTexts(next);
     saveHelpData(next);
@@ -165,6 +170,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   </div>
                 )}
               </div>
+              {/* 設定 (Settings) — removed from debug tab; now in dedicated 設定 tab */}
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>デバッグ情報:</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
@@ -210,6 +216,25 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   {globalMarkers.length === 0 && route.markers.length === 0 && <div style={{ fontSize: '10px', color: '#666', padding: '8px', textAlign: 'center' }}>マーカーがありません</div>}
                 </div>
               </div>
+            </div>
+          ) : isSettingsTab ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '4px' }}>
+                ⚙️ 設定
+              </div>
+              {onSetAutoLoadLastRoute && (
+                <div style={{ padding: '10px 14px', background: 'rgba(0, 240, 255, 0.04)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoLoadLastRoute ?? true}
+                      onChange={(e) => onSetAutoLoadLastRoute(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    🚀 起動時に最後に使用していたデータを自動で読み込む
+                  </label>
+                </div>
+              )}
             </div>
           ) : isEditMode && isLocal && !isHelpPreviewMode ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>

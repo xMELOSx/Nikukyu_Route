@@ -1,6 +1,6 @@
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint';
 
 // Simple XOR cipher for author name obfuscation
 export function xorEncrypt(plain: string, key: string): string {
@@ -50,7 +50,47 @@ export interface DrawingStroke {
   points: Point[];
   color: string;
   width: number;
-  type: 'solid' | 'dashed' | 'arrow';
+  // 'solid' = 進行ルート (route, with arrowhead), 'dashed' = 分岐ルート (branch, no arrowhead)
+  type: 'solid' | 'dashed';
+}
+
+/**
+ * Migrate legacy DrawingStroke data. The 'arrow' type was removed and is now
+ * equivalent to 'solid'. This helper normalizes any persisted data on load.
+ */
+export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
+  return strokes.map(s => s.type === 'arrow' ? { ...s, type: 'solid' } : s);
+}
+
+/**
+ * Smooth a polyline using Chaikin's corner-cutting algorithm.
+ * Each iteration replaces every interior point with two new points
+ * that are 1/4 and 3/4 along each segment, producing a smooth curve
+ * from the original points. Endpoints are preserved.
+ *
+ * `iterations` controls smoothness (more = smoother, fewer = closer to original).
+ * `maxPoints` caps the result so excessive smoothing can't produce tens of
+ * thousands of points and freeze the canvas.
+ */
+export function smoothStrokePoints(points: Point[], iterations: number = 3, maxPoints: number = 1500): Point[] {
+  if (points.length < 3) return points;
+  let result = points.slice();
+  for (let it = 0; it < iterations; it++) {
+    // Stop early if we've already hit the cap
+    if (result.length >= maxPoints) break;
+    const next: Point[] = [result[0]];
+    for (let i = 0; i < result.length - 1; i++) {
+      const p0 = result[i];
+      const p1 = result[i + 1];
+      const q = { x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y };
+      const r = { x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y };
+      next.push(q, r);
+      if (next.length >= maxPoints) break;
+    }
+    next.push(result[result.length - 1]);
+    result = next;
+  }
+  return result;
 }
 
 export interface ScrollConfig {
@@ -109,6 +149,10 @@ export interface HeistMarker {
   textTooltip?: boolean;      // For text markers: show mouseover tooltip
   textGlow?: boolean;         // For text markers: show glow effect
   mediaItems?: MediaItem[]; // For info/eh/boss/battle markers: multiple media attachments
+  // Checkpoint marker fields (type === 'checkpoint')
+  checkpointTargetTime?: number;  // Target arrival time in seconds (0 = no target)
+  checkpointSoundOn?: boolean;    // Play a beep when the auto-route passes this checkpoint
+  checkpointExpanded?: boolean;   // Whether the popup is expanded in presentation mode
 }
 
 export interface RouteData {
@@ -140,7 +184,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   description: 'Plan description here...',
   targetCash: '100,000',
   targetCoins: '500',
-  targetDuration: '',
+  targetDuration: '720',
   author: '',
   originalAuthor: '',
   strokes: {
@@ -199,8 +243,58 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   text: { emoji: 'T', label: 'TEXT', color: '#ffffff' },
   iinfo: { emoji: 'ⓘ', label: 'I-INFO', color: '#4fc3f7' },
   inote: { emoji: '📝', label: 'I-MEMO', color: '#39ff14' },
-  itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' }
+  itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' },
+  start: { emoji: '🐾', label: 'START', color: '#39ff14' },
+  checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' }
 };
+
+/**
+ * Auto-route helper: returns true if the marker is a movement marker
+ * (i.e. traversal continues through it without pausing).
+ */
+export function isMovementMarker(type: MarkerType): boolean {
+  return type === 'warp' || type === 'iwarp' || type === 'stairs' || type === 'start';
+}
+
+/**
+ * Auto-route helper: returns true if the marker is a stop marker
+ * (i.e. traversal pauses for the marker's configured duration).
+ */
+export function isStopMarker(type: MarkerType): boolean {
+  return type === 'picking' || type === 'gpicking' ||
+         type === 'long_picking' || type === 'glong_picking' ||
+         type === 'boss' || type === 'gbattle' || type === 'battle';
+}
+
+/**
+ * Auto-route helper: returns true if the marker is a checkpoint marker
+ * (i.e. the auto-route should detect when it passes it for on-time checks).
+ */
+export function isCheckpointMarker(type: MarkerType): boolean {
+  return type === 'checkpoint';
+}
+
+/**
+ * Returns the stop duration in seconds for a stop marker.
+ * Falls back to a sensible default if not configured.
+ */
+export function getStopDurationSeconds(marker: HeistMarker): number {
+  if (marker.type === 'picking' || marker.type === 'gpicking') {
+    if (marker.pickingPicky) return 0;
+    return marker.pickingDurationSeconds ?? 5;
+  }
+  if (marker.type === 'long_picking' || marker.type === 'glong_picking') {
+    if (marker.pickingPicky) return 0;
+    return marker.longPickingDurationSeconds ?? 7;
+  }
+  if (marker.type === 'boss') {
+    return marker.bossDurationSeconds ?? 60;
+  }
+  if (marker.type === 'battle' || marker.type === 'gbattle') {
+    return marker.battleDurationSeconds ?? 20;
+  }
+  return 0;
+}
 
 // Preset Maps metadata with local paths
 export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; label: string } } = {
@@ -242,7 +336,27 @@ export class DataManager {
   // Load route from localStorage
   static loadFromLocalStorage(id: string): RouteData | null {
     const dataStr = localStorage.getItem(`heist_route_${id}`);
-    return dataStr ? JSON.parse(dataStr) : null;
+    if (!dataStr) return null;
+    const parsed = JSON.parse(dataStr) as RouteData;
+    // Migrate legacy 'arrow' stroke type to 'solid' on load and persist the
+    // normalized form so subsequent loads don't need to re-migrate.
+    if (parsed.strokes) {
+      let needsPersist = false;
+      const normalized: RouteData['strokes'] = { ...parsed.strokes };
+      (Object.keys(parsed.strokes) as (keyof RouteData['strokes'])[]).forEach(k => {
+        const before = parsed.strokes[k];
+        const after = normalizeStrokes(before);
+        if (after !== before) {
+          normalized[k] = after;
+          needsPersist = true;
+        }
+      });
+      if (needsPersist) {
+        parsed.strokes = normalized;
+        localStorage.setItem(`heist_route_${id}`, JSON.stringify(parsed));
+      }
+    }
+    return parsed;
   }
 
   // Delete route from localStorage
