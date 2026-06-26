@@ -757,66 +757,109 @@ export class DataManager {
       const imgData = ctx.getImageData(0, 0, w, h);
       const pixels = imgData.data;
 
-      // Scan for magenta marker (R=255, B=255 in same pixel, G≈0)
-      // We look for 4 consecutive magenta pixels
-      let markerStart = -1;
-      for (let i = 0; i < pixels.length - 16; i += 4) {
-        if (pixels[i] > 200 && pixels[i+1] < 50 && pixels[i+2] > 200) {
-          // Check 4 consecutive magenta pixels
-          let count = 1;
-          for (let j = 1; j < 4 && i + j*4 < pixels.length; j++) {
-            if (pixels[i+j*4] > 200 && pixels[i+j*4+1] < 50 && pixels[i+j*4+2] > 200) count++;
-            else break;
+      // Try to decode the data bar starting at a given pixel offset.
+      // Returns the parsed RouteData on success, or null if the marker is
+      // not a valid data bar (wrong magic, bad length, truncated payload,
+      // unparseable JSON, etc.).
+      const tryDecode = (markerStart: number): RouteData | null => {
+        // 8 marker pixels × 4 bytes/pixel = 32 bytes
+        const afterMarker = markerStart + 32;
+        // Read magic "N K N Y" from G channel
+        const rMagic = [
+          pixels[afterMarker + 1],
+          pixels[afterMarker + 5],
+          pixels[afterMarker + 9],
+          pixels[afterMarker + 13]
+        ];
+        if (rMagic[0] !== 0x4E || rMagic[1] !== 0x4B || rMagic[2] !== 0x4E || rMagic[3] !== 0x59) {
+          return null;
+        }
+        // Read 4-byte length (big-endian) from G channel
+        const afterMagic = afterMarker + 16;
+        const lenG = [
+          pixels[afterMagic + 1],
+          pixels[afterMagic + 5],
+          pixels[afterMagic + 9],
+          pixels[afterMagic + 13]
+        ];
+        const view = new DataView(new Uint8Array(lenG).buffer);
+        const dataLen = view.getUint32(0, false);
+        // Sanity cap: refuse anything obviously broken. The encoder writes
+        // the route JSON, so well-formed exports stay well under this.
+        if (dataLen === 0 || dataLen > 50_000_000) return null;
+        // Read data from G channel
+        const afterLen = afterMagic + 16;
+        const dataBytes = new Uint8Array(dataLen);
+        let read = 0;
+        for (let i = 0; i < dataLen; i++) {
+          const pixelOffset = afterLen + i * 4 + 1; // +1 for G channel
+          if (pixelOffset >= pixels.length) break;
+          dataBytes[i] = pixels[pixelOffset];
+          read = i + 1;
+        }
+        if (read < dataLen) return null;
+        try {
+          const jsonStr = new TextDecoder().decode(dataBytes);
+          const clean = jsonStr.replace(/\0+$/, '');
+          const parsed = JSON.parse(clean);
+          if (parsed && parsed.id && typeof parsed.title === 'string') {
+            return parsed as RouteData;
           }
-          if (count >= 4) { markerStart = i; break; }
+          return null;
+        } catch {
+          return null;
         }
-      }
-      if (markerStart < 0) { resolve(null); return; }
+      };
 
-      // Skip 8 marker pixels (32 bytes in pixel data)
-      const afterMarker = markerStart + 32;
+      // Magenta pixel check: R > 200, G < 50, B > 200
+      const isMagenta = (i: number): boolean =>
+        pixels[i] > 200 && pixels[i + 1] < 50 && pixels[i + 2] > 200;
 
-      // Read magic "N K N Y" from G channel
-      const rMagic = [];
-      for (let j = 0; j < 4; j++) rMagic.push(pixels[afterMarker + j*4 + 1]);
-      if (rMagic[0] !== 0x4E || rMagic[1] !== 0x4B || rMagic[2] !== 0x4E || rMagic[3] !== 0x59) {
-        resolve(null); return;
-      }
-
-      // Read 4-byte length (big-endian) from G channel
-      const afterMagic = afterMarker + 16; // 4 magic bytes = 16 pixel bytes
-      const lenG = [pixels[afterMagic+1], pixels[afterMagic+5], pixels[afterMagic+9], pixels[afterMagic+13]];
-      const view = new DataView(new Uint8Array(lenG).buffer);
-      const dataLen = view.getUint32(0, false);
-      // Sanity cap: refuse anything obviously broken. The encoder writes
-      // the route JSON, so well-formed exports stay well under this.
-      if (dataLen === 0 || dataLen > 50_000_000) { resolve(null); return; }
-
-      // Read data from G channel
-      const afterLen = afterMagic + 16; // 4 length bytes = 16 pixel bytes
-      const dataBytes = new Uint8Array(dataLen);
-      let read = 0;
-      for (let i = 0; i < dataLen; i++) {
-        const pixelOffset = afterLen + i * 4 + 1; // +1 for G channel
-        if (pixelOffset >= pixels.length) break;
-        dataBytes[i] = pixels[pixelOffset];
-        read = i + 1;
-      }
-      // If we couldn't read the full payload, treat as failure.
-      if (read < dataLen) { resolve(null); return; }
-
-      try {
-        const jsonStr = new TextDecoder().decode(dataBytes);
-        const clean = jsonStr.replace(/\0+$/, '');
-        const parsed = JSON.parse(clean);
-        if (parsed && parsed.id && typeof parsed.title === 'string') {
-          resolve(parsed as RouteData);
-        } else {
-          resolve(null);
+      // Find the starting byte offsets of runs of 4+ consecutive magenta
+      // pixels within the given byte range. Skips past each run so we
+      // don't report the same run multiple times.
+      const findMagentaRuns = (startIdx: number, endIdx: number): number[] => {
+        const runs: number[] = [];
+        for (let i = startIdx; i < endIdx - 16; i += 4) {
+          if (isMagenta(i)) {
+            let count = 1;
+            for (let j = 1; j < 8 && i + j * 4 < endIdx; j++) {
+              if (isMagenta(i + j * 4)) count++;
+              else break;
+            }
+            if (count >= 4) {
+              runs.push(i);
+              i += count * 4; // Skip past this run
+            }
+          }
         }
-      } catch {
-        resolve(null);
+        return runs;
+      };
+
+      // The data bar is always written at the bottom of the exported PNG,
+      // so scan that region first. This avoids being misled by magenta-
+      // colored UI elements (phone/warp/p3 pins, magenta strokes, magenta
+      // text markers) drawn in the upper part of the image — those would
+      // otherwise be matched first and the magic check would fail,
+      // producing a false "data bar not found".
+      const bottomRows = Math.min(Math.max(200, Math.ceil(h * 0.1)), h);
+      const bottomStartIdx = (h - bottomRows) * w * 4;
+
+      // Pass 1: scan the bottom region
+      for (const runStart of findMagentaRuns(bottomStartIdx, pixels.length)) {
+        const result = tryDecode(runStart);
+        if (result) { resolve(result); return; }
       }
+
+      // Pass 2: scan the entire image (fallback if the data bar is not at
+      // the bottom — e.g. a PNG that was cropped or assembled differently).
+      for (const runStart of findMagentaRuns(0, pixels.length)) {
+        if (runStart >= bottomStartIdx) break; // Already tried in pass 1
+        const result = tryDecode(runStart);
+        if (result) { resolve(result); return; }
+      }
+
+      resolve(null);
     });
   }
 }
