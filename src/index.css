@@ -327,6 +327,7 @@ button, select, input {
   position: relative;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 /* Inner canvas wrapper inside MapCanvas component */
@@ -334,11 +335,10 @@ button, select, input {
   position: relative;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   background: #020305;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: crosshair;
   touch-action: none;
   -webkit-touch-callout: none;
