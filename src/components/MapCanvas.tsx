@@ -484,8 +484,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
   }, []);
 
-  const prevLeftCollapsedRef = useRef(leftSidebarCollapsed);
-  const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
+  // Assume markers were saved with both sidebars open (desktop default).
+  // Initializing to `false` makes the shift useEffect run on mount, so that
+  // when the page loads with one or both panes already collapsed (e.g. mobile
+  // mode where `leftSidebarCollapsed` starts as `true`), the markers are
+  // shifted to maintain their map-relative position.
+  const prevLeftCollapsedRef = useRef(false);
+  const prevRightCollapsedRef = useRef(false);
   const markersRef = useRef(markers);
   markersRef.current = markers;
 
@@ -3353,12 +3358,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </button>
                     )
                   )}
-                  {activeNoteMarker.type === 'checkpoint' && !hiddenMarkers.includes(activeNoteMarker.id) && globalMarkerIds.includes(activeNoteMarker.id) && (
+                  {activeNoteMarker.type === 'checkpoint' && !hiddenMarkers.includes(activeNoteMarker.id) && (
                     <button
                       className="delete-btn"
                       style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
                       onClick={() => { onHideGlobalMarker?.(activeNoteMarker.id); }}
-                      title="Hide this checkpoint in this plan only"
+                      title="このチェックポイントを非表示"
                     >
                       非表示
                     </button>
@@ -3368,7 +3373,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       className="delete-btn"
                       style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
                       onClick={() => { onShowGlobalMarker?.(activeNoteMarker.id); }}
-                      title="Show this checkpoint in this plan"
+                      title="Show this checkpoint"
                     >
                       表示
                     </button>
