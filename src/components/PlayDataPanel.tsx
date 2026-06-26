@@ -19,7 +19,9 @@ import {
   BIWEEKLY_COINS_CAP,
   FANS_PER_NIKUKYUU_POINT
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X, List, Target, Plus } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X, List, Target, Plus, ScanText, Image as ImageIcon, ClipboardPaste, Loader2 } from 'lucide-react';
+import { parseGoalsFromText } from '../utils/goalOcr';
+import { preprocessImageForOcr } from '../utils/imagePreprocess';
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
@@ -41,6 +43,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
   const [newGoal, setNewGoal] = useState<{ name: string; target: string; reward: string }>({ name: '', target: '', reward: '' });
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editingGoalCurrent, setEditingGoalCurrent] = useState<string>('');
+  // OCR state
+  const [showOcrModal, setShowOcrModal] = useState<boolean>(false);
+  const [ocrStatus, setOcrStatus] = useState<string>('');
+  const [ocrProgress, setOcrProgress] = useState<number>(0);
+  const [ocrPreview, setOcrPreview] = useState<string | null>(null);
+  const [ocrParsed, setOcrParsed] = useState<{ name: string; target: string; current: string; reward: string }[]>([]);
+  const [ocrRawText, setOcrRawText] = useState<string>('');
 
   useEffect(() => {
     savePlayData(state);
@@ -240,6 +249,153 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
     if (!window.confirm('全ての今週の目標を削除します。よろしいですか？')) return;
     setState(prev => ({ ...prev, goals: [] }));
     notify('今週の目標を全て削除しました');
+  };
+
+  // --- OCR handlers ---
+  const runOcrOnFiles = async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      notify('画像ファイルを選択してください');
+      return;
+    }
+
+    // Show first file as preview
+    const firstReader = new FileReader();
+    firstReader.onload = (e) => setOcrPreview(e.target?.result as string);
+    firstReader.readAsDataURL(imageFiles[0]);
+
+    setOcrStatus('Tesseract を読み込み中…');
+    setOcrProgress(0);
+    setOcrParsed([]);
+    setOcrRawText('');
+
+    try {
+      // Dynamic import — only loaded on first OCR use
+      const Tesseract = await import('tesseract.js');
+
+      // Collect all parsed goals from all images, dedup by name
+      const allParsed: { name: string; target: number; current: number; reward: number }[] = [];
+      const rawTexts: string[] = [];
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        setOcrStatus(`画像 ${i + 1}/${imageFiles.length} を処理中…`);
+
+        // Pre-process: scale 2x + grayscale + binarize for better OCR
+        const canvas = await preprocessImageForOcr(imageFiles[i]);
+
+        const result = await Tesseract.recognize(canvas, 'jpn', {
+          logger: (m: { status: string; progress: number }) => {
+            const label = m.status === 'recognizing text' ? 'テキスト認識中…' : m.status;
+            setOcrStatus(`画像 ${i + 1}/${imageFiles.length}: ${label}`);
+            setOcrProgress(m.progress);
+          }
+        });
+        const text = result.data.text;
+        rawTexts.push(text);
+        const parsed = parseGoalsFromText(text);
+        for (const g of parsed) {
+          // Dedup by name (normalize whitespace)
+          const norm = g.name.replace(/\s+/g, '').toLowerCase();
+          if (!allParsed.some(x => x.name.replace(/\s+/g, '').toLowerCase() === norm)) {
+            allParsed.push(g);
+          }
+        }
+      }
+
+      setOcrRawText(rawTexts.join('\n\n─────\n\n'));
+      setOcrParsed(allParsed.map(g => ({
+        name: g.name,
+        target: String(g.target),
+        current: String(g.current),
+        reward: String(g.reward)
+      })));
+      setOcrStatus(allParsed.length > 0
+        ? `${imageFiles.length}枚から ${allParsed.length}件検出 (重複除外済)`
+        : '検出できず — 画像を確認するか手動で入力してください');
+    } catch (err) {
+      console.error(err);
+      setOcrStatus('OCRエラー: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleOcrFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) runOcrOnFiles(files);
+    e.target.value = '';
+  };
+
+  const handleOcrPaste = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      const files: File[] = [];
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            files.push(new File([blob], 'pasted.png', { type }));
+          }
+        }
+      }
+      if (files.length === 0) {
+        notify('クリップボードに画像がありません');
+        return;
+      }
+      await runOcrOnFiles(files);
+    } catch (err) {
+      notify('クリップボードの読み取りに失敗: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const updateParsedGoal = (idx: number, field: 'name' | 'target' | 'current' | 'reward', value: string) => {
+    setOcrParsed(prev => prev.map((g, i) => i === idx ? { ...g, [field]: value } : g));
+  };
+
+  const removeParsedGoal = (idx: number) => {
+    setOcrParsed(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleConfirmOcr = () => {
+    const valid = ocrParsed.filter(g => g.name.trim() && parseInt(g.target) > 0);
+    if (valid.length === 0) {
+      notify('追加できる目標がありません');
+      return;
+    }
+
+    // Dedup against existing goals in the list (by normalized name)
+    const existing = new Set(state.goals.map(g => g.name.replace(/\s+/g, '').toLowerCase()));
+    const toAdd = valid.filter(g => !existing.has(g.name.replace(/\s+/g, '').toLowerCase()));
+    const skipped = valid.length - toAdd.length;
+
+    const newGoals: WeeklyGoal[] = toAdd.map(g => {
+      const target = parseInt(g.target) || 0;
+      const current = parseInt(g.current) || 0;
+      const reward = parseInt(g.reward) || 0;
+      return {
+        id: generateGoalId(),
+        name: g.name.trim(),
+        target,
+        current,
+        reward: reward > 0 ? reward : undefined,
+        completed: current >= target && target > 0
+      };
+    });
+    setState(prev => ({ ...prev, goals: [...prev.goals, ...newGoals] }));
+    notify(`${newGoals.length}件追加${skipped > 0 ? ` (既存と重複${skipped}件スキップ)` : ''}`);
+    setShowOcrModal(false);
+    setOcrPreview(null);
+    setOcrParsed([]);
+    setOcrRawText('');
+    setOcrProgress(0);
+    setOcrStatus('');
+  };
+
+  const handleCloseOcr = () => {
+    setShowOcrModal(false);
+    setOcrPreview(null);
+    setOcrParsed([]);
+    setOcrRawText('');
+    setOcrProgress(0);
+    setOcrStatus('');
   };
 
   const handleToggleExcluded = (id: string) => {
@@ -777,13 +933,23 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
             </div>
           </div>
         ) : (
-          <button
-            className="btn-cyber"
-            style={{ width: '100%', padding: '4px', fontSize: '10px', marginBottom: '6px' }}
-            onClick={() => setShowAddGoal(true)}
-          >
-            <Plus size={10} /> 目標を追加
-          </button>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+            <button
+              className="btn-cyber"
+              style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+              onClick={() => setShowAddGoal(true)}
+            >
+              <Plus size={10} /> 目標を追加
+            </button>
+            <button
+              className="btn-cyber"
+              style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+              onClick={() => setShowOcrModal(true)}
+              title="スクリーンショットからOCRで目標を一括追加"
+            >
+              <ScanText size={10} /> SSから追加
+            </button>
+          </div>
         )}
 
         {/* Goal list */}
@@ -896,6 +1062,149 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
           </button>
         )}
       </div>
+
+      {/* ====================================================== */}
+      {/* SS OCR モーダル                                           */}
+      {/* ====================================================== */}
+      {showOcrModal && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={handleCloseOcr}
+        >
+          <div
+            style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(255,0,255,0.3)', borderRadius: '12px', width: '640px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,0,255,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ScanText size={14} color="var(--magenta-neon, #ff00ff)" />
+                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--magenta-neon, #ff00ff)' }}>SSから目標を追加 (OCR)</span>
+              </div>
+              <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '10px' }} onClick={handleCloseOcr}>
+                ✕ 閉じる
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Input methods */}
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <label className="btn-cyber" style={{ flex: 1, padding: '6px', fontSize: '11px', textAlign: 'center', cursor: 'pointer' }}>
+                  <ImageIcon size={11} /> ファイル選択(複数可)
+                  <input type="file" accept="image/*" multiple onChange={handleOcrFileInput} style={{ display: 'none' }} />
+                </label>
+                <button className="btn-cyber" style={{ flex: 1, padding: '6px', fontSize: '11px' }} onClick={handleOcrPaste}>
+                  <ClipboardPaste size={11} /> クリップボードから
+                </button>
+              </div>
+
+              {/* Status / progress */}
+              {ocrStatus && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {ocrProgress < 1 && ocrParsed.length === 0 && <Loader2 size={12} className="spin" />}
+                  <span>{ocrStatus}</span>
+                  {ocrProgress > 0 && ocrProgress < 1 && (
+                    <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.round(ocrProgress * 100)}%`, background: 'var(--magenta-neon, #ff00ff)' }} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Image preview */}
+              {ocrPreview && (
+                <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,0,255,0.2)', borderRadius: '4px', padding: '4px', textAlign: 'center' }}>
+                  <img src={ocrPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain' }} />
+                </div>
+              )}
+
+              {/* Parsed goals list */}
+              {ocrParsed.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--magenta-neon, #ff00ff)', fontWeight: 700, marginBottom: '4px' }}>
+                    検出された目標 (編集可)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {ocrParsed.map((g, idx) => (
+                      <div key={idx} style={{ background: 'rgba(255,0,255,0.05)', border: '1px solid rgba(255,0,255,0.2)', borderRadius: '4px', padding: '5px 6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            className="input-cyber"
+                            style={{ flex: 1, fontSize: '11px', padding: '2px 4px' }}
+                            value={g.name}
+                            onChange={(e) => updateParsedGoal(idx, 'name', e.target.value)}
+                            placeholder="目標名"
+                          />
+                          <button
+                            className="btn-cyber danger"
+                            style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
+                            onClick={() => removeParsedGoal(idx)}
+                            title="削除"
+                          >
+                            <Trash2 size={9} />
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+                          <input
+                            type="number"
+                            className="input-cyber"
+                            style={{ fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                            value={g.target}
+                            onChange={(e) => updateParsedGoal(idx, 'target', e.target.value)}
+                            placeholder="目標"
+                          />
+                          <input
+                            type="number"
+                            className="input-cyber"
+                            style={{ fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                            value={g.current}
+                            onChange={(e) => updateParsedGoal(idx, 'current', e.target.value)}
+                            placeholder="現在"
+                          />
+                          <input
+                            type="number"
+                            className="input-cyber"
+                            style={{ fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                            value={g.reward}
+                            onChange={(e) => updateParsedGoal(idx, 'reward', e.target.value)}
+                            placeholder="報酬"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Raw OCR text (for debugging) */}
+              {ocrRawText && (
+                <details style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                  <summary style={{ cursor: 'pointer' }}>OCR生テキストを表示</summary>
+                  <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0 0', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px', maxHeight: '120px', overflowY: 'auto' }}>{ocrRawText}</pre>
+                </details>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', padding: '10px 14px', borderTop: '1px solid rgba(255,0,255,0.2)' }}>
+              <button
+                className="btn-cyber success"
+                style={{ flex: 2, padding: '7px', fontSize: '12px', fontWeight: 700 }}
+                onClick={handleConfirmOcr}
+                disabled={ocrParsed.length === 0}
+              >
+                <Check size={12} /> {ocrParsed.length}件を追加
+              </button>
+              <button
+                className="btn-cyber"
+                style={{ flex: 1, padding: '7px', fontSize: '11px' }}
+                onClick={handleCloseOcr}
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ====================================================== */}
       {/* 脱出記録 (history)                                       */}

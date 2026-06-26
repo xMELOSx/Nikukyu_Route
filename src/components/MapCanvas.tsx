@@ -484,26 +484,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
   }, []);
 
-  // Assume markers were saved with both sidebars open (desktop default).
-  // Initializing to `false` makes the shift useEffect run on mount, so that
-  // when the page loads with one or both panes already collapsed (e.g. mobile
-  // mode where `leftSidebarCollapsed` starts as `true`), the markers are
-  // shifted to maintain their map-relative position.
+  // On desktop (or any layout where the left pane starts open), markers were
+  // saved with the left pane open, so opening the page on mobile (where the
+  // left pane starts closed) leaves them visually offset by the pane width.
+  // Initializing the prev ref to `false` makes the shift useEffect run on
+  // mount and pull those markers left by 280px to compensate.
+  // The right pane ref still matches the current state, so its shift only
+  // fires on subsequent toggles (preserving the original behavior).
   const prevLeftCollapsedRef = useRef(false);
-  const prevRightCollapsedRef = useRef(false);
+  const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  // Tracks whether the initial shift for the current sidebar layout has been
+  // applied. Global markers are loaded asynchronously in App.tsx, so on the
+  // first useEffect run `markersRef.current` is still empty. The effect must
+  // re-run once the markers are populated; `hasAppliedInitialShiftRef`
+  // ensures we shift exactly once per layout, not on every re-render.
+  const hasAppliedInitialShiftRef = useRef(false);
 
   useEffect(() => {
     const prevLeft = prevLeftCollapsedRef.current;
     const prevRight = prevRightCollapsedRef.current;
 
-    if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
+    const currentMarkers = markersRef.current;
+    if (currentMarkers.length === 0) return;
+
+    const sidebarStateChanged = prevLeft !== leftSidebarCollapsed || prevRight !== rightSidebarCollapsed;
+    if (hasAppliedInitialShiftRef.current && !sidebarStateChanged) return;
 
     prevLeftCollapsedRef.current = leftSidebarCollapsed;
     prevRightCollapsedRef.current = rightSidebarCollapsed;
+    hasAppliedInitialShiftRef.current = true;
 
-    const currentMarkers = markersRef.current;
     const midX = window.innerWidth / 2;
 
     onMarkersChange(
@@ -525,7 +537,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return m;
       })
     );
-  }, [leftSidebarCollapsed, rightSidebarCollapsed]);
+  }, [leftSidebarCollapsed, rightSidebarCollapsed, markers.length]);
 
   // Sync state to anim refs whenever state changes
   // This ensures that user manual zoom/pan (which update state)
@@ -1199,7 +1211,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (segments.length === 0) return '';
     let remaining = elapsed;
     for (const seg of segments) {
-      const travelTime = seg.distance / Math.max(speed, 0.0001);
+      // Use the per-segment speed (if set) to match the actual auto-route timing.
+      const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+      const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
       if (remaining <= travelTime) return '';
       remaining -= travelTime;
       if (remaining <= seg.stopDuration) {
