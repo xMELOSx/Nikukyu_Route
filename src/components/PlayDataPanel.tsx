@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   type PlayDataState,
   type PlayDataRecord,
+  type WeeklyGoal,
   loadPlayData,
   savePlayData,
   checkAutoReset,
@@ -13,11 +14,12 @@ import {
   formatNextReset,
   downloadCSV,
   generateRecordId,
+  generateGoalId,
   BIWEEKLY_FANS_CAP,
   BIWEEKLY_COINS_CAP,
   FANS_PER_NIKUKYUU_POINT
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X, List } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Pencil, Check, X, List, Target, Plus } from 'lucide-react';
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
@@ -35,6 +37,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
   const [editingCumulative, setEditingCumulative] = useState<CumulativeField | null>(null);
   const [editingCumulativeValue, setEditingCumulativeValue] = useState<string>('');
   const [showAllRecords, setShowAllRecords] = useState<boolean>(false);
+  const [showAddGoal, setShowAddGoal] = useState<boolean>(false);
+  const [newGoal, setNewGoal] = useState<{ name: string; target: string; reward: string }>({ name: '', target: '', reward: '' });
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [editingGoalCurrent, setEditingGoalCurrent] = useState<string>('');
 
   useEffect(() => {
     savePlayData(state);
@@ -163,6 +169,77 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
       records: []
     }));
     notify('記録値と現在値をリセットしました');
+  };
+
+  // --- Goal handlers ---
+  const handleAddGoal = () => {
+    const name = newGoal.name.trim();
+    const target = parseInt(newGoal.target) || 0;
+    const reward = parseInt(newGoal.reward) || 0;
+    if (!name || target <= 0) {
+      notify('目標名と目標数を入力してください');
+      return;
+    }
+    const goal: WeeklyGoal = {
+      id: generateGoalId(),
+      name,
+      target,
+      current: 0,
+      reward: reward > 0 ? reward : undefined,
+      completed: false
+    };
+    setState(prev => ({ ...prev, goals: [...prev.goals, goal] }));
+    setNewGoal({ name: '', target: '', reward: '' });
+    setShowAddGoal(false);
+    notify(`目標を追加しました: ${name}`);
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    if (!window.confirm('この目標を削除しますか？')) return;
+    setState(prev => ({ ...prev, goals: prev.goals.filter(g => g.id !== id) }));
+    notify('目標を削除しました');
+  };
+
+  const handleToggleGoalCompleted = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      goals: prev.goals.map(g => {
+        if (g.id !== id) return g;
+        // When marking complete, snap current to target if needed
+        const completed = !g.completed;
+        return { ...g, completed, current: completed ? Math.max(g.current, g.target) : g.current };
+      })
+    }));
+  };
+
+  const startEditGoalCurrent = (goal: WeeklyGoal) => {
+    setEditingGoalId(goal.id);
+    setEditingGoalCurrent(String(goal.current));
+  };
+
+  const commitEditGoalCurrent = () => {
+    if (!editingGoalId) return;
+    const num = Math.max(0, parseInt(editingGoalCurrent) || 0);
+    setState(prev => ({
+      ...prev,
+      goals: prev.goals.map(g => {
+        if (g.id !== editingGoalId) return g;
+        return { ...g, current: num, completed: num >= g.target };
+      })
+    }));
+    setEditingGoalId(null);
+    setEditingGoalCurrent('');
+  };
+
+  const cancelEditGoalCurrent = () => {
+    setEditingGoalId(null);
+    setEditingGoalCurrent('');
+  };
+
+  const handleClearAllGoals = () => {
+    if (!window.confirm('全ての今週の目標を削除します。よろしいですか？')) return;
+    setState(prev => ({ ...prev, goals: [] }));
+    notify('今週の目標を全て削除しました');
   };
 
   const handleToggleExcluded = (id: string) => {
@@ -628,6 +705,196 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
         <div style={smallText}>
           ※累計値は値をクリックして手動編集できます
         </div>
+      </div>
+
+      {/* ====================================================== */}
+      {/* 今週の目標 (Weekly challenge goals)                       */}
+      {/* ====================================================== */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+          <Target size={12} color="var(--magenta-neon, #ff00ff)" />
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>今週の目標 ({state.goals.length}件)</span>
+        </div>
+
+        {/* Add new goal inline form */}
+        {showAddGoal ? (
+          <div
+            style={{
+              background: 'rgba(255,0,255,0.05)',
+              border: '1px solid rgba(255,0,255,0.25)',
+              borderRadius: '4px',
+              padding: '6px',
+              marginBottom: '6px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}
+          >
+            <input
+              type="text"
+              className="input-cyber"
+              style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
+              value={newGoal.name}
+              onChange={(e) => setNewGoal(g => ({ ...g, name: e.target.value }))}
+              placeholder="目標名 (例: 金塊を240個集める)"
+              autoFocus
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+              <input
+                type="number"
+                min="1"
+                className="input-cyber"
+                style={{ fontSize: '11px', padding: '3px 6px' }}
+                value={newGoal.target}
+                onChange={(e) => setNewGoal(g => ({ ...g, target: e.target.value }))}
+                placeholder="目標数"
+              />
+              <input
+                type="number"
+                min="0"
+                className="input-cyber"
+                style={{ fontSize: '11px', padding: '3px 6px' }}
+                value={newGoal.reward}
+                onChange={(e) => setNewGoal(g => ({ ...g, reward: e.target.value }))}
+                placeholder="報酬 (任意)"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                className="btn-cyber success"
+                style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+                onClick={handleAddGoal}
+              >
+                <Check size={10} /> 追加
+              </button>
+              <button
+                className="btn-cyber"
+                style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+                onClick={() => { setShowAddGoal(false); setNewGoal({ name: '', target: '', reward: '' }); }}
+              >
+                <X size={10} /> キャンセル
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn-cyber"
+            style={{ width: '100%', padding: '4px', fontSize: '10px', marginBottom: '6px' }}
+            onClick={() => setShowAddGoal(true)}
+          >
+            <Plus size={10} /> 目標を追加
+          </button>
+        )}
+
+        {/* Goal list */}
+        {state.goals.length === 0 ? (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '6px' }}>
+            まだ目標がありません
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {state.goals.map(goal => {
+              const ratio = goal.target > 0 ? Math.min(100, (goal.current / goal.target) * 100) : 0;
+              return (
+                <div
+                  key={goal.id}
+                  style={{
+                    background: goal.completed ? 'rgba(57,255,20,0.08)' : 'rgba(255,0,255,0.05)',
+                    border: goal.completed ? '1px solid rgba(57,255,20,0.4)' : '1px solid rgba(255,0,255,0.2)',
+                    borderRadius: '4px',
+                    padding: '5px 6px',
+                    fontSize: '10px',
+                    opacity: goal.completed ? 0.85 : 1
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="checkbox"
+                      checked={goal.completed}
+                      onChange={() => handleToggleGoalCompleted(goal.id)}
+                      title="完了"
+                      style={{ cursor: 'pointer', accentColor: 'var(--green-neon)' }}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        color: goal.completed ? 'var(--text-muted)' : 'var(--text-primary)',
+                        textDecoration: goal.completed ? 'line-through' : 'none',
+                        fontWeight: 600
+                      }}
+                    >
+                      {goal.name}
+                    </span>
+                    {goal.reward !== undefined && goal.reward > 0 && (
+                      <span style={{ color: 'var(--yellow-neon)', fontSize: '9px', fontWeight: 700 }}>
+                        🪙{goal.reward}
+                      </span>
+                    )}
+                    <button
+                      className="btn-cyber danger"
+                      style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
+                      onClick={() => handleDeleteGoal(goal.id)}
+                      title="この目標を削除"
+                    >
+                      <Trash2 size={9} />
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                    {editingGoalId === goal.id ? (
+                      <>
+                        <input
+                          type="number"
+                          min="0"
+                          className="input-cyber"
+                          style={{ width: '70px', fontSize: '11px', fontWeight: 700, padding: '1px 4px', textAlign: 'right', fontFamily: 'monospace' }}
+                          value={editingGoalCurrent}
+                          onChange={(e) => setEditingGoalCurrent(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEditGoalCurrent();
+                            if (e.key === 'Escape') cancelEditGoalCurrent();
+                          }}
+                          onBlur={commitEditGoalCurrent}
+                          autoFocus
+                        />
+                        <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}> / {goal.target.toLocaleString()}</span>
+                      </>
+                    ) : (
+                      <span
+                        onClick={() => startEditGoalCurrent(goal)}
+                        style={{ color: goal.completed ? 'var(--green-neon)' : 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace', cursor: 'pointer', borderBottom: `1px dashed ${goal.completed ? 'var(--green-neon)' : 'var(--cyan-neon)'}55` }}
+                        title="クリックで進捗を編集"
+                      >
+                        {goal.current.toLocaleString()} / {goal.target.toLocaleString()}
+                        <Pencil size={9} style={{ marginLeft: '4px', verticalAlign: 'middle', opacity: 0.6 }} />
+                      </span>
+                    )}
+                    <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${ratio}%`,
+                          background: goal.completed ? 'var(--green-neon)' : 'var(--magenta-neon, #ff00ff)',
+                          transition: 'width 0.2s'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {state.goals.length > 0 && (
+          <button
+            className="btn-cyber danger"
+            style={{ width: '100%', padding: '3px', fontSize: '9px', marginTop: '6px', clipPath: 'none' }}
+            onClick={handleClearAllGoals}
+            title="今週の目標を全て削除"
+          >
+            目標を全削除
+          </button>
+        )}
       </div>
 
       {/* ====================================================== */}

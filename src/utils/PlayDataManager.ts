@@ -9,6 +9,15 @@ export interface PlayDataRecord {
   excluded: boolean;
 }
 
+export interface WeeklyGoal {
+  id: string;
+  name: string;
+  target: number;
+  current: number;
+  reward?: number;
+  completed: boolean;
+}
+
 export interface PlayDataState {
   // Current period counters (entered by user each run)
   currentFans: number;
@@ -28,6 +37,10 @@ export interface PlayDataState {
 
   // History of escape button presses
   records: PlayDataRecord[];
+
+  // Weekly challenge goals (manual tracking, e.g. from the in-game
+  // 挑戦目標 tab — name, target, current progress, optional reward)
+  goals: WeeklyGoal[];
 
   // UI state — auto-route panel collapsed
   autoRouteCollapsed: boolean;
@@ -53,21 +66,23 @@ export const PLAY_DATA_DEFAULTS: PlayDataState = {
   recordedNikukyuu: 0,
   periodStart: 0,
   records: [],
+  goals: [],
   autoRouteCollapsed: false
 };
 
 export function loadPlayData(): PlayDataState {
   try {
     const raw = localStorage.getItem(PLAY_DATA_KEY);
-    if (!raw) return { ...PLAY_DATA_DEFAULTS, records: [] };
+    if (!raw) return { ...PLAY_DATA_DEFAULTS, records: [], goals: [] };
     const parsed = JSON.parse(raw) as Partial<PlayDataState>;
     return {
       ...PLAY_DATA_DEFAULTS,
       ...parsed,
-      records: Array.isArray(parsed.records) ? parsed.records : []
+      records: Array.isArray(parsed.records) ? parsed.records : [],
+      goals: Array.isArray(parsed.goals) ? parsed.goals : []
     };
   } catch {
-    return { ...PLAY_DATA_DEFAULTS, records: [] };
+    return { ...PLAY_DATA_DEFAULTS, records: [], goals: [] };
   }
 }
 
@@ -286,4 +301,8 @@ export function downloadCSV(records: PlayDataRecord[], filename: string = 'heist
 
 export function generateRecordId(): string {
   return `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function generateGoalId(): string {
+  return `goal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

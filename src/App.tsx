@@ -243,6 +243,13 @@ export default function App() {
     }));
     setGlobalMarkers(previous.globalMarkers);
     localStorage.setItem('heist_global_markers', JSON.stringify(previous.globalMarkers));
+
+    // If the undo brings back a deleted marker, clear the active note marker
+    // and reset tool mode so the user can place new markers normally.
+    const restored = [...previous.individualMarkers, ...previous.globalMarkers];
+    setActiveNoteMarkerId(prev => prev && restored.some(m => m.id === prev) ? prev : null);
+    setToolMode('pan');
+    setActiveMarkerType(null);
   };
 
   const redo = () => {
@@ -266,6 +273,13 @@ export default function App() {
     }));
     setGlobalMarkers(next.globalMarkers);
     localStorage.setItem('heist_global_markers', JSON.stringify(next.globalMarkers));
+
+    // If the redo brings back a deleted marker, clear the active note marker
+    // and reset tool mode so the user can place new markers normally.
+    const restored = [...next.individualMarkers, ...next.globalMarkers];
+    setActiveNoteMarkerId(prev => prev && restored.some(m => m.id === prev) ? prev : null);
+    setToolMode('pan');
+    setActiveMarkerType(null);
   };
 
   const handleBossCustomDurationChange = (markerId: string, duration: number | undefined) => {
@@ -2508,8 +2522,9 @@ export default function App() {
                         <div
                           key={m.id}
                           className="placed-note-item"
-                          style={{ borderLeft: `3px solid ${meta.color}`, cursor: m.scrollConfig ? 'pointer' : 'default' }}
-                          onClick={() => m.scrollConfig && setFocusTrigger({ id: m.id, timestamp: Date.now() })}
+                          style={{ borderLeft: `3px solid ${meta.color}`, cursor: 'pointer' }}
+                          onClick={() => setFocusTrigger({ id: m.id, timestamp: Date.now() })}
+                          title={m.scrollConfig ? 'クリックでこのピンに移動 (カスタムスクロール)' : 'クリックでこのピンに移動 (デフォルトスクロール)'}
                         >
                           <div className="placed-note-item-header">
                             <span className="placed-note-type" style={{ color: meta.color }}>
@@ -2530,11 +2545,9 @@ export default function App() {
                           <div className="placed-note-text">
                             {m.note.trim() ? m.note : <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No text note details</span>}
                           </div>
-                          {m.scrollConfig && (
-                            <div style={{ fontSize: '9px', color: 'var(--cyan-neon)', marginTop: '2px', textAlign: 'right' }}>
-                              Click to Pan ➔
-                            </div>
-                          )}
+                          <div style={{ fontSize: '9px', color: m.scrollConfig ? 'var(--cyan-neon)' : 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
+                            {m.scrollConfig ? '🎯 Click to Pan ➔' : 'Click to Pan ➔'}
+                          </div>
                         </div>
                       );
                     })

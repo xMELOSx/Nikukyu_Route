@@ -11,7 +11,7 @@ import {
   PRESET_MAPS_META
 } from '../utils/DataManager';
 import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
-import { buildAutoRoute, computeRouteTiming, interpolateRoute, playCheckpointSound, prewarmAudio, type RouteSegment } from '../utils/AutoRoute';
+import { buildAutoRoute, computeRouteTiming, interpolateRoute, playCheckpointSound, prewarmAudio, speakCheckpointTime, type RouteSegment } from '../utils/AutoRoute';
 
 // TweetEmbed Component using official Twitter widgets SDK
 const TweetEmbed: React.FC<{ url: string }> = ({ url }) => {
@@ -410,6 +410,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
   const [textFixedPosition, setTextFixedPosition] = useState(false);
+  const [textTrackSide, setTextTrackSide] = useState<'auto' | 'left' | 'right'>('left');
   const [textDescription, setTextDescription] = useState('');
   const [textTooltip, setTextTooltip] = useState(false);
   const [textGlow, setTextGlow] = useState(false);
@@ -437,6 +438,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Checkpoint-specific state
   const [checkpointTargetTime, setCheckpointTargetTime] = useState(60);
   const [checkpointSoundOn, setCheckpointSoundOn] = useState(false);
+  const [checkpointVoiceOn, setCheckpointVoiceOn] = useState(true);
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
@@ -497,11 +499,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     prevRightCollapsedRef.current = rightSidebarCollapsed;
 
     const currentMarkers = markersRef.current;
+    const midX = window.innerWidth / 2;
 
     onMarkersChange(
       currentMarkers.map(m => {
         if (!m.textFixedPosition || m.floor !== floor) return m;
-        const side = m.trackSide || 'left';
+        const side: 'left' | 'right' =
+          m.trackSide === 'auto' || !m.trackSide
+            ? (m.x < midX ? 'left' : 'right')
+            : m.trackSide;
 
         if (prevLeft !== leftSidebarCollapsed && side === 'left') {
           const shift = leftSidebarCollapsed ? -280 : 280;
@@ -822,8 +828,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           );
           if (prev?.markerId && prev.markerType === 'checkpoint') {
             const passedMarker = markers.find(m => m.id === prev.markerId);
-            if (passedMarker?.type === 'checkpoint' && passedMarker.checkpointSoundOn) {
-              playCheckpointSound(true);
+            if (passedMarker?.type === 'checkpoint') {
+              const cpTarget = (prev as any)._checkpointTarget as number;
+              if (passedMarker.checkpointSoundOn) {
+                playCheckpointSound(true);
+              }
+              // Voice announcement: "X秒地点です" — uses the global
+              // checkpointVoiceOn flag (default ON) so the user can disable
+              // it separately from the beep sound.
+              if (cpTarget > 0 && checkpointVoiceOn) {
+                speakCheckpointTime(cpTarget, passedMarker.note?.trim() || undefined);
+              }
             }
           }
         }
@@ -1827,6 +1842,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setTextSize(m.textSize || 14);
     setTextScaleWithMap(!!m.textScaleWithMap);
     setTextFixedPosition(!!m.textFixedPosition);
+    setTextTrackSide(m.trackSide || 'left');
     setTextDescription(m.textDescription || '');
     setTextTooltip(!!m.textTooltip);
     setTextGlow(!!m.textGlow);
@@ -1863,7 +1879,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     // Checkpoint fields
     setCheckpointTargetTime(m.checkpointTargetTime ?? 60);
-    setCheckpointSoundOn(m.checkpointSoundOn ?? false);
+    setCheckpointSoundOn(!!m.checkpointSoundOn);
+    setCheckpointVoiceOn(m.checkpointVoiceOn !== false);
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
@@ -1942,6 +1959,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.textSize = textSize;
               updated.textScaleWithMap = textScaleWithMap;
               updated.textFixedPosition = textFixedPosition;
+              updated.trackSide = textFixedPosition ? textTrackSide : undefined;
               updated.textDescription = textDescription;
               updated.textTooltip = textTooltip;
               updated.textGlow = textGlow;
@@ -1950,6 +1968,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.bossDrops = bossDrops;
               updated.bossDescription = bossDescription;
               updated.bossDurationSeconds = bossDurationSeconds;
+              updated.checkpointSoundOn = checkpointSoundOn;
+              updated.checkpointVoiceOn = checkpointVoiceOn;
             }
             if (m.type === 'battle' || m.type === 'gbattle') {
               updated.battleDurationSeconds = battleDurationSeconds;
@@ -1971,6 +1991,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (m.type === 'checkpoint') {
               updated.checkpointTargetTime = checkpointTargetTime;
               updated.checkpointSoundOn = checkpointSoundOn;
+              updated.checkpointVoiceOn = checkpointVoiceOn;
             }
             if (isInfoType(m.type) || m.type === 'eh' || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle') {
               updated.mediaItems = mediaItems;
@@ -3307,12 +3328,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     isHidden ? (
                       <button 
                         className="delete-btn"
-                        style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                         style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
                         onClick={() => {
                           if (onShowGlobalMarker) {
                             onShowGlobalMarker(activeNoteMarker.id);
                           }
-                          setActiveNoteMarkerId(null);
                         }}
                         title="Show this global marker in this plan"
                       >
@@ -3326,7 +3346,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           if (onHideGlobalMarker) {
                             onHideGlobalMarker(activeNoteMarker.id);
                           }
-                          setActiveNoteMarkerId(null);
                         }}
                         title="Hide this global marker in this plan only"
                       >
@@ -3334,8 +3353,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </button>
                     )
                   )}
+                  {activeNoteMarker.type === 'checkpoint' && !hiddenMarkers.includes(activeNoteMarker.id) && globalMarkerIds.includes(activeNoteMarker.id) && (
+                    <button
+                      className="delete-btn"
+                      style={{ background: 'none', border: 'none', color: '#ffaa00', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      onClick={() => { onHideGlobalMarker?.(activeNoteMarker.id); }}
+                      title="Hide this checkpoint in this plan only"
+                    >
+                      非表示
+                    </button>
+                  )}
+                  {activeNoteMarker.type === 'checkpoint' && hiddenMarkers.includes(activeNoteMarker.id) && (
+                    <button
+                      className="delete-btn"
+                      style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      onClick={() => { onShowGlobalMarker?.(activeNoteMarker.id); }}
+                      title="Show this checkpoint in this plan"
+                    >
+                      表示
+                    </button>
+                  )}
                   {(!isGlobal || isLocal) && (
-                    <button 
+                    <button
                       className="delete-btn"
                       style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
                       onClick={() => handleDeleteMarker(activeNoteMarker.id)}
@@ -3458,7 +3497,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           if (!rect) return m;
                           const vpX = rect.left + (m.x / 1600) * rect.width;
                           const vpY = rect.top + (m.y / 4550) * rect.height;
-                          const side: 'left' | 'right' = vpX < window.innerWidth / 2 ? 'left' : 'right';
+                          const side: 'auto' | 'left' | 'right' = textTrackSide || 'left';
                           return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(vpX), y: Math.round(vpY), textFixedPosition: true, trackSide: side };
                         } else {
                           const origX = m.fixedOriginX ?? m.x;
@@ -3472,6 +3511,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 />
                 画面に固定（ズーム影響なし）
               </label>
+              {textFixedPosition && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginLeft: '18px' }}>
+                  <div style={{ fontSize: '9px', color: '#b0b0b0' }}>ペイン追従:</div>
+                  <div style={{ display: 'flex', gap: '8px', fontSize: '9px', color: '#b0b0b0' }}>
+                    {(['auto', 'left', 'right'] as const).map(opt => (
+                      <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="text-track-side"
+                          checked={textTrackSide === opt}
+                          onChange={() => {
+                            setTextTrackSide(opt);
+                            if (activeNoteMarkerId) {
+                              onMarkersChange(markers.map(m => {
+                                if (m.id !== activeNoteMarkerId) return m;
+                                return { ...m, trackSide: opt };
+                              }));
+                            }
+                          }}
+                          style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                        />
+                        {opt === 'auto' ? '自動' : opt === 'left' ? '左' : '右'}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <label style={{ fontSize: '9px', color: '#b0b0b0' }}>説明文:</label>
                 <textarea
@@ -3883,24 +3949,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </label>
               </label>
 
-              {/* Temporarily ignore this checkpoint */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(128,128,128,0.08)', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(128,128,128,0.25)', cursor: 'pointer' }}>
+              {/* Voice announcement on pass */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', background: 'rgba(255,149,0,0.05)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,149,0,0.2)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  id="checkpoint-hide-cb"
-                  checked={hiddenMarkers.includes(activeNoteMarker.id)}
-                  onChange={(e) => {
-                    const isHidden = hiddenMarkers.includes(activeNoteMarker.id);
-                    if (e.target.checked && !isHidden) {
-                      onHideGlobalMarker?.(activeNoteMarker.id);
-                    } else if (!e.target.checked && isHidden) {
-                      onShowGlobalMarker?.(activeNoteMarker.id);
-                    }
-                  }}
-                  style={{ accentColor: '#888', cursor: 'pointer' }}
+                  id="checkpoint-voice-cb"
+                  checked={checkpointVoiceOn}
+                  onChange={(e) => setCheckpointVoiceOn(e.target.checked)}
+                  style={{ accentColor: '#ff9500', cursor: 'pointer' }}
                 />
-                <label htmlFor="checkpoint-hide-cb" style={{ fontSize: '12px', color: '#cccccc', cursor: 'pointer', userSelect: 'none', flex: 1 }}>
-                  🙈 このチェックポイントを無視 (一時的に非表示)
+                <label htmlFor="checkpoint-voice-cb" style={{ fontSize: '13px', color: '#ffb84d', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none', flex: 1 }}>
+                  🗣 「X秒地点です」と読み上げ
                 </label>
               </label>
             </div>

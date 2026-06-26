@@ -24,15 +24,20 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ show, onClose, marke
             {markers.length === 0 ? (
               <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>履歴はありません</div>
             ) : (
-              [...markers].reverse().map(m => {
+              [...markers].sort((a, b) => {
+                // Sort by timestamp embedded in the marker id (format: marker_<ts>_<rand>)
+                const aTs = parseInt((a.id.match(/^marker_(\d+)_/) || [])[1] || '0', 10);
+                const bTs = parseInt((b.id.match(/^marker_(\d+)_/) || [])[1] || '0', 10);
+                return aTs - bTs;
+              }).map(m => {
                 const meta = MARKER_META[m.type];
                 const isGlobal = globalMarkerIds.includes(m.id);
                 return (
                   <div
                     key={`hist-${m.id}`}
                     className="placed-note-item"
-                    style={{ borderLeft: `3px solid ${meta.color}`, cursor: m.scrollConfig ? 'pointer' : 'default' }}
-                    onClick={() => { m.scrollConfig && onFocusTrigger({ id: m.id, timestamp: Date.now() }); onClose(); }}
+                    style={{ borderLeft: `3px solid ${meta.color}`, cursor: 'pointer' }}
+                    onClick={() => { onFocusTrigger({ id: m.id, timestamp: Date.now() }); onClose(); }}
                   >
                     <div className="placed-note-item-header">
                       <span className="placed-note-type" style={{ color: meta.color }}>
@@ -47,6 +52,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ show, onClose, marke
                     </div>
                     {m.scrollConfig && (
                       <div style={{ fontSize: '9px', color: 'var(--cyan-neon)', marginTop: '2px', textAlign: 'right' }}>
+                        Click to Pan ➔
+                      </div>
+                    )}
+                    {!m.scrollConfig && (
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
                         Click to Pan ➔
                       </div>
                     )}

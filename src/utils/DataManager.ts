@@ -145,7 +145,7 @@ export interface HeistMarker {
   textFixedPosition?: boolean; // For text markers: fixed to viewport, not affected by pan/zoom
   fixedOriginX?: number;      // For text markers: original map X before fixing to viewport
   fixedOriginY?: number;      // For text markers: original map Y before fixing to viewport
-  trackSide?: 'left' | 'right'; // For fixed text markers: which sidebar side to track for collapse shift
+  trackSide?: 'auto' | 'left' | 'right'; // For fixed text markers: which sidebar side to track for collapse shift ('auto' = resolve from viewport position)
   textDescription?: string;   // For text markers: description text shown below label
   textTooltip?: boolean;      // For text markers: show mouseover tooltip
   textGlow?: boolean;         // For text markers: show glow effect
@@ -153,6 +153,8 @@ export interface HeistMarker {
   // Checkpoint marker fields (type === 'checkpoint')
   checkpointTargetTime?: number;  // Target arrival time in seconds (0 = no target)
   checkpointSoundOn?: boolean;    // Play a beep when the auto-route passes this checkpoint
+  checkpointVoiceOn?: boolean;   // Voice announcement "X秒地点です" when passing
+  checkpointExpanded?: boolean;  // Whether the popup is expanded in presentation mode
   checkpointExpanded?: boolean;   // Whether the popup is expanded in presentation mode
 }
 

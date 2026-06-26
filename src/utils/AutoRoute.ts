@@ -264,32 +264,54 @@ export function prewarmAudio() {
 }
 function playBeep(freq: number = 880, durationMs: number = 120) {
   try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
     if (!_audioCtx) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return;
       _audioCtx = new Ctx();
     }
-    if (_audioCtx.state === 'suspended') {
-      _audioCtx.resume();
-    }
     const ctx = _audioCtx;
+    // Browsers require a user gesture before audio can play. If the
+    // context is still suspended (e.g. the user gesture was on a
+    // different element), try to resume it again.
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => { /* no-op */ });
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.frequency.value = freq;
     osc.type = 'sine';
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
+    const t = ctx.currentTime;
+    // Louder volume: peak gain raised from 0.18 to 0.5
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + durationMs / 1000);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
+    osc.stop(t + durationMs / 1000);
   } catch { /* no-op */ }
 }
 
 /** Play the checkpoint "on-time" / "late" sound. */
 export function playCheckpointSound(onTime: boolean) {
   playBeep(onTime ? 1320 : 220, 140);
+}
+
+/** Speak the checkpoint arrival time (e.g. "30秒地点です"). */
+export function speakCheckpointTime(seconds: number, label?: string) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const text = label
+      ? `${seconds}秒地点、${label}です`
+      : `${seconds}秒地点です`;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ja-JP';
+    utter.rate = 1.3;
+    utter.pitch = 1.0;
+    utter.volume = 0.8;
+    window.speechSynthesis.speak(utter);
+  } catch { /* no-op */ }
 }
 
 function distanceToSegment(p: Point, a: Point, b: Point): number {
