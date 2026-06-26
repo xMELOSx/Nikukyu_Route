@@ -26,6 +26,14 @@ interface HelpModalProps {
   onClearOriginalAuthor?: () => void;
   autoLoadLastRoute?: boolean;
   onSetAutoLoadLastRoute?: (enabled: boolean) => void;
+  showDetectionRanges?: boolean;
+  onSetShowDetectionRanges?: (enabled: boolean) => void;
+  stopMarkerThreshold?: number;
+  setStopMarkerThreshold?: (n: number) => void;
+  movementMarkerThreshold?: number;
+  setMovementMarkerThreshold?: (n: number) => void;
+  warpMarkerThreshold?: number;
+  setWarpMarkerThreshold?: (n: number) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -39,7 +47,15 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   startupFocusMarkerId, onSetStartupFocus,
   onClearOriginalAuthor,
   autoLoadLastRoute,
-  onSetAutoLoadLastRoute
+  onSetAutoLoadLastRoute,
+  showDetectionRanges,
+  onSetShowDetectionRanges,
+  stopMarkerThreshold,
+  setStopMarkerThreshold,
+  movementMarkerThreshold,
+  setMovementMarkerThreshold,
+  warpMarkerThreshold,
+  setWarpMarkerThreshold
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -171,6 +187,56 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 )}
               </div>
               {/* 設定 (Settings) — removed from debug tab; now in dedicated 設定 tab */}
+              <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 149, 0, 0.04)', border: '1px solid rgba(255, 149, 0, 0.2)', borderRadius: '4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#ff9500', marginBottom: '6px' }}>🛠 自動ルート デバッグ</div>
+                {onSetShowDetectionRanges && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!showDetectionRanges}
+                      onChange={(e) => onSetShowDetectionRanges(e.target.checked)}
+                      style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                    />
+                    🎯 判定範囲を強調表示
+                  </label>
+                )}
+
+                {/* Threshold sliders */}
+                {setStopMarkerThreshold && setMovementMarkerThreshold && setWarpMarkerThreshold && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 8px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>判定閾値 (px)</div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>🔴 停止</span>
+                      <input type="range" min="4" max="40" step="1" value={stopMarkerThreshold ?? 12}
+                        onChange={(e) => setStopMarkerThreshold(parseInt(e.target.value))}
+                        style={{ flex: 1, accentColor: '#ff4444' }} />
+                      <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{stopMarkerThreshold}px</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>🟢 階段</span>
+                      <input type="range" min="4" max="50" step="1" value={movementMarkerThreshold ?? 20}
+                        onChange={(e) => setMovementMarkerThreshold(parseInt(e.target.value))}
+                        style={{ flex: 1, accentColor: '#39ff14' }} />
+                      <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{movementMarkerThreshold}px</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '70px' }}>🟠 ワープ</span>
+                      <input type="range" min="4" max="50" step="1" value={warpMarkerThreshold ?? 12}
+                        onChange={(e) => setWarpMarkerThreshold(parseInt(e.target.value))}
+                        style={{ flex: 1, accentColor: '#ff9500' }} />
+                      <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{warpMarkerThreshold}px</span>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
+                  スライダーで各マーカーの判定距離を変更できます。<br />
+                  値は即座に自動ルート・判定範囲の円に反映されます。
+                </div>
+              </div>
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>デバッグ情報:</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>

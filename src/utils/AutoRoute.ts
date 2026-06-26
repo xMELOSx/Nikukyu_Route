@@ -17,20 +17,24 @@ export interface RouteSegment {
   cumulativeStopTime: number;
   // For checkpoint segments: whether the checkpoint was reached on time
   checkpointOnTime?: boolean;
+  // Per-segment travel speed (px/s). Set by computeRouteTiming so the
+  // route completes in exactly targetDuration. Recomputed at the last
+  // checkpoint so the final arrival matches the target.
+  speed?: number;
 }
 
 const DEFAULT_CONFIG: AutoRouteConfig = {
   // Strict threshold for stop markers (picking, boss, etc.) — false positives
   // here would cause the auto-route to stop at unrelated markers.
   stopMarkerThreshold: 12,
-  // Threshold for movement markers (stairs). Slightly looser than stop
-  // markers so the line doesn't need to pass exactly through a stairs but
-  // not so loose that unrelated markers get caught.
-  movementMarkerThreshold: 35,
-  // Warp markers (warp, iwarp) are very lenient — any line that merely
-  // contacts/near-touches the warp area triggers it. This is because the
-  // route often passes very close to but not through the warp hotspot.
-  warpMarkerThreshold: 80,
+  // Threshold for movement markers (stairs). The line must pass quite
+  // close to the stairs for the auto-route to take it. 20px is strict
+  // enough to avoid false positives from long line segments.
+  movementMarkerThreshold: 20,
+  // Warp markers (warp, iwarp) are slightly more lenient than stairs
+  // since warp hotspots are often offset from the line. 25px is enough
+  // to catch "line contact" but won't extend to neighbouring rooms.
+  warpMarkerThreshold: 25,
   // Max distance (px) to consider two line endpoints "connected"
   lineConnectThreshold: 50
 };
@@ -111,19 +115,29 @@ export function buildAutoRoute(
     while (i < travelPoints.length) {
       const a = currentPos;
       const b = travelPoints[i];
-      // Find all markers close to segment a->b
+      // Find all markers close to segment a->b.
+      // Use the MINIMUM of: perpendicular distance to segment, distance to
+      // currentPos, distance to b. This prevents long line segments from
+      // detecting markers that are perpendicular-close but not actually
+      // near the route's current position.
       const hits = relevantMarkers
         .filter(m => !visitedMarkerIds.has(m.id))
         .map(m => {
-          const dist = distanceToSegment(m, a, b);
+          const perpDist = distanceToSegment(m, a, b);
+          const distToCurrent = Math.hypot(m.x - a.x, m.y - a.y);
+          const distToNext = Math.hypot(m.x - b.x, m.y - b.y);
+          const dist = Math.min(perpDist, distToCurrent, distToNext);
           const t = projectionParameter(m, a, b);
           const th = thresholdFor(m.type, cfg);
-          return { marker: m, dist, t, threshold: th };
+          return { marker: m, dist, perpDist, t, threshold: th };
         })
         .filter(h => h.dist < h.threshold && h.t >= -0.1 && h.t <= 1.1)
-        .sort((x, y) => x.t - y.t);
+        // Sort by perpendicular distance (closest to the line wins) so
+        // markers that are off to the side of the route lose to markers
+        // that are directly in the path. Ties broken by t (forward order).
+        .sort((x, y) => x.perpDist - y.perpDist || x.t - y.t);
 
-      // If we have a hit, take the closest one along the segment direction
+      // If we have a hit, take the closest one to the line
       if (hits.length > 0) {
         const hit = hits[0];
         const m = hit.marker;
@@ -345,6 +359,34 @@ export function computeRouteTiming(segments: RouteSegment[], targetDuration?: nu
     speedSource = 'default';
   }
 
+  // Per-segment speed: after the LAST checkpoint, recalculate speed based
+  // on remaining time and distance so the final arrival matches the
+  // target duration. Before the last checkpoint, use the route-wide speed.
+  // Find the last segment that is a checkpoint.
+  let lastCpIdx = -1;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].markerType === 'checkpoint') { lastCpIdx = i; break; }
+  }
+  if (lastCpIdx >= 0 && lastCpIdx < segments.length - 1 && speed > 0) {
+    const lastCp = segments[lastCpIdx];
+    const remainingDistance = totalDistance - lastCp.cumulativeDistance;
+    const remainingStops = totalStopTime - lastCp.cumulativeStopTime;
+    const remainingTime = targetDuration !== undefined && targetDuration > 0
+      ? Math.max(0, targetDuration - lastCp.cumulativeStopTime - lastCp.stopDuration)
+      : 0;
+    if (remainingDistance > 0 && remainingTime > remainingStops) {
+      const newSpeed = remainingDistance / Math.max(0.001, remainingTime - remainingStops);
+      // Apply the new speed to all segments AFTER the last checkpoint.
+      for (let i = lastCpIdx + 1; i < segments.length; i++) {
+        segments[i].speed = newSpeed;
+      }
+    }
+  }
+  // Set the route-wide speed for segments that don't have a per-segment override.
+  for (const seg of segments) {
+    if (seg.speed === undefined) seg.speed = speed;
+  }
+
   return {
     totalDistance,
     totalStopTime,
@@ -377,7 +419,9 @@ export function interpolateRoute(
     if (seg.distance === 0 && seg.stopDuration === 0) {
       continue;
     }
-    const travelTime = seg.distance / Math.max(speed, 0.0001);
+    // Use the segment's per-segment speed if set, otherwise the global speed
+    const segSpeed = seg.speed !== undefined ? seg.speed : speed;
+    const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
     if (remaining <= travelTime) {
       // Inside this segment's travel phase
       const t = seg.distance > 0 ? remaining / travelTime : 1;

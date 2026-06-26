@@ -132,6 +132,10 @@ interface MapCanvasProps {
   onHideGlobalMarker?: (id: string) => void;
   hiddenMarkers?: string[];
   hiddenMarkerTypes?: string[];
+  showDetectionRanges?: boolean;
+  stopMarkerThreshold?: number;
+  movementMarkerThreshold?: number;
+  warpMarkerThreshold?: number;
   globalMarkerIds?: string[];
   onShowGlobalMarker?: (id: string) => void;
   leftSidebarCollapsed?: boolean;
@@ -150,6 +154,7 @@ interface MapCanvasProps {
     error: string | null;
     nextMarkerLabel: string;
     waitRemaining: number; // seconds left in initial wait (0 when not waiting)
+    checkpoints: { elapsed: number; label: string; passed: boolean }[];
   }) => void;
   // Auto-route command from parent — when the ts changes, the action is run.
   autoRouteCommand?: { action: 'start' | 'pause' | 'resume' | 'reset' | 'seek'; ts: number; seekTo?: number } | null;
@@ -199,6 +204,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onHideGlobalMarker,
   hiddenMarkers = [],
   hiddenMarkerTypes = [],
+  showDetectionRanges = false,
+  stopMarkerThreshold = 12,
+  movementMarkerThreshold = 20,
+  warpMarkerThreshold = 12,
   globalMarkerIds = [],
   onShowGlobalMarker,
   leftSidebarCollapsed = false,
@@ -638,7 +647,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setAutoRouteError('スタートマーカー (🐾) が見つかりません。グローバルマーカーに追加してください。');
       return;
     }
-    const routeSegments = buildAutoRoute(strokes, markers, startMarker, {}, hiddenMarkers || []);
+    const routeSegments = buildAutoRoute(strokes, markers, startMarker, {
+      stopMarkerThreshold,
+      movementMarkerThreshold,
+      warpMarkerThreshold
+    }, hiddenMarkers || []);
     if (routeSegments.length === 0) {
       setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
       return;
@@ -850,17 +863,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const waitRemaining = autoRouteWaitUntilRef.current > 0
         ? Math.max(0, (autoRouteWaitUntilRef.current - performance.now()) / 1000)
         : 0;
+      // Build checkpoint list with their elapsed times for timeline display.
+      // The elapsed time of a checkpoint = cumulativeDistance / speed + cumulativeStopTime
+      const cpList: { elapsed: number; label: string; passed: boolean }[] = [];
+      for (const seg of autoRouteSegments) {
+        if (seg.markerType === 'checkpoint') {
+          const m = markers.find(mk => mk.id === seg.markerId);
+          const elapsedAt = seg.cumulativeDistance / Math.max(1, autoRouteTiming.speed) + seg.cumulativeStopTime;
+          cpList.push({
+            elapsed: elapsedAt,
+            label: m?.note || 'Checkpoint',
+            passed: autoRouteElapsed >= elapsedAt
+          });
+        }
+      }
+
       onAutoRouteStatusChange({
         active: autoRouteActive,
         running: autoRouteRunning,
         elapsed: autoRouteElapsed,
         totalTime: autoRouteTiming.totalTime,
         totalDistance: autoRouteTiming.totalDistance,
-        totalStopTime: autoRouteTiming.totalStopTime,
+        totalStopTime: autoRouteTiming.totalTime - autoRouteTiming.totalDistance / Math.max(1, autoRouteTiming.speed),
         speed: autoRouteTiming.speed,
         error: autoRouteError,
         nextMarkerLabel: nextMarkerLabel(autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed),
-        waitRemaining
+        waitRemaining,
+        checkpoints: cpList
       });
     };
     sendStatus();
@@ -2117,6 +2146,59 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </svg>
 
         <div className="markers-layer">
+          {/* Detection range visualization (debug) — always on top */}
+          {showDetectionRanges && (
+            <svg
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                overflow: 'visible',
+                zIndex: 100
+              }}
+            >
+              {markers.filter(m => m.floor === floor).map(m => {
+                const isWarp = m.type === 'warp' || m.type === 'iwarp';
+                const isStairs = m.type === 'stairs';
+                const isStart = m.type === 'start';
+                const isStop = ['picking','gpicking','long_picking','glong_picking','boss','gbattle','battle'].includes(m.type);
+                const isCheckpoint = m.type === 'checkpoint';
+                const radius = isWarp ? warpMarkerThreshold : isStairs ? movementMarkerThreshold : isStart ? movementMarkerThreshold : isStop ? stopMarkerThreshold : isCheckpoint ? movementMarkerThreshold : 0;
+                if (radius === 0) return null;
+                const color = isWarp ? '#ff9500' : isStairs ? '#39ff14' : isStart ? '#39ff14' : isStop ? '#ff4444' : isCheckpoint ? '#ff9500' : '#888';
+                return (
+                  <g key={`range-${m.id}`}>
+                    <circle
+                      cx={m.x}
+                      cy={m.y}
+                      r={radius}
+                      fill={color}
+                      fillOpacity={0.08}
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      opacity={0.9}
+                    />
+                    <text
+                      x={m.x}
+                      y={m.y - radius - 4}
+                      fill={color}
+                      fontSize="10"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {radius}px
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+
           {/* Current Position Marker (▼) */}
           {currentPosition && (
             <div

@@ -164,6 +164,10 @@ export default function App() {
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
   const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
+  const [showDetectionRanges, setShowDetectionRanges] = useState<boolean>(false);
+  const [stopMarkerThreshold, setStopMarkerThreshold] = useState<number>(12);
+  const [movementMarkerThreshold, setMovementMarkerThreshold] = useState<number>(20);
+  const [warpMarkerThreshold, setWarpMarkerThreshold] = useState<number>(12);
   const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_labels');
@@ -398,10 +402,12 @@ export default function App() {
     error: string | null;
     nextMarkerLabel: string;
     waitRemaining: number;
+    checkpoints: { elapsed: number; label: string; passed: boolean }[];
   }>({
     active: false, running: false, elapsed: 0,
     totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0,
-    error: null, nextMarkerLabel: '', waitRemaining: 0
+    error: null, nextMarkerLabel: '', waitRemaining: 0,
+    checkpoints: []
   });
   // Auto-route command to MapCanvas — bump ts to trigger
   const [autoRouteCommand, setAutoRouteCommand] = useState<{ action: 'start' | 'pause' | 'resume' | 'reset' | 'seek'; ts: number; seekTo?: number } | null>(null);
@@ -2002,6 +2008,10 @@ export default function App() {
               return combined.filter(m => seen.has(m.id) ? false : (seen.add(m.id), true));
             })()}
             hiddenMarkers={route.hiddenMarkers || []}
+            showDetectionRanges={showDetectionRanges}
+            stopMarkerThreshold={stopMarkerThreshold}
+            movementMarkerThreshold={movementMarkerThreshold}
+            warpMarkerThreshold={warpMarkerThreshold}
             hiddenMarkerTypes={route.hiddenMarkerTypes || []}
             globalMarkerIds={globalMarkers.map(m => m.id)}
             markerScale={markerScale}
@@ -2609,6 +2619,28 @@ export default function App() {
                       }}
                     >
                       <div style={{ height: '100%', width: `${Math.min(100, (autoRouteStatus.elapsed / Math.max(autoRouteStatus.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
+                      {/* Checkpoint position lines */}
+                      {autoRouteStatus.checkpoints.map((cp, i) => {
+                        if (autoRouteStatus.totalTime <= 0) return null;
+                        const ratio = cp.elapsed / autoRouteStatus.totalTime;
+                        return (
+                          <div
+                            key={`cp-line-${i}`}
+                            title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              bottom: 0,
+                              left: `${Math.min(100, Math.max(0, ratio * 100))}%`,
+                              width: '2px',
+                              background: cp.passed ? '#39ff14' : '#ff9500',
+                              opacity: 0.85,
+                              pointerEvents: 'none',
+                              boxShadow: '0 0 3px rgba(255,149,0,0.8)'
+                            }}
+                          />
+                        );
+                      })}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                       <span>停止 {formatTime(autoRouteStatus.totalStopTime)}</span>
@@ -2781,6 +2813,14 @@ export default function App() {
           setSaveNotification('原作者名をクリアしました');
           setTimeout(() => setSaveNotification(null), 2000);
         }}
+        showDetectionRanges={showDetectionRanges}
+        onSetShowDetectionRanges={setShowDetectionRanges}
+        stopMarkerThreshold={stopMarkerThreshold}
+        setStopMarkerThreshold={setStopMarkerThreshold}
+        movementMarkerThreshold={movementMarkerThreshold}
+        setMovementMarkerThreshold={setMovementMarkerThreshold}
+        warpMarkerThreshold={warpMarkerThreshold}
+        setWarpMarkerThreshold={setWarpMarkerThreshold}
         autoLoadLastRoute={autoLoadLastRoute}
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
       />
