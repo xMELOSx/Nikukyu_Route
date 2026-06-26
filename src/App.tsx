@@ -956,7 +956,7 @@ export default function App() {
         </section>
 
         {/* Map area */}
-        <section style={{ position: 'relative', minWidth: 0, minHeight: 0 }}>
+        <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
           <MapCanvas
             floor={currentFloor}
             strokes={memoizedStrokes}
