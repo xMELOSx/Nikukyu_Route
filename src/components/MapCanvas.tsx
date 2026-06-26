@@ -162,7 +162,7 @@ interface MapCanvasProps {
   autoRouteSettings?: {
     waitEnabled: boolean;
     waitSeconds: number;
-    speedMultiplier: 1 | 2 | 3;
+    speedMultiplier: 1 | 2 | 3 | 5;
     followCamera: boolean;
   };
   // Follow camera state — when true, the view scrolls to keep the current
@@ -322,9 +322,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   setMediaItems(next);
                 }} />
                 <span style={{ cursor: 'pointer', color: 'var(--red-neon)', fontWeight: 'bold', fontSize: '10px' }} onClick={() => {
+                  const removed = (m.mediaItems || [])[idx];
                   const next = (m.mediaItems || []).filter((_, i) => i !== idx);
                   onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, mediaItems: next } : mk));
                   setMediaItems(next);
+                  // If the media was uploaded to the server, delete the file too
+                  if (removed && removed.url && removed.url.includes('/uploads/')) {
+                    const filename = removed.url.split('/uploads/').pop() || '';
+                    if (filename) {
+                      fetch('/api/upload-media', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename })
+                      }).catch(() => { /* ignore */ });
+                    }
+                  }
                 }}>×</span>
               </div>
             ))}
@@ -389,6 +401,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [infoMediaUrl, setInfoMediaUrl] = useState('');
   const [infoMediaType, setInfoMediaType] = useState<'image' | 'webm' | 'x-embed' | 'youtube'>('image');
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [zoomedMedia, setZoomedMedia] = useState<{ url: string; type: 'image' | 'webm' | 'youtube' } | null>(null);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
   const [textColor, setTextColor] = useState('#ffffff');
   const [textSize, setTextSize] = useState(14);
   const [textScaleWithMap, setTextScaleWithMap] = useState(false);
@@ -399,6 +414,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [warpLinkTargetId, setWarpLinkTargetId] = useState<string>('');
   const [warpLinkMode, setWarpLinkMode] = useState<'idle' | 'selecting-bi' | 'selecting-oneway'>('idle');
   const [bossDrops, setBossDrops] = useState<string[]>([]);
+  const [bossDescription, setBossDescription] = useState<string>('');
   const [bossDurationSeconds, setBossDurationSeconds] = useState(60);
   const [battleDurationSeconds, setBattleDurationSeconds] = useState(20);
   const [pickingDurationSeconds, setPickingDurationSeconds] = useState(5);
@@ -679,6 +695,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     autoRouteElapsedAtStartRef.current = 0;
     autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
     setCurrentPosition({ x: startMarker.x, y: startMarker.y });
+    // Immediately scroll the camera to the start position so the route
+    // begins visible on screen (not off-screen).
+    if (followCamera && wrapperRef.current) {
+      const W_v = wrapperRef.current.clientWidth;
+      const H_v = wrapperRef.current.clientHeight;
+      const tgtZoom = zoom || 1;
+      setPan({
+        x: W_v * 0.5 - startMarker.x * tgtZoom,
+        y: H_v * 0.6 - startMarker.y * tgtZoom
+      });
+    }
   };
 
   const pauseAutoRoute = () => {
@@ -784,11 +811,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (followCamera) {
           const wrapper = wrapperRef.current;
           if (wrapper) {
+            const W_v = wrapper.clientWidth;
             const H_v = wrapper.clientHeight;
             const tgtZoom = zoom || 1;
             const tgtPan = {
-              x: (800 - interp.position.x) * tgtZoom,
-              y: H_v * 0.1 - (interp.position.y - 2275) * tgtZoom
+              x: W_v * 0.5 - interp.position.x * tgtZoom,
+              y: H_v * 0.6 - (interp.position.y - 2275) * tgtZoom
             };
             targetPanRef.current = tgtPan;
             setPan(tgtPan);
@@ -836,12 +864,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, t);
         if (interp && interp.position && isFinite(interp.position.x) && isFinite(interp.position.y)) {
           setCurrentPosition({ x: interp.position.x, y: interp.position.y });
-          if (autoRouteFollowCamera && wrapperRef.current) {
+          if (followCamera && wrapperRef.current) {
+            const W_v = wrapperRef.current.clientWidth;
             const H_v = wrapperRef.current.clientHeight;
-            const tgtZoom = (zoom && isFinite(zoom)) ? zoom : 1;
+            // Use the ref for zoom to avoid stale closure issues when zoom
+            // changes mid-animation. animZoomRef is synced every render.
+            const tgtZoom = (animZoomRef.current && isFinite(animZoomRef.current)) ? animZoomRef.current : 1;
+            // Place current position at 50% horizontal, 60% vertical (center-bottom)
             const tgtPan = {
-              x: (800 - interp.position.x) * tgtZoom,
-              y: H_v * 0.1 - (interp.position.y - 2275) * tgtZoom
+              x: W_v * 0.5 - interp.position.x * tgtZoom,
+              y: H_v * 0.6 - interp.position.y * tgtZoom
             };
             if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
               targetPanRef.current = tgtPan;
@@ -864,12 +896,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ? Math.max(0, (autoRouteWaitUntilRef.current - performance.now()) / 1000)
         : 0;
       // Build checkpoint list with their elapsed times for timeline display.
-      // The elapsed time of a checkpoint = cumulativeDistance / speed + cumulativeStopTime
+      // Use the checkpoint's TARGET time directly (set by the user) so the
+      // timeline line is at the correct position regardless of per-segment
+      // speed variations. Fall back to distance-based estimate if no target.
       const cpList: { elapsed: number; label: string; passed: boolean }[] = [];
       for (const seg of autoRouteSegments) {
         if (seg.markerType === 'checkpoint') {
           const m = markers.find(mk => mk.id === seg.markerId);
-          const elapsedAt = seg.cumulativeDistance / Math.max(1, autoRouteTiming.speed) + seg.cumulativeStopTime;
+          const cpTarget = (seg as any)._checkpointTarget as number;
+          // Use the user-set target time directly. This is the "contract":
+          // the auto-route promises to reach this point in exactly this time.
+          const elapsedAt = cpTarget > 0
+            ? cpTarget
+            : seg.cumulativeDistance / Math.max(1, autoRouteTiming.speed) + seg.cumulativeStopTime;
           cpList.push({
             elapsed: elapsedAt,
             label: m?.note || 'Checkpoint',
@@ -963,6 +1002,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && zoomedMedia) {
+        e.preventDefault();
+        setZoomedMedia(null);
+        return;
+      }
       if (e.key === 'Escape' && activeNoteMarkerId) {
         e.preventDefault();
         setActiveNoteMarkerId(null);
@@ -1721,10 +1765,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             // Fallback: calculate position from partner coordinates
             const wrapper = wrapperRef.current;
             if (wrapper) {
+              const W_v = wrapper.clientWidth;
               const H_v = wrapper.clientHeight;
               const tgtZoom = zoom;
-              const tgtPanX = (400 - partner.x) * tgtZoom;
-              const tgtPanY = H_v * 0.1 - (partner.y - 1137.5) * tgtZoom;
+              const tgtPanX = W_v * 0.5 - partner.x * tgtZoom;
+              const tgtPanY = H_v * 0.6 - (partner.y - 1137.5) * tgtZoom;
               startSmoothScroll({ x: tgtPanX, y: tgtPanY }, tgtZoom);
             }
           }
@@ -1755,6 +1800,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setTextTooltip(!!m.textTooltip);
     setTextGlow(!!m.textGlow);
     setBossDrops(m.bossDrops || []);
+    setBossDescription(m.bossDescription || '');
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
     setPickingDurationSeconds(m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
@@ -1844,6 +1890,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.popupHeight = popupHeight;
             }
             if (isInfoType(m.type)) {
+              // If the infoMediaUrl changed and the old one was an uploaded
+              // file, delete it from the server to avoid orphaned files.
+              if (m.infoMediaUrl && m.infoMediaUrl !== infoMediaUrl && m.infoMediaUrl.includes('/uploads/')) {
+                const oldFilename = m.infoMediaUrl.split('/uploads/').pop() || '';
+                if (oldFilename) {
+                  fetch('/api/upload-media', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: oldFilename })
+                  }).catch(() => { /* ignore */ });
+                }
+              }
               updated.infoLabel = infoLabel;
               updated.infoMediaUrl = infoMediaUrl;
               updated.infoMediaType = infoMediaType;
@@ -1859,6 +1917,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             if (m.type === 'boss') {
               updated.bossDrops = bossDrops;
+              updated.bossDescription = bossDescription;
               updated.bossDurationSeconds = bossDurationSeconds;
             }
             if (m.type === 'battle' || m.type === 'gbattle') {
@@ -2285,7 +2344,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 );
               }
-              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? 'Boss (Mamon)' : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : '');
+              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? (m.note?.trim() || 'Boss') : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : '');
               return (
                 <div
                   key={m.id}
@@ -2445,10 +2504,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {m.infoMediaUrl && m.infoMediaUrl.trim() && (
                           <div className="info-popup-media">
                             {m.infoMediaType === 'image' && (
-                              <img src={m.infoMediaUrl} alt="Media Attachment" onError={(e) => { (e.target as any).style.display = 'none'; }} />
+                              <img
+                                src={m.infoMediaUrl}
+                                alt="Media Attachment"
+                                style={{ cursor: 'zoom-in' }}
+                                onClick={() => setZoomedMedia({ url: m.infoMediaUrl!, type: 'image' })}
+                                onError={(e) => { (e.target as any).style.display = 'none'; }}
+                              />
                             )}
                             {m.infoMediaType === 'webm' && (
-                              <video src={m.infoMediaUrl} controls loop muted autoPlay playsInline onError={(e) => { (e.target as any).style.display = 'none'; }} />
+                              <video
+                                src={m.infoMediaUrl}
+                                controls
+                                loop
+                                muted
+                                autoPlay
+                                playsInline
+                                style={{ cursor: 'zoom-in' }}
+                                onClick={() => setZoomedMedia({ url: m.infoMediaUrl!, type: 'webm' })}
+                                onError={(e) => { (e.target as any).style.display = 'none'; }}
+                              />
                             )}
                             {m.infoMediaType === 'x-embed' && (
                               <TweetEmbed url={m.infoMediaUrl} />
@@ -2462,15 +2537,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         )}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
-                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'webm' })} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
                               return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
-                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                            {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
                         {isEditMode && isLocal && renderMediaManager(m)}
@@ -2669,6 +2744,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         )}
                       </div>
                       <div className="info-popup-content">
+                        {/* Boss description display */}
+                        {m.bossDescription && m.bossDescription.trim() && (
+                          <div style={{ fontSize: '12px', color: '#e0e0e0', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(255, 0, 85, 0.08)', border: '1px solid rgba(255, 0, 85, 0.25)', borderRadius: '4px', whiteSpace: 'pre-wrap' }}>
+                            {m.bossDescription}
+                          </div>
+                        )}
+
                         {/* Drops display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span style={{ fontSize: '10px', color: '#b0b0b0' }}>ボスドロップ:</span>
@@ -2688,15 +2770,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {/* Boss media items */}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
-                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'webm' })} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
                               return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
-                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                            {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
                         {isEditMode && isLocal && renderMediaManager(m)}
@@ -2798,15 +2880,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {/* Battle media items */}
                         {m.mediaItems && m.mediaItems.length > 0 && m.mediaItems.map(item => (
                           <div key={item.id} style={{ marginTop: '4px' }}>
-                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px' }} />}
+                            {item.type === 'image' && <img src={item.url} alt={item.description || 'Media'} style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'image' })} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                            {item.type === 'webm' && <video src={item.url} controls loop muted autoPlay playsInline style={{ maxWidth: '100%', borderRadius: '4px', cursor: 'zoom-in' }} onClick={() => setZoomedMedia({ url: item.url, type: 'webm' })} />}
                             {item.type === 'x-embed' && <TweetEmbed url={item.url} />}
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
                               return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
                             })()}
-                            {item.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.description}</div>}
+                            {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
                         ))}
                         {isEditMode && isLocal && renderMediaManager(m)}
@@ -3065,7 +3147,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const showTT = isEditing ? textTooltip : !!hm.textTooltip;
             if (showTT) text = desc || hm.note || 'Text';
           } else {
-            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? 'Boss (Mamon)' : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : '');
+            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? (hm.note?.trim() || 'Boss') : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : '');
           }
           if (!text) return null;
           const pad = 14;
@@ -3393,7 +3475,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Boss marker drops & duration editing */}
           {activeNoteMarker.type === 'boss' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 0, 85, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#ff6b9d' }}>ボスドロップ:</div>
+              <textarea
+                className="input-cyber"
+                value={bossDescription}
+                onChange={(e) => setBossDescription(e.target.value)}
+                placeholder="注意事項・攻略メモ"
+                rows={3}
+                style={{ width: '100%', fontSize: '12px', padding: '4px 6px', resize: 'vertical', minHeight: '50px', fontFamily: 'inherit' }}
+              />
+              <div style={{ fontSize: '10px', color: '#ff6b9d', marginTop: '4px' }}>ボスドロップ:</div>
 
               {/* Drops List */}
               {bossDrops.length > 0 ? (
@@ -3473,7 +3563,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     min={60}
                     max={720}
                     step={1}
-                    value={Math.max(60, Math.min(720, bossDurationSeconds))}
+                    value={Math.max(0, Math.min(720, bossDurationSeconds))}
                     onChange={(e) => setBossDurationSeconds(parseInt(e.target.value))}
                     style={{ accentColor: '#ff6b9d', cursor: 'pointer', width: '100%' }}
                   />
@@ -3516,7 +3606,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         min={60}
                         max={720}
                         step={1}
-                        value={Math.max(60, Math.min(720, bossCustomDurationVal || 60))}
+                        value={Math.max(0, Math.min(720, bossCustomDurationVal ?? 0))}
                         onChange={(e) => setBossCustomDurationVal(parseInt(e.target.value))}
                         style={{ accentColor: 'var(--red-neon)', cursor: 'pointer', width: '100%' }}
                       />
@@ -3554,7 +3644,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           min={60}
                           max={720}
                           step={1}
-                          value={Math.max(60, Math.min(720, battleDurationSeconds))}
+                          value={Math.max(0, Math.min(720, battleDurationSeconds))}
                           onChange={(e) => setBattleDurationSeconds(parseInt(e.target.value))}
                           style={{ accentColor: '#7ec8e3', cursor: 'pointer', width: '100%' }}
                         />
@@ -3597,7 +3687,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               min={60}
                               max={720}
                               step={1}
-                              value={Math.max(60, Math.min(720, battleCustomDurationVal || 60))}
+                              value={Math.max(0, Math.min(720, battleCustomDurationVal ?? 0))}
                               onChange={(e) => setBattleCustomDurationVal(parseInt(e.target.value))}
                               style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                             />
@@ -4147,7 +4237,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           <Maximize2 size={18} />
         </button>
         {isEditMode && (
-          <button 
+          <button
             className={`zoom-btn ${toolMode === 'pan' ? 'active' : ''}`}
             onClick={() => {}}
             title="Press Shift to Pan, or use Pan tool"
@@ -4156,6 +4246,129 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </button>
         )}
       </div>
+
+      {/* Media lightbox — click on image/video to enlarge */}
+      {zoomedMedia && ReactDOM.createPortal(
+        <div
+          onClick={() => { setZoomedMedia(null); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}
+          onWheel={(e) => {
+            if (zoomedMedia.type !== 'image') return;
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 1.1 : 1/1.1;
+            setLightboxZoom(z => Math.max(0.5, Math.min(8, z * delta)));
+          }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            cursor: lightboxZoom > 1 ? 'grab' : 'zoom-out',
+            padding: '40px',
+            boxSizing: 'border-box',
+            overflow: 'hidden'
+          }}
+        >
+          {zoomedMedia.type === 'image' && (
+            <img
+              src={zoomedMedia.url}
+              alt="Zoomed"
+              draggable={false}
+              style={{
+                maxWidth: lightboxZoom > 1 ? 'none' : '100%',
+                maxHeight: lightboxZoom > 1 ? 'none' : '100%',
+                width: lightboxZoom > 1 ? `${lightboxZoom * 80}%` : 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: '6px',
+                boxShadow: '0 0 30px rgba(0, 240, 255, 0.3)',
+                transform: `translate(${lightboxPan.x}px, ${lightboxPan.y}px)`,
+                transition: lightboxZoom === 1 ? 'transform 0.2s' : 'none',
+                cursor: lightboxZoom > 1 ? 'grab' : 'zoom-in'
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (lightboxZoom === 1) {
+                  setLightboxZoom(2.5);
+                } else {
+                  setLightboxZoom(1);
+                  setLightboxPan({ x: 0, y: 0 });
+                }
+              }}
+              onMouseDown={(e) => {
+                if (lightboxZoom <= 1) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const startX = e.clientX - lightboxPan.x;
+                const startY = e.clientY - lightboxPan.y;
+                const onMove = (ev: MouseEvent) => {
+                  setLightboxPan({ x: ev.clientX - startX, y: ev.clientY - startY });
+                };
+                const onUp = () => {
+                  window.removeEventListener('mousemove', onMove);
+                  window.removeEventListener('mouseup', onUp);
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+              }}
+            />
+          )}
+          {zoomedMedia.type === 'webm' && (
+            <video
+              src={zoomedMedia.url}
+              controls
+              autoPlay
+              loop
+              style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '6px', boxShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          {/* Zoom controls for images */}
+          {zoomedMedia.type === 'image' && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                bottom: '20px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                gap: '8px',
+                background: 'rgba(0,0,0,0.7)',
+                padding: '8px 12px',
+                borderRadius: '20px',
+                alignItems: 'center'
+              }}
+            >
+              <button onClick={() => setLightboxZoom(z => Math.max(0.5, z / 1.3))} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>−</button>
+              <span style={{ color: '#fff', fontSize: '13px', minWidth: '60px', textAlign: 'center', fontFamily: 'monospace' }}>
+                {Math.round(lightboxZoom * 100)}%
+              </span>
+              <button onClick={() => setLightboxZoom(z => Math.min(8, z * 1.3))} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>+</button>
+              <button onClick={() => { setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px' }}>リセット</button>
+            </div>
+          )}
+          <div style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            color: '#fff',
+            fontSize: '14px',
+            background: 'rgba(0,0,0,0.6)',
+            padding: '6px 12px',
+            borderRadius: '4px',
+            userSelect: 'none'
+          }}>
+            ✕ 閉じる (ESC)
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

@@ -123,6 +123,33 @@ export default defineConfig({
                   res.end(JSON.stringify({ error: 'No file' }));
                 }
               });
+            } else if (req.method === 'DELETE') {
+              // Delete an uploaded media file
+              const chunks: Buffer[] = [];
+              req.on('data', chunk => chunks.push(chunk));
+              req.on('end', () => {
+                try {
+                  const body = JSON.parse(Buffer.concat(chunks).toString());
+                  const filename = (body.filename || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+                  if (!filename) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ error: 'No filename' }));
+                    return;
+                  }
+                  const filePath = path.resolve(__dirname, 'public/uploads', filename);
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ ok: true, deleted: filename }));
+                  } else {
+                    res.statusCode = 404;
+                    res.end(JSON.stringify({ error: 'Not found' }));
+                  }
+                } catch (e) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ error: 'Bad request' }));
+                }
+              });
             } else {
               next();
             }

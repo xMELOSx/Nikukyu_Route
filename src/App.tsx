@@ -165,9 +165,35 @@ export default function App() {
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
   const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
   const [showDetectionRanges, setShowDetectionRanges] = useState<boolean>(false);
-  const [stopMarkerThreshold, setStopMarkerThreshold] = useState<number>(12);
-  const [movementMarkerThreshold, setMovementMarkerThreshold] = useState<number>(20);
-  const [warpMarkerThreshold, setWarpMarkerThreshold] = useState<number>(12);
+  const [stopMarkerThreshold, setStopMarkerThresholdState] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_threshold_stop') || '');
+    return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
+  });
+  const [movementMarkerThreshold, setMovementMarkerThresholdState] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_threshold_movement') || '');
+    return !isNaN(v) && v >= 5 && v <= 30 ? v : 20;
+  });
+  const [warpMarkerThreshold, setWarpMarkerThresholdState] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_threshold_warp') || '');
+    return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
+  });
+
+  // Wrapper functions that persist to localStorage
+  const setStopMarkerThreshold = (n: number) => {
+    const clamped = Math.max(5, Math.min(30, n));
+    setStopMarkerThresholdState(clamped);
+    localStorage.setItem('heist_threshold_stop', String(clamped));
+  };
+  const setMovementMarkerThreshold = (n: number) => {
+    const clamped = Math.max(5, Math.min(30, n));
+    setMovementMarkerThresholdState(clamped);
+    localStorage.setItem('heist_threshold_movement', String(clamped));
+  };
+  const setWarpMarkerThreshold = (n: number) => {
+    const clamped = Math.max(5, Math.min(30, n));
+    setWarpMarkerThresholdState(clamped);
+    localStorage.setItem('heist_threshold_warp', String(clamped));
+  };
   const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_labels');
@@ -380,7 +406,7 @@ export default function App() {
   const [strokeColor, setStrokeColor] = useState('#ff0055'); // default red neon for route
   const [strokeWidth, setStrokeWidth] = useState(3); // line default 3px
   const [strokeType, setStrokeType] = useState<'solid' | 'dashed'>('solid');
-  const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('free');
+  const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('smooth');
   const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true); // default true
 
   // App UI lists
@@ -418,7 +444,7 @@ export default function App() {
   // Auto-route settings — sent to MapCanvas so the animation loop can use them
   const [autoRouteWaitEnabled, setAutoRouteWaitEnabled] = useState(false);
   const [autoRouteWaitSeconds, setAutoRouteWaitSeconds] = useState(5);
-  const [autoRouteSpeedMultiplier, setAutoRouteSpeedMultiplier] = useState<1 | 2 | 3>(1);
+  const [autoRouteSpeedMultiplier, setAutoRouteSpeedMultiplier] = useState<1 | 2 | 3 | 5>(1);
   const [autoRouteFollowCamera, setAutoRouteFollowCamera] = useState<boolean>(true);
 
   const formatTime = (seconds: number): string => {
@@ -2171,11 +2197,11 @@ export default function App() {
                     type="text"
                     className="input-cyber"
                     value={route.title}
-                    onChange={(e) => setRoute({ ...route, title: e.target.value.toUpperCase() })}
+                    onChange={(e) => setRoute({ ...route, title: e.target.value })}
                     onFocus={(e) => { (e.target as HTMLInputElement).dataset.origTitle = route.title; }}
                     onBlur={(e) => {
                       const origTitle = e.target.dataset.origTitle || '';
-                      const newTitle = e.target.value.trim().toUpperCase();
+                      const newTitle = e.target.value.trim();
                       if (!newTitle || newTitle === origTitle) return;
                       const newId = `route_${Date.now()}`;
                       const newRoute = { ...route, id: newId, title: newTitle, createdAt: Date.now() };
@@ -2253,9 +2279,11 @@ export default function App() {
 
                 <div style={{ marginTop: '6px' }}>
                   <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
-                    目標所要時間 <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                      {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
-                    </span>
+                    目標所要時間{isEditMode && (
+                      <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginLeft: '4px' }}>
+                        {(() => { const s = parseInt(route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                      </span>
+                    )}
                   </label>
                   {isEditMode ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
@@ -2546,7 +2574,7 @@ export default function App() {
                   </label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
                     <span>倍速:</span>
-                    {([1, 2, 3] as const).map(m => (
+                    {([1, 2, 3, 5] as const).map(m => (
                       <button
                         key={m}
                         className={`btn-cyber ${autoRouteSpeedMultiplier === m ? 'active' : ''}`}

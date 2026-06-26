@@ -359,30 +359,64 @@ export function computeRouteTiming(segments: RouteSegment[], targetDuration?: nu
     speedSource = 'default';
   }
 
-  // Per-segment speed: after the LAST checkpoint, recalculate speed based
-  // on remaining time and distance so the final arrival matches the
-  // target duration. Before the last checkpoint, use the route-wide speed.
-  // Find the last segment that is a checkpoint.
-  let lastCpIdx = -1;
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i].markerType === 'checkpoint') { lastCpIdx = i; break; }
-  }
-  if (lastCpIdx >= 0 && lastCpIdx < segments.length - 1 && speed > 0) {
-    const lastCp = segments[lastCpIdx];
-    const remainingDistance = totalDistance - lastCp.cumulativeDistance;
-    const remainingStops = totalStopTime - lastCp.cumulativeStopTime;
-    const remainingTime = targetDuration !== undefined && targetDuration > 0
-      ? Math.max(0, targetDuration - lastCp.cumulativeStopTime - lastCp.stopDuration)
-      : 0;
-    if (remainingDistance > 0 && remainingTime > remainingStops) {
-      const newSpeed = remainingDistance / Math.max(0.001, remainingTime - remainingStops);
-      // Apply the new speed to all segments AFTER the last checkpoint.
-      for (let i = lastCpIdx + 1; i < segments.length; i++) {
-        segments[i].speed = newSpeed;
+  // Per-segment speed: calculate from the start using ALL checkpoints
+  // AND the route end. Each segment gets a speed so that:
+  //   - Each checkpoint is reached at its target time
+  //   - The route end is reached at targetDuration
+  // The last "waypoint" is either the next checkpoint or the route end.
+  type Waypoint = { segIdx: number; targetTime: number; cumDistAtWaypoint: number; cumStopsAtWaypoint: number };
+  const waypoints: Waypoint[] = [];
+  // First waypoint: start of route (time 0, distance 0, stops 0)
+  waypoints.push({ segIdx: -1, targetTime: 0, cumDistAtWaypoint: 0, cumStopsAtWaypoint: 0 });
+  // Checkpoint waypoints
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg.markerType === 'checkpoint') {
+      const cpTarget = (seg as any)._checkpointTarget as number;
+      if (cpTarget > 0) {
+        // The checkpoint is reached when cumulative travel time +
+        // cumulative stop time up to (but not including) the checkpoint stop
+        // equals cpTarget. We treat the target as "time at checkpoint
+        // position" (before any stop AT the checkpoint itself, since
+        // checkpoints have no stop duration).
+        waypoints.push({
+          segIdx: i,
+          targetTime: cpTarget,
+          cumDistAtWaypoint: seg.cumulativeDistance,
+          cumStopsAtWaypoint: seg.cumulativeStopTime
+        });
       }
     }
   }
-  // Set the route-wide speed for segments that don't have a per-segment override.
+  // Final waypoint: route end at targetDuration
+  if (targetDuration !== undefined && targetDuration > 0) {
+    waypoints.push({
+      segIdx: segments.length,
+      targetTime: targetDuration,
+      cumDistAtWaypoint: totalDistance,
+      cumStopsAtWaypoint: totalStopTime
+    });
+  }
+
+  // For each pair of consecutive waypoints, calculate the speed for the
+  // segments between them.
+  for (let w = 0; w < waypoints.length - 1; w++) {
+    const a = waypoints[w];
+    const b = waypoints[w + 1];
+    const distDelta = b.cumDistAtWaypoint - a.cumDistAtWaypoint;
+    const stopsDelta = b.cumStopsAtWaypoint - a.cumStopsAtWaypoint;
+    const timeDelta = b.targetTime - a.targetTime;
+    if (distDelta > 0 && timeDelta > stopsDelta) {
+      const segSpeed = distDelta / Math.max(0.001, timeDelta - stopsDelta);
+      // Apply to segments between a.segIdx+1 and b.segIdx (inclusive)
+      const startIdx = Math.max(0, a.segIdx + 1);
+      const endIdx = b.segIdx;
+      for (let i = startIdx; i <= endIdx && i < segments.length; i++) {
+        segments[i].speed = segSpeed;
+      }
+    }
+  }
+  // Fill any segments without a per-segment speed with the route-wide default
   for (const seg of segments) {
     if (seg.speed === undefined) seg.speed = speed;
   }

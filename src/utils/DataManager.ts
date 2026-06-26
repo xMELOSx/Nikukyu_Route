@@ -125,6 +125,7 @@ export interface HeistMarker {
   bossDrops?: string[];   // For boss markers: list of drop items
   bossDurationSeconds?: number; // For boss markers: duration in seconds
   bossExpanded?: boolean; // For boss markers: whether details are expanded in presentation mode
+  bossDescription?: string; // For boss markers: detailed description (separate from name in note)
   battleDurationSeconds?: number; // For battle markers: duration in seconds
   battleExpanded?: boolean; // For battle markers: whether details are expanded in presentation mode
   popupDirection?: 'top' | 'bottom' | 'left' | 'right'; // Direction of detail popup
@@ -223,7 +224,7 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   eh: { emoji: '💎', label: 'EH', color: '#00f0ff' },
   rare: { emoji: '💴', label: 'RARE', color: '#ffd700' },
   vault: { emoji: '💰', label: 'MDP', color: '#ffe600' },
-  boss: { emoji: '😈', label: 'BOSS (MAMON)', color: '#ff0055' },
+  boss: { emoji: '😈', label: 'BOSS', color: '#ff0055' },
   phone: { emoji: '☎', label: 'ESCAPE PHONE', color: '#ff00ff' },
   note: { emoji: '📌', label: 'MEMO', color: '#64748b' },
   room: { emoji: '🚪', label: 'ROOM / ZONE', color: '#00f0ff' },

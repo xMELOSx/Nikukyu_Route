@@ -208,7 +208,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>🔴 停止</span>
-                      <input type="range" min="4" max="40" step="1" value={stopMarkerThreshold ?? 12}
+                      <input type="range" min="5" max="30" step="1" value={stopMarkerThreshold ?? 12}
                         onChange={(e) => setStopMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#ff4444' }} />
                       <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{stopMarkerThreshold}px</span>
@@ -216,7 +216,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>🟢 階段</span>
-                      <input type="range" min="4" max="50" step="1" value={movementMarkerThreshold ?? 20}
+                      <input type="range" min="5" max="30" step="1" value={movementMarkerThreshold ?? 20}
                         onChange={(e) => setMovementMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#39ff14' }} />
                       <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{movementMarkerThreshold}px</span>
@@ -224,7 +224,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '70px' }}>🟠 ワープ</span>
-                      <input type="range" min="4" max="50" step="1" value={warpMarkerThreshold ?? 12}
+                      <input type="range" min="5" max="30" step="1" value={warpMarkerThreshold ?? 12}
                         onChange={(e) => setWarpMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#ff9500' }} />
                       <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{warpMarkerThreshold}px</span>
