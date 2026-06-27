@@ -98,6 +98,10 @@ export function useAutoRouteEngine({
   const autoRoutePrevSegmentIdRef = useRef<string>('');
   const followCameraRef = useRef<boolean>(false);
   followCameraRef.current = followCamera;
+  const autoRouteElapsedRef = useRef<number>(0);
+  autoRouteElapsedRef.current = autoRouteElapsed;
+  const markersRef = useRef<HeistMarker[]>(markers);
+  markersRef.current = markers;
 
   const resetAutoRoute = () => {
     setAutoRouteRunning(false);
@@ -112,6 +116,7 @@ export function useAutoRouteEngine({
   const startAutoRoute = () => {
     setAutoRouteError(null);
     prewarmAudio();
+    try {
     const startMarker = markers.find(m => m.type === 'start');
     let effectiveStartMarker = startMarker;
     if (!effectiveStartMarker) {
@@ -131,11 +136,13 @@ export function useAutoRouteEngine({
       } as HeistMarker;
       if (onAutoStartMarkerSet) onAutoStartMarkerSet(effectiveStartMarker);
     }
+    console.log('[auto-route] startAutoRoute called', { markers: markers.length, strokes: strokes.length, startMarker: effectiveStartMarker.id });
     const routeSegments = buildAutoRoute(strokes, markers, effectiveStartMarker, {
       stopMarkerThreshold,
       movementMarkerThreshold,
       warpMarkerThreshold
     }, hiddenMarkers || []);
+    console.log('[auto-route] buildAutoRoute returned', { segments: routeSegments.length, totalDistance: routeSegments.length > 0 ? routeSegments[routeSegments.length - 1].cumulativeDistance : 0, warpSegments: routeSegments.filter(s => s.distance === 0).length });
     if (routeSegments.length === 0) {
       setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
       return;
@@ -169,6 +176,11 @@ export function useAutoRouteEngine({
       };
       setPan(tgtPan);
       animPanRef.current = tgtPan;
+    }
+    console.log('[auto-route] startAutoRoute completed', { timing: { speed: timing.speed, totalTime: timing.totalTime, totalDistance: timing.totalDistance } });
+    } catch (e) {
+      console.error('[auto-route] startAutoRoute threw:', e);
+      setAutoRouteError('ルート構築中にエラーが発生しました: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -208,7 +220,6 @@ export function useAutoRouteEngine({
       }
 
       if (!autoRouteRunning) {
-        autoRouteAnimRef.current = requestAnimationFrame(tick);
         return;
       }
 
@@ -329,13 +340,15 @@ export function useAutoRouteEngine({
   useEffect(() => {
     if (!onAutoRouteStatusChange) return;
     const sendStatus = () => {
+      const elapsed = autoRouteElapsedRef.current;
+      const mks = markersRef.current;
       const waitRemaining = autoRouteWaitUntilRef.current > 0
         ? Math.max(0, (autoRouteWaitUntilRef.current - performance.now()) / 1000)
         : 0;
       const cpList: { elapsed: number; label: string; passed: boolean }[] = [];
       for (const seg of autoRouteSegments) {
         if (seg.markerType === 'checkpoint') {
-          const m = markers.find(mk => mk.id === seg.markerId);
+          const m = mks.find(mk => mk.id === seg.markerId);
           const cpTarget = (seg as any)._checkpointTarget as number;
           const elapsedAt = cpTarget > 0
             ? cpTarget
@@ -343,7 +356,7 @@ export function useAutoRouteEngine({
           cpList.push({
             elapsed: elapsedAt,
             label: m?.note || 'Checkpoint',
-            passed: autoRouteElapsed >= elapsedAt
+            passed: elapsed >= elapsedAt
           });
         }
       }
@@ -351,13 +364,13 @@ export function useAutoRouteEngine({
       onAutoRouteStatusChange({
         active: autoRouteActive,
         running: autoRouteRunning,
-        elapsed: autoRouteElapsed,
+        elapsed,
         totalTime: autoRouteTiming.totalTime,
         totalDistance: autoRouteTiming.totalDistance,
         totalStopTime: autoRouteTiming.totalTime - autoRouteTiming.totalDistance / Math.max(1, autoRouteTiming.speed),
         speed: autoRouteTiming.speed,
         error: autoRouteError,
-        nextMarkerLabel: nextMarkerLabel(autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed),
+        nextMarkerLabel: nextMarkerLabel(autoRouteSegments, elapsed, autoRouteTiming.speed),
         waitRemaining,
         checkpoints: cpList
       });
@@ -365,7 +378,7 @@ export function useAutoRouteEngine({
     sendStatus();
     const interval = setInterval(sendStatus, 100);
     return () => clearInterval(interval);
-  }, [autoRouteActive, autoRouteRunning, autoRouteElapsed, autoRouteTiming, autoRouteError, autoRouteSegments, onAutoRouteStatusChange]);
+  }, [autoRouteActive, autoRouteRunning, autoRouteError, autoRouteSegments, autoRouteTiming, onAutoRouteStatusChange]);
 
   // Spacebar toggles pause/resume
   useEffect(() => {

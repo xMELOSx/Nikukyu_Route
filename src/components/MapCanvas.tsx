@@ -152,6 +152,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const markersRef = useRef<HeistMarker[]>(markers);
 
   // Helper to resolve connection properties between Warp/Stairs
   const getWarpConnectionInfo = (m: HeistMarker, allMarkers: HeistMarker[]) => {
@@ -364,62 +365,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [isEditMode]);
 
   // Fixed text-pin pane tracking — display-only offset.
-  // The pane offset is NOT persisted to marker data. Instead, it is stored in
-  // a ref and applied only at render time. This prevents the pane width from
-  // being baked into the saved marker coordinates, which would cause pins to
-  // appear shifted when the page is loaded with a different pane state.
-  // Both refs are initialized to `true` (pane closed) so that the base state
-  // is "panes closed". On PC where panes start open, the first effect run
-  // detects a change and applies the appropriate display offset. On mobile
-  // where panes start closed, no offset is applied — pins stay at their
-  // saved position.
-  const prevLeftCollapsedRef = useRef(true);
-  const prevRightCollapsedRef = useRef(true);
-  const markersRef = useRef(markers);
-  markersRef.current = markers;
-  const paneDisplayOffsetRef = useRef<Map<string, number>>(new Map());
-  const [, forceRender] = useState(0);
-
-  useEffect(() => {
-    const prevLeft = prevLeftCollapsedRef.current;
-    const prevRight = prevRightCollapsedRef.current;
-
-    if (prevLeft === leftSidebarCollapsed && prevRight === rightSidebarCollapsed) return;
-
-    const currentMarkers = markersRef.current;
-    if (currentMarkers.length === 0) return;
-
+  // The pane offset is NOT persisted to marker data. Instead, the offset is
+  // computed directly from the current pane state at render time. Since the
+  // base state is "panes closed", when a pane is open the pin shifts by the
+  // pane width to maintain its visual position relative to the map content.
+  // This approach works for all markers regardless of when they are loaded.
+  const computePaneOffset = (m: HeistMarker): number => {
+    if (!m.textFixedPosition) return 0;
     const midX = window.innerWidth / 2;
-
-    let anyChanged = false;
-    const next = new Map(paneDisplayOffsetRef.current);
-
-    for (const m of currentMarkers) {
-      if (!m.textFixedPosition || m.floor !== floor) continue;
-      const side: 'left' | 'right' =
-        m.trackSide === 'auto' || !m.trackSide
-          ? (m.x < midX ? 'left' : 'right')
-          : m.trackSide;
-
-      if (prevLeft !== leftSidebarCollapsed && side === 'left') {
-        const shift = leftSidebarCollapsed ? -280 : 280;
-        anyChanged = true;
-        next.set(m.id, (next.get(m.id) || 0) + shift);
-      }
-      if (prevRight !== rightSidebarCollapsed && side === 'right') {
-        const shift = rightSidebarCollapsed ? 340 : -340;
-        anyChanged = true;
-        next.set(m.id, (next.get(m.id) || 0) + shift);
-      }
-    }
-
-    prevLeftCollapsedRef.current = leftSidebarCollapsed;
-    prevRightCollapsedRef.current = rightSidebarCollapsed;
-
-    if (!anyChanged) return;
-    paneDisplayOffsetRef.current = next;
-    forceRender(n => n + 1);
-  }, [leftSidebarCollapsed, rightSidebarCollapsed, markers.length]);
+    const side: 'left' | 'right' =
+      m.trackSide === 'auto' || !m.trackSide
+        ? (m.x < midX ? 'left' : 'right')
+        : m.trackSide;
+    if (side === 'left') return leftSidebarCollapsed ? 0 : 280;
+    return rightSidebarCollapsed ? 0 : -340;
+  };
 
   // Sync state to anim refs whenever state changes
   // This ensures that user manual zoom/pan (which update state)
@@ -553,6 +513,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     animFrameIdRef.current = requestAnimationFrame(tick);
   };
+
+  // Keep markersRef in sync with the markers prop
+  useEffect(() => {
+    markersRef.current = markers;
+  }, [markers]);
 
   // Handle focusTrigger updates
   // NOTE: Uses markersRef (not `markers`) to avoid re-triggering on every
@@ -1096,7 +1061,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const targetX = e.clientX - dragStartOffset.x;
           const targetY = e.clientY - dragStartOffset.y;
           // Subtract the display offset to store the pane-closed base position.
-          const offset = paneDisplayOffsetRef.current.get(marker.id) || 0;
+          const offset = computePaneOffset(marker);
           onMarkersChange(
             markers.map(m => {
               if (m.id === draggingMarkerId) {
@@ -1315,7 +1280,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (onMarkersDragStart) onMarkersDragStart();
     setDraggingMarkerId(m.id);
     if (m.textFixedPosition) {
-      const displayX = m.x + (paneDisplayOffsetRef.current.get(m.id) || 0);
+      const displayX = m.x + computePaneOffset(m);
       setDragStartOffset({ x: e.clientX - displayX, y: e.clientY - m.y });
     } else {
       setDragStartOffset({ x: coords.x - m.x, y: coords.y - m.y });
@@ -2776,7 +2741,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 onMouseLeave={tooltipNote ? () => setHoveredMarkerId(null) : undefined}
                 style={{
                   position: 'fixed',
-                  left: `${m.x + (paneDisplayOffsetRef.current.get(m.id) || 0)}px`,
+                  left: `${m.x + computePaneOffset(m)}px`,
                   top: `${m.y}px`,
                   transform: 'translate(-50%, -50%)',
                   color: displayColor,

@@ -55,7 +55,64 @@ export interface DrawingStroke {
 }
 
 export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
-  return strokes;
+  if (!Array.isArray(strokes)) return [];
+  return strokes
+    .filter(s => s && typeof s === 'object' && Array.isArray(s.points) && s.points.length >= 2)
+    .map(s => ({
+      points: s.points
+        .filter((p: any) => p && typeof p === 'object' && typeof p.x === 'number' && typeof p.y === 'number' && isFinite(p.x) && isFinite(p.y))
+        .map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+      color: typeof s.color === 'string' ? s.color : '#00ff00',
+      width: typeof s.width === 'number' && s.width > 0 ? s.width : 3,
+      type: s.type === 'dashed' ? 'dashed' : 'solid',
+    }))
+    .filter(s => s.points.length >= 2);
+}
+
+// --- Stroke compression for PNG pixel-encoded data bar ---
+
+interface CompressedStroke {
+  c: string;   // color
+  w: number;   // width
+  t: string;   // type
+  p: number[]; // delta-encoded flat array [dx0,dy0,dx1,dy1,...] with zigzag
+}
+
+function zigzagEncode(n: number): number {
+  return (n << 1) ^ (n >> 31);
+}
+
+function zigzagDecode(n: number): number {
+  return (n >>> 1) ^ -(n & 1);
+}
+
+export function compressStrokes(strokes: DrawingStroke[]): CompressedStroke[] {
+  return strokes.map(s => {
+    const flat: number[] = [];
+    let prevX = 0;
+    let prevY = 0;
+    for (const pt of s.points) {
+      flat.push(zigzagEncode(pt.x - prevX));
+      flat.push(zigzagEncode(pt.y - prevY));
+      prevX = pt.x;
+      prevY = pt.y;
+    }
+    return { c: s.color, w: s.width, t: s.type, p: flat };
+  });
+}
+
+export function decompressStrokes(compressed: CompressedStroke[]): DrawingStroke[] {
+  return compressed.map(cs => {
+    const points: Point[] = [];
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < cs.p.length; i += 2) {
+      x += zigzagDecode(cs.p[i]);
+      y += zigzagDecode(cs.p[i + 1]);
+      points.push({ x, y });
+    }
+    return { points, color: cs.c, width: cs.w, type: cs.t as 'solid' | 'dashed' };
+  });
 }
 
 /**
@@ -327,15 +384,31 @@ export class DataManager {
 
   // Get list of saved routes
   static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; createdAt: number; updatedAt: number }[] {
-    const listStr = localStorage.getItem('heist_routes_list');
-    return listStr ? JSON.parse(listStr) : [];
+    try {
+      const listStr = localStorage.getItem('heist_routes_list');
+      if (!listStr) return [];
+      const parsed = JSON.parse(listStr);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error('getSavesList: corrupted data, clearing', e);
+      try { localStorage.removeItem('heist_routes_list'); } catch {}
+      return [];
+    }
   }
 
   // Load route from localStorage
   static loadFromLocalStorage(id: string): RouteData | null {
-    const dataStr = localStorage.getItem(`heist_route_${id}`);
-    if (!dataStr) return null;
-    return DataManager.migrateMediaFields(JSON.parse(dataStr) as RouteData);
+    try {
+      const dataStr = localStorage.getItem(`heist_route_${id}`);
+      if (!dataStr) return null;
+      const parsed = JSON.parse(dataStr);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return DataManager.migrateMediaFields(parsed as RouteData);
+    } catch (e) {
+      console.error(`loadFromLocalStorage: corrupted route ${id}, removing`, e);
+      try { localStorage.removeItem(`heist_route_${id}`); } catch {}
+      return null;
+    }
   }
 
   // Delete route from localStorage
@@ -712,16 +785,32 @@ export class DataManager {
         fctx.fillText(`原作者: ${originalAuthor}`, ax, 115);
       }
 
-      // Draw pixel-encoded JSON data bar at bottom
+      // Draw pixel-encoded JSON data bar BELOW the map (appended, not overwriting).
+      // Stroke points are delta+zigzag compressed to drastically reduce JSON size.
       // Format: [8 magenta pixels][4 magic N-K-N-Y][4 length BE][JSON data][8 magenta end]
-      const jsonStr = JSON.stringify(DataManager.sanitizeRouteForExport(route));
+      const sanitized = DataManager.sanitizeRouteForExport(route);
+      const compressed: any = { ...sanitized, _v: 2 };
+      for (const floorKey of Object.keys(sanitized.strokes) as FloorType[]) {
+        compressed.strokes = { ...compressed.strokes, [floorKey]: compressStrokes(sanitized.strokes[floorKey]) };
+      }
+      const jsonStr = JSON.stringify(compressed);
       const dataBytes = new TextEncoder().encode(jsonStr);
       const MAGIC = [0x4E, 0x4B, 0x4E, 0x59]; // "N K N Y"
       const HEADER_SIZE = 8 + 4 + 4; // 8 marker + 4 magic + 4 length
       const dataRows = Math.ceil((HEADER_SIZE + dataBytes.length + 8) / EXTW);
       const dataBarHeight = Math.max(dataRows, 2);
-      const dataBarY = EXTH - dataBarHeight;
-      
+
+      // Extend the final canvas to fit the data bar below the map content
+      const finalH = EXTH + dataBarHeight;
+      const finalCanvas2 = document.createElement('canvas');
+      finalCanvas2.width = EXTW;
+      finalCanvas2.height = finalH;
+      const fctx2 = finalCanvas2.getContext('2d');
+      if (!fctx2) return;
+
+      // Copy the already-drawn map content onto the extended canvas
+      fctx2.drawImage(finalCanvas, 0, 0);
+
       const allBytes = new Uint8Array(HEADER_SIZE + dataBytes.length + 8);
       // Start marker: 8 magenta pixels
       for (let j = 0; j < 8; j++) { allBytes[j] = 0xFF; }
@@ -737,21 +826,21 @@ export class DataManager {
       allBytes.set(dataBytes, HEADER_SIZE);
       // End marker: 8 magenta pixels
       for (let j = 0; j < 8; j++) { allBytes[HEADER_SIZE + dataBytes.length + j] = 0xFF; }
-      
-      const imgData = fctx.getImageData(0, dataBarY, EXTW, dataBarHeight);
+
+      const imgData = fctx2.createImageData(EXTW, dataBarHeight);
       for (let i = 0; i < allBytes.length; i++) {
         const px = i % EXTW;
         const row = Math.floor(i / EXTW);
         const idx = (row * EXTW + px) * 4;
-        const isMarker = allBytes[i] === 0xFF && i < 8 || i >= HEADER_SIZE + dataBytes.length;
+        const isMarker = (allBytes[i] === 0xFF && i < 8) || i >= HEADER_SIZE + dataBytes.length;
         imgData.data[idx] = isMarker ? 255 : 0;     // R: marker=255, data=0
         imgData.data[idx + 1] = isMarker ? 0 : allBytes[i]; // G: marker=0, data=byte value
         imgData.data[idx + 2] = isMarker ? 255 : 0; // B: marker=255, data=0
         imgData.data[idx + 3] = 255;
       }
-      fctx.putImageData(imgData, 0, dataBarY);
+      fctx2.putImageData(imgData, 0, EXTH);
 
-      const dataUrl = finalCanvas.toDataURL('image/png');
+      const dataUrl = finalCanvas2.toDataURL('image/png');
       onComplete(dataUrl);
     };
 
@@ -832,6 +921,16 @@ export class DataManager {
           const clean = jsonStr.replace(/\0+$/, '');
           const parsed = JSON.parse(clean);
           if (parsed && parsed.id && typeof parsed.title === 'string') {
+            // Decompress v2 strokes (delta+zigzag encoded)
+            if (parsed._v === 2 && parsed.strokes && typeof parsed.strokes === 'object') {
+              for (const floorKey of Object.keys(parsed.strokes)) {
+                const val = parsed.strokes[floorKey];
+                if (Array.isArray(val) && val.length > 0 && val[0].p && Array.isArray(val[0].p)) {
+                  parsed.strokes[floorKey] = decompressStrokes(val);
+                }
+              }
+              delete parsed._v;
+            }
             return parsed as RouteData;
           }
           return null;

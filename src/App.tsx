@@ -27,6 +27,7 @@ import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
 import { useAutoRoute } from './hooks/useAutoRoute';
+import { PLAY_DATA_KEY } from './utils/PlayDataManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import {
   Save,
@@ -190,6 +191,8 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const targetDurationSliderRef = useRef<HTMLInputElement | null>(null);
   const targetDurationTextRef = useRef<HTMLInputElement | null>(null);
+  const playDataImportRef = useRef<HTMLInputElement>(null);
+  const [playDataRefreshKey, setPlayDataRefreshKey] = useState(0);
 
   // --- Hooks (in dependency order) ---
   const notification = useNotifications(2000);
@@ -374,18 +377,24 @@ export default function App() {
     if (autoLoadLastRoute) {
       const lastId = localStorage.getItem('heist_last_used_route_id');
       if (lastId) {
-        const data = DataManager.loadFromLocalStorage(lastId);
-        if (data) {
-          const migrated = migrateRouteCoordinates(data);
-          if (migrated.mapVersion !== data.mapVersion) {
-            DataManager.saveToLocalStorage(migrated);
+        try {
+          const data = DataManager.loadFromLocalStorage(lastId);
+          if (data) {
+            const migrated = migrateRouteCoordinates(data);
+            if (migrated.mapVersion !== data.mapVersion) {
+              DataManager.saveToLocalStorage(migrated);
+            }
+            routeApi.setRouteWithGlobalDefaults(migrated);
+            if (migrated.markerScale !== undefined) {
+              setMarkerScale(migrated.markerScale);
+              localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
+            }
+            notification.show(`前回データを読み込みました: ${migrated.title}`);
           }
-          routeApi.setRouteWithGlobalDefaults(migrated);
-          if (migrated.markerScale !== undefined) {
-            setMarkerScale(migrated.markerScale);
-            localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
-          }
-          notification.show(`前回データを読み込みました: ${migrated.title}`);
+        } catch (e) {
+          console.error('Auto-load failed: corrupted route data, clearing last-used ID', e);
+          try { localStorage.removeItem('heist_last_used_route_id'); } catch {}
+          notification.show('前回データの読み込みに失敗しました（デフォルトを使用）', 3000);
         }
       }
     }
@@ -512,6 +521,50 @@ export default function App() {
 
   const handleExportJSON = () => {
     fileIO.exportJSON();
+  };
+
+  const handleExportPlayData = () => {
+    const raw = localStorage.getItem(PLAY_DATA_KEY);
+    if (!raw) { notification.show('エクスポートするプレイデータがありません'); return; }
+    try {
+      const parsed = JSON.parse(raw);
+      const { records, ...exportData } = parsed;
+      const date = new Date().toISOString().slice(0, 10);
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nikukyuu_playdata_${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      notification.show('プレイデータをエクスポートしました');
+    } catch {
+      notification.show('エクスポートに失敗しました');
+    }
+  };
+
+  const handleImportPlayData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (playDataImportRef.current) playDataImportRef.current.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const imported = JSON.parse(ev.target?.result as string);
+        if (!imported || typeof imported !== 'object') { notification.show('無効なファイル形式です'); return; }
+        const existing = localStorage.getItem(PLAY_DATA_KEY);
+        const current = existing ? JSON.parse(existing) : {};
+        const merged = { ...current, ...imported };
+        localStorage.setItem(PLAY_DATA_KEY, JSON.stringify(merged));
+        setPlayDataRefreshKey(k => k + 1);
+        notification.show('プレイデータをインポートしました');
+      } catch {
+        notification.show('ファイルの読み込みに失敗しました');
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleDeletePreset = (presetId: string) => {
@@ -1464,10 +1517,22 @@ export default function App() {
                 </div>
 
                 <div className="panel-section">
-                  <div className="panel-title">プレイデータ</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                    <div className="panel-title" style={{ marginBottom: 0 }}>プレイデータ</div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '3px' }}>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px' }} onClick={handleExportPlayData} title="履歴CSV以外の全データをJSONで保存">
+                        <Download size={9} /> 保存
+                      </button>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px' }} onClick={() => playDataImportRef.current?.click()} title="JSONからプレイデータを読み込み">
+                        <Upload size={9} /> 読込
+                      </button>
+                    </div>
+                  </div>
+                  <input ref={playDataImportRef} type="file" accept=".json" onChange={handleImportPlayData} style={{ display: 'none' }} />
                   <PlayDataPanel
                     routeTitle={routeApi.route.title}
                     onNotify={(msg) => { notification.show(msg); }}
+                    refreshKey={playDataRefreshKey}
                   />
                 </div>
               </>

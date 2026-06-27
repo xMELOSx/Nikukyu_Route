@@ -229,69 +229,75 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }, [route, setRouteWithGlobalDefaults]);
 
   const loadFromLocal = useCallback((id: string) => {
-    let data: RouteData | null = null;
-    if (id.startsWith('__preset__')) {
-      const presetId = id.replace('__preset__', '');
-      const preset = presets.find(p => p.id === presetId);
-      if (!preset) return;
-      data = {
-        ...preset.routeData,
-        id: `route_${Date.now()}`,
-        title: `${preset.routeData.title} (COPY)`
-      };
-    } else {
-      data = DataManager.loadFromLocalStorage(id);
-    }
-    if (!data) return;
+    try {
+      let data: RouteData | null = null;
+      if (id.startsWith('__preset__')) {
+        const presetId = id.replace('__preset__', '');
+        const preset = presets.find(p => p.id === presetId);
+        if (!preset) return;
+        data = {
+          ...preset.routeData,
+          id: `route_${Date.now()}`,
+          title: `${preset.routeData.title} (COPY)`
+        };
+      } else {
+        data = DataManager.loadFromLocalStorage(id);
+      }
+      if (!data) return;
 
-    // Strip legacy fields, backfill defaults, ensure floor/main, split global/individual
-    data.markers = (data.markers || []).filter(
-      m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
-    );
-    const isIndiv = (t: string) =>
-      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(t);
-    const planIndiv = data.markers
-      .filter(m => isIndiv(m.type))
-      .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));
-    const planGlobal = data.markers
-      .filter(m => !isIndiv(m.type))
-      .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));
-    if (planGlobal.length > 0) {
-      globalMarkersStoreRef.current.mergeFromImport(planGlobal);
-    }
-    data.markers = planIndiv;
+      // Strip legacy fields, backfill defaults, ensure floor/main, split global/individual
+      data.markers = (data.markers || []).filter(
+        m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
+      );
+      const isIndiv = (t: string) =>
+        ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(t);
+      const planIndiv = data.markers
+        .filter(m => isIndiv(m.type))
+        .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));
+      const planGlobal = data.markers
+        .filter(m => !isIndiv(m.type))
+        .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));
+      if (planGlobal.length > 0) {
+        globalMarkersStoreRef.current.mergeFromImport(planGlobal);
+      }
+      data.markers = planIndiv;
 
-    if (!data.strokes.main) {
-      const merged: DrawingStroke[] = [];
-      Object.keys(data.strokes).forEach(k => {
-        const arr = (data!.strokes as any)[k];
-        if (Array.isArray(arr)) merged.push(...arr);
-      });
-      data.strokes = { main: merged };
-    }
-    data.strokes.main = normalizeStrokes(data.strokes.main);
+      if (!data.strokes || typeof data.strokes !== 'object') data.strokes = { main: [] };
+      if (!data.strokes.main) {
+        const merged: DrawingStroke[] = [];
+        Object.keys(data.strokes).forEach(k => {
+          const arr = (data!.strokes as any)[k];
+          if (Array.isArray(arr)) merged.push(...arr);
+        });
+        data.strokes = { main: merged };
+      }
+      data.strokes.main = normalizeStrokes(data.strokes.main);
 
-    if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
-    data.bossCustomDurations = data.bossCustomDurations || {};
-    data.battleCustomDurations = data.battleCustomDurations || {};
-    data.pickingCustomDurations = data.pickingCustomDurations || {};
-    data.longPickingCustomDurations = data.longPickingCustomDurations || {};
-    data.hiddenMarkers = data.hiddenMarkers || [];
-    data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
-    if (data.author === undefined) data.author = '';
-    if (data.originalAuthor === undefined) data.originalAuthor = '';
+      if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
+      data.bossCustomDurations = data.bossCustomDurations || {};
+      data.battleCustomDurations = data.battleCustomDurations || {};
+      data.pickingCustomDurations = data.pickingCustomDurations || {};
+      data.longPickingCustomDurations = data.longPickingCustomDurations || {};
+      data.hiddenMarkers = data.hiddenMarkers || [];
+      data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
+      if (data.author === undefined) data.author = '';
+      if (data.originalAuthor === undefined) data.originalAuthor = '';
 
-    if (data.id !== 'default') {
-      const gd = globalDefaultsRefRef.current.current;
-      data.hiddenMarkers = [...new Set([...data.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
-      data.hiddenMarkerTypes = [...new Set([...data.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
+      if (data.id !== 'default') {
+        const gd = globalDefaultsRefRef.current.current;
+        data.hiddenMarkers = [...new Set([...data.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
+        data.hiddenMarkerTypes = [...new Set([...data.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
+      }
+      setRouteWithGlobalDefaults(data);
+      localStorage.setItem('heist_last_used_route_id', data.id);
+      if (data.markerScale !== undefined) {
+        onMarkerScaleChange(data.markerScale);
+      }
+      showNotificationRef.current(`読み込み完了: ${data.title}`);
+    } catch (e) {
+      console.error('loadFromLocal failed:', e);
+      showNotificationRef.current('データの読み込みに失敗しました', 3000);
     }
-    setRouteWithGlobalDefaults(data);
-    localStorage.setItem('heist_last_used_route_id', data.id);
-    if (data.markerScale !== undefined) {
-      onMarkerScaleChange(data.markerScale);
-    }
-    showNotificationRef.current(`読み込み完了: ${data.title}`);
   }, [presets, setRouteWithGlobalDefaults, onMarkerScaleChange]);
 
   const deleteFromLocal = useCallback((e: React.MouseEvent, id: string) => {

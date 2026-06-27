@@ -24,6 +24,7 @@ import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, L
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
   routeTitle?: string;
+  refreshKey?: number;
 }
 
 type CumulativeField = 'recordedFans' | 'recordedCoins' | 'recordedNikukyuu';
@@ -210,7 +211,7 @@ function parseGoalsFromInput(text: string): { name: string; target: number; rewa
   return out;
 }
 
-export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps) {
+export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDataPanelProps) {
   const [state, setState] = useState<PlayDataState>(() => checkAutoReset(loadPlayData()));
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingLocation, setEditingLocation] = useState<string>('');
@@ -229,6 +230,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '' }: PlayDataPanelProps)
   useEffect(() => {
     savePlayData(state);
   }, [state]);
+
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      setState(checkAutoReset(loadPlayData()));
+    }
+  }, [refreshKey]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
