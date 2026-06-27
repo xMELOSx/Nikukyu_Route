@@ -1913,14 +1913,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 zIndex: 100
               }}
             >
-              {markers.filter(m => m.floor === floor)
-                // スタートピンが常にチェックポイントの上に来るよう、
-                // チェックポイントを先に描画 (= 背後) させる。
-                .sort((a, b) => {
-                  const rank = (t: string) => (t === 'start' ? 1 : 0);
-                  return rank(a.type) - rank(b.type);
-                })
-                .map(m => {
+              {markers.filter(m => m.floor === floor).map(m => {
                 const isWarp = m.type === 'warp' || m.type === 'iwarp';
                 const isStairs = m.type === 'stairs';
                 const isStart = m.type === 'start';

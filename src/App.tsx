@@ -777,15 +777,27 @@ export default function App() {
                       <div style={{ display: 'flex', gap: '3px' }}>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                           onClick={() => {
-                            (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
-                              if ((routeApi.route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
-                            });
+                            // 一括トグル: クロージャ毎の route 参照で hidden 判定すると
+                            // ループ末尾の状態 (旧値基準) しか反映されないため、
+                            // 旧値から最終状態を一度だけ計算して単一の setRoute にまとめる
+                            const current = routeApi.route.hiddenMarkerTypes || [];
+                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[];
+                            const next = current.filter(t => !targetTypes.includes(t));
+                            if (next.length === current.length) return;
+                            const nextHidden = routeApi.route.hiddenMarkers || [];
+                            postGlobalDefaults(nextHidden, next);
+                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
                           }}>ALL ON</button>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                           onClick={() => {
-                            (['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).forEach(t => {
-                              if (!(routeApi.route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
-                            });
+                            const current = routeApi.route.hiddenMarkerTypes || [];
+                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[];
+                            const additions = targetTypes.filter(t => !current.includes(t));
+                            if (additions.length === 0) return;
+                            const next = Array.from(new Set([...current, ...additions]));
+                            const nextHidden = routeApi.route.hiddenMarkers || [];
+                            postGlobalDefaults(nextHidden, next);
+                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
                           }}>ALL OFF</button>
                       </div>
                     </div>
@@ -809,20 +821,29 @@ export default function App() {
                       <div style={{ display: 'flex', gap: '3px' }}>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                           onClick={() => {
-                            (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).forEach(t => {
-                              if ((routeApi.route.hiddenMarkerTypes || []).includes(t)) handleShowGlobalMarkerType(t);
-                            });
+                            const current = routeApi.route.hiddenMarkerTypes || [];
+                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[];
+                            const next = current.filter(t => !targetTypes.includes(t));
+                            if (next.length === current.length) return;
+                            const nextHidden = routeApi.route.hiddenMarkers || [];
+                            postGlobalDefaults(nextHidden, next);
+                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
                           }}>ALL ON</button>
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                           onClick={() => {
-                            (['battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).forEach(t => {
-                              if (!(routeApi.route.hiddenMarkerTypes || []).includes(t)) handleHideGlobalMarkerType(t);
-                            });
+                            const current = routeApi.route.hiddenMarkerTypes || [];
+                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[];
+                            const additions = targetTypes.filter(t => !current.includes(t));
+                            if (additions.length === 0) return;
+                            const next = Array.from(new Set([...current, ...additions]));
+                            const nextHidden = routeApi.route.hiddenMarkers || [];
+                            postGlobalDefaults(nextHidden, next);
+                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
                           }}>ALL OFF</button>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
+                      {(['start', 'checkpoint', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
                         const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                         return (
@@ -980,7 +1001,7 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">マーカー</div>
                 <div className="marker-list">
-                  {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
+                  {(['start', 'checkpoint', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
                     return (
                       <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}

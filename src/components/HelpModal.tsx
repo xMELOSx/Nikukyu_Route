@@ -267,7 +267,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '6px' }}>マーカー表示切替:</div>
                 <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {globalMarkers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>グローバル:</div>}
-                  {globalMarkers.map(m => {
+                  {globalMarkers
+                    // チェックポイントピンをスタートピンの後ろ (リスト下段) に表示
+                    .slice()
+                    .sort((a, b) => {
+                      const rank = (t: string) => (t === 'start' ? 0 : t === 'checkpoint' ? 2 : 1);
+                      return rank(a.type) - rank(b.type);
+                    })
+                    .map(m => {
                     const meta = MARKER_META[m.type];
                     const isHidden = (route.hiddenMarkers || []).includes(m.id);
                     return (
@@ -281,7 +288,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     );
                   })}
                   {route.markers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>個別:</div>}
-                  {route.markers.map(m => {
+                  {route.markers
+                    // チェックポイントピンをスタートピンの後ろ (リスト下段) に表示
+                    .slice()
+                    .sort((a, b) => {
+                      const rank = (t: string) => (t === 'start' ? 0 : t === 'checkpoint' ? 2 : 1);
+                      return rank(a.type) - rank(b.type);
+                    })
+                    .map(m => {
                     const meta = MARKER_META[m.type];
                     const isHidden = (route.hiddenMarkers || []).includes(m.id);
                     return (
@@ -317,10 +331,58 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </div>
               )}
             </div>
-          ) : isEditMode && isLocal && !isHelpPreviewMode ? (
+          ) : isEditMode && isLocal ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>※ グローバル編集モード: HTMLタグ（aタグ等含む）で自由に編集できます。</div>
-              <textarea value={currentText} onChange={setCurrentText ? (e) => setCurrentText(e.target.value) : undefined} style={{ width: '100%', flex: 1, minHeight: '300px', background: 'rgba(5, 7, 10, 0.8)', border: '1px solid rgba(0, 240, 255, 0.3)', color: 'var(--text-primary)', padding: '12px', borderRadius: '4px', fontFamily: 'Consolas, Monaco, monospace', fontSize: '13px', resize: 'none' }} placeholder="HTMLタグを使って自由に記述してください" />
+              {/* Stacked container: keep BOTH the textarea and the preview in the DOM at all
+                  times so the browser preserves the textarea's native Undo/Redo history
+                  when toggling preview. `display:none` would unmount the textarea from
+                  layout and some browsers (notably Firefox) clear the undo stack in that
+                  case. Using `visibility:hidden` + `pointer-events:none` keeps the
+                  element rendered (and its undo history intact) while hiding it from
+                  the user. */}
+              <div style={{ position: 'relative', flex: 1, minHeight: '300px' }}>
+                <textarea
+                  value={currentText}
+                  onChange={setCurrentText ? (e) => setCurrentText(e.target.value) : undefined}
+                  placeholder="HTMLタグを使って自由に記述してください"
+                  tabIndex={isHelpPreviewMode ? -1 : 0}
+                  aria-hidden={isHelpPreviewMode}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(5, 7, 10, 0.8)',
+                    border: '1px solid rgba(0, 240, 255, 0.3)',
+                    color: 'var(--text-primary)',
+                    padding: '12px',
+                    borderRadius: '4px',
+                    fontFamily: 'Consolas, Monaco, monospace',
+                    fontSize: '13px',
+                    resize: 'none',
+                    visibility: isHelpPreviewMode ? 'hidden' : 'visible',
+                    pointerEvents: isHelpPreviewMode ? 'none' : 'auto',
+                  }}
+                />
+                <div
+                  aria-hidden={!isHelpPreviewMode}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    overflow: 'auto',
+                    border: '1px solid rgba(0, 240, 255, 0.15)',
+                    borderRadius: '4px',
+                    padding: '5px',
+                    background: 'rgba(10, 15, 28, 0.6)',
+                    visibility: isHelpPreviewMode ? 'visible' : 'hidden',
+                    pointerEvents: isHelpPreviewMode ? 'auto' : 'none',
+                  }}
+                >
+                  <HelpContentView html={currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'} />
+                </div>
+              </div>
             </div>
           ) : (
             <HelpContentView html={currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'} />
