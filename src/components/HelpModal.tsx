@@ -1,6 +1,21 @@
-import React, { useState } from 'react';
+import React, { memo, useState } from 'react';
 import { MARKER_META, type HeistMarker, type RouteData } from '../utils/DataManager';
 import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
+
+// Isolated component that only re-renders when the HTML string actually changes.
+// Prevents parent re-renders (e.g. auto-route engine ticks) from re-evaluating
+// dangerouslySetInnerHTML and losing the user's text selection.
+interface HelpContentViewProps {
+  html: string;
+}
+const HelpContentView = memo(({ html }: HelpContentViewProps) => (
+  <div
+    className="help-content-view"
+    style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-primary)', padding: '5px' }}
+    dangerouslySetInnerHTML={{ __html: html }}
+  />
+));
+HelpContentView.displayName = 'HelpContentView';
 
 interface HelpModalProps {
   show: boolean;
@@ -75,7 +90,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   } : undefined;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 7, 10, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+    <div tabIndex={-1} autoFocus style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 7, 10, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, outline: 'none' }}>
       <div className="glass-panel" style={{ width: '900px', maxWidth: '95%', height: '85vh', maxHeight: '90%', padding: '25px', borderRadius: '8px', border: '1.5px solid var(--cyan-neon)', boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)', background: 'rgba(10, 15, 28, 0.98)', display: 'flex', flexDirection: 'column', gap: '0', pointerEvents: 'auto', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px', marginBottom: '0' }}>
@@ -308,7 +323,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               <textarea value={currentText} onChange={setCurrentText ? (e) => setCurrentText(e.target.value) : undefined} style={{ width: '100%', flex: 1, minHeight: '300px', background: 'rgba(5, 7, 10, 0.8)', border: '1px solid rgba(0, 240, 255, 0.3)', color: 'var(--text-primary)', padding: '12px', borderRadius: '4px', fontFamily: 'Consolas, Monaco, monospace', fontSize: '13px', resize: 'none' }} placeholder="HTMLタグを使って自由に記述してください" />
             </div>
           ) : (
-            <div className="help-content-view" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-primary)', padding: '5px' }} dangerouslySetInnerHTML={{ __html: currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>' }} />
+            <HelpContentView html={currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'} />
           )}
         </div>
 
