@@ -82,9 +82,6 @@ export function buildAutoRoute(
     .map((s, i) => ({ stroke: s, idx: i }))
     .filter(({ stroke }) => stroke.type === 'solid');
 
-  // eslint-disable-next-line no-console
-  console.log(`[route-debug] strokes=${solidStrokes.length} cfg.stopMarkerThreshold=${cfg.stopMarkerThreshold} + capture=${cfg.stopMarkerCaptureRadius} (effective ${cfg.stopMarkerThreshold + cfg.stopMarkerCaptureRadius}px) hiddenMarkers=${hiddenMarkerIds.length}`);
-
   if (solidStrokes.length === 0) return segments;
 
   const hiddenSet = new Set(hiddenMarkerIds);
@@ -226,31 +223,6 @@ export function buildAutoRoute(
       if (++innerSafety > innerMax) break; // hard cap — never spin forever
       const a = currentPos;
       const b = travelPoints[i];
-
-      // DEBUG: log every stop-marker within 60px with the reason it would
-      // be REJECTED (visited, t out of range) or accepted, so we can
-      // see exactly why a key that visually sits on the line still
-      // doesn't trigger a stop. Remove once detection is fixed.
-      for (const m of relevantMarkers) {
-        if (!isStopMarker(m.type)) continue;
-        const perp = distanceToSegment(m, a, b);
-        const dC = Math.hypot(m.x - a.x, m.y - a.y);
-        const dN = Math.hypot(m.x - b.x, m.y - b.y);
-        const minD = Math.min(perp, dC, dN);
-        if (minD >= 60) continue;
-        const t = projectionParameter(m, a, b);
-        const th = thresholdFor(m.type, cfg);
-        const visited = visitedMarkerIds.has(m.id);
-        const distOk = minD < th;
-        const tOk = t >= -0.1 && t <= 1.1;
-        const accepted = !visited && distOk && tOk;
-        // eslint-disable-next-line no-console
-        console.log(
-          `[hit-debug] m=${m.id} (${m.x|0},${m.y|0}) seg (${a.x|0},${a.y|0})→(${b.x|0},${b.y|0}) ` +
-          `min=${minD.toFixed(1)} th=${th} t=${t.toFixed(2)} ` +
-          `visited=${visited} distOk=${distOk} tOk=${tOk} → ${accepted ? 'HIT' : 'skip'}`
-        );
-      }
 
       const hits = relevantMarkers
         // Pause currently-paused warp endpoints (their id is in some paused

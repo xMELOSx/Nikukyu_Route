@@ -245,6 +245,35 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   // Two-step confirmation for 全削除
   const [confirmClearGoals, setConfirmClearGoals] = useState(false);
 
+  // Direct OCR paste integration state
+  const [ocrImg1, setOcrImg1] = useState<string | null>(null);
+  const [ocrImg2, setOcrImg2] = useState<string | null>(null);
+  const [modalOcrStatus, setModalOcrStatus] = useState<string>('');
+  const [modalOcrProgress, setModalOcrProgress] = useState<number>(0);
+  const [focus1, setFocus1] = useState(false);
+  const [focus2, setFocus2] = useState(false);
+  const [ocrPresets, setOcrPresets] = useState<any[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+
+  const fileInputRef1 = useRef<HTMLInputElement | null>(null);
+  const fileInputRef2 = useRef<HTMLInputElement | null>(null);
+
+  // One-time startup database migration to clean system presets
+  useEffect(() => {
+    try {
+      const savedPresets = localStorage.getItem('heist_ocr_multi_presets');
+      if (savedPresets) {
+        const presets: any[] = JSON.parse(savedPresets);
+        const cleaned = presets.filter(p => p.id !== 'ocr_preset_dadada_default' && p.id !== 'ocr_preset_dada_default');
+        if (presets.length !== cleaned.length) {
+          localStorage.setItem('heist_ocr_multi_presets', JSON.stringify(cleaned));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   // --- Sound Player state ---
   const [playlist, setPlaylist] = useState<{ id: string; url: string; title: string }[]>(() => {
     try {
@@ -587,7 +616,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   };
 
   const handleAddParsedTextGoals = () => {
-    const valid = textGoalParsed.filter(g => g.name.trim() && parseInt(g.target) > 0);
+    const valid = textGoalParsed.filter(g => g.name.trim() && parseInt(g.target.replace(/,/g, '')) > 0);
     if (valid.length === 0) {
       notify('追加できる目標がありません');
       return;
@@ -596,15 +625,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     const toAdd = valid.filter(g => !existing.has(g.name.replace(/\s+/g, '').toLowerCase()));
     const skipped = valid.length - toAdd.length;
     const newGoals: WeeklyGoal[] = toAdd.map(g => {
-      const target = parseInt(g.target) || 0;
-      const reward = parseInt(g.reward) || 0;
+      const target = parseInt(g.target.replace(/,/g, '')) || 0;
+      const reward = parseInt(g.reward.replace(/,/g, '')) || 0;
       return {
         id: generateGoalId(),
         name: g.name.trim(),
         target,
-        current: target, // default: assume complete
+        current: 0,
         reward: reward > 0 ? reward : undefined,
-        completed: true
+        completed: false
       };
     });
     setState(prev => ({ ...prev, goals: [...prev.goals, ...newGoals] }));
@@ -612,12 +641,276 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     setShowTextGoalModal(false);
     setTextGoalInput('');
     setTextGoalParsed([]);
+    setOcrImg1(null);
+    setOcrImg2(null);
+    setModalOcrStatus('');
+    setModalOcrProgress(0);
   };
 
   const handleCloseTextGoalModal = () => {
     setShowTextGoalModal(false);
     setTextGoalInput('');
     setTextGoalParsed([]);
+    setOcrImg1(null);
+    setOcrImg2(null);
+    setModalOcrStatus('');
+    setModalOcrProgress(0);
+  };
+
+  useEffect(() => {
+    if (showTextGoalModal) {
+      try {
+        const saved = localStorage.getItem('heist_ocr_multi_presets');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setOcrPresets(parsed);
+          if (parsed.length > 0) {
+            const activeId = localStorage.getItem('heist_ocr_active_preset_id') || '';
+            const exists = parsed.some((p: any) => p.id === activeId);
+            setSelectedPresetId(exists ? activeId : parsed[0].id);
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [showTextGoalModal]);
+
+  const runDirectOcr = async () => {
+    if (!ocrImg1 && !ocrImg2) {
+      notify('画像を貼り付けてください');
+      return;
+    }
+
+    setModalOcrStatus('Tesseract.jsを読み込み中...');
+    setModalOcrProgress(0.05);
+
+    try {
+      const Tesseract = await new Promise<any>((resolve, reject) => {
+        if ((window as any).Tesseract) {
+          resolve((window as any).Tesseract);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
+        script.onload = () => resolve((window as any).Tesseract);
+        script.onerror = (e) => reject(e);
+        document.head.appendChild(script);
+      });
+
+      setModalOcrStatus('OCRエンジン初期化中...');
+      setModalOcrProgress(0.15);
+
+      const worker = await Tesseract.createWorker('eng+jpn', 1);
+
+      // Try to load user's actual preset coordinates
+      let activePresetRegions: any[] | null = null;
+      if (selectedPresetId) {
+        const found = ocrPresets.find(x => x.id === selectedPresetId);
+        if (found && found.regions && found.regions.length > 0) {
+          activePresetRegions = found.regions;
+        }
+      }
+
+      if (!activePresetRegions) {
+        try {
+          // Fallback 1. Look at currently active regions in the workspace
+          const savedRegions = localStorage.getItem('heist_ocr_regions');
+          if (savedRegions) {
+            const parsed = JSON.parse(savedRegions);
+            if (parsed && parsed.length > 0) {
+              activePresetRegions = parsed;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load user presets from localStorage', e);
+        }
+      }
+
+      // Fallback/Default specs (3840x2160 screen)
+      let cropSpecs = [
+        { name: 'R1_text', x: 1250, y: 795, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R1_reward', x: 2548, y: 795, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R2_text', x: 1250, y: 925, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R2_reward', x: 2548, y: 925, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R3_text', x: 1250, y: 1055, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R3_reward', x: 2548, y: 1055, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R4_text', x: 1250, y: 1185, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
+        { name: 'R4_reward', x: 2548, y: 1185, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false }
+      ];
+
+      if (activePresetRegions) {
+        cropSpecs = activePresetRegions.map((r) => ({
+          name: r.name,
+          x: r.x,
+          y: r.y,
+          w: r.w,
+          h: r.h,
+          whitelist: r.whitelist || '',
+          psm: r.psm || '7',
+          scale: typeof r.scale === 'number' ? r.scale : 2,
+          thresholdVal: typeof r.thresholdVal === 'number' ? r.thresholdVal : 128,
+          thresholdEnabled: r.thresholdEnabled !== false,
+          grayscaleEnabled: r.grayscaleEnabled !== false,
+          invertEnabled: !!r.invertEnabled
+        }));
+      }
+
+      // Helper function to load image and crop
+      const cropImage = (imgSrc: string, spec: typeof cropSpecs[0]): Promise<string> => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { resolve(''); return; }
+
+            const w = Math.max(1, spec.w);
+            const h = Math.max(1, spec.h);
+            const currentScale = spec.scale;
+            canvas.width = w * currentScale;
+            canvas.height = h * currentScale;
+
+            ctx.imageSmoothingEnabled = false;
+            // Draw image cropped
+            ctx.drawImage(
+              img,
+              spec.x, spec.y, w, h,
+              0, 0, canvas.width, canvas.height
+            );
+
+            // Apply Grayscale and Thresholding filter
+            try {
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const data = imgData.data;
+              for (let i = 0; i < data.length; i += 4) {
+                const red = data[i];
+                const green = data[i+1];
+                const blue = data[i+2];
+                // Grayscale
+                let v = red;
+                if (spec.grayscaleEnabled) {
+                  v = 0.299 * red + 0.587 * green + 0.114 * blue;
+                }
+                // Thresholding
+                let val = v;
+                if (spec.thresholdEnabled) {
+                  val = v >= spec.thresholdVal ? 255 : 0;
+                }
+                if (spec.invertEnabled) {
+                  val = 255 - val;
+                }
+                data[i] = data[i+1] = data[i+2] = val;
+              }
+              ctx.putImageData(imgData, 0, 0);
+            } catch (e) {}
+
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => resolve('');
+          img.src = imgSrc;
+        });
+      };
+
+      const getOcrRows = async (imgSrc: string, specs: any[]): Promise<{ goalName: string; requiredQty: string; reward: string }[]> => {
+        const sortedByY = [...specs].sort((a, b) => a.y - b.y);
+        const rows: { textRegion: any; rewardRegion: any }[] = [];
+        for (let i = 0; i < sortedByY.length; i += 2) {
+          if (i + 1 < sortedByY.length) {
+            const regA = sortedByY[i];
+            const regB = sortedByY[i + 1];
+            const [left, right] = regA.x < regB.x ? [regA, regB] : [regB, regA];
+            rows.push({ textRegion: left, rewardRegion: right });
+          }
+        }
+
+        const parsedRows: { goalName: string; requiredQty: string; reward: string }[] = [];
+        for (const row of rows) {
+          // OCR Text
+          const textUrl = await cropImage(imgSrc, row.textRegion);
+          let rawGoalText = '';
+          if (textUrl) {
+            await worker.setParameters({
+              tessedit_char_whitelist: row.textRegion.whitelist || '',
+              tessedit_pageseg_mode: row.textRegion.psm || '7'
+            });
+            const res = await worker.recognize(textUrl);
+            rawGoalText = res.data.text ? res.data.text.trim() : '';
+          }
+
+          // OCR Reward
+          const rewardUrl = await cropImage(imgSrc, row.rewardRegion);
+          let rewardVal = '';
+          if (rewardUrl) {
+            await worker.setParameters({
+              tessedit_char_whitelist: row.rewardRegion.whitelist || '0123456789$,.',
+              tessedit_pageseg_mode: row.rewardRegion.psm || '7'
+            });
+            const res = await worker.recognize(rewardUrl);
+            rewardVal = res.data.text ? res.data.text.trim().replace(/\s+/g, '').replace(/[®©]/g, '') : '';
+          }
+
+          const cleanGoalText = rawGoalText.replace(/\s+/g, '').replace(/[®©]/g, '');
+          let goalName = cleanGoalText;
+          if (cleanGoalText.includes('を')) {
+            goalName = cleanGoalText.split('を')[0];
+          }
+          const numMatch = cleanGoalText.match(/[\d,]+/);
+          const requiredQty = numMatch ? numMatch[0] : '-';
+
+          parsedRows.push({ goalName, requiredQty, reward: rewardVal });
+        }
+        return parsedRows;
+      };
+
+      const final6Slots: { goalName: string; requiredQty: string; reward: string }[] = Array.from({ length: 6 }, () => ({ goalName: '', requiredQty: '', reward: '' }));
+
+      if (ocrImg1) {
+        setModalOcrStatus('SS1枚目の解析中...');
+        setModalOcrProgress(0.2);
+        const ss1Rows = await getOcrRows(ocrImg1, cropSpecs);
+        ss1Rows.forEach((row, idx) => {
+          if (idx < 4) {
+            final6Slots[idx] = row;
+          }
+        });
+        setModalOcrProgress(0.5);
+      }
+
+      if (ocrImg2) {
+        setModalOcrStatus('SS2枚目の解析中...');
+        setModalOcrProgress(0.6);
+        const ss2Rows = await getOcrRows(ocrImg2, cropSpecs);
+        ss2Rows.forEach((row, idx) => {
+          if (idx + 2 < 6) {
+            final6Slots[idx + 2] = row;
+          }
+        });
+        setModalOcrProgress(0.9);
+      }
+
+      const filtered = final6Slots.filter(itm => itm.goalName.trim() !== '');
+      setTextGoalParsed(filtered.map(itm => ({
+        name: itm.goalName,
+        target: itm.requiredQty,
+        reward: itm.reward
+      })));
+
+      await worker.terminate();
+      setModalOcrStatus('一括認識完了');
+      setModalOcrProgress(1);
+      setTimeout(() => {
+        setModalOcrStatus('');
+        setModalOcrProgress(0);
+      }, 2000);
+      notify('OCR解析が完了しました');
+    } catch (err) {
+      console.error(err);
+      setModalOcrStatus('エラーが発生しました');
+      setModalOcrProgress(0);
+      notify('OCR認識エラー');
+    }
   };
 
   // --- Cumulative field handlers ---
@@ -1269,7 +1562,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       )}
                     </span>
                     {goal.reward !== undefined && goal.reward > 0 && (
-                      <span style={{ color: 'var(--yellow-neon)', fontSize: '9px', fontWeight: 700 }}>🪙{goal.reward}</span>
+                      <span style={{ color: 'var(--yellow-neon)', fontSize: '11px', fontWeight: 700 }}>🪙{goal.reward}</span>
                     )}
                     <button
                       className="btn-cyber danger"
@@ -1590,6 +1883,211 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   onChange={(e) => setTextGoalInput(e.target.value)}
                   placeholder="銀行書類・その四を22個集める&#10;絵画「花畑」を12枚集める&#10;ナクペイダ模型を20体集める&#10;金塊を240個集める&#10;金角の月光を12個集める&#10;累計1,950,000の収益を獲得"
                 />
+                {/* 2-Screenshot Paste integration dropzones */}
+                <div style={{ marginTop: '8px', border: '1px dashed rgba(255,0,255,0.3)', borderRadius: '8px', padding: '10px', background: 'rgba(0,0,0,0.4)', boxSizing: 'border-box' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--magenta-neon, #ff00ff)', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>📷 画像(SS)直接 OCR 解析機能</span>
+                    {modalOcrStatus && <span style={{ color: 'var(--cyan-neon)', animation: 'pulse 1s infinite' }}>{modalOcrStatus}</span>}
+                  </div>
+                  
+                  {/* Side by side pasting dropzones */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                    
+                    {/* SS 1 Dropzone */}
+                    <div 
+                      tabIndex={0}
+                      onFocus={() => setFocus1(true)}
+                      onBlur={() => setFocus1(false)}
+                      onClick={(e) => {
+                        e.currentTarget.focus();
+                      }}
+                      onPaste={(e) => {
+                        const items = e.clipboardData?.items;
+                        if (!items) return;
+                        for (let i = 0; i < items.length; i++) {
+                          if (items[i].type.indexOf('image') !== -1) {
+                            const file = items[i].getAsFile();
+                            if (file) {
+                              const rdr = new FileReader();
+                              rdr.onload = (ev) => {
+                                if (ev.target?.result) setOcrImg1(ev.target.result as string);
+                              };
+                              rdr.readAsDataURL(file);
+                            }
+                            break;
+                          }
+                        }
+                      }}
+                      style={{
+                        height: '85px',
+                        border: focus1 ? '1.5px solid var(--magenta-neon, #ff00ff)' : '1px solid rgba(255,255,255,0.15)',
+                        boxShadow: focus1 ? '0 0 8px rgba(255,0,255,0.3)' : 'none',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'text',
+                        background: ocrImg1 ? `url(${ocrImg1}) center/contain no-repeat rgba(0,0,0,0.85)` : 'rgba(0,0,0,0.5)',
+                        color: 'var(--text-muted)',
+                        fontSize: '9px',
+                        outline: 'none',
+                        position: 'relative',
+                        transition: 'border-color 0.2s, box-shadow 0.2s'
+                      }}
+                    >
+                      {!ocrImg1 && (
+                        <>
+                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>SS 1枚目 (1-4行目)</span>
+                          <span style={{ fontSize: '8px', opacity: 0.8, color: focus1 ? 'var(--cyan-neon)' : 'inherit' }}>
+                            {focus1 ? '【Ctrl+Vで貼り付け可能】' : 'クリックして選択し Ctrl+Vで貼付'}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-cyber"
+                            style={{ padding: '2px 6px', fontSize: '8px', marginTop: '6px', clipPath: 'none', borderColor: 'rgba(255,255,255,0.3)' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fileInputRef1.current?.click();
+                            }}
+                          >
+                            ファイル選択
+                          </button>
+                        </>
+                      )}
+                      {ocrImg1 && (
+                        <button 
+                          style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.8)', border: 'none', color: '#ff4b4b', borderRadius: '30%', cursor: 'pointer', padding: '1px 4px', fontSize: '8px', zIndex: 10 }}
+                          onClick={(e) => { e.stopPropagation(); setOcrImg1(null); }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      <input 
+                        type="file" 
+                        ref={fileInputRef1}
+                        accept="image/*" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const rdr = new FileReader();
+                            rdr.onload = (ev) => {
+                              if (ev.target?.result) setOcrImg1(ev.target.result as string);
+                            };
+                            rdr.readAsDataURL(file);
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+
+                    {/* SS 2 Dropzone */}
+                    <div 
+                      tabIndex={0}
+                      onFocus={() => setFocus2(true)}
+                      onBlur={() => setFocus2(false)}
+                      onClick={(e) => {
+                        e.currentTarget.focus();
+                      }}
+                      onPaste={(e) => {
+                        const items = e.clipboardData?.items;
+                        if (!items) return;
+                        for (let i = 0; i < items.length; i++) {
+                          if (items[i].type.indexOf('image') !== -1) {
+                            const file = items[i].getAsFile();
+                            if (file) {
+                              const rdr = new FileReader();
+                              rdr.onload = (ev) => {
+                                if (ev.target?.result) setOcrImg2(ev.target.result as string);
+                              };
+                              rdr.readAsDataURL(file);
+                            }
+                            break;
+                          }
+                        }
+                      }}
+                      style={{
+                        height: '85px',
+                        border: focus2 ? '1.5px solid var(--magenta-neon, #ff00ff)' : '1px solid rgba(255,255,255,0.15)',
+                        boxShadow: focus2 ? '0 0 8px rgba(255,0,255,0.3)' : 'none',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'text',
+                        background: ocrImg2 ? `url(${ocrImg2}) center/contain no-repeat rgba(0,0,0,0.85)` : 'rgba(0,0,0,0.5)',
+                        color: 'var(--text-muted)',
+                        fontSize: '9px',
+                        outline: 'none',
+                        position: 'relative',
+                        transition: 'border-color 0.2s, box-shadow 0.2s'
+                      }}
+                    >
+                      {!ocrImg2 && (
+                        <>
+                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>SS 2枚目 (3-6行目)</span>
+                          <span style={{ fontSize: '8px', opacity: 0.8, color: focus2 ? 'var(--cyan-neon)' : 'inherit' }}>
+                            {focus2 ? '【Ctrl+Vで貼り付け可能】' : 'クリックして選択し Ctrl+Vで貼付'}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-cyber"
+                            style={{ padding: '2px 6px', fontSize: '8px', marginTop: '6px', clipPath: 'none', borderColor: 'rgba(255,255,255,0.3)' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fileInputRef2.current?.click();
+                            }}
+                          >
+                            ファイル選択
+                          </button>
+                        </>
+                      )}
+                      {ocrImg2 && (
+                        <button 
+                          style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.8)', border: 'none', color: '#ff4b4b', borderRadius: '30%', cursor: 'pointer', padding: '1px 4px', fontSize: '8px', zIndex: 10 }}
+                          onClick={(e) => { e.stopPropagation(); setOcrImg2(null); }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      <input 
+                        type="file" 
+                        ref={fileInputRef2}
+                        accept="image/*" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const rdr = new FileReader();
+                            rdr.onload = (ev) => {
+                              if (ev.target?.result) setOcrImg2(ev.target.result as string);
+                            };
+                            rdr.readAsDataURL(file);
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Progress bar inside the dropzone area */}
+                  {modalOcrProgress > 0 && (
+                    <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
+                      <div style={{ height: '100%', width: `${modalOcrProgress * 100}%`, background: 'var(--magenta-neon, #ff00ff)', transition: 'width 0.2s' }} />
+                    </div>
+                  )}
+
+                  {/* Extract action button */}
+                  <button
+                    type="button"
+                    className="btn-cyber success"
+                    onClick={runDirectOcr}
+                    disabled={(!ocrImg1 && !ocrImg2) || !!modalOcrStatus.includes('解析中') || !!modalOcrStatus.includes('初期化')}
+                    style={{ width: '100%', fontSize: '11px', padding: '6px', fontWeight: 'bold', clipPath: 'none' }}
+                  >
+                    ⚡ {ocrImg1 && ocrImg2 ? '2枚のSSから6項目を自動OCR抽出' : ocrImg1 ? 'SS1枚目から4項目を自動OCR抽出' : ocrImg2 ? 'SS2枚目から4項目を自動OCR抽出' : '画像を貼り付けて自動OCR抽出'}
+                  </button>
+                </div>
                 <button
                   className="btn-cyber"
                   style={{ width: '100%', marginTop: '6px', padding: '6px', fontSize: '11px' }}
@@ -1615,7 +2113,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           onChange={(e) => setTextGoalParsed(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
                         />
                         <input
-                          type="number"
+                          type="text"
                           className="input-cyber"
                           style={{ width: 70, fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
                           value={g.target}
@@ -1623,7 +2121,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           placeholder="目標"
                         />
                         <input
-                          type="number"
+                          type="text"
                           className="input-cyber"
                           style={{ width: 60, fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
                           value={g.reward}

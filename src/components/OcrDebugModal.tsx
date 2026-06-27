@@ -29,20 +29,7 @@ interface OcrPreset {
   regions: OcrRegion[];
 }
 
-const defaultDadaPreset: OcrPreset = {
-  id: 'ocr_preset_dada_default',
-  name: 'dada',
-  regions: [
-    { id: 'dada_r1_text', name: '目標1 (本文)', x: 1250, y: 795, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
-    { id: 'dada_r1_reward', name: '目標1 (報酬)', x: 2548, y: 795, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
-    { id: 'dada_r2_text', name: '目標2 (本文)', x: 1250, y: 925, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
-    { id: 'dada_r2_reward', name: '目標2 (報酬)', x: 2548, y: 925, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
-    { id: 'dada_r3_text', name: '目標3 (本文)', x: 1250, y: 1055, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
-    { id: 'dada_r3_reward', name: '目標3 (報酬)', x: 2548, y: 1055, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
-    { id: 'dada_r4_text', name: '目標4 (本文)', x: 1250, y: 1185, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
-    { id: 'dada_r4_reward', name: '目標4 (報酬)', x: 2548, y: 1185, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' }
-  ]
-};
+
 
 export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -132,8 +119,8 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   };
 
   const parseOcrGoal = (rawText: string) => {
-    // Strip spaces and ®
-    const clean = rawText.replace(/\s+/g, '').replace(/[®]/g, '');
+    // Strip spaces and ®/©
+    const clean = rawText.replace(/\s+/g, '').replace(/[®©]/g, '');
     let goalName = clean;
     if (clean.includes('を')) {
       goalName = clean.split('を')[0];
@@ -163,7 +150,7 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
         const targetIdx = mode === 'ss1' ? idx : idx + 2;
         if (targetIdx < 6) {
           const { goalName, requiredQty } = parseOcrGoal(row.textRegion.result || '');
-          const reward = (row.rewardRegion.result || '').replace(/\s+/g, '').replace(/[®]/g, '');
+          const reward = (row.rewardRegion.result || '').replace(/\s+/g, '').replace(/[®©]/g, '');
           next[targetIdx] = { goalName, requiredQty, reward };
         }
       });
@@ -183,19 +170,20 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
       }
     }
     
-    // Ensure default dada preset is always in the list
-    if (!parsed.some(p => p.id === defaultDadaPreset.id)) {
-      parsed = [defaultDadaPreset, ...parsed];
+    // Filter out any system-injected garbage default presets to restore user's clean database
+    const cleaned = parsed.filter(p => p.id !== 'ocr_preset_dadada_default' && p.id !== 'ocr_preset_dada_default');
+    if (parsed.length !== cleaned.length) {
+      localStorage.setItem('heist_ocr_multi_presets', JSON.stringify(cleaned));
     }
-    setPresets(parsed);
+    setPresets(cleaned);
 
     const savedRegions = localStorage.getItem('heist_ocr_regions');
     if (savedRegions) {
       try {
-        const parsed = JSON.parse(savedRegions);
-        if (parsed.length > 0) {
-          setRegions(parsed);
-          setSelectedRegionId(parsed[0].id);
+        const parsedRegions = JSON.parse(savedRegions);
+        if (parsedRegions.length > 0) {
+          setRegions(parsedRegions);
+          setSelectedRegionId(parsedRegions[0].id);
         }
       } catch (e) {
         console.error('Failed to parse saved OCR regions', e);
@@ -1122,9 +1110,9 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
                   className="textarea-cyber"
                   readOnly
                   value={targetBuilderItems.map(itm => {
-                    const cleanName = (itm.goalName || '').replace(/[®]/g, '');
-                    const cleanQty = (itm.requiredQty || '').replace(/[®]/g, '');
-                    const cleanReward = (itm.reward || '').replace(/[®]/g, '');
+                    const cleanName = (itm.goalName || '').replace(/[®©]/g, '');
+                    const cleanQty = (itm.requiredQty || '').replace(/[®©]/g, '');
+                    const cleanReward = (itm.reward || '').replace(/[®©]/g, '');
                     return `${cleanName || '-'}　${cleanQty || '-'}　${cleanReward || '-'}`;
                   }).join('\n')}
                   style={{
@@ -1148,9 +1136,9 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
                     style={{ flex: 2, fontSize: '10px', padding: '4px', clipPath: 'none' }}
                     onClick={() => {
                       const text = targetBuilderItems.map(itm => {
-                        const cleanName = (itm.goalName || '').replace(/[®]/g, '');
-                        const cleanQty = (itm.requiredQty || '').replace(/[®]/g, '');
-                        const cleanReward = (itm.reward || '').replace(/[®]/g, '');
+                        const cleanName = (itm.goalName || '').replace(/[®©]/g, '');
+                        const cleanQty = (itm.requiredQty || '').replace(/[®©]/g, '');
+                        const cleanReward = (itm.reward || '').replace(/[®©]/g, '');
                         return `${cleanName || '-'}　${cleanQty || '-'}　${cleanReward || '-'}`;
                       }).join('\n');
                       navigator.clipboard.writeText(text);

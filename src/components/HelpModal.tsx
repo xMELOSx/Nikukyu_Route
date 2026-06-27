@@ -49,6 +49,7 @@ interface HelpModalProps {
   setMovementMarkerThreshold?: (n: number) => void;
   warpMarkerThreshold?: number;
   setWarpMarkerThreshold?: (n: number) => void;
+  onShowOcrDebug?: () => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -70,7 +71,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   movementMarkerThreshold,
   setMovementMarkerThreshold,
   warpMarkerThreshold,
-  setWarpMarkerThreshold
+  setWarpMarkerThreshold,
+  onShowOcrDebug
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -134,6 +136,11 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 {onClearOriginalAuthor && (
                   <button className="btn-cyber danger" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClearOriginalAuthor(); onClose(); }}>
                     🔓 原作者名をクリア
+                  </button>
+                )}
+                {onShowOcrDebug && (
+                  <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px', borderColor: 'var(--magenta-neon, #ff00ff)', color: 'var(--magenta-neon, #ff00ff)' }} onClick={() => { onShowOcrDebug(); onClose(); }}>
+                    ⚙️ OCR調整テストベンチを開く
                   </button>
                 )}
 

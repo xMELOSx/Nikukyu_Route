@@ -894,14 +894,7 @@ export default function App() {
               </div>
             </div>
 
-            {isLocal && (
-              <div className="panel-section">
-                <div className="panel-title">デバッグメニュー</div>
-                <button className="btn-cyber" style={{ width: '100%', padding: '6px', fontSize: '11px', borderColor: 'var(--magenta-neon, #ff00ff)', color: 'var(--magenta-neon, #ff00ff)' }} onClick={() => setShowOcrDebugModal(true)}>
-                  ⚙️ OCR調整テストベンチ
-                </button>
-              </div>
-            )}
+
 
             {isEditMode && (
               <div className="panel-section">
@@ -1722,6 +1715,7 @@ export default function App() {
         setWarpMarkerThreshold={setWarpMarkerThreshold}
         autoLoadLastRoute={autoLoadLastRoute}
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
+        onShowOcrDebug={() => setShowOcrDebugModal(true)}
       />
 
       <HistoryModal
