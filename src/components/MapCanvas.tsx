@@ -362,14 +362,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // a ref and applied only at render time. This prevents the pane width from
   // being baked into the saved marker coordinates, which would cause pins to
   // appear shifted when the page is loaded with a different pane state.
-  // prevLeftCollapsedRef is initialized to `false` so the very first effect
-  // run on mount counts as a "change" — this compensates for markers that
-  // were saved with the left pane open, when the page is opened on mobile
-  // (where the left pane starts closed).
-  // prevRightCollapsedRef is initialized to the current value so it only
-  // fires on subsequent right-pane toggles.
-  const prevLeftCollapsedRef = useRef(false);
-  const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
+  // Both refs are initialized to `true` (pane closed) so that the base state
+  // is "panes closed". On PC where panes start open, the first effect run
+  // detects a change and applies the appropriate display offset. On mobile
+  // where panes start closed, no offset is applied — pins stay at their
+  // saved position.
+  const prevLeftCollapsedRef = useRef(true);
+  const prevRightCollapsedRef = useRef(true);
   const markersRef = useRef(markers);
   markersRef.current = markers;
   const paneDisplayOffsetRef = useRef<Map<string, number>>(new Map());
@@ -442,7 +441,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const prevZoom = animZoomRef.current;
       const prevPan = animPanRef.current;
       const newZoom = Math.max(0.1, Math.min(4, prevZoom * factor));
-      if (prevZoom === newZoom) return;
+      if (!isFinite(newZoom) || prevZoom === newZoom) return;
 
       const wRect = wrapper.getBoundingClientRect();
       // アンカー: wrapper の中心（wrapper 相対座標 = 要素ローカル座標と一致）。
@@ -520,6 +519,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const newZoom = zoomDone
         ? targetZoomRef.current
         : curZoom + dz * 0.15;
+
+      if (!isFinite(newPan.x) || !isFinite(newPan.y) || !isFinite(newZoom)) {
+        animPanRef.current = { ...targetPanRef.current };
+        animZoomRef.current = targetZoomRef.current;
+        setPan(targetPanRef.current);
+        setZoom(targetZoomRef.current);
+        animFrameIdRef.current = null;
+        if (onClearFocusTrigger) onClearFocusTrigger();
+        return;
+      }
 
       animPanRef.current = newPan;
       animZoomRef.current = newZoom;
@@ -798,6 +807,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
+      if (ts.dist < 1 || !isFinite(dist / ts.dist)) return;
       const scale = dist / ts.dist;
       const newZoom = Math.max(0.1, Math.min(5, ts.zoom * scale));
       if (newZoom === ts.zoom) return;
@@ -1075,10 +1085,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (marker.textFixedPosition) {
           const targetX = e.clientX - dragStartOffset.x;
           const targetY = e.clientY - dragStartOffset.y;
+          // Subtract the display offset to store the pane-closed base position.
+          const offset = paneDisplayOffsetRef.current.get(marker.id) || 0;
           onMarkersChange(
             markers.map(m => {
               if (m.id === draggingMarkerId) {
-                return { ...m, x: Math.round(targetX), y: Math.round(targetY) };
+                return { ...m, x: Math.round(targetX - offset), y: Math.round(targetY) };
               }
               return m;
             })
@@ -1293,7 +1305,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (onMarkersDragStart) onMarkersDragStart();
     setDraggingMarkerId(m.id);
     if (m.textFixedPosition) {
-      setDragStartOffset({ x: e.clientX - m.x, y: e.clientY - m.y });
+      const displayX = m.x + (paneDisplayOffsetRef.current.get(m.id) || 0);
+      setDragStartOffset({ x: e.clientX - displayX, y: e.clientY - m.y });
     } else {
       setDragStartOffset({ x: coords.x - m.x, y: coords.y - m.y });
     }
@@ -1509,7 +1522,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const prevZoom = animZoomRef.current;
     const prevPan = animPanRef.current;
     const newZoom = Math.max(0.1, Math.min(4, prevZoom * factor));
-    if (prevZoom === newZoom) return;
+    if (!isFinite(newZoom) || prevZoom === newZoom) return;
     const wrapper = wrapperRef.current;
     if (!wrapper) {
       setZoom(newZoom);
@@ -3042,7 +3055,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           const vpX = rect.left + (m.x / 1600) * rect.width;
                           const vpY = rect.top + (m.y / 4550) * rect.height;
                           const side: 'auto' | 'left' | 'right' = textTrackSide || 'left';
-                          return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(vpX), y: Math.round(vpY), textFixedPosition: true, trackSide: side };
+                          const effectiveSide = side === 'auto' ? (vpX < window.innerWidth / 2 ? 'left' : 'right') : side;
+                          // Save the pane-closed base position: subtract the
+                          // current pane offset so the stored coordinate does
+                          // not include the pane shift.
+                          const paneOffsetX = effectiveSide === 'left'
+                            ? (leftSidebarCollapsed ? 0 : 280)
+                            : (rightSidebarCollapsed ? 0 : -340);
+                          const baseX = vpX - paneOffsetX;
+                          return { ...m, fixedOriginX: m.x, fixedOriginY: m.y, x: Math.round(baseX), y: Math.round(vpY), textFixedPosition: true, trackSide: side };
                         } else {
                           const origX = m.fixedOriginX ?? m.x;
                           const origY = m.fixedOriginY ?? m.y;
