@@ -29,6 +29,21 @@ interface OcrPreset {
   regions: OcrRegion[];
 }
 
+const defaultDadaPreset: OcrPreset = {
+  id: 'ocr_preset_dada_default',
+  name: 'dada',
+  regions: [
+    { id: 'dada_r1_text', name: '目標1 (本文)', x: 1250, y: 795, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
+    { id: 'dada_r1_reward', name: '目標1 (報酬)', x: 2548, y: 795, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
+    { id: 'dada_r2_text', name: '目標2 (本文)', x: 1250, y: 925, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
+    { id: 'dada_r2_reward', name: '目標2 (報酬)', x: 2548, y: 925, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
+    { id: 'dada_r3_text', name: '目標3 (本文)', x: 1250, y: 1055, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
+    { id: 'dada_r3_reward', name: '目標3 (報酬)', x: 2548, y: 1055, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' },
+    { id: 'dada_r4_text', name: '目標4 (本文)', x: 1250, y: 1185, w: 1200, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '', result: '' },
+    { id: 'dada_r4_reward', name: '目標4 (報酬)', x: 2548, y: 1185, w: 120, h: 40, scale: 2, thresholdEnabled: true, thresholdVal: 128, invertEnabled: false, grayscaleEnabled: true, psm: '7', whitelist: '0123456789$,.', result: '' }
+  ]
+};
+
 export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imgSize, setImgSize] = useState({ w: 0, h: 0 });
@@ -62,6 +77,22 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   const [presets, setPresets] = useState<OcrPreset[]>([]);
   const [activePresetId, setActivePresetId] = useState<string>('');
   const [newPresetName, setNewPresetName] = useState<string>('');
+
+  // 6-item target list builder state
+  const [targetBuilderItems, setTargetBuilderItems] = useState<{ goalName: string; requiredQty: string; reward: string }[]>(() => {
+    const saved = localStorage.getItem('heist_ocr_target_builder_items');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return Array.from({ length: 6 }, () => ({ goalName: '', requiredQty: '', reward: '' }));
+  });
+
+  // Auto-save target builder items
+  useEffect(() => {
+    localStorage.setItem('heist_ocr_target_builder_items', JSON.stringify(targetBuilderItems));
+  }, [targetBuilderItems]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -100,16 +131,63 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
     })));
   };
 
+  const parseOcrGoal = (rawText: string) => {
+    // Strip spaces and ®
+    const clean = rawText.replace(/\s+/g, '').replace(/[®]/g, '');
+    let goalName = clean;
+    if (clean.includes('を')) {
+      goalName = clean.split('を')[0];
+    }
+    const numMatch = clean.match(/[\d,]+/);
+    const requiredQty = numMatch ? numMatch[0] : '-';
+    return { goalName, requiredQty };
+  };
+
+  const importOcrToSlots = (mode: 'ss1' | 'ss2') => {
+    const sortedByY = [...regions].sort((a, b) => a.y - b.y);
+    const rows: { textRegion: OcrRegion; rewardRegion: OcrRegion }[] = [];
+    for (let i = 0; i < sortedByY.length; i += 2) {
+      if (i + 1 < sortedByY.length) {
+        const regA = sortedByY[i];
+        const regB = sortedByY[i + 1];
+        const [left, right] = regA.x < regB.x ? [regA, regB] : [regB, regA];
+        rows.push({ textRegion: left, rewardRegion: right });
+      }
+    }
+
+    setTargetBuilderItems(prev => {
+      const next = [...prev];
+      rows.forEach((row, idx) => {
+        // Mode 'ss1': OCR rows 0-3 go to slots 0-3 (Items 1-4)
+        // Mode 'ss2': OCR rows 0-3 go to slots 2-5 (Items 3-6)
+        const targetIdx = mode === 'ss1' ? idx : idx + 2;
+        if (targetIdx < 6) {
+          const { goalName, requiredQty } = parseOcrGoal(row.textRegion.result || '');
+          const reward = (row.rewardRegion.result || '').replace(/\s+/g, '').replace(/[®]/g, '');
+          next[targetIdx] = { goalName, requiredQty, reward };
+        }
+      });
+      return next;
+    });
+  };
+
   // Load presets & default configuration on mount
   useEffect(() => {
     const savedPresets = localStorage.getItem('heist_ocr_multi_presets');
+    let parsed: OcrPreset[] = [];
     if (savedPresets) {
       try {
-        setPresets(JSON.parse(savedPresets));
+        parsed = JSON.parse(savedPresets);
       } catch (e) {
         console.error('Failed to parse multi OCR presets', e);
       }
     }
+    
+    // Ensure default dada preset is always in the list
+    if (!parsed.some(p => p.id === defaultDadaPreset.id)) {
+      parsed = [defaultDadaPreset, ...parsed];
+    }
+    setPresets(parsed);
 
     const savedRegions = localStorage.getItem('heist_ocr_regions');
     if (savedRegions) {
@@ -965,6 +1043,134 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
                 </button>
               </div>
             )}
+
+            {/* 6-Item Target Builder */}
+            <div style={{ borderTop: '1px solid rgba(0, 240, 255, 0.25)', paddingTop: '10px', marginTop: '10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--cyan-neon)', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>📋 6項目目標追加ベンチ</span>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>2枚のSSから6つの項目を合成</span>
+              </div>
+              
+              {/* Slots Importers */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                <button 
+                  type="button" 
+                  className="btn-cyber" 
+                  onClick={() => importOcrToSlots('ss1')} 
+                  style={{ flex: 1, fontSize: '9px', padding: '3px', clipPath: 'none', borderColor: 'var(--cyan-neon)' }}
+                  title="現在のOCR結果をスロット1〜4へ流し込みます"
+                >
+                  📥 OCR ➔ 1-4 (SS1枚目)
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-cyber" 
+                  onClick={() => importOcrToSlots('ss2')} 
+                  style={{ flex: 1, fontSize: '9px', padding: '3px', clipPath: 'none', borderColor: 'var(--cyan-neon)' }}
+                  title="現在のOCR結果をスロット3〜6へ流し込みます (重複3,4を自動上書き)"
+                >
+                  📥 OCR ➔ 3-6 (SS2枚目)
+                </button>
+              </div>
+
+              {/* 6 Slots Editors */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                {targetBuilderItems.map((item, idx) => (
+                  <div key={`slot_${idx}`} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '12px' }}>{idx + 1}</span>
+                    <input 
+                      type="text" 
+                      className="input-cyber" 
+                      placeholder="目標名" 
+                      style={{ flex: 2, fontSize: '10px', padding: '2px 4px', minWidth: 0 }} 
+                      value={item.goalName} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTargetBuilderItems(prev => prev.map((itm, i) => i === idx ? { ...itm, goalName: val } : itm));
+                      }}
+                    />
+                    <input 
+                      type="text" 
+                      className="input-cyber" 
+                      placeholder="必要数" 
+                      style={{ flex: 1, fontSize: '10px', padding: '2px 4px', minWidth: 0 }} 
+                      value={item.requiredQty} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTargetBuilderItems(prev => prev.map((itm, i) => i === idx ? { ...itm, requiredQty: val } : itm));
+                      }}
+                    />
+                    <input 
+                      type="text" 
+                      className="input-cyber" 
+                      placeholder="報酬" 
+                      style={{ flex: 1, fontSize: '10px', padding: '2px 4px', minWidth: 0 }} 
+                      value={item.reward} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTargetBuilderItems(prev => prev.map((itm, i) => i === idx ? { ...itm, reward: val } : itm));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Combined Output */}
+              <div>
+                <label style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>合成テキスト出力結果 (全角スペース区切り)</label>
+                <textarea
+                  className="textarea-cyber"
+                  readOnly
+                  value={targetBuilderItems.map(itm => {
+                    const cleanName = (itm.goalName || '').replace(/[®]/g, '');
+                    const cleanQty = (itm.requiredQty || '').replace(/[®]/g, '');
+                    const cleanReward = (itm.reward || '').replace(/[®]/g, '');
+                    return `${cleanName || '-'}　${cleanQty || '-'}　${cleanReward || '-'}`;
+                  }).join('\n')}
+                  style={{
+                    fontSize: '10px',
+                    height: '80px',
+                    fontFamily: 'monospace',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(0,0,0,0.4)',
+                    borderColor: 'rgba(0,240,255,0.2)',
+                    color: '#39ff14',
+                    resize: 'none',
+                    outline: 'none',
+                    padding: '4px'
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    className="btn-cyber success"
+                    style={{ flex: 2, fontSize: '10px', padding: '4px', clipPath: 'none' }}
+                    onClick={() => {
+                      const text = targetBuilderItems.map(itm => {
+                        const cleanName = (itm.goalName || '').replace(/[®]/g, '');
+                        const cleanQty = (itm.requiredQty || '').replace(/[®]/g, '');
+                        const cleanReward = (itm.reward || '').replace(/[®]/g, '');
+                        return `${cleanName || '-'}　${cleanQty || '-'}　${cleanReward || '-'}`;
+                      }).join('\n');
+                      navigator.clipboard.writeText(text);
+                    }}
+                  >
+                    6行結果をコピー
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-cyber danger"
+                    style={{ flex: 1, fontSize: '10px', padding: '4px', clipPath: 'none' }}
+                    onClick={() => {
+                      setTargetBuilderItems(Array.from({ length: 6 }, () => ({ goalName: '', requiredQty: '', reward: '' })));
+                    }}
+                  >
+                    クリア
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -274,17 +274,16 @@ export function buildAutoRoute(
         })
         .filter(h => {
           if (h.dist >= h.threshold) return false;
-          // The marker is within the threshold. The t-range check only
-          // matters when the closest point is the perpendicular foot of
-          // the segment. When the marker sits next to a polyline vertex
-          // (the line bends around the key), the perpendicular foot may
-          // fall on a *different* segment and t here will be far outside
-          // [-0.1, 1.1]. The endpoint distance (distToCurrent/distToNext)
-          // is the more meaningful test in that case — and it's already
-          // covered by the dist check above.
-          if (h.dist === h.perpDist) {
-            return h.t >= -0.1 && h.t <= 1.1;
-          }
+          // The marker is within the threshold of this segment. The
+          // previous t-range check (h.t in [-0.1, 1.1]) is too strict for
+          // U-turn lines: when a polyline vertex sits right next to a
+          // key, distanceToSegment() clamps t to 0/1 and returns the
+          // same value for perpDist and distToCurrent/distToNext, but
+          // the raw projection t can be 1.5+ past the endpoint. Since
+          // the dist test already guarantees the marker is within
+          // `threshold` px of either the perpendicular foot OR a
+          // segment endpoint, and the endpoint is itself a valid place
+          // to stop (it's a polyline vertex), we accept unconditionally.
           return true;
         })
         .sort((x, y) => x.perpDist - y.perpDist || x.t - y.t);

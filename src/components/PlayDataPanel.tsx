@@ -209,13 +209,24 @@ function parseGoalsFromInput(text: string): { name: string; target: number; rewa
       }
     }
 
-    // Clean leading noise from the name (bullet markers, list numbers, etc.)
-    const cleanName = nameRaw.replace(/^[\d\s\.\-\)\]【】•・●○①②③④⑤⑥⑦⑧⑨]+/, '').trim();
+    // Clean leading noise from the name (bullet markers, list numbers, etc.) and strip ®
+    const cleanName = nameRaw.replace(/^[\d\s\.\-\)\]【】•・●○①②③④⑤⑥⑦⑧⑨]+/, '').replace(/[®]/g, '').trim();
     if (cleanName.length < 1 || target <= 0) continue;
 
     out.push({ name: cleanName, target, reward });
   }
-  return out;
+
+  // De-duplicate by name key to handle overlapping screenshots
+  const seen = new Set<string>();
+  const deduplicated: { name: string; target: number; reward: number }[] = [];
+  for (const item of out) {
+    const key = item.name.replace(/\s+/g, '').replace(/[®]/g, '').toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push(item);
+    }
+  }
+  return deduplicated;
 }
 
 export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDataPanelProps) {
