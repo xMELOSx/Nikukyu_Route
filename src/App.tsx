@@ -3,6 +3,8 @@ import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
 import { PlayDataPanel } from './components/PlayDataPanel';
+import { OcrDebugModal } from './components/OcrDebugModal';
+
 import {
   type FloorType,
   type MarkerType,
@@ -182,6 +184,8 @@ export default function App() {
   const [focusTrigger, setFocusTrigger] = useState<{ id: string; timestamp: number } | null>(null);
   const [currentPosTrigger, setCurrentPosTrigger] = useState<number>(0);
   const [autoStartMarker, setAutoStartMarker] = useState<HeistMarker | null>(null);
+  const [showOcrDebugModal, setShowOcrDebugModal] = useState<boolean>(false);
+
 
   // Preset editor state was previously used by an inline "Save as preset" form
   // that was removed during the hook extraction. Kept removed; the saveAsPreset
@@ -890,6 +894,15 @@ export default function App() {
               </div>
             </div>
 
+            {isLocal && (
+              <div className="panel-section">
+                <div className="panel-title">デバッグメニュー</div>
+                <button className="btn-cyber" style={{ width: '100%', padding: '6px', fontSize: '11px', borderColor: 'var(--magenta-neon, #ff00ff)', color: 'var(--magenta-neon, #ff00ff)' }} onClick={() => setShowOcrDebugModal(true)}>
+                  ⚙️ OCR調整テストベンチ
+                </button>
+              </div>
+            )}
+
             {isEditMode && (
               <div className="panel-section">
                 <div className="panel-title">モード選択</div>
@@ -1165,6 +1178,12 @@ export default function App() {
           >
             {rightSidebarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
           </button>
+          {showOcrDebugModal && (
+            <OcrDebugModal
+              show={showOcrDebugModal}
+              onClose={() => setShowOcrDebugModal(false)}
+            />
+          )}
         </section>
 
         {/* Right Sidebar */}

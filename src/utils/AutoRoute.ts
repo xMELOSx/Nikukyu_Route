@@ -27,6 +27,14 @@ const DEFAULT_CONFIG: AutoRouteConfig = {
   // Strict threshold for stop markers (picking, boss, etc.) — false positives
   // here would cause the auto-route to stop at unrelated markers.
   stopMarkerThreshold: 12,
+  // Extra "capture" radius added on top of stopMarkerThreshold when the
+  // user's polyline just barely misses the marker (e.g. SMOOTH-mode
+  // polyline curves around the key, or the line ends visually on top of
+  // the marker but a few px off in the recorded points). Without this,
+  // a line that completely overlaps a key on screen can still slip
+  // through hit detection. The default 6px matches the SMOOTH-mode
+  // jitter threshold so any visible overlap is captured.
+  stopMarkerCaptureRadius: 6,
   // Threshold for movement markers (stairs). The line must pass quite
   // close to the stairs for the auto-route to take it. 20px is strict
   // enough to avoid false positives from long line segments.
@@ -41,13 +49,16 @@ const DEFAULT_CONFIG: AutoRouteConfig = {
 
 export interface AutoRouteConfig {
   stopMarkerThreshold: number;
+  stopMarkerCaptureRadius: number;
   movementMarkerThreshold: number;
   warpMarkerThreshold: number;
   lineConnectThreshold: number;
 }
 
 function thresholdFor(markerType: MarkerType, cfg: AutoRouteConfig): number {
-  if (isStopMarker(markerType)) return cfg.stopMarkerThreshold;
+  if (isStopMarker(markerType)) {
+    return cfg.stopMarkerThreshold + (cfg.stopMarkerCaptureRadius ?? 0);
+  }
   if (markerType === 'warp' || markerType === 'iwarp') return cfg.warpMarkerThreshold;
   return cfg.movementMarkerThreshold;
 }
@@ -70,6 +81,9 @@ export function buildAutoRoute(
   const solidStrokes = strokes
     .map((s, i) => ({ stroke: s, idx: i }))
     .filter(({ stroke }) => stroke.type === 'solid');
+
+  // eslint-disable-next-line no-console
+  console.log(`[route-debug] strokes=${solidStrokes.length} cfg.stopMarkerThreshold=${cfg.stopMarkerThreshold} + capture=${cfg.stopMarkerCaptureRadius} (effective ${cfg.stopMarkerThreshold + cfg.stopMarkerCaptureRadius}px) hiddenMarkers=${hiddenMarkerIds.length}`);
 
   if (solidStrokes.length === 0) return segments;
 
@@ -213,6 +227,31 @@ export function buildAutoRoute(
       const a = currentPos;
       const b = travelPoints[i];
 
+      // DEBUG: log every stop-marker within 60px with the reason it would
+      // be REJECTED (visited, t out of range) or accepted, so we can
+      // see exactly why a key that visually sits on the line still
+      // doesn't trigger a stop. Remove once detection is fixed.
+      for (const m of relevantMarkers) {
+        if (!isStopMarker(m.type)) continue;
+        const perp = distanceToSegment(m, a, b);
+        const dC = Math.hypot(m.x - a.x, m.y - a.y);
+        const dN = Math.hypot(m.x - b.x, m.y - b.y);
+        const minD = Math.min(perp, dC, dN);
+        if (minD >= 60) continue;
+        const t = projectionParameter(m, a, b);
+        const th = thresholdFor(m.type, cfg);
+        const visited = visitedMarkerIds.has(m.id);
+        const distOk = minD < th;
+        const tOk = t >= -0.1 && t <= 1.1;
+        const accepted = !visited && distOk && tOk;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[hit-debug] m=${m.id} (${m.x|0},${m.y|0}) seg (${a.x|0},${a.y|0})→(${b.x|0},${b.y|0}) ` +
+          `min=${minD.toFixed(1)} th=${th} t=${t.toFixed(2)} ` +
+          `visited=${visited} distOk=${distOk} tOk=${tOk} → ${accepted ? 'HIT' : 'skip'}`
+        );
+      }
+
       const hits = relevantMarkers
         // Pause currently-paused warp endpoints (their id is in some paused
         // entry) so the same warp doesn't ping-pong. Other markers follow
@@ -231,9 +270,23 @@ export function buildAutoRoute(
           const dist = Math.min(perpDist, distToCurrent, distToNext);
           const t = projectionParameter(m, a, b);
           const th = thresholdFor(m.type, cfg);
-          return { marker: m, dist, perpDist, t, threshold: th };
+          return { marker: m, dist, perpDist, distToCurrent, distToNext, t, threshold: th };
         })
-        .filter(h => h.dist < h.threshold && h.t >= -0.1 && h.t <= 1.1)
+        .filter(h => {
+          if (h.dist >= h.threshold) return false;
+          // The marker is within the threshold. The t-range check only
+          // matters when the closest point is the perpendicular foot of
+          // the segment. When the marker sits next to a polyline vertex
+          // (the line bends around the key), the perpendicular foot may
+          // fall on a *different* segment and t here will be far outside
+          // [-0.1, 1.1]. The endpoint distance (distToCurrent/distToNext)
+          // is the more meaningful test in that case — and it's already
+          // covered by the dist check above.
+          if (h.dist === h.perpDist) {
+            return h.t >= -0.1 && h.t <= 1.1;
+          }
+          return true;
+        })
         .sort((x, y) => x.perpDist - y.perpDist || x.t - y.t);
 
       if (hits.length === 0) {
