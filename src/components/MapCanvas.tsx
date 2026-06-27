@@ -20,7 +20,7 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-vis';
+  toolMode: 'select' | 'draw' | 'erase' | 'erase-marker' | 'pan' | 'add-marker' | 'toggle-vis';
   activeMarkerType: MarkerType | null;
   strokeColor: string;
   strokeWidth: number;
@@ -1280,10 +1280,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
 
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase-marker' ? true : isIndivMarker));
     if (!canInteract) return;
 
-    if (toolMode === 'erase') {
+    if (toolMode === 'erase-marker') {
       // Eraser mode always actually deletes from the current view, regardless
       // of whether the marker is global or local. Global markers will be
       // re-merged from global_markers.json on the next page load, but during

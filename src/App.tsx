@@ -48,6 +48,7 @@ import {
   Play,
   Pause,
   Square,
+  Trash2,
   EyeOff
 } from 'lucide-react';
 
@@ -143,7 +144,7 @@ export default function App() {
   });
   const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'add-marker' | 'toggle-vis'>('pan');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'erase-marker' | 'pan' | 'add-marker' | 'toggle-vis'>('pan');
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
@@ -904,10 +905,13 @@ export default function App() {
                     <Paintbrush size={18} /><span>ルート線</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
-                    <Eraser size={18} /><span>消しゴム</span>
+                    <Eraser size={18} /><span>ライン消し</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
                     <Move size={18} /><span>移動</span>
+                  </button>
+                  <button className={`tool-btn ${toolMode === 'erase-marker' ? 'active' : ''}`} onClick={() => setToolMode('erase-marker')} id="tool-erase-marker-btn">
+                    <Trash2 size={18} /><span>マーカー消し</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>表示切替</span>
