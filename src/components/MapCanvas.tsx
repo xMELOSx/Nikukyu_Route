@@ -338,7 +338,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPan,
     setCurrentPosition,
     zoom,
-    onAutoStartMarkerChange,
+    onAutoStartMarkerSet: onAutoStartMarkerChange,
   });
 
   // Clean up animation frame on unmount
@@ -1274,7 +1274,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
 
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : ((toolMode === 'erase' || toolMode === 'toggle-vis') ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
     if (!canInteract) return;
 
     if (toolMode === 'erase') {

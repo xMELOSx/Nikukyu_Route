@@ -781,8 +781,8 @@ export default function App() {
                             // ループ末尾の状態 (旧値基準) しか反映されないため、
                             // 旧値から最終状態を一度だけ計算して単一の setRoute にまとめる
                             const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[];
-                            const next = current.filter(t => !targetTypes.includes(t));
+                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
+                            const next = current.filter(t => !targetTypes.includes(t as string));
                             if (next.length === current.length) return;
                             const nextHidden = routeApi.route.hiddenMarkers || [];
                             postGlobalDefaults(nextHidden, next);
@@ -791,7 +791,7 @@ export default function App() {
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                           onClick={() => {
                             const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[];
+                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
                             const additions = targetTypes.filter(t => !current.includes(t));
                             if (additions.length === 0) return;
                             const next = Array.from(new Set([...current, ...additions]));
@@ -822,8 +822,8 @@ export default function App() {
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                           onClick={() => {
                             const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[];
-                            const next = current.filter(t => !targetTypes.includes(t));
+                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
+                            const next = current.filter(t => !targetTypes.includes(t as string));
                             if (next.length === current.length) return;
                             const nextHidden = routeApi.route.hiddenMarkers || [];
                             postGlobalDefaults(nextHidden, next);
@@ -832,7 +832,7 @@ export default function App() {
                         <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                           onClick={() => {
                             const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[];
+                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
                             const additions = targetTypes.filter(t => !current.includes(t));
                             if (additions.length === 0) return;
                             const next = Array.from(new Set([...current, ...additions]));

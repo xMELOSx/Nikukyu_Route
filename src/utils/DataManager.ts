@@ -64,7 +64,7 @@ export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
         .map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) })),
       color: typeof s.color === 'string' ? s.color : '#00ff00',
       width: typeof s.width === 'number' && s.width > 0 ? s.width : 3,
-      type: s.type === 'dashed' ? 'dashed' : 'solid',
+      type: (s.type === 'dashed' ? 'dashed' : 'solid') as 'solid' | 'dashed',
     }))
     .filter(s => s.points.length >= 2);
 }
