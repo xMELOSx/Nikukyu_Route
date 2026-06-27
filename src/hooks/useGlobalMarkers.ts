@@ -10,10 +10,8 @@ function backfillDefaults(m: HeistMarker): HeistMarker {
     if (updated.battleDurationSeconds === undefined) updated.battleDurationSeconds = 20;
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
-    if (updated.pickingPicky === undefined) updated.pickingPicky = false;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
-    if (updated.pickingPicky === undefined) updated.pickingPicky = false;
   }
   return updated;
 }

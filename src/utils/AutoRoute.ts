@@ -61,7 +61,8 @@ export function buildAutoRoute(
   markers: HeistMarker[],
   startMarker: HeistMarker,
   config: Partial<AutoRouteConfig> = {},
-  hiddenMarkerIds: string[] = []
+  hiddenMarkerIds: string[] = [],
+  pickyMarkerIds?: { [markerId: string]: boolean }
 ): RouteSegment[] {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const segments: RouteSegment[] = [];
@@ -105,7 +106,18 @@ export function buildAutoRoute(
   let cumulativeStopTime = 0;
 
   const tryWarp = (warpSource: HeistMarker): boolean => {
-    const linked = markers.find(lm => lm.id === warpSource.linkedWarpId);
+    // Resolve the destination. Try the explicit linkedWarpId first, then
+    // fall back to looking up the partner that points BACK at warpSource
+    // (some data files only set linkedWarpId on one side of the pair).
+    let linked = warpSource.linkedWarpId
+      ? markers.find(lm => lm.id === warpSource.linkedWarpId) || null
+      : null;
+    if (!linked) {
+      linked = markers.find(lm =>
+        lm.linkedWarpId === warpSource.id &&
+        (lm.type === 'warp' || lm.type === 'iwarp' || lm.type === 'stairs')
+      ) || null;
+    }
     if (!linked) return false;
     if (isPaused(warpSource.id)) return false; // source is currently paused
 
@@ -250,7 +262,7 @@ export function buildAutoRoute(
       const clampedT = Math.max(0, Math.min(1, hit.t));
       const segDist = Math.hypot(b.x - a.x, b.y - a.y) * clampedT;
       cumulativeDistance += segDist;
-      const stopDur = isStopMarker(m.type) ? getStopDurationSeconds(m) : 0;
+      const stopDur = isStopMarker(m.type) ? getStopDurationSeconds(m, pickyMarkerIds) : 0;
       cumulativeStopTime += stopDur;
 
       let checkpointOnTime: boolean | undefined;

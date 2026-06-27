@@ -1157,6 +1157,34 @@ select.input-cyber {
   }
 }
 
+/* Picking (Picky ON) Marker Pulsing Glow Outline — applied to all 4 picking types */
+.map-marker.picking-picky::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  border: 1px solid var(--green-neon);
+  box-shadow: 0 0 2px var(--green-neon), inset 0 0 2px var(--green-neon);
+  animation: picking-picky-pulse 1.8s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes picking-picky-pulse {
+  0% {
+    transform: scale(0.98);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0.95;
+    box-shadow: 0 0 4px var(--green-neon), inset 0 0 3px var(--green-neon);
+  }
+}
+
 /* Warp Waypoint Handle styling */
 .warp-waypoint-handle {
   transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;

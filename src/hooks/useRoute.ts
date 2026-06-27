@@ -82,6 +82,7 @@ export interface UseRouteApi {
   setBattleCustomDuration: (id: string, duration: number | undefined) => void;
   setPickingCustomDuration: (id: string, duration: number | undefined) => void;
   setLongPickingCustomDuration: (id: string, duration: number | undefined) => void;
+  setPickyMarker: (id: string, picky: boolean) => void;
   /** Apply a previously-saved route's marker scale to the live editor. */
   applyMarkerScale: (scale: number | undefined) => void;
   /** Internal: replace the route in-place (used by undo/redo). */
@@ -278,6 +279,21 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       data.battleCustomDurations = data.battleCustomDurations || {};
       data.pickingCustomDurations = data.pickingCustomDurations || {};
       data.longPickingCustomDurations = data.longPickingCustomDurations || {};
+      data.pickyMarkerIds = data.pickyMarkerIds || {};
+      // Migrate legacy marker-level `pickingPicky` (was incorrectly stored
+      // on the marker; the plan owns the picky state instead). Cover BOTH
+      // the individual markers (which live in the route) and the global
+      // markers (which are about to be merged into the global store), so
+      // gpicking/glong_picking pickies are preserved per plan.
+      const legacyPickySources: HeistMarker[] = [
+        ...(Array.isArray(planIndiv) ? planIndiv : []),
+        ...(Array.isArray(planGlobal) ? planGlobal : [])
+      ];
+      for (const m of legacyPickySources) {
+        if (m && m.pickingPicky) {
+          data.pickyMarkerIds![m.id] = true;
+        }
+      }
       data.hiddenMarkers = data.hiddenMarkers || [];
       data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
       if (data.author === undefined) data.author = '';
@@ -384,6 +400,15 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     });
   }, []);
 
+  const setPickyMarker = useCallback((id: string, picky: boolean) => {
+    setRouteRaw(prev => {
+      const next = { ...(prev.pickyMarkerIds || {}) };
+      if (!picky) delete next[id];
+      else next[id] = true;
+      return { ...prev, pickyMarkerIds: next };
+    });
+  }, []);
+
   const applyMarkerScale = useCallback((scale: number | undefined) => {
     if (scale !== undefined) onMarkerScaleChange(scale);
   }, [onMarkerScaleChange]);
@@ -412,6 +437,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     saveAsPreset, savePresetsToServer, deletePreset,
     setBossCustomDuration, setBattleCustomDuration,
     setPickingCustomDuration, setLongPickingCustomDuration,
+    setPickyMarker,
     applyMarkerScale,
     _replaceRoute
   };
@@ -425,10 +451,8 @@ function backfillMarkerDefaults(m: HeistMarker): HeistMarker {
     if (m.battleDurationSeconds === undefined) m.battleDurationSeconds = 20;
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
-    if (m.pickingPicky === undefined) m.pickingPicky = false;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 7;
-    if (m.pickingPicky === undefined) m.pickingPicky = false;
   }
   return m;
 }

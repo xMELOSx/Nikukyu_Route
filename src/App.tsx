@@ -393,7 +393,7 @@ export default function App() {
           }
         } catch (e) {
           console.error('Auto-load failed: corrupted route data, clearing last-used ID', e);
-          try { localStorage.removeItem('heist_last_used_route_id'); } catch {}
+          try { localStorage.removeItem('heist_last_used_route_id'); } catch { }
           notification.show('前回データの読み込みに失敗しました（デフォルトを使用）', 3000);
         }
       }
@@ -445,7 +445,7 @@ export default function App() {
         }
       })
       .catch(() => { });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync target duration slider DOM value with state when the user is NOT
@@ -453,7 +453,7 @@ export default function App() {
   // (defaultValue) so the drag itself isn't interrupted by React reconciliation.
   useEffect(() => {
     if (targetDurationSliderRef.current &&
-        document.activeElement !== targetDurationSliderRef.current) {
+      document.activeElement !== targetDurationSliderRef.current) {
       const v = routeApi.route.targetDuration || '0';
       if (targetDurationSliderRef.current.value !== v) {
         targetDurationSliderRef.current.value = v;
@@ -822,7 +822,7 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                  {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
+                      {(['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
                         const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                         return (
@@ -874,20 +874,20 @@ export default function App() {
                 <div className="panel-title">モード選択</div>
                 <div className="tool-grid">
                   <button className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`} onClick={() => setToolMode('draw')} id="tool-draw-btn">
-                    <Paintbrush size={18} /><span>Draw Line</span>
+                    <Paintbrush size={18} /><span>ルート線</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
-                    <Eraser size={18} /><span>Eraser</span>
+                    <Eraser size={18} /><span>消しゴム</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
-                    <Move size={18} /><span>Pan Map</span>
+                    <Move size={18} /><span>移動</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>表示切替</span>
                   </button>
                   {!resetTarget ? (
                     <button className="tool-btn" onClick={() => setResetTarget('both')} id="tool-reset-btn">
-                      <RotateCcw size={18} /><span>Reset Map</span>
+                      <RotateCcw size={18} /><span>リセット</span>
                     </button>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px', background: 'rgba(255,100,100,0.1)', borderRadius: '6px', border: '1px solid rgba(255,100,100,0.3)' }}>
@@ -1089,6 +1089,8 @@ export default function App() {
             onPickingCustomDurationChange={(id, dur) => routeApi.setPickingCustomDuration(id, dur)}
             longPickingCustomDurations={routeApi.route.longPickingCustomDurations}
             onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
+            pickyMarkerIds={routeApi.route.pickyMarkerIds}
+            onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
             disablePinsDuringDraw={disablePinsDuringDraw}
             textPinPassThrough={textPinPassThrough}
             onMarkersDragStart={historyApi.startDragSnapshot}
@@ -1275,7 +1277,7 @@ export default function App() {
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
                       目標所要時間{isEditMode && (
                         <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginLeft: '4px' }}>
-                          {(() => { const s = parseInt(routeApi.route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                          {(() => { const s = parseInt(routeApi.route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : '--:--'; })()}
                         </span>
                       )}
                     </label>
@@ -1310,7 +1312,7 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="display-field-time" style={{ marginTop: '4px' }}>
-                        {(() => { const s = parseInt(routeApi.route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '--:--'; })()}
+                        {(() => { const s = parseInt(routeApi.route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : '--:--'; })()}
                       </div>
                     )}
                   </div>

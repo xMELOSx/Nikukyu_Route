@@ -62,10 +62,8 @@ function backfillMarker(m: HeistMarker): HeistMarker {
     if (m.battleDurationSeconds === undefined) m.battleDurationSeconds = 20;
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
-    if (m.pickingPicky === undefined) m.pickingPicky = false;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 7;
-    if (m.pickingPicky === undefined) m.pickingPicky = false;
   }
   return m;
 }
@@ -138,6 +136,20 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       data.battleCustomDurations = data.battleCustomDurations || {};
       data.pickingCustomDurations = data.pickingCustomDurations || {};
       data.longPickingCustomDurations = data.longPickingCustomDurations || {};
+      data.pickyMarkerIds = data.pickyMarkerIds || {};
+      // Migrate legacy marker-level `pickingPicky` into the route-level
+      // `pickyMarkerIds`. The picky state belongs to the plan, not the
+      // (possibly global) marker. Cover BOTH the individual markers and
+      // the global ones, so gpicking/glong_picking pickies are preserved.
+      const legacyPickySources: HeistMarker[] = [
+        ...(Array.isArray(indiv) ? indiv : []),
+        ...(Array.isArray(global) ? global : [])
+      ];
+      for (const m of legacyPickySources) {
+        if (m && m.pickingPicky) {
+          data.pickyMarkerIds![m.id] = true;
+        }
+      }
       data.hiddenMarkers = data.hiddenMarkers || [];
       data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
       if (data.author === undefined) data.author = '';
@@ -178,11 +190,18 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       const allMarkers = clean.markers || [];
       const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
       const importedGlobals = allMarkers.filter(m => isGlobalType(m.type));
+      // Migrate legacy marker-level `pickingPicky` for BOTH individual
+      // and global markers into the route-level `pickyMarkerIds`.
+      const importedPickyMarkerIds: { [markerId: string]: boolean } = {};
+      for (const m of allMarkers) {
+        if (m && m.pickingPicky) importedPickyMarkerIds[m.id] = true;
+      }
       const importedRoute: RouteData = {
         ...clean,
         id: newId,
         createdAt: newCreatedAt,
         markers: individualMarkers,
+        pickyMarkerIds: { ...(clean.pickyMarkerIds || {}), ...importedPickyMarkerIds },
         author: xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt)),
         originalAuthor: xorEncrypt(plainOriginal, getOriginalAuthorKey(newId, newCreatedAt))
       };

@@ -227,6 +227,7 @@ export interface RouteData {
   battleCustomDurations?: { [markerId: string]: number }; // Plan-specific override for battle timers
   pickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for picking timers
   longPickingCustomDurations?: { [markerId: string]: number }; // Plan-specific override for long picking timers
+  pickyMarkerIds?: { [markerId: string]: boolean }; // Plan-specific: true = picky (0s) for that marker
   mapVersion?: number; // Version of map coordinate scale (e.g. 2 = 3200x9100)
   markerScale?: number; // Optional scale of markers (e.g. 30 = 100%)
   hiddenMarkers?: string[]; // Global markers hidden in this specific plan
@@ -253,6 +254,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   battleCustomDurations: {},
   pickingCustomDurations: {},
   longPickingCustomDurations: {},
+  pickyMarkerIds: {},
   hiddenMarkers: [],
   hiddenMarkerTypes: [],
   createdAt: Date.now(),
@@ -332,14 +334,25 @@ export function isCheckpointMarker(type: MarkerType): boolean {
 /**
  * Returns the stop duration in seconds for a stop marker.
  * Falls back to a sensible default if not configured.
+ *
+ * The picky state lives on the ROUTE (`pickyMarkerIds`, plan-specific),
+ * not on the marker itself. This applies uniformly to all 4 picking
+ * types, including global pins, so each plan can independently mark
+ * a gpicking/glong_picking pin as picky. Migration from the legacy
+ * marker-level `pickingPicky` happens at load time (see useRoute /
+ * useFileIO) so the data is preserved for existing routes.
  */
-export function getStopDurationSeconds(marker: HeistMarker): number {
+export function getStopDurationSeconds(
+  marker: HeistMarker,
+  pickyMarkerIds?: { [markerId: string]: boolean }
+): number {
+  const isPicky = !!(pickyMarkerIds && pickyMarkerIds[marker.id]);
   if (marker.type === 'picking' || marker.type === 'gpicking') {
-    if (marker.pickingPicky) return 0;
+    if (isPicky) return 0;
     return marker.pickingDurationSeconds ?? 5;
   }
   if (marker.type === 'long_picking' || marker.type === 'glong_picking') {
-    if (marker.pickingPicky) return 0;
+    if (isPicky) return 0;
     return marker.longPickingDurationSeconds ?? 7;
   }
   if (marker.type === 'boss') {
@@ -512,6 +525,10 @@ export class DataManager {
         route?.longPickingCustomDurations && typeof route.longPickingCustomDurations === 'object'
           ? route.longPickingCustomDurations
           : def.longPickingCustomDurations,
+      pickyMarkerIds:
+        route?.pickyMarkerIds && typeof route.pickyMarkerIds === 'object'
+          ? route.pickyMarkerIds
+          : (def.pickyMarkerIds || {}),
       mapVersion: typeof route?.mapVersion === 'number' ? route.mapVersion : def.mapVersion,
       markerScale: typeof route?.markerScale === 'number' ? route.markerScale : def.markerScale,
       hiddenMarkers: Array.isArray(route?.hiddenMarkers) ? route.hiddenMarkers : def.hiddenMarkers,

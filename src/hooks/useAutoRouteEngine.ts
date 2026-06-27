@@ -29,6 +29,7 @@ export interface UseAutoRouteEngineParams {
   autoRouteCommand?: AutoRouteCommand | null;
   onAutoRouteStatusChange?: (status: AutoRouteStatus) => void;
   checkpointVoiceOn: boolean;
+  pickyMarkerIds?: { [markerId: string]: boolean };
   // Viewport refs for follow-camera
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   animZoomRef: React.MutableRefObject<number>;
@@ -74,6 +75,7 @@ export function useAutoRouteEngine({
   autoRouteCommand,
   onAutoRouteStatusChange,
   checkpointVoiceOn,
+  pickyMarkerIds,
   wrapperRef,
   animZoomRef,
   animPanRef,
@@ -102,6 +104,8 @@ export function useAutoRouteEngine({
   autoRouteElapsedRef.current = autoRouteElapsed;
   const markersRef = useRef<HeistMarker[]>(markers);
   markersRef.current = markers;
+  const pickyMarkerIdsRef = useRef<{ [markerId: string]: boolean } | undefined>(pickyMarkerIds);
+  pickyMarkerIdsRef.current = pickyMarkerIds;
 
   const resetAutoRoute = () => {
     setAutoRouteRunning(false);
@@ -139,7 +143,7 @@ export function useAutoRouteEngine({
       stopMarkerThreshold,
       movementMarkerThreshold,
       warpMarkerThreshold
-    }, hiddenMarkers || []);
+    }, hiddenMarkers || [], pickyMarkerIds);
     if (routeSegments.length === 0) {
       setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
       return;

@@ -43,6 +43,8 @@ interface MapCanvasProps {
   onPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
   longPickingCustomDurations?: { [markerId: string]: number };
   onLongPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
+  pickyMarkerIds?: { [markerId: string]: boolean };
+  onPickyMarkerChange?: (markerId: string, picky: boolean) => void;
   disablePinsDuringDraw?: boolean;
   textPinPassThrough?: boolean;
   onMarkersDragStart?: () => void;
@@ -120,6 +122,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onPickingCustomDurationChange,
   longPickingCustomDurations = {},
   onLongPickingCustomDurationChange,
+  pickyMarkerIds = {},
+  onPickyMarkerChange,
   disablePinsDuringDraw = true,
   textPinPassThrough = true,
   onMarkersDragStart,
@@ -326,6 +330,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     autoRouteCommand,
     onAutoRouteStatusChange,
     checkpointVoiceOn,
+    pickyMarkerIds,
     wrapperRef,
     animZoomRef,
     animPanRef,
@@ -609,6 +614,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         e.preventDefault();
         setActiveNoteMarkerId(null);
         return;
+      }
+      // Presentation-mode popups (picking / info / boss / battle) are
+      // tracked on the marker via `*Expanded` flags rather than
+      // `activeNoteMarkerId`, so the ESC check above misses them.
+      // Close any open presentation popup here.
+      if (e.key === 'Escape') {
+        const hasOpenPopup = markers.some(
+          m => m.pickingExpanded || m.infoExpanded || m.bossExpanded || m.battleExpanded || m.noteExpanded
+        );
+        if (hasOpenPopup) {
+          e.preventDefault();
+          onMarkersChange(
+            markers.map(mk => mk.pickingExpanded || mk.infoExpanded || mk.bossExpanded || mk.battleExpanded || mk.noteExpanded
+              ? { ...mk, pickingExpanded: false, infoExpanded: false, bossExpanded: false, battleExpanded: false, noteExpanded: false }
+              : mk
+            )
+          );
+          return;
+        }
       }
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
@@ -908,12 +932,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (activeMarkerType === 'picking' || activeMarkerType === 'gpicking') {
         newMarker.pickingDurationSeconds = 5;
-        newMarker.pickingPicky = false;
         newMarker.pickingExpanded = false;
       }
       if (activeMarkerType === 'long_picking' || activeMarkerType === 'glong_picking') {
         newMarker.longPickingDurationSeconds = 7;
-        newMarker.pickingPicky = false;
         newMarker.pickingExpanded = false;
       }
       onMarkersChange([...markers, newMarker], true);
@@ -1241,8 +1263,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMarkerMouseDown = (e: React.MouseEvent, m: HeistMarker) => {
     if (e.button === 1) return;
+
+    // 表示切替モード: マーカー自身のドラッグを開始せず Canvas 側へイベントを
+    // 透過させ、Canvas 側の toggleVisibilityAtPoint に処理を任せる
+    // (mousedown/mousemove で順次 visibility がトグルされ、ポップアップも出ない)
+    if (toolMode === 'toggle-vis') {
+      return;
+    }
+
     e.stopPropagation();
-    
+
     const isIndivMarker = isIndiv(m.type);
     const canInteract = isEditMode && (isLocal ? true : ((toolMode === 'erase' || toolMode === 'toggle-vis') ? true : isIndivMarker));
     if (!canInteract) return;
@@ -1290,6 +1320,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMarkerClick = (e: React.MouseEvent, m: HeistMarker) => {
     e.stopPropagation();
 
+    // 表示切替モードではクリックでポップアップを開かず、ドラッグのみ許可する
+    // (mousedown で draggingMarkerId は既に設定済み)
+    if (toolMode === 'toggle-vis') {
+      return;
+    }
+
     // Click-to-link mode for warp/stairs
     if (warpLinkMode !== 'idle' && activeNoteMarkerId) {
       const source = markers.find(mk => mk.id === activeNoteMarkerId);
@@ -1301,7 +1337,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (isValidTarget) {
           const isBidirectional = warpLinkMode === 'selecting-bi';
           const partnerMarker = markers.find(mk => mk.id === m.id);
-          const canBidirectional = isBidirectional && source.type !== 'iwarp' && m.type !== 'iwarp'
+          const canBidirectional = isBidirectional
             && (!partnerMarker?.linkedWarpId || partnerMarker.linkedWarpId === source.id);
           onMarkersChange(
             markers.map(mk => {
@@ -1456,7 +1492,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
     setPickingDurationSeconds(m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
     setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7);
-    setPickingPicky(!!m.pickingPicky);
+    setPickingPicky(!!pickyMarkerIds[m.id]);
     setEhHighRate(!!m.ehHighRate);
     setCardkeyHighRate(!!m.cardkeyHighRate);
     setCustomDropInput('');
@@ -1572,11 +1608,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
             if (m.type === 'picking' || m.type === 'gpicking') {
               updated.pickingDurationSeconds = pickingPicky ? 0 : pickingDurationSeconds;
-              updated.pickingPicky = pickingPicky;
             }
             if (m.type === 'long_picking' || m.type === 'glong_picking') {
               updated.longPickingDurationSeconds = pickingPicky ? 0 : longPickingDurationSeconds;
-              updated.pickingPicky = pickingPicky;
             }
             if (m.type === 'eh') {
               updated.ehHighRate = ehHighRate;
@@ -1631,6 +1665,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         } else {
           onLongPickingCustomDurationChange(activeNoteMarkerId, undefined as any);
         }
+      }
+
+      // Save the plan-level picky override (used by the green highlight and
+      // by the auto-route timing). Replaces the previous marker-level
+      // `m.pickingPicky`, which incorrectly globalized the state for
+      // gpicking/glong_picking pins.
+      if (marker && (marker.type === 'picking' || marker.type === 'gpicking' || marker.type === 'long_picking' || marker.type === 'glong_picking') && onPickyMarkerChange) {
+        onPickyMarkerChange(activeNoteMarkerId, pickingPicky);
       }
 
       if (closePanel) setActiveNoteMarkerId(null);
@@ -1871,7 +1913,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 zIndex: 100
               }}
             >
-              {markers.filter(m => m.floor === floor).map(m => {
+              {markers.filter(m => m.floor === floor)
+                // スタートピンが常にチェックポイントの上に来るよう、
+                // チェックポイントを先に描画 (= 背後) させる。
+                .sort((a, b) => {
+                  const rank = (t: string) => (t === 'start' ? 1 : 0);
+                  return rank(a.type) - rank(b.type);
+                })
+                .map(m => {
                 const isWarp = m.type === 'warp' || m.type === 'iwarp';
                 const isStairs = m.type === 'stairs';
                 const isStart = m.type === 'start';
@@ -2022,7 +2071,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               return (
                 <div
                   key={m.id}
-                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${(m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && pickyMarkerIds[m.id] ? 'picking-picky' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
                    onMouseEnter={nonTextTooltip ? (e) => { setHoveredMarkerId(m.id); setHoverPos({ x: e.clientX, y: e.clientY }); } : undefined}
                    onMouseMove={nonTextTooltip ? (e) => setHoverPos({ x: e.clientX, y: e.clientY }) : undefined}
                    onMouseLeave={nonTextTooltip ? () => setHoveredMarkerId(null) : undefined}
@@ -2621,89 +2670,71 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         </button>
                       </div>
                       <div className="info-popup-content">
-                        {/* Picky Checkbox - editable directly in presentation mode */}
                         {(() => {
-                          const isGlobalPin = m.type === 'gpicking' || m.type === 'glong_picking';
                           const canEditDuration = true;
-                          const isPicky = (isGlobalPin && !isLocal && pickingCustomDurations[m.id] !== undefined)
-                            ? (pickingCustomDurations[m.id] === 0)
-                            : (isGlobalPin && !isLocal && longPickingCustomDurations[m.id] !== undefined)
-                              ? (longPickingCustomDurations[m.id] === 0)
-                              : !!m.pickingPicky;
+                          // The picky state lives on the ROUTE (plan-specific),
+                          // not on the marker. This applies uniformly to all 4
+                          // picking types, including global pins, so the user
+                          // can toggle them from personal display mode too.
+                          const isPicky = !!pickyMarkerIds[m.id];
 
                           const handlePickyChange = (updatedPicky: boolean) => {
                             const isLong = m.type === 'long_picking' || m.type === 'glong_picking';
-                            if (isGlobalPin && !isLocal) {
-                              if (isLong) {
-                                if (onLongPickingCustomDurationChange) {
-                                  onLongPickingCustomDurationChange(m.id, updatedPicky ? 0 : undefined);
-                                }
-                              } else {
-                                if (onPickingCustomDurationChange) {
-                                  onPickingCustomDurationChange(m.id, updatedPicky ? 0 : undefined);
-                                }
-                              }
-                            } else {
-                              onMarkersChange(
-                                markers.map(mk => {
-                                  if (mk.id === m.id) {
-                                    const updated = { ...mk, pickingPicky: updatedPicky };
-                                    if (isLong) {
-                                      updated.longPickingDurationSeconds = updatedPicky ? 0 : 7;
-                                    } else {
-                                      updated.pickingDurationSeconds = updatedPicky ? 0 : 5;
-                                    }
-                                    return updated;
+                            onMarkersChange(
+                              markers.map(mk => {
+                                if (mk.id === m.id) {
+                                  const updated = { ...mk };
+                                  if (isLong) {
+                                    updated.longPickingDurationSeconds = updatedPicky ? 0 : 7;
+                                  } else {
+                                    updated.pickingDurationSeconds = updatedPicky ? 0 : 5;
                                   }
-                                  return mk;
-                                }),
-                                true
-                              );
+                                  return updated;
+                                }
+                                return mk;
+                              }),
+                              true
+                            );
+                            if (onPickyMarkerChange) {
+                              onPickyMarkerChange(m.id, updatedPicky);
                             }
                           };
 
                           return (
-                            <div style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '6px', 
-                              background: 'rgba(57, 255, 20, 0.05)', 
-                              padding: '6px', 
-                              borderRadius: '4px', 
-                              border: '1px solid rgba(57, 255, 20, 0.15)', 
-                              marginBottom: '6px' 
-                            }}>
-                              <input 
-                                type="checkbox"
-                                id={`picky-cb-${m.id}`}
-                                checked={isPicky}
-                                disabled={!canEditDuration}
-                                onChange={(e) => handlePickyChange(e.target.checked)}
-                                style={{ accentColor: '#39ff14', cursor: canEditDuration ? 'pointer' : 'default' }}
-                              />
-                              <label htmlFor={`picky-cb-${m.id}`} style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: canEditDuration ? 'pointer' : 'default', userSelect: 'none' }}>
-                                ピッキー (Picky) — 所要時間を0秒にする
-                              </label>
-                            </div>
+                            <>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: 'rgba(57, 255, 20, 0.05)',
+                                padding: '6px',
+                                borderRadius: '4px',
+                                border: '1px solid rgba(57, 255, 20, 0.15)',
+                                marginBottom: '6px'
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  id={`picky-cb-${m.id}`}
+                                  checked={isPicky}
+                                  disabled={!canEditDuration}
+                                  onChange={(e) => handlePickyChange(e.target.checked)}
+                                  style={{ accentColor: '#39ff14', cursor: canEditDuration ? 'pointer' : 'default' }}
+                                />
+                                <label htmlFor={`picky-cb-${m.id}`} style={{ fontSize: '10px', color: '#39ff14', fontWeight: 'bold', cursor: canEditDuration ? 'pointer' : 'default', userSelect: 'none' }}>
+                                  ピッキー (Picky) — 所要時間を0秒にする
+                                </label>
+                              </div>
+
+                              {/* Duration settings - read-only display */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
+                                <div style={{ fontSize: '14px', color: isPicky ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
+                                  {isPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')}
+                                </div>
+                              </div>
+                            </>
                           );
                         })()}
-
-                        {/* Duration settings - read-only display */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
-                          <div style={{ fontSize: '14px', color: (
-                            (m.type === 'gpicking' || m.type === 'glong_picking')
-                              ? (((m.type === 'glong_picking' ? longPickingCustomDurations[m.id] : pickingCustomDurations[m.id]) === 0) || (m.pickingPicky))
-                              : !!m.pickingPicky
-                          ) ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
-                            {
-                              ((m.type === 'gpicking' || m.type === 'glong_picking')
-                                ? (((m.type === 'glong_picking' ? longPickingCustomDurations[m.id] : pickingCustomDurations[m.id]) === 0) || (m.pickingPicky))
-                                : !!m.pickingPicky
-                              ) ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')
-                            }
-                          </div>
-                        </div>
                       </div>
                     </div>
                     )}
@@ -3673,9 +3704,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '9px', clipPath: 'none' }} disabled={!canLink || !warpLinkTargetId} onClick={() => {
                         const partnerId = warpLinkTargetId;
                         const partnerMarker = markers.find(mk => mk.id === partnerId);
-                        const canBidirectional = activeNoteMarker.type !== 'iwarp'
-                          && partnerMarker?.type !== 'iwarp'
-                          && (!partnerMarker?.linkedWarpId || partnerMarker.linkedWarpId === activeNoteMarker.id);
+                        const canBidirectional = !partnerMarker?.linkedWarpId
+                          || partnerMarker.linkedWarpId === activeNoteMarker.id;
                         onMarkersChange(
                           markers.map(m => {
                             if (m.id === activeNoteMarker.id) {
