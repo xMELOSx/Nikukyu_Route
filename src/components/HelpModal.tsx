@@ -50,6 +50,10 @@ interface HelpModalProps {
   warpMarkerThreshold?: number;
   setWarpMarkerThreshold?: (n: number) => void;
   onShowOcrDebug?: () => void;
+  warpColor: string;
+  stairsColor: string;
+  onWarpColorChange: (color: string) => void;
+  onStairsColorChange: (color: string) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -72,7 +76,11 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   setMovementMarkerThreshold,
   warpMarkerThreshold,
   setWarpMarkerThreshold,
-  onShowOcrDebug
+  onShowOcrDebug,
+  warpColor,
+  stairsColor,
+  onWarpColorChange,
+  onStairsColorChange
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -337,6 +345,29 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   </label>
                 </div>
               )}
+              <div style={{ padding: '12px 14px', background: 'rgba(255, 0, 255, 0.02)', border: '1px solid rgba(255, 0, 255, 0.15)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--magenta-neon, #ff00ff)' }}>🎨 接続線の色設定</div>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-primary)' }}>ワープ接続線:</span>
+                    <input
+                      type="color"
+                      value={warpColor}
+                      onChange={(e) => onWarpColorChange(e.target.value)}
+                      style={{ width: '40px', height: '24px', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '3px', cursor: 'pointer', background: 'none', padding: 0 }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-primary)' }}>階段接続線:</span>
+                    <input
+                      type="color"
+                      value={stairsColor}
+                      onChange={(e) => onStairsColorChange(e.target.value)}
+                      style={{ width: '40px', height: '24px', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '3px', cursor: 'pointer', background: 'none', padding: 0 }}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           ) : isEditMode && isLocal ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>

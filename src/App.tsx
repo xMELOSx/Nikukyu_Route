@@ -158,6 +158,18 @@ export default function App() {
   const [strokeColor, setStrokeColor] = useState('#ff0055');
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [strokeType, setStrokeType] = useState<'solid' | 'dashed'>('solid');
+
+  const [warpColor, setWarpColor] = useState<string>(() => localStorage.getItem('heist_warp_color') || '#ff00ff');
+  const [stairsColor, setStairsColor] = useState<string>(() => localStorage.getItem('heist_stairs_color') || '#ffaa00');
+
+  const handleSetWarpColor = (color: string) => {
+    setWarpColor(color);
+    localStorage.setItem('heist_warp_color', color);
+  };
+  const handleSetStairsColor = (color: string) => {
+    setStairsColor(color);
+    localStorage.setItem('heist_stairs_color', color);
+  };
   const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('smooth');
   const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true);
   const [textPinPassThrough, setTextPinPassThrough] = useState<boolean>(() => {
@@ -1147,6 +1159,8 @@ export default function App() {
             targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
             autoStartMarker={autoStartMarker}
             onAutoStartMarkerChange={setAutoStartMarker}
+            warpColor={warpColor}
+            stairsColor={stairsColor}
           />
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -1720,6 +1734,10 @@ export default function App() {
         autoLoadLastRoute={autoLoadLastRoute}
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
+        warpColor={warpColor}
+        stairsColor={stairsColor}
+        onWarpColorChange={handleSetWarpColor}
+        onStairsColorChange={handleSetStairsColor}
       />
 
       <HistoryModal

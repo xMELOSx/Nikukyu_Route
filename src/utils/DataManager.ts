@@ -208,6 +208,7 @@ export interface HeistMarker {
   checkpointSoundOn?: boolean;    // Play a beep when the auto-route passes this checkpoint
   checkpointVoiceOn?: boolean;   // Voice announcement "X秒地点です" when passing
   checkpointExpanded?: boolean;  // Whether the popup is expanded in presentation mode
+  connectionColor?: string;      // Custom color for warp/stairs connection lines
 }
 
 export interface RouteData {

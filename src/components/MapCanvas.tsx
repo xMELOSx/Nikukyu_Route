@@ -92,6 +92,8 @@ interface MapCanvasProps {
   // Auto-placed start marker (dummy) when no real start marker exists
   autoStartMarker?: HeistMarker | null;
   onAutoStartMarkerChange?: (marker: HeistMarker | null) => void;
+  warpColor?: string;
+  stairsColor?: string;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -147,6 +149,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   followCamera = false,
   autoStartMarker = null,
   onAutoStartMarkerChange,
+  warpColor = '#ff00ff',
+  stairsColor = '#ffaa00'
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -1799,7 +1803,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               markerHeight="6" 
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#ff00ff" />
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor" />
             </marker>
             <marker 
               id="stairs-arrow" 
@@ -1810,7 +1814,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               markerHeight="4.5" 
               orient="auto-start-reverse"
             >
-              <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#ffaa00" />
+              <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="currentColor" />
             </marker>
           </defs>
           {markers
@@ -1830,7 +1834,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isMutuallyLinked = m.linkedWarpId === partner.id && partner.linkedWarpId === m.id;
 
               const isWarp = m.type === 'warp' || m.type === 'iwarp';
-              const color = isWarp ? '#ff00ff' : '#ffaa00';
+              const color = m.connectionColor || partner.connectionColor || (isWarp ? warpColor : stairsColor);
               const strokeWidth = isWarp ? "2" : "1";
               const strokeDasharray = isWarp ? "6 4" : "3 3";
               const markerEnd = isWarp ? "url(#warp-arrow)" : "url(#stairs-arrow)";
@@ -1848,6 +1852,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     d={pathD}
                     fill="none"
                     stroke={color}
+                    color={color}
                     strokeWidth={strokeWidth}
                     strokeDasharray={strokeDasharray}
                     opacity={opacity}
@@ -1862,6 +1867,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   key={`warp-line-${m.id}`}
                   x1={m.x} y1={m.y} x2={partner.x} y2={partner.y}
                   stroke={color}
+                  color={color}
                   strokeWidth={strokeWidth}
                   strokeDasharray={strokeDasharray}
                   opacity={opacity}
@@ -3637,6 +3643,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     <div style={{ fontSize: '10px', color: (activeNoteMarker.type === 'warp' || activeNoteMarker.type === 'iwarp') ? 'var(--magenta-neon)' : '#ffaa00' }}>
                       {conn.isMutuallyLinked ? '↔' : '→'} Leads to: {conn.partner.note.trim() ? conn.partner.note : `${activeNoteMarker.type === 'stairs' ? 'Stairs' : 'Warp'} #${conn.partner.id.substring(conn.partner.id.length - 4)}`}
                       <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '4px' }}>({conn.isMutuallyLinked ? '双方向' : '片道'})</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '10px', color: '#b0b0b0' }}>接続線の色:</span>
+                      <input
+                        type="color"
+                        value={activeNoteMarker.connectionColor || conn.partner.connectionColor || (activeNoteMarker.type === 'stairs' ? '#ffaa00' : '#ff00ff')}
+                        onChange={(e) => {
+                          const newColor = e.target.value;
+                          onMarkersChange(
+                            markers.map(m => {
+                              if (m.id === activeNoteMarker.id) {
+                                return { ...m, connectionColor: newColor };
+                              }
+                              if (conn.isMutuallyLinked && conn.partner && m.id === conn.partner.id) {
+                                return { ...m, connectionColor: newColor };
+                              }
+                              return m;
+                            }),
+                            true
+                          );
+                        }}
+                        style={{ width: '40px', height: '20px', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '3px', cursor: 'pointer', background: 'none', padding: 0 }}
+                      />
                     </div>
                     <button className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '9px' }} disabled={!canLink} onClick={() => {
                       onMarkersChange(
