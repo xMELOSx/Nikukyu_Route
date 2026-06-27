@@ -37,6 +37,7 @@ export interface UseAutoRouteEngineParams {
   setPan: (pan: { x: number; y: number }) => void;
   setCurrentPosition: (pos: { x: number; y: number } | null) => void;
   zoom: number;
+  onAutoStartMarkerSet?: (marker: HeistMarker | null) => void;
 }
 
 function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): string {
@@ -80,6 +81,7 @@ export function useAutoRouteEngine({
   setPan,
   setCurrentPosition,
   zoom,
+  onAutoStartMarkerSet,
 }: UseAutoRouteEngineParams) {
   const [autoRouteActive, setAutoRouteActive] = useState(false);
   const [autoRouteRunning, setAutoRouteRunning] = useState(false);
@@ -104,17 +106,32 @@ export function useAutoRouteEngine({
     setAutoRouteSegments([]);
     setAutoRouteTiming({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
     if (autoRouteAnimRef.current) cancelAnimationFrame(autoRouteAnimRef.current);
+    if (onAutoStartMarkerSet) onAutoStartMarkerSet(null);
   };
 
   const startAutoRoute = () => {
     setAutoRouteError(null);
     prewarmAudio();
     const startMarker = markers.find(m => m.type === 'start');
-    if (!startMarker) {
-      setAutoRouteError('スタートマーカー (🐾) が見つかりません。マーカーを配置してください。');
-      return;
+    let effectiveStartMarker = startMarker;
+    if (!effectiveStartMarker) {
+      const solidStrokes = strokes.filter(s => s.type === 'solid');
+      if (solidStrokes.length === 0 || solidStrokes[0].points.length === 0) {
+        setAutoRouteError('スタートマーカー (🐾) も進行ルート (実線) も見つかりません。');
+        return;
+      }
+      const startPoint = solidStrokes[0].points[0];
+      effectiveStartMarker = {
+        id: '__auto_start__',
+        type: 'start',
+        x: startPoint.x,
+        y: startPoint.y,
+        note: '',
+        floor: floor as any,
+      } as HeistMarker;
+      if (onAutoStartMarkerSet) onAutoStartMarkerSet(effectiveStartMarker);
     }
-    const routeSegments = buildAutoRoute(strokes, markers, startMarker, {
+    const routeSegments = buildAutoRoute(strokes, markers, effectiveStartMarker, {
       stopMarkerThreshold,
       movementMarkerThreshold,
       warpMarkerThreshold
@@ -141,14 +158,14 @@ export function useAutoRouteEngine({
     autoRouteStartTimeRef.current = performance.now();
     autoRouteElapsedAtStartRef.current = 0;
     autoRouteWaitUntilRef.current = waitEnabled ? performance.now() + waitSeconds * 1000 : 0;
-    setCurrentPosition({ x: startMarker.x, y: startMarker.y });
+    setCurrentPosition({ x: effectiveStartMarker.x, y: effectiveStartMarker.y });
     if (followCamera && wrapperRef.current) {
       const W_v = wrapperRef.current.clientWidth;
       const H_v = wrapperRef.current.clientHeight;
       const tgtZoom = zoom || 1;
       const tgtPan = {
-        x: W_v * 0.5 - 800 - (startMarker.x - 800) * tgtZoom,
-        y: H_v * 0.6 - 2275 - (startMarker.y - 2275) * tgtZoom
+        x: W_v * 0.5 - 800 - (effectiveStartMarker.x - 800) * tgtZoom,
+        y: H_v * 0.6 - 2275 - (effectiveStartMarker.y - 2275) * tgtZoom
       };
       setPan(tgtPan);
       animPanRef.current = tgtPan;

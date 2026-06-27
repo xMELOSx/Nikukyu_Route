@@ -87,6 +87,9 @@ interface MapCanvasProps {
   // Follow camera state — when true, the view scrolls to keep the current
   // position slightly below center during the auto-route animation.
   followCamera?: boolean;
+  // Auto-placed start marker (dummy) when no real start marker exists
+  autoStartMarker?: HeistMarker | null;
+  onAutoStartMarkerChange?: (marker: HeistMarker | null) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -137,7 +140,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onAutoRouteStatusChange,
   autoRouteCommand,
   autoRouteSettings,
-  followCamera = false
+  followCamera = false,
+  autoStartMarker = null,
+  onAutoStartMarkerChange,
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -327,6 +332,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setPan,
     setCurrentPosition,
     zoom,
+    onAutoStartMarkerChange,
   });
 
   // Clean up animation frame on unmount
@@ -946,6 +952,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.pickingExpanded = false;
       }
       onMarkersChange([...markers, newMarker], true);
+      // If a real start marker is placed, remove the auto-placed dummy
+      if (activeMarkerType === 'start' && autoStartMarker && onAutoStartMarkerChange) {
+        onAutoStartMarkerChange(null);
+      }
       setActiveNoteMarkerId(newMarker.id);
       setNoteText(newMarker.note);
       setBossDrops([]);
@@ -1948,6 +1958,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             >
               <div className="current-position-arrow">▼</div>
               <div className="current-position-pulse" />
+            </div>
+          )}
+
+          {/* Auto-placed start marker (dummy) */}
+          {autoStartMarker && autoStartMarker.floor === floor && (
+            <div
+              className="map-marker"
+              style={{
+                position: 'absolute',
+                left: `${autoStartMarker.x}px`,
+                top: `${autoStartMarker.y}px`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                opacity: 0.7,
+                filter: 'drop-shadow(0 0 6px rgba(57, 255, 20, 0.6))'
+              }}
+            >
+              <div className="map-marker-icon" style={{ fontSize: `${(markerScale / 30) * 24}px` }}>
+                {MARKER_META.start.emoji}
+              </div>
+              <div className="map-marker-label" style={{ fontSize: '10px', color: '#39ff14', whiteSpace: 'nowrap' }}>
+                （自動配置）
+              </div>
             </div>
           )}
 

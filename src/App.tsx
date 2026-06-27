@@ -180,6 +180,7 @@ export default function App() {
   const [resetTarget, setResetTarget] = useState<'lines' | 'pins' | 'both' | null>(null);
   const [focusTrigger, setFocusTrigger] = useState<{ id: string; timestamp: number } | null>(null);
   const [currentPosTrigger, setCurrentPosTrigger] = useState<number>(0);
+  const [autoStartMarker, setAutoStartMarker] = useState<HeistMarker | null>(null);
 
   // Preset editor state was previously used by an inline "Save as preset" form
   // that was removed during the hook extraction. Kept removed; the saveAsPreset
@@ -242,7 +243,6 @@ export default function App() {
       }
     },
     onRestore: () => {
-      setToolMode('pan');
       setActiveMarkerType(null);
     }
   });
@@ -1059,6 +1059,8 @@ export default function App() {
             }}
             followCamera={autoRoute.followCamera}
             targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
+            autoStartMarker={autoStartMarker}
+            onAutoStartMarkerChange={setAutoStartMarker}
           />
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
