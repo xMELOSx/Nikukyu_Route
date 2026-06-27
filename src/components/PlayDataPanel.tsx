@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   type PlayDataState,
@@ -20,6 +20,13 @@ import {
   BIWEEKLY_COINS_CAP
 } from '../utils/PlayDataManager';
 import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat } from 'lucide-react';
+
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: (() => void) | undefined;
+  }
+}
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
@@ -244,6 +251,117 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [newUrlInput, setNewUrlInput] = useState<string>('');
   const [newTitleInput, setNewTitleInput] = useState<string>('');
   const [showAddUrl, setShowAddUrl] = useState<boolean>(false);
+
+  const extractVideoId = (url: string): string | null => {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+      /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  };
+
+  const currentVideoId = useMemo(() => {
+    if (playlist.length === 0) return null;
+    return extractVideoId(playlist[currentTrackIndex]?.url || '');
+  }, [playlist, currentTrackIndex]);
+
+  // --- YouTube IFrame Player API ---
+  const ytPlayerRef = useRef<any>(null);
+  const ytContainerId = useMemo(() => `yt-player-${Math.random().toString(36).slice(2, 8)}`, []);
+  const [playerReady, setPlayerReady] = useState(false);
+  const isPlayingRef = useRef(isPlaying);
+  const repeatModeRef = useRef(repeatMode);
+  const shuffleModeRef = useRef(shuffleMode);
+  const playlistLenRef = useRef(playlist.length);
+
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+  useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
+  useEffect(() => { playlistLenRef.current = playlist.length; }, [playlist.length]);
+
+  useEffect(() => {
+    let destroyed = false;
+
+    const createPlayer = () => {
+      if (destroyed || ytPlayerRef.current) return;
+      if (!document.getElementById(ytContainerId)) return;
+
+      ytPlayerRef.current = new window.YT.Player(ytContainerId, {
+        videoId: currentVideoId || undefined,
+        playerVars: {
+          autoplay: 0,
+          enablejsapi: 1,
+          rel: 0,
+          modestbranding: 1,
+          origin: window.location.origin,
+        },
+        events: {
+          onReady: () => {
+            if (!destroyed) setPlayerReady(true);
+          },
+          onStateChange: (e: any) => {
+            if (e.data === 0) {
+              if (repeatModeRef.current) {
+                ytPlayerRef.current?.seekTo(0);
+                ytPlayerRef.current?.playVideo();
+              } else {
+                setCurrentTrackIndex(prev => {
+                  if (shuffleModeRef.current) {
+                    return Math.floor(Math.random() * playlistLenRef.current);
+                  }
+                  return (prev + 1) % playlistLenRef.current;
+                });
+              }
+            }
+          },
+        },
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      createPlayer();
+    } else {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      window.onYouTubeIframeAPIReady = createPlayer;
+    }
+
+    return () => {
+      destroyed = true;
+      window.onYouTubeIframeAPIReady = undefined;
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.destroy(); } catch {}
+        ytPlayerRef.current = null;
+      }
+      setPlayerReady(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!playerReady || !ytPlayerRef.current) return;
+    if (isPlaying) {
+      ytPlayerRef.current.playVideo();
+    } else {
+      ytPlayerRef.current.pauseVideo();
+    }
+  }, [isPlaying, playerReady]);
+
+  useEffect(() => {
+    if (!playerReady || !ytPlayerRef.current || !currentVideoId) return;
+    ytPlayerRef.current.loadVideoById(currentVideoId);
+    if (!isPlayingRef.current) {
+      const timer = setTimeout(() => {
+        ytPlayerRef.current?.pauseVideo();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [currentVideoId, playerReady]);
 
   useEffect(() => {
     localStorage.setItem('nikukyu_playlist_v1', JSON.stringify(playlist));
@@ -497,18 +615,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   };
 
   // --- Sound Player handlers ---
-  const extractVideoId = (url: string): string | null => {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-      /^([a-zA-Z0-9_-]{11})$/
-    ];
-    for (const p of patterns) {
-      const m = url.match(p);
-      if (m) return m[1];
-    }
-    return null;
-  };
-
   const handleAddUrl = () => {
     const url = newUrlInput.trim();
     if (!url) { notify('URLを入力してください'); return; }
@@ -547,11 +653,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     setCurrentTrackIndex(index);
     setIsPlaying(true);
   };
-
-  const currentVideoId = useMemo(() => {
-    if (playlist.length === 0) return null;
-    return extractVideoId(playlist[currentTrackIndex]?.url || '');
-  }, [playlist, currentTrackIndex]);
 
   // --- Records handlers ---
   const handleToggleExcluded = (id: string) => {
@@ -1292,12 +1393,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         }}>
           {currentVideoId ? (
             <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', marginBottom: '6px' }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=${isPlaying ? 1 : 0}&enablejsapi=1`}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', borderRadius: '4px' }}
-                allow="autoplay; encrypted-media"
-                allowFullScreen
-                title={playlist[currentTrackIndex]?.title || 'YouTube Player'}
+              <div
+                id={ytContainerId}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '4px' }}
               />
             </div>
           ) : (
