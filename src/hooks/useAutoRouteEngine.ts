@@ -188,7 +188,7 @@ export function useAutoRouteEngine({
     if (!autoRouteActive) return;
     setAutoRouteRunning(true);
     autoRouteStartTimeRef.current = performance.now();
-    autoRouteElapsedAtStartRef.current = autoRouteElapsed;
+    autoRouteElapsedAtStartRef.current = autoRouteElapsedRef.current;
   };
 
   // Auto-route animation loop
