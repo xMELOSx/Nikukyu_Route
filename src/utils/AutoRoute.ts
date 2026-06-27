@@ -81,26 +81,33 @@ export function buildAutoRoute(
 
   const visitedStrokeIndices = new Set<number>();
   const visitedMarkerIds = new Set<string>([startMarker.id]);
+  // Warp markers currently "paused" (temporarily removed from consideration).
+  // A marker is paused as soon as it is used as warp source OR destination,
+  // and is un-paused once `currentPos` is farther than `lineConnectThreshold`
+  // from BOTH endpoints of the warp. This prevents A→B→A ping-pong while
+  // still allowing the same warp to be reused along a real route.
+  type PausedWarp = { sourceId: string; linkedId: string; sourcePos: Point; linkedPos: Point };
+  const pausedWarps: PausedWarp[] = [];
+  const isPaused = (id: string): boolean => pausedWarps.some(p => p.sourceId === id || p.linkedId === id);
+  const cleanupPaused = () => {
+    const limit = cfg.lineConnectThreshold;
+    for (let k = pausedWarps.length - 1; k >= 0; k--) {
+      const p = pausedWarps[k];
+      const distSrc = Math.hypot(currentPos.x - p.sourcePos.x, currentPos.y - p.sourcePos.y);
+      const distLinked = Math.hypot(currentPos.x - p.linkedPos.x, currentPos.y - p.linkedPos.y);
+      if (distSrc >= limit && distLinked >= limit) {
+        pausedWarps.splice(k, 1);
+      }
+    }
+  };
   let currentPos: Point = { x: startMarker.x, y: startMarker.y };
   let cumulativeDistance = 0;
   let cumulativeStopTime = 0;
 
-  // Track the last warp destination. As long as `currentPos` is within
-  // `lineConnectThreshold` of it, warp is suppressed (prevents A→B→A
-  // ping-pong without requiring per-marker visited state, so warps can
-  // still be reused N times once the route has actually moved away).
-  let lastWarpDest: Point | null = null;
-
-  // True only while `currentPos` is still within `lineConnectThreshold`
-  // of `lastWarpDest`. Cleared once the route has moved far enough.
-  const atLastWarpDest = () =>
-    !!lastWarpDest &&
-    Math.hypot(currentPos.x - lastWarpDest.x, currentPos.y - lastWarpDest.y) < cfg.lineConnectThreshold;
-
   const tryWarp = (warpSource: HeistMarker): boolean => {
     const linked = markers.find(lm => lm.id === warpSource.linkedWarpId);
     if (!linked) return false;
-    if (atLastWarpDest()) return false; // suppresses immediate ping-pong
+    if (isPaused(warpSource.id)) return false; // source is currently paused
 
     const warpDist = Math.hypot(warpSource.x - currentPos.x, warpSource.y - currentPos.y);
     cumulativeDistance += warpDist;
@@ -125,27 +132,32 @@ export function buildAutoRoute(
       cumulativeStopTime
     });
     currentPos = { x: linked.x, y: linked.y };
-    lastWarpDest = { x: linked.x, y: linked.y };
+    // Pause both endpoints until the route moves far enough away from BOTH.
+    pausedWarps.push({
+      sourceId: warpSource.id,
+      linkedId: linked.id,
+      sourcePos: { x: warpSource.x, y: warpSource.y },
+      linkedPos: { x: linked.x, y: linked.y }
+    });
     return true;
   };
 
   for (let safety = 0; safety < 500; safety++) {
-    // --- Outer-loop warp priority check ---
-    // Warp markers near currentPos take priority over following the next
-    // stroke. Suppressed while atLastWarpDest().
-    if (!atLastWarpDest()) {
-      const warpSource = relevantMarkers
-        .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId)
-        .map(m => ({
-          marker: m,
-          dist: Math.hypot(m.x - currentPos.x, m.y - currentPos.y)
-        }))
-        .filter(h => h.dist < cfg.warpMarkerThreshold)
-        .sort((x, y) => x.dist - y.dist)[0] || null;
+    cleanupPaused();
 
-      if (warpSource && tryWarp(warpSource.marker)) {
-        continue;
-      }
+    // --- Outer-loop warp priority check ---
+    // Warp markers near currentPos take priority over following the next stroke.
+    const warpSource = relevantMarkers
+      .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId)
+      .map(m => ({
+        marker: m,
+        dist: Math.hypot(m.x - currentPos.x, m.y - currentPos.y)
+      }))
+      .filter(h => h.dist < cfg.warpMarkerThreshold && !isPaused(h.marker.id))
+      .sort((x, y) => x.dist - y.dist)[0] || null;
+
+    if (warpSource && tryWarp(warpSource.marker)) {
+      continue;
     }
 
     // --- Find next stroke ---
@@ -190,7 +202,16 @@ export function buildAutoRoute(
       const b = travelPoints[i];
 
       const hits = relevantMarkers
-        .filter(m => !visitedMarkerIds.has(m.id))
+        // Pause currently-paused warp endpoints (their id is in some paused
+        // entry) so the same warp doesn't ping-pong. Other markers follow
+        // the normal visitedMarkerIds check.
+        .filter(m => {
+          if (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') {
+            if (isPaused(m.id)) return false;
+            return true;
+          }
+          return !visitedMarkerIds.has(m.id);
+        })
         .map(m => {
           const perpDist = distanceToSegment(m, a, b);
           const distToCurrent = Math.hypot(m.x - a.x, m.y - a.y);
@@ -221,7 +242,11 @@ export function buildAutoRoute(
 
       const hit = hits[0];
       const m = hit.marker;
-      visitedMarkerIds.add(m.id);
+      // Warp/iwarp/stairs markers stay re-detectable so the same warp
+      // can be taken multiple times (e.g. A→B then B→A on a return).
+      if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') {
+        visitedMarkerIds.add(m.id);
+      }
       const clampedT = Math.max(0, Math.min(1, hit.t));
       const segDist = Math.hypot(b.x - a.x, b.y - a.y) * clampedT;
       cumulativeDistance += segDist;
@@ -254,8 +279,8 @@ export function buildAutoRoute(
         }
       }
 
-      // Advance to next polyline point. Once we've moved far enough from
-      // lastWarpDest, the warp will be allowed again.
+      // Advance to next polyline point. The next warp (if any) will be
+      // allowed immediately as long as it's a different pair.
       i++;
     }
 
