@@ -1129,6 +1129,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // - Skip micro-movements (< 6px) to avoid recording hand jitter
       // - Average the new point with the previous 2 to smooth out
       //   larger wobbles (exponential-style moving average)
+      //
+      // IMPORTANT: the polyline (currentPoints) stores the ACTUAL mouse
+      // coords, not the smoothed one. The smoothing is only used for
+      // the on-screen rendering. This keeps the recorded route accurate
+      // enough that hit detection (AutoRoute) can stop on markers that
+      // the user's stroke actually passes through.
       let effectiveCoord = coords;
       if (drawMode === 'smooth' && currentPoints.length > 0) {
         const last = currentPoints[currentPoints.length - 1];
@@ -1148,7 +1154,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           };
         }
       }
-      const newPoints = [...currentPoints, effectiveCoord];
+      const newPoints = [...currentPoints, coords];
       setCurrentPoints(newPoints);
       const ctx = ctxRef.current;
       if (ctx) {

@@ -1479,15 +1479,20 @@ export default function App() {
                       </div>
 
                       <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                        {autoRoute.status.waitRemaining > 0 ? (
-                          <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>待機中... {autoRoute.status.waitRemaining.toFixed(1)}s</div>
-                        ) : !autoRoute.status.active ? (
-                          <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><Play size={12} /> スタート</button>
-                        ) : autoRoute.status.running ? (
-                          <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><Pause size={11} /> 一時停止</button>
-                        ) : (
-                          <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><Play size={11} /> 再開</button>
-                        )}
+                        {(() => {
+                          const finished = autoRoute.status.active && !autoRoute.status.running && autoRoute.status.totalTime > 0 && autoRoute.status.elapsed >= autoRoute.status.totalTime;
+                          if (autoRoute.status.waitRemaining > 0) {
+                            return <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>待機中... {autoRoute.status.waitRemaining.toFixed(1)}s</div>;
+                          } else if (!autoRoute.status.active) {
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><Play size={12} /> スタート</button>;
+                          } else if (finished) {
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><RotateCcw size={11} /> リスタート</button>;
+                          } else if (autoRoute.status.running) {
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><Pause size={11} /> 一時停止</button>;
+                          } else {
+                            return <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><Play size={11} /> 再開</button>;
+                          }
+                        })()}
                         <button className={`btn-cyber ${autoRoute.status.active ? 'danger' : ''}`} style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRoute.status.active ? 1 : 0.4 }} disabled={!autoRoute.status.active} onClick={() => autoRoute.sendCommand('reset')}>
                           <Square size={11} /> 停止
                         </button>
@@ -1495,7 +1500,7 @@ export default function App() {
 
                       {autoRoute.status.active && (
                         <>
-                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>Space キーで一時停止 / 再開</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>Space キーで一時停止 / 再開 (終端でリスタート)</div>
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
                               <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>

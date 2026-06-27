@@ -376,7 +376,7 @@ export function useAutoRouteEngine({
     return () => clearInterval(interval);
   }, [autoRouteActive, autoRouteRunning, autoRouteError, autoRouteSegments, autoRouteTiming, onAutoRouteStatusChange]);
 
-  // Spacebar toggles pause/resume
+  // Spacebar toggles pause/resume (or restarts when finished)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
@@ -384,13 +384,21 @@ export function useAutoRouteEngine({
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (!autoRouteActive) return;
       e.preventDefault();
-      if (autoRouteRunning) pauseAutoRoute();
-      else resumeAutoRoute();
+      if (autoRouteRunning) {
+        pauseAutoRoute();
+      } else if (
+        autoRouteTiming.totalTime > 0 &&
+        autoRouteElapsedRef.current >= autoRouteTiming.totalTime
+      ) {
+        startAutoRoute();
+      } else {
+        resumeAutoRoute();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRouteActive, autoRouteRunning]);
+  }, [autoRouteActive, autoRouteRunning, autoRouteTiming.totalTime]);
 
   // Apply speed multiplier changes mid-animation
   useEffect(() => {
