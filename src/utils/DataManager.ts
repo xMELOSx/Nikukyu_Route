@@ -93,6 +93,8 @@ export interface ScrollConfig {
   x: number;
   y: number;
   zoom: number;
+  viewWidth?: number;
+  viewHeight?: number;
 }
 
 export interface MediaItem {

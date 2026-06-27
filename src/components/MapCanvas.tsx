@@ -357,7 +357,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [isEditMode]);
 
-  // Fixed text-pin pane tracking.
+  // Fixed text-pin pane tracking — display-only offset.
+  // The pane offset is NOT persisted to marker data. Instead, it is stored in
+  // a ref and applied only at render time. This prevents the pane width from
+  // being baked into the saved marker coordinates, which would cause pins to
+  // appear shifted when the page is loaded with a different pane state.
   // prevLeftCollapsedRef is initialized to `false` so the very first effect
   // run on mount counts as a "change" — this compensates for markers that
   // were saved with the left pane open, when the page is opened on mobile
@@ -368,6 +372,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const prevRightCollapsedRef = useRef(rightSidebarCollapsed);
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  const paneDisplayOffsetRef = useRef<Map<string, number>>(new Map());
+  const [, forceRender] = useState(0);
 
   useEffect(() => {
     const prevLeft = prevLeftCollapsedRef.current;
@@ -381,8 +387,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const midX = window.innerWidth / 2;
 
     let anyChanged = false;
-    const next = currentMarkers.map(m => {
-      if (!m.textFixedPosition || m.floor !== floor) return m;
+    const next = new Map(paneDisplayOffsetRef.current);
+
+    for (const m of currentMarkers) {
+      if (!m.textFixedPosition || m.floor !== floor) continue;
       const side: 'left' | 'right' =
         m.trackSide === 'auto' || !m.trackSide
           ? (m.x < midX ? 'left' : 'right')
@@ -391,21 +399,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (prevLeft !== leftSidebarCollapsed && side === 'left') {
         const shift = leftSidebarCollapsed ? -280 : 280;
         anyChanged = true;
-        return { ...m, x: m.x + shift };
+        next.set(m.id, (next.get(m.id) || 0) + shift);
       }
       if (prevRight !== rightSidebarCollapsed && side === 'right') {
         const shift = rightSidebarCollapsed ? 340 : -340;
         anyChanged = true;
-        return { ...m, x: m.x + shift };
+        next.set(m.id, (next.get(m.id) || 0) + shift);
       }
-      return m;
-    });
+    }
 
     prevLeftCollapsedRef.current = leftSidebarCollapsed;
     prevRightCollapsedRef.current = rightSidebarCollapsed;
 
     if (!anyChanged) return;
-    onMarkersChange(next);
+    paneDisplayOffsetRef.current = next;
+    forceRender(n => n + 1);
   }, [leftSidebarCollapsed, rightSidebarCollapsed, markers.length]);
 
   // Sync state to anim refs whenever state changes
@@ -468,6 +476,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
   }, []);
 
+  // Adjust scrollConfig pan values for the current viewport size.
+  // When scrollConfig was saved on a different viewport, pan.x/y contain
+  // offsets relative to that viewport's center. We recalculate so the same
+  // map area appears centered on the current viewport.
+  const adjustScrollConfigForViewport = (cfg: { x: number; y: number; zoom: number; viewWidth?: number; viewHeight?: number }) => {
+    if (cfg.viewWidth == null || cfg.viewHeight == null) return { x: cfg.x, y: cfg.y };
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return { x: cfg.x, y: cfg.y };
+    const curW = wrapper.clientWidth;
+    const curH = wrapper.clientHeight;
+    return {
+      x: cfg.x + (curW - cfg.viewWidth) / 2,
+      y: cfg.y + (curH - cfg.viewHeight) / 2
+    };
+  };
+
   // Smooth scroll logic using requestAnimationFrame
   // Uses refs to track animation progress (avoids React 18 batching issues
   // where state updater callbacks don't run synchronously)
@@ -528,9 +552,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setCurrentPosition({ x: marker.x, y: marker.y });
 
         if (marker.scrollConfig) {
-          // If custom scrollConfig is registered, use it directly
+          // If custom scrollConfig is registered, adjust for current viewport
+          const adjusted = adjustScrollConfigForViewport(marker.scrollConfig);
           startSmoothScroll(
-            { x: marker.scrollConfig.x, y: marker.scrollConfig.y },
+            { x: adjusted.x, y: adjusted.y },
             marker.scrollConfig.zoom
           );
         } else {
@@ -1370,9 +1395,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           setCurrentPosition({ x: partner.x, y: partner.y });
 
           if (partner.scrollConfig) {
-            // Partner has manually-set scroll target → use it
+            // Partner has manually-set scroll target → adjust for current viewport
+            const adjusted = adjustScrollConfigForViewport(partner.scrollConfig);
             startSmoothScroll(
-              { x: partner.scrollConfig.x, y: partner.scrollConfig.y },
+              { x: adjusted.x, y: adjusted.y },
               partner.scrollConfig.zoom
             );
           } else {
@@ -1389,8 +1415,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
         }
       } else if (isLinkable && m.scrollConfig) {
+        const adjusted = adjustScrollConfigForViewport(m.scrollConfig);
         startSmoothScroll(
-          { x: m.scrollConfig.x, y: m.scrollConfig.y },
+          { x: adjusted.x, y: adjusted.y },
           m.scrollConfig.zoom
         );
       }
@@ -1644,12 +1671,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
       if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
-      // Save the CURRENT view position (pan & zoom) as the scroll target.
-      // When the user clicks "Go" in the sidebar, it restores this exact view.
+      const wrapper = wrapperRef.current;
+      const vw = wrapper ? wrapper.clientWidth : undefined;
+      const vh = wrapper ? wrapper.clientHeight : undefined;
       onMarkersChange(
         markers.map(m => m.id === activeNoteMarkerId ? {
           ...m,
-          scrollConfig: { x: pan.x, y: pan.y, zoom: zoom }
+          scrollConfig: { x: pan.x, y: pan.y, zoom: zoom, viewWidth: vw, viewHeight: vh }
         } : m),
         true
       );
@@ -2702,7 +2730,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 onMouseLeave={tooltipNote ? () => setHoveredMarkerId(null) : undefined}
                 style={{
                   position: 'fixed',
-                  left: `${m.x}px`,
+                  left: `${m.x + (paneDisplayOffsetRef.current.get(m.id) || 0)}px`,
                   top: `${m.y}px`,
                   transform: 'translate(-50%, -50%)',
                   color: displayColor,
