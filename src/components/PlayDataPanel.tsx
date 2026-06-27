@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   type PlayDataState,
@@ -19,7 +19,7 @@ import {
   BIWEEKLY_FANS_CAP,
   BIWEEKLY_COINS_CAP
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat } from 'lucide-react';
 
 interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
@@ -226,6 +226,28 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [textGoalParsed, setTextGoalParsed] = useState<{ name: string; target: string; reward: string }[]>([]);
   // Two-step confirmation for 全削除
   const [confirmClearGoals, setConfirmClearGoals] = useState(false);
+
+  // --- Sound Player state ---
+  const [playlist, setPlaylist] = useState<{ id: string; url: string; title: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('nikukyu_playlist_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+{ id: 'default', url: 'https://youtu.be/AcfvpsDO6jI?si=zypwUpXy1pYtPlk5', title: '🎶 NTE: Neverness to Everness - EXP & Beetle Coins Stage | 이환 BGM OST Music / NTE Creator' }
+    ];
+  });
+  const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [shuffleMode, setShuffleMode] = useState<boolean>(false);
+  const [repeatMode, setRepeatMode] = useState<boolean>(false);
+  const [newUrlInput, setNewUrlInput] = useState<string>('');
+  const [newTitleInput, setNewTitleInput] = useState<string>('');
+  const [showAddUrl, setShowAddUrl] = useState<boolean>(false);
+
+  useEffect(() => {
+    localStorage.setItem('nikukyu_playlist_v1', JSON.stringify(playlist));
+  }, [playlist]);
 
   useEffect(() => {
     savePlayData(state);
@@ -473,6 +495,63 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const handleUpdateCumulative = (field: CumulativeField, value: number) => {
     setState(prev => ({ ...prev, [field]: value }));
   };
+
+  // --- Sound Player handlers ---
+  const extractVideoId = (url: string): string | null => {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+      /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  };
+
+  const handleAddUrl = () => {
+    const url = newUrlInput.trim();
+    if (!url) { notify('URLを入力してください'); return; }
+    const videoId = extractVideoId(url);
+    if (!videoId) { notify('有効なYouTube URLではありません'); return; }
+    const title = newTitleInput.trim() || `曲 ${playlist.length + 1}`;
+    setPlaylist(prev => [...prev, { id: Date.now().toString(), url: `https://www.youtube.com/watch?v=${videoId}`, title }]);
+    setNewUrlInput('');
+    setNewTitleInput('');
+    setShowAddUrl(false);
+    notify(`プレイリストに追加しました: ${title}`);
+  };
+
+  const handleRemoveTrack = (id: string) => {
+    setPlaylist(prev => {
+      const next = prev.filter(t => t.id !== id);
+      if (next.length === 0) return [{ id: 'default', url: 'https://youtu.be/AcfvpsDO6jI?si=zypwUpXy1pYtPlk5', title: '🎶 NTE: Neverness to Everness - EXP & Beetle Coins Stage | 이환 BGM OST Music / NTE Creator' }];
+      return next;
+    });
+    setCurrentTrackIndex(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNextTrack = useCallback(() => {
+    if (shuffleMode) {
+      setCurrentTrackIndex(Math.floor(Math.random() * playlist.length));
+    } else {
+      setCurrentTrackIndex(prev => (prev + 1) % playlist.length);
+    }
+  }, [playlist.length, shuffleMode]);
+
+  const handlePrevTrack = () => {
+    setCurrentTrackIndex(prev => (prev - 1 + playlist.length) % playlist.length);
+  };
+
+  const handlePlayTrack = (index: number) => {
+    setCurrentTrackIndex(index);
+    setIsPlaying(true);
+  };
+
+  const currentVideoId = useMemo(() => {
+    if (playlist.length === 0) return null;
+    return extractVideoId(playlist[currentTrackIndex]?.url || '');
+  }, [playlist, currentTrackIndex]);
 
   // --- Records handlers ---
   const handleToggleExcluded = (id: string) => {
@@ -1192,6 +1271,180 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             </button>
           </>
         )}
+      </div>
+
+      {/* ====================================================== */}
+      {/* サウンドプレイヤー (YouTube Playlist)                     */}
+      {/* ====================================================== */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+          <Music size={12} color="var(--magenta-neon, #ff00ff)" />
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>サウンドプレイヤー ({playlist.length}曲)</span>
+        </div>
+
+        {/* Now Playing */}
+        <div style={{
+          background: 'rgba(255,0,255,0.05)',
+          border: '1px solid rgba(255,0,255,0.2)',
+          borderRadius: '4px',
+          padding: '6px',
+          marginBottom: '6px'
+        }}>
+          {currentVideoId ? (
+            <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', marginBottom: '6px' }}>
+              <iframe
+                src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=${isPlaying ? 1 : 0}&enablejsapi=1`}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', borderRadius: '4px' }}
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+                title={playlist[currentTrackIndex]?.title || 'YouTube Player'}
+              />
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '11px' }}>
+              曲を追加してください
+            </div>
+          )}
+
+          {/* Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+            <button
+              className={`btn-cyber ${shuffleMode ? 'active' : ''}`}
+              style={{ padding: '4px 8px', fontSize: '10px' }}
+              onClick={() => setShuffleMode(s => !s)}
+              title={shuffleMode ? 'シャッフルON' : 'シャッフルOFF'}
+            >
+              <Shuffle size={12} />
+            </button>
+            <button
+              className="btn-cyber"
+              style={{ padding: '4px 8px', fontSize: '10px' }}
+              onClick={handlePrevTrack}
+              title="前の曲"
+            >
+              <SkipBack size={14} />
+            </button>
+            <button
+              className="btn-cyber success"
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setIsPlaying(p => !p)}
+              title={isPlaying ? '一時停止' : '再生'}
+            >
+              {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <button
+              className="btn-cyber"
+              style={{ padding: '4px 8px', fontSize: '10px' }}
+              onClick={handleNextTrack}
+              title="次の曲"
+            >
+              <SkipForward size={14} />
+            </button>
+            <button
+              className={`btn-cyber ${repeatMode ? 'active' : ''}`}
+              style={{ padding: '4px 8px', fontSize: '10px' }}
+              onClick={() => setRepeatMode(r => !r)}
+              title={repeatMode ? 'リピートON' : 'リピートOFF'}
+            >
+              <Repeat size={12} />
+            </button>
+          </div>
+          <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {playlist[currentTrackIndex]?.title || '-'}
+          </div>
+        </div>
+
+        {/* Add URL */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+          <button
+            className="btn-cyber"
+            style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+            onClick={() => setShowAddUrl(s => !s)}
+          >
+            <Plus size={10} /> URLを追加
+          </button>
+        </div>
+
+        {showAddUrl && (
+          <div style={{
+            background: 'rgba(255,0,255,0.05)',
+            border: '1px solid rgba(255,0,255,0.25)',
+            borderRadius: '4px',
+            padding: '6px',
+            marginBottom: '6px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px'
+          }}>
+            <input
+              type="text"
+              className="input-cyber"
+              style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
+              value={newUrlInput}
+              onChange={(e) => setNewUrlInput(e.target.value)}
+              placeholder="YouTube URL (例: https://youtu.be/...)"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrl(); }}
+            />
+            <input
+              type="text"
+              className="input-cyber"
+              style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
+              value={newTitleInput}
+              onChange={(e) => setNewTitleInput(e.target.value)}
+              placeholder="曲名 (任意)"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrl(); }}
+            />
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleAddUrl}>
+                <Check size={10} /> 追加
+              </button>
+              <button
+                className="btn-cyber"
+                style={{ flex: 1, padding: '4px', fontSize: '10px' }}
+                onClick={() => { setShowAddUrl(false); setNewUrlInput(''); setNewTitleInput(''); }}
+              >
+                <X size={10} /> キャンセル
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Playlist */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          {playlist.map((track, idx) => (
+            <div
+              key={track.id}
+              style={{
+                background: idx === currentTrackIndex ? 'rgba(0,240,255,0.1)' : 'rgba(10,15,28,0.4)',
+                border: idx === currentTrackIndex ? '1px solid rgba(0,240,255,0.4)' : '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '4px',
+                padding: '4px 6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '10px',
+                cursor: 'pointer'
+              }}
+              onClick={() => handlePlayTrack(idx)}
+            >
+              <span style={{ color: idx === currentTrackIndex ? 'var(--cyan-neon)' : 'var(--text-muted)', fontWeight: 700, minWidth: '16px' }}>
+                {idx === currentTrackIndex && isPlaying ? '▶' : `${idx + 1}`}
+              </span>
+              <span style={{ flex: 1, color: idx === currentTrackIndex ? 'var(--cyan-neon)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {track.title}
+              </span>
+              <button
+                className="btn-cyber danger"
+                style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
+                onClick={(e) => { e.stopPropagation(); handleRemoveTrack(track.id); }}
+                title="削除"
+              >
+                <Trash2 size={9} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ====================================================== */}

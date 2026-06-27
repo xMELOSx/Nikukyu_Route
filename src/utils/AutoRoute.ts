@@ -37,9 +37,6 @@ const DEFAULT_CONFIG: AutoRouteConfig = {
   warpMarkerThreshold: 25,
   // Max distance (px) to consider two line endpoints "connected"
   lineConnectThreshold: 50,
-  // Maximum number of times a single warp pair can be activated.
-  // Prevents infinite loops when a route revisits the same warp.
-  maxWarpActivations: 3
 };
 
 export interface AutoRouteConfig {
@@ -47,7 +44,6 @@ export interface AutoRouteConfig {
   movementMarkerThreshold: number;
   warpMarkerThreshold: number;
   lineConnectThreshold: number;
-  maxWarpActivations: number;
 }
 
 function thresholdFor(markerType: MarkerType, cfg: AutoRouteConfig): number {
@@ -70,16 +66,12 @@ export function buildAutoRoute(
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const segments: RouteSegment[] = [];
 
-  // Only consider solid (route) lines (the 'arrow' legacy type is no longer produced)
   const solidStrokes = strokes
     .map((s, i) => ({ stroke: s, idx: i }))
     .filter(({ stroke }) => stroke.type === 'solid');
 
   if (solidStrokes.length === 0) return segments;
 
-  // Only consider relevant markers (movement + stop + checkpoint), keyed by id for dedup.
-  // Hidden markers (via "一時的に無視" or visibility toggle) are excluded so the
-  // auto-route falls back to the time-based speed when no checkpoint is active.
   const hiddenSet = new Set(hiddenMarkerIds);
   const relevantMarkers = markers.filter(m =>
     m.id !== startMarker.id &&
@@ -87,59 +79,31 @@ export function buildAutoRoute(
     (isMovementMarker(m.type) || isStopMarker(m.type) || isCheckpointMarker(m.type))
   );
 
-  // Debug: log warp markers and their linked IDs
-  const warpMarkers = relevantMarkers.filter(m => m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs');
-  if (warpMarkers.length > 0) {
-    const markerIds = new Set(markers.map(m => m.id));
-    console.log('[buildAutoRoute] warp-relevant markers:', warpMarkers.map(m => ({
-      id: m.id, type: m.type, linkedWarpId: m.linkedWarpId,
-      linkedExists: m.linkedWarpId ? markerIds.has(m.linkedWarpId) : false,
-      pos: { x: m.x, y: m.y }
-    })));
-    console.log('[buildAutoRoute] start marker:', { id: startMarker.id, pos: { x: startMarker.x, y: startMarker.y } });
-  }
-
   const visitedStrokeIndices = new Set<number>();
   const visitedMarkerIds = new Set<string>([startMarker.id]);
-  const warpActivations = new Map<string, number>();
   let currentPos: Point = { x: startMarker.x, y: startMarker.y };
   let cumulativeDistance = 0;
   let cumulativeStopTime = 0;
 
-  // Warp tracking for the "no re-warp until we leave the destination"
-  // rule and the "resume the original stroke when we warp back" rule.
-  // lastWarpDest       — the destination we last arrived at via a warp.
-  //                      Suppresses the warp-priority check while we're
-  //                      still within warpMarkerThreshold of it.
-  // lastWarpStrokeIdx  — the original solidStrokes index of the stroke we
-  //                      were traversing when we warped away. Used to
-  //                      resume traversal when we warp back.
-  // lastWarpStrokePos  — the marker position on that stroke (the warp
-  //                      source). The inner loop restarts from the point
-  //                      after this position on the stroke.
+  // Track the last warp destination to suppress the warp-priority check
+  // while we're still sitting on the destination marker (prevents A→B→A ping-pong).
   let lastWarpDest: Point | null = null;
-  let lastWarpStrokeIdx: number | null = null;
-  let lastWarpStrokePos: Point | null = null;
 
   for (let safety = 0; safety < 500; safety++) {
     // --- Warp priority check ---
-    // When the current position is near a warp/stairs marker, prioritize
-    // the warp over following the next stroke.  This ensures warps at
-    // line intersections are taken even when findNextStroke() would pick
-    // a different connecting line.
-    //
-    // BUT: if we just warped here and haven't moved away yet, the
-    // destination is itself a warp marker (its linkedWarpId points back)
-    // and the naive check would loop us A→B→A→B… until maxWarpActivations
-    // is hit. Suppress the priority check until the route has moved
-    // warpMarkerThreshold away from the last destination.
+    // When the current position is near a warp/stairs marker that hasn't
+    // been visited yet, prioritize the warp over following the next stroke.
+    // Suppress while we're still within warpMarkerThreshold of the last
+    // warp destination to prevent A→B→A→B loops.
     let warpHit: { marker: HeistMarker; dist: number } | null = null;
     const distFromLastWarp = lastWarpDest
       ? Math.hypot(currentPos.x - lastWarpDest.x, currentPos.y - lastWarpDest.y)
       : Infinity;
+    lastWarpDest = null;
     if (distFromLastWarp >= cfg.warpMarkerThreshold) {
       warpHit = relevantMarkers
-        .filter(m => (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId)
+        .filter(m => !visitedMarkerIds.has(m.id) &&
+          (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId)
         .map(m => {
           const dist = Math.hypot(m.x - currentPos.x, m.y - currentPos.y);
           return { marker: m, dist };
@@ -150,131 +114,78 @@ export function buildAutoRoute(
     if (warpHit) {
       const m = warpHit.marker;
       const linked = markers.find(lm => lm.id === m.linkedWarpId);
-      if (linked) {
-        const pairKey = [m.id, linked.id].sort().join(':');
-        const count = warpActivations.get(pairKey) || 0;
-        if (count < cfg.maxWarpActivations) {
-          warpActivations.set(pairKey, count + 1);
-          visitedMarkerIds.add(m.id);
-          visitedMarkerIds.add(linked.id);
-          const warpDist = warpHit.dist;
-          cumulativeDistance += warpDist;
-          segments.push({
-            start: { ...currentPos },
-            end: { x: m.x, y: m.y },
-            distance: warpDist,
-            stopDuration: 0,
-            markerId: m.id,
-            markerType: m.type,
-            cumulativeDistance,
-            cumulativeStopTime
-          });
-          segments.push({
-            start: { x: m.x, y: m.y },
-            end: { x: linked.x, y: linked.y },
-            distance: 0,
-            stopDuration: 0,
-            markerId: linked.id,
-            markerType: linked.type,
-            cumulativeDistance,
-            cumulativeStopTime
-          });
-          currentPos = { x: linked.x, y: linked.y };
-          lastWarpDest = { x: linked.x, y: linked.y };
-          // An outer-loop warp is taken from a stroke endpoint / free
-          // position, not from the middle of a stroke, so there is no
-          // stroke to "resume" if we ever return here.
-          lastWarpStrokeIdx = null;
-          lastWarpStrokePos = null;
-          continue;
-        }
+      if (linked && !visitedMarkerIds.has(linked.id)) {
+        visitedMarkerIds.add(m.id);
+        visitedMarkerIds.add(linked.id);
+        const warpDist = warpHit.dist;
+        cumulativeDistance += warpDist;
+        segments.push({
+          start: { ...currentPos },
+          end: { x: m.x, y: m.y },
+          distance: warpDist,
+          stopDuration: 0,
+          markerId: m.id,
+          markerType: m.type,
+          cumulativeDistance,
+          cumulativeStopTime
+        });
+        segments.push({
+          start: { x: m.x, y: m.y },
+          end: { x: linked.x, y: linked.y },
+          distance: 0,
+          stopDuration: 0,
+          markerId: linked.id,
+          markerType: linked.type,
+          cumulativeDistance,
+          cumulativeStopTime
+        });
+        currentPos = { x: linked.x, y: linked.y };
+        lastWarpDest = { x: linked.x, y: linked.y };
+        continue;
       }
     }
 
     // --- Find next stroke ---
-    // Rule 3: if we just warped back to the source of a previous warp,
-    // continue traversal on the SAME stroke (don't mark it visited until
-    // we're done) from the point after the warp source.
     let next: StrokeRef | null = null;
-    let isWarpReturn = false;
-    if (lastWarpStrokeIdx !== null && lastWarpStrokePos) {
-      const distToReturn = Math.hypot(
-        currentPos.x - lastWarpStrokePos.x,
-        currentPos.y - lastWarpStrokePos.y
-      );
-      if (distToReturn < cfg.warpMarkerThreshold) {
-        const ref = solidStrokes.find(r => r.idx === lastWarpStrokeIdx);
-        if (ref) {
-          next = ref;
-          isWarpReturn = true;
-        }
-      }
-    }
+    next = findNextStroke(solidStrokes, currentPos, cfg.lineConnectThreshold, visitedStrokeIndices);
+    // Fallback: if no stroke endpoint is near, check if any stroke's
+    // polyline passes through the current position.
+    let fallbackNearestPtIdx: number | null = null;
     if (!next) {
-      next = findNextStroke(solidStrokes, currentPos, cfg.lineConnectThreshold, visitedStrokeIndices);
+      const hit = findStrokeThroughPosition(solidStrokes, currentPos, cfg.warpMarkerThreshold, visitedStrokeIndices);
+      if (hit) {
+        next = hit.ref;
+        fallbackNearestPtIdx = hit.nearestPtIdx;
+      }
     }
     if (!next) break;
 
     const { stroke, idx } = next;
-    // NOTE: do NOT add `idx` to visitedStrokeIndices yet. We only mark a
-    // stroke as visited once the inner loop has fully consumed it. This
-    // lets a later warp back to a point on this stroke resume traversal
-    // on the same stroke (Rule 3).
 
-    // Determine the direction of travel along this stroke.
-    // The stroke's "natural" direction is points[0] -> points[last].
-    // We travel from whichever end is closer to the current position.
-    // For a warp return we use the warp source position to pick the
-    // direction that continues toward the still-unvisited part of the
-    // stroke instead of going backwards over already-walked segments.
-    const refPos = isWarpReturn && lastWarpStrokePos ? lastWarpStrokePos : currentPos;
+    const refPos = currentPos;
     const startPt = stroke.points[0];
     const endPt = stroke.points[stroke.points.length - 1];
     const distToStart = Math.hypot(startPt.x - refPos.x, startPt.y - refPos.y);
     const distToEnd = Math.hypot(endPt.x - refPos.x, endPt.y - refPos.y);
-    const travelPoints = distToStart <= distToEnd
-      ? stroke.points
-      : [...stroke.points].reverse();
+    const reversed = distToStart > distToEnd;
+    const travelPoints = reversed
+      ? [...stroke.points].reverse()
+      : stroke.points;
 
-    // For a warp return, skip the polyline points up to and including
-    // the one nearest the warp source. Otherwise start at index 1 as
-    // before.
     let i = 1;
-    if (isWarpReturn && lastWarpStrokePos) {
-      let minDist = Infinity;
-      let bestK = 0;
-      for (let k = 0; k < travelPoints.length; k++) {
-        const d = Math.hypot(
-          travelPoints[k].x - lastWarpStrokePos.x,
-          travelPoints[k].y - lastWarpStrokePos.y
-        );
-        if (d < minDist) {
-          minDist = d;
-          bestK = k;
-        }
-      }
-      i = bestK + 1;
+    if (fallbackNearestPtIdx !== null) {
+      const tpIdx = reversed
+        ? stroke.points.length - 1 - fallbackNearestPtIdx
+        : fallbackNearestPtIdx;
+      i = Math.max(1, tpIdx);
     }
 
-    // Walk along the stroke. The starting point of each segment check is
-    // currentPos (not a fixed polyline point) so the route follows the
-    // actual line shape, including zigzags, and the distance from a marker
-    // to the next polyline point is not lost.
     while (i < travelPoints.length) {
       const a = currentPos;
       const b = travelPoints[i];
-      // Find all markers close to segment a->b.
-      // Use the MINIMUM of: perpendicular distance to segment, distance to
-      // currentPos, distance to b. This prevents long line segments from
-      // detecting markers that are perpendicular-close but not actually
-      // near the route's current position.
+
       const hits = relevantMarkers
-        .filter(m => {
-          if (!visitedMarkerIds.has(m.id)) return true;
-          // Allow warp/iwarp/stairs to be re-detected so multi-pass routes
-          // can warp again on the second encounter.
-          return m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
-        })
+        .filter(m => !visitedMarkerIds.has(m.id))
         .map(m => {
           const perpDist = distanceToSegment(m, a, b);
           const distToCurrent = Math.hypot(m.x - a.x, m.y - a.y);
@@ -285,27 +196,18 @@ export function buildAutoRoute(
           return { marker: m, dist, perpDist, t, threshold: th };
         })
         .filter(h => h.dist < h.threshold && h.t >= -0.1 && h.t <= 1.1)
-        // Sort by perpendicular distance (closest to the line wins) so
-        // markers that are off to the side of the route lose to markers
-        // that are directly in the path. Ties broken by t (forward order).
         .sort((x, y) => x.perpDist - y.perpDist || x.t - y.t);
 
-      // If we have a hit, take the closest one to the line
       if (hits.length > 0) {
         const hit = hits[0];
         const m = hit.marker;
         visitedMarkerIds.add(m.id);
-        // Clamp t to [0, 1] so we don't overshoot the segment endpoints when
-        // measuring the distance walked this sub-iteration.
         const clampedT = Math.max(0, Math.min(1, hit.t));
         const segDist = Math.hypot(b.x - a.x, b.y - a.y) * clampedT;
         cumulativeDistance += segDist;
         const stopDur = isStopMarker(m.type) ? getStopDurationSeconds(m) : 0;
         cumulativeStopTime += stopDur;
 
-        // For checkpoint markers, attach the target time so computeRouteTiming
-        // can use it as the speed source. The sound trigger is handled in
-        // MapCanvas when the segment transitions during animation.
         let checkpointOnTime: boolean | undefined;
         const seg: RouteSegment = {
           start: { ...a },
@@ -324,48 +226,34 @@ export function buildAutoRoute(
         segments.push(seg);
         currentPos = { x: m.x, y: m.y };
 
-        // If this is a movement marker with a linked warp (stairs, warp, iwarp),
-        // instantly warp to the linked marker and break out of the inner
-        // stroke traversal so the outer loop searches for a NEW connected
-        // stroke from the warped position (not the original line).
+        // If this is a movement marker with a linked warp, instantly warp
+        // to the linked marker and break out of the inner stroke traversal.
         if (isMovementMarker(m.type) && m.linkedWarpId) {
           const linked = markers.find(lm => lm.id === m.linkedWarpId);
-          if (linked) {
-            const pairKey = [m.id, linked.id].sort().join(':');
-            const count = warpActivations.get(pairKey) || 0;
-            if (count < cfg.maxWarpActivations) {
-              warpActivations.set(pairKey, count + 1);
-              visitedMarkerIds.add(m.id);
-              visitedMarkerIds.add(linked.id);
-              segments.push({
-                start: { ...currentPos },
-                end: { x: linked.x, y: linked.y },
-                distance: 0,
-                stopDuration: 0,
-                markerId: linked.id,
-                markerType: linked.type,
-                cumulativeDistance,
-                cumulativeStopTime
-              });
-              // Rule 3: remember the stroke we were on and the warp-source
-              // position so that if a later warp brings us back here we
-              // can resume from the point after this marker on the same
-              // stroke instead of skipping it (it's not in
-              // visitedStrokeIndices yet — we only mark the stroke
-              // visited after the inner loop completes).
-              lastWarpDest = { x: linked.x, y: linked.y };
-              lastWarpStrokeIdx = idx;
-              lastWarpStrokePos = { ...currentPos };
-              currentPos = { x: linked.x, y: linked.y };
-              break;
-            }
+          if (linked && !visitedMarkerIds.has(linked.id)) {
+            visitedMarkerIds.add(linked.id);
+            segments.push({
+              start: { ...currentPos },
+              end: { x: linked.x, y: linked.y },
+              distance: 0,
+              stopDuration: 0,
+              markerId: linked.id,
+              markerType: linked.type,
+              cumulativeDistance,
+              cumulativeStopTime
+            });
+            lastWarpDest = { x: linked.x, y: linked.y };
+            currentPos = { x: linked.x, y: linked.y };
+            break;
           }
         }
-        // Re-check the same polyline edge from the new currentPos so the
-        // remaining portion of that edge is still traced correctly.
+        // If currentPos is now at or very close to b, advance to next segment
+        // to prevent re-detecting the same marker in an infinite loop.
+        if (Math.hypot(currentPos.x - b.x, currentPos.y - b.y) < 1) {
+          i++;
+        }
         continue;
       } else {
-        // No marker hit: travel from currentPos to b along the edge
         const segDist = Math.hypot(b.x - a.x, b.y - a.y);
         cumulativeDistance += segDist;
         segments.push({
@@ -381,20 +269,7 @@ export function buildAutoRoute(
       }
     }
 
-    // The inner loop has fully consumed this stroke (or broken out via a
-    // warp, in which case the warp-tracking above lets us come back).
-    // Either way, this stroke is no longer eligible to be re-entered
-    // from its endpoints by findNextStroke.
     visitedStrokeIndices.add(idx);
-
-    // If we just used a warp-return to resume this stroke, the tracking
-    // has served its purpose; clear it so the next outer-loop iteration
-    // behaves normally.
-    if (isWarpReturn) {
-      lastWarpDest = null;
-      lastWarpStrokeIdx = null;
-      lastWarpStrokePos = null;
-    }
   }
 
   return segments;
@@ -424,6 +299,32 @@ function findNextStroke(
     if (dEnd < bestDist) { bestDist = dEnd; best = ref; }
   }
   return best;
+}
+
+/**
+ * Fallback after warps: find a stroke whose polyline passes near `pos`,
+ * even if no endpoint is close. Returns the stroke ref and the index of
+ * the nearest polyline point (so the caller can start traversal from there).
+ */
+function findStrokeThroughPosition(
+  strokes: StrokeRef[],
+  pos: Point,
+  threshold: number,
+  visited: Set<number>
+): { ref: StrokeRef; nearestPtIdx: number } | null {
+  let best: { ref: StrokeRef; nearestPtIdx: number; dist: number } | null = null;
+  for (const ref of strokes) {
+    if (visited.has(ref.idx)) continue;
+    if (ref.stroke.points.length < 2) continue;
+    for (let k = 0; k < ref.stroke.points.length; k++) {
+      const pt = ref.stroke.points[k];
+      const d = Math.hypot(pt.x - pos.x, pt.y - pos.y);
+      if (d < threshold && (!best || d < best.dist)) {
+        best = { ref, nearestPtIdx: k, dist: d };
+      }
+    }
+  }
+  return best ? { ref: best.ref, nearestPtIdx: best.nearestPtIdx } : null;
 }
 
 // Simple Web Audio beep utility for checkpoint sounds. Lazily creates the

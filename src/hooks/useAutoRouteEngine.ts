@@ -116,7 +116,6 @@ export function useAutoRouteEngine({
   const startAutoRoute = () => {
     setAutoRouteError(null);
     prewarmAudio();
-    try {
     const startMarker = markers.find(m => m.type === 'start');
     let effectiveStartMarker = startMarker;
     if (!effectiveStartMarker) {
@@ -136,13 +135,11 @@ export function useAutoRouteEngine({
       } as HeistMarker;
       if (onAutoStartMarkerSet) onAutoStartMarkerSet(effectiveStartMarker);
     }
-    console.log('[auto-route] startAutoRoute called', { markers: markers.length, strokes: strokes.length, startMarker: effectiveStartMarker.id });
     const routeSegments = buildAutoRoute(strokes, markers, effectiveStartMarker, {
       stopMarkerThreshold,
       movementMarkerThreshold,
       warpMarkerThreshold
     }, hiddenMarkers || []);
-    console.log('[auto-route] buildAutoRoute returned', { segments: routeSegments.length, totalDistance: routeSegments.length > 0 ? routeSegments[routeSegments.length - 1].cumulativeDistance : 0, warpSegments: routeSegments.filter(s => s.distance === 0).length });
     if (routeSegments.length === 0) {
       setAutoRouteError('スタートから繋がる進行ルート (実線) が見つかりません。');
       return;
@@ -176,11 +173,6 @@ export function useAutoRouteEngine({
       };
       setPan(tgtPan);
       animPanRef.current = tgtPan;
-    }
-    console.log('[auto-route] startAutoRoute completed', { timing: { speed: timing.speed, totalTime: timing.totalTime, totalDistance: timing.totalDistance } });
-    } catch (e) {
-      console.error('[auto-route] startAutoRoute threw:', e);
-      setAutoRouteError('ルート構築中にエラーが発生しました: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
