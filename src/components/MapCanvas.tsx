@@ -176,15 +176,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const hideRouteLinesRef = useRef(hideRouteLines);
-  const routeLines1pxRef = useRef(routeLines1px);
-  const hideBranchLinesRef = useRef(hideBranchLines);
-  const branchLines1pxRef = useRef(branchLines1px);
-
-  useEffect(() => { hideRouteLinesRef.current = hideRouteLines; }, [hideRouteLines]);
-  useEffect(() => { routeLines1pxRef.current = routeLines1px; }, [routeLines1px]);
-  useEffect(() => { hideBranchLinesRef.current = hideBranchLines; }, [hideBranchLines]);
-  useEffect(() => { branchLines1pxRef.current = branchLines1px; }, [branchLines1px]);
+  const redrawStrokesRef = useRef<((overrideElapsed?: number) => void) | null>(null);
   const runnerDotRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
 
@@ -403,7 +395,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         runnerDotRef.current.style.left = `${pos.x}px`;
         runnerDotRef.current.style.top = `${pos.y}px`;
       }
-      redrawStrokes(elapsed);
+      if (redrawStrokesRef.current) redrawStrokesRef.current(elapsed);
     },
     onStart: onAutoRouteStart
   });
@@ -764,6 +756,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentPosition, markers, floor, onMarkersChange, activeNoteMarkerId]);
 
+  useEffect(() => {
+    redrawStrokesRef.current = redrawStrokes;
+  });
+
   // Redraw all strokes on canvas
   const redrawStrokes = (overrideElapsed?: number) => {
     const ctx = ctxRef.current;
@@ -771,12 +767,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.clearRect(0, 0, 1600, 4550);
 
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
-      if (!hideRouteLinesRef.current) {
+      if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
         let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
         ctx.strokeStyle = '#ff0055';
-        ctx.lineWidth = routeLines1pxRef.current ? 1 : 3;
+        ctx.lineWidth = routeLines1px ? 1 : 3;
         ctx.setLineDash([]);
         ctx.beginPath();
 
@@ -825,10 +821,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // Also draw branch lines (dashed) during auto-route playback unless hidden
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
-        if (!isDashed || hideBranchLinesRef.current) return;
+        if (!isDashed || hideBranchLines) return;
 
         ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = branchLines1pxRef.current ? 1 : stroke.width;
+        ctx.lineWidth = branchLines1px ? 1 : stroke.width;
         ctx.setLineDash([8, 6]);
 
         ctx.beginPath();
@@ -842,14 +838,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
 
-        if (isDashed && hideBranchLinesRef.current) return;
-        if (!isDashed && hideRouteLinesRef.current) return;
+        if (isDashed && hideBranchLines) return;
+        if (!isDashed && hideRouteLines) return;
 
         ctx.strokeStyle = stroke.color;
 
-        if (isDashed && branchLines1pxRef.current) {
+        if (isDashed && branchLines1px) {
           ctx.lineWidth = 1;
-        } else if (!isDashed && routeLines1pxRef.current) {
+        } else if (!isDashed && routeLines1px) {
           ctx.lineWidth = 1;
         } else {
           ctx.lineWidth = stroke.width;
