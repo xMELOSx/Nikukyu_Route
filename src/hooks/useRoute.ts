@@ -327,11 +327,14 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }
     refreshSavesList();
     if (route.id === id) {
-      const newId = generateId('route');
-      setRouteWithGlobalDefaults(DEFAULT_ROUTE(newId));
-      localStorage.setItem('heist_last_used_route_id', newId);
+      // Keep the current route state in memory; only remove the saved entry.
+      // The user can keep working and decide to save as a new entry later.
+      lastSavedSnapshotRef.current = JSON.stringify({
+        ...route,
+        markers: stripGlobalMarkersFromRoute(route.markers)
+      });
     }
-  }, [route.id, setRouteWithGlobalDefaults, refreshSavesList]);
+  }, [route, setRouteWithGlobalDefaults, refreshSavesList]);
 
   const savePresetsToServer = useCallback((next: PresetData[]) => {
     setPresetsState(next);
