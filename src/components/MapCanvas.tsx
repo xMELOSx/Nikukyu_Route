@@ -732,6 +732,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.setLineDash([]);
       ctx.beginPath();
 
+      let lastX: number | null = null;
+      let lastY: number | null = null;
+      const addLineToPath = (x1: number, y1: number, x2: number, y2: number) => {
+        if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
+          ctx.moveTo(x1, y1);
+        }
+        ctx.lineTo(x2, y2);
+        lastX = x2;
+        lastY = y2;
+      };
+
       autoRouteSegments.forEach(seg => {
         const isWarp = seg.distance === 0 && seg.stopDuration === 0;
         if (isWarp) return;
@@ -746,8 +757,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               x: seg.start.x + (seg.end.x - seg.start.x) * t,
               y: seg.start.y + (seg.end.y - seg.start.y) * t
             };
-            ctx.moveTo(startPt.x, startPt.y);
-            ctx.lineTo(seg.end.x, seg.end.y);
+            addLineToPath(startPt.x, startPt.y, seg.end.x, seg.end.y);
             remaining = 0;
           } else {
             remaining -= travelTime;
@@ -758,8 +768,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
           }
         } else {
-          ctx.moveTo(seg.start.x, seg.start.y);
-          ctx.lineTo(seg.end.x, seg.end.y);
+          addLineToPath(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
         }
       });
       ctx.stroke();

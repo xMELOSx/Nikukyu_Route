@@ -1577,7 +1577,7 @@ export default function App() {
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          💣 導火線モード(高負荷)
+                          💣 導火線モード
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.inactiveMarkersMode} onChange={(e) => autoRoute.setInactiveMarkersMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
