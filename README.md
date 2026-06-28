@@ -7,7 +7,7 @@
 ## サードパーティ製ライセンス
 - **React / React DOM**: MIT License (https://react.dev)
 - **Lucide**: ISC License (https://lucide.dev)
-
+- **Tesseract.js**: https://github.com/naptha/tesseract.js — Apache-2.0
 ### Google Fonts
 - **Orbitron**: Matt McInerney, SIL OFL 1.1
 - **Rajdhani**: Indian Type Foundry, SIL OFL 1.1
