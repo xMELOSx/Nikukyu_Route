@@ -176,6 +176,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const hideRouteLinesRef = useRef(hideRouteLines);
+  const routeLines1pxRef = useRef(routeLines1px);
+  const hideBranchLinesRef = useRef(hideBranchLines);
+  const branchLines1pxRef = useRef(branchLines1px);
+
+  useEffect(() => { hideRouteLinesRef.current = hideRouteLines; }, [hideRouteLines]);
+  useEffect(() => { routeLines1pxRef.current = routeLines1px; }, [routeLines1px]);
+  useEffect(() => { hideBranchLinesRef.current = hideBranchLines; }, [hideBranchLines]);
+  useEffect(() => { branchLines1pxRef.current = branchLines1px; }, [branchLines1px]);
   const runnerDotRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
 
@@ -682,7 +691,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px]);
 
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
@@ -762,13 +771,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.clearRect(0, 0, 1600, 4550);
 
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
-      const speed = autoRouteTiming.speed;
-      let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
+      if (!hideRouteLinesRef.current) {
+        const speed = autoRouteTiming.speed;
+        let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
-      ctx.strokeStyle = '#ff0055';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([]);
-      ctx.beginPath();
+        ctx.strokeStyle = '#ff0055';
+        ctx.lineWidth = routeLines1pxRef.current ? 1 : 3;
+        ctx.setLineDash([]);
+        ctx.beginPath();
 
       let lastX: number | null = null;
       let lastY: number | null = null;
@@ -809,19 +819,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           addLineToPath(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
         }
       });
-      ctx.stroke();
+        ctx.stroke();
+      }
+
+      // Also draw branch lines (dashed) during auto-route playback unless hidden
+      strokes.forEach(stroke => {
+        const isDashed = stroke.type === 'dashed';
+        if (!isDashed || hideBranchLinesRef.current) return;
+
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = branchLines1pxRef.current ? 1 : stroke.width;
+        ctx.setLineDash([8, 6]);
+
+        ctx.beginPath();
+        stroke.points.forEach((pt, idx) => {
+          if (idx === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+      });
     } else {
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
 
-        if (isDashed && hideBranchLines) return;
-        if (!isDashed && hideRouteLines) return;
+        if (isDashed && hideBranchLinesRef.current) return;
+        if (!isDashed && hideRouteLinesRef.current) return;
 
         ctx.strokeStyle = stroke.color;
 
-        if (isDashed && branchLines1px) {
+        if (isDashed && branchLines1pxRef.current) {
           ctx.lineWidth = 1;
-        } else if (!isDashed && routeLines1px) {
+        } else if (!isDashed && routeLines1pxRef.current) {
           ctx.lineWidth = 1;
         } else {
           ctx.lineWidth = stroke.width;
