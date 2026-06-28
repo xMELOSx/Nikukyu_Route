@@ -127,16 +127,19 @@ export default function App() {
     const clamped = Math.max(5, Math.min(30, n));
     setStopMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_stop', String(clamped));
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], clamped, undefined, undefined);
   };
   const setMovementMarkerThreshold = (n: number) => {
     const clamped = Math.max(5, Math.min(30, n));
     setMovementMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_movement', String(clamped));
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, clamped, undefined);
   };
   const setWarpMarkerThreshold = (n: number) => {
     const clamped = Math.max(5, Math.min(30, n));
     setWarpMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_warp', String(clamped));
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, undefined, clamped);
   };
   const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
@@ -180,6 +183,7 @@ export default function App() {
   });
   const [presetListVisible, setPresetListVisible] = useState(false);
   const [saveLoadSearchQuery, setSaveLoadSearchQuery] = useState('');
+  const [urlLoadConfirm, setUrlLoadConfirm] = useState<{ type: 'preset' | 'save'; id: string; name: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -232,6 +236,15 @@ export default function App() {
       hiddenMarkers: [...new Set([...(prev.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
       hiddenMarkerTypes: [...new Set([...(prev.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])]
     }));
+    if (gd.stopMarkerThreshold !== undefined) {
+      setStopMarkerThresholdState(gd.stopMarkerThreshold);
+    }
+    if (gd.movementMarkerThreshold !== undefined) {
+      setMovementMarkerThresholdState(gd.movementMarkerThreshold);
+    }
+    if (gd.warpMarkerThreshold !== undefined) {
+      setWarpMarkerThresholdState(gd.warpMarkerThreshold);
+    }
   });
   const defaultsLoaded = globalDefaults.loaded;
 
@@ -317,13 +330,38 @@ export default function App() {
     routeApi.setRoute(prev => ({ ...prev, markers: newIndividual }));
   };
 
-  const postGlobalDefaults = (hiddenMarkers: string[], hiddenMarkerTypes: string[]) => {
-    globalDefaults.setHidden(hiddenMarkers, hiddenMarkerTypes);
+  function postGlobalDefaults(
+    hiddenMarkers: string[],
+    hiddenMarkerTypes: string[],
+    stopTh?: number,
+    moveTh?: number,
+    warpTh?: number
+  ) {
+    const sTh = stopTh !== undefined ? stopTh : stopMarkerThreshold;
+    const mTh = moveTh !== undefined ? moveTh : movementMarkerThreshold;
+    const wTh = warpTh !== undefined ? warpTh : warpMarkerThreshold;
+
+    globalDefaultsRef.current = {
+      ...globalDefaultsRef.current,
+      hiddenMarkers,
+      hiddenMarkerTypes,
+      stopMarkerThreshold: sTh,
+      movementMarkerThreshold: mTh,
+      warpMarkerThreshold: wTh
+    };
+
     if (isLocal) {
       fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hiddenMarkers, hiddenMarkerTypes })
+        body: JSON.stringify({
+          hiddenMarkers,
+          hiddenMarkerTypes,
+          startupFocusMarkerId: globalDefaultsRef.current.startupFocusMarkerId,
+          stopMarkerThreshold: sTh,
+          movementMarkerThreshold: mTh,
+          warpMarkerThreshold: wTh
+        })
       });
     }
   };
@@ -467,32 +505,27 @@ export default function App() {
     const saveId = params.get('save');
 
     if (saveId) {
-      urlParamsHandledRef.current = true;
       const data = DataManager.loadFromLocalStorage(saveId);
-      if (data) {
-        const migrated = migrateRouteCoordinates(data);
-        routeApi.setRouteWithGlobalDefaults(migrated);
-        if (migrated.markerScale !== undefined) {
-          setMarkerScale(migrated.markerScale);
-          localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
-        }
-        notification.show(`URLから読み込み: ${migrated.title}`);
-      } else {
+      if (!data) {
         notification.show(`セーブデータが見つかりません: ${saveId}`, 3000);
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
       }
+      urlParamsHandledRef.current = true;
+      setUrlLoadConfirm({ type: 'save', id: saveId, name: data.title });
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
 
     if (presetId && routeApi.presets.length > 0) {
-      urlParamsHandledRef.current = true;
       const preset = routeApi.presets.find(p => p.id === presetId);
-      if (preset) {
-        routeApi.loadFromLocal(`__preset__${presetId}`);
-        notification.show(`URLからプリセットを読み込み: ${preset.name}`);
-      } else {
+      if (!preset) {
         notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
       }
+      urlParamsHandledRef.current = true;
+      setUrlLoadConfirm({ type: 'preset', id: presetId, name: preset.name });
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [routeApi.presets]);
@@ -1194,6 +1227,7 @@ export default function App() {
             warpColor={warpColor}
             stairsColor={stairsColor}
             fuseMode={autoRoute.fuseMode}
+            inactiveMarkersMode={autoRoute.inactiveMarkersMode}
           />
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -1546,6 +1580,10 @@ export default function App() {
                           💣 導火線モード(高負荷)
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={autoRoute.inactiveMarkersMode} onChange={(e) => autoRoute.setInactiveMarkersMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                          🔘 通過マーカー半透明化
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           🎥 カメラ追従
                         </label>
@@ -1591,27 +1629,53 @@ export default function App() {
                               <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.totalTime)}</span>
                             </div>
                           </div>
-                          <div
-                            style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px', cursor: 'pointer', position: 'relative' }}
-                            title="クリックでシーク"
-                            onClick={(e) => {
-                              if (!autoRoute.status.active || autoRoute.status.totalTime <= 0) return;
-                              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                              if (rect.width <= 0) return;
-                              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                              const target = ratio * autoRoute.status.totalTime;
-                              if (!isFinite(target) || isNaN(target)) return;
-                              autoRoute.sendCommand('seek', target);
-                            }}
-                          >
-                            <div style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
-                            {autoRoute.status.checkpoints.map((cp, i) => {
-                              if (autoRoute.status.totalTime <= 0) return null;
-                              const ratio = cp.elapsed / autoRoute.status.totalTime;
-                              return (
-                                <div key={`cp-line-${i}`} title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`} style={{ position: 'absolute', top: 0, bottom: 0, left: `${Math.min(100, Math.max(0, ratio * 100))}%`, width: '2px', background: cp.passed ? '#39ff14' : '#ff9500', opacity: 0.85, pointerEvents: 'none', boxShadow: '0 0 3px rgba(255,149,0,0.8)' }} />
-                              );
-                            })}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                            <button
+                              type="button"
+                              className="btn-cyber"
+                              style={{ padding: '2px 4px', fontSize: '9px', minWidth: '32px' }}
+                              onClick={() => {
+                                const target = Math.max(0, autoRoute.status.elapsed - 30);
+                                autoRoute.sendCommand('seek', target);
+                              }}
+                              title="30秒戻る"
+                            >
+                              ◀30s
+                            </button>
+                            <div
+                              style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
+                              title="クリックでシーク"
+                              onClick={(e) => {
+                                if (!autoRoute.status.active || autoRoute.status.totalTime <= 0) return;
+                                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                                if (rect.width <= 0) return;
+                                const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                                const target = ratio * autoRoute.status.totalTime;
+                                if (!isFinite(target) || isNaN(target)) return;
+                                autoRoute.sendCommand('seek', target);
+                              }}
+                            >
+                              <div style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
+                              {autoRoute.status.checkpoints.map((cp, i) => {
+                                if (autoRoute.status.totalTime <= 0) return null;
+                                const ratio = cp.elapsed / autoRoute.status.totalTime;
+                                return (
+                                  <div key={`cp-line-${i}`} title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`} style={{ position: 'absolute', top: 0, bottom: 0, left: `${Math.min(100, Math.max(0, ratio * 100))}%`, width: '2px', background: cp.passed ? '#39ff14' : '#ff9500', opacity: 0.85, pointerEvents: 'none', boxShadow: '0 0 3px rgba(255,149,0,0.8)' }} />
+                                );
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-cyber"
+                              style={{ padding: '2px 4px', fontSize: '9px', minWidth: '32px' }}
+                              onClick={() => {
+                                const target = Math.min(autoRoute.status.totalTime, autoRoute.status.elapsed + 30);
+                                autoRoute.sendCommand('seek', target);
+                              }}
+                              title="30秒進む"
+                            >
+                              30s▶
+                            </button>
                           </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                             <span>停止 {formatTime(autoRoute.status.totalStopTime)}</span>
@@ -1706,14 +1770,14 @@ export default function App() {
                       onClick={() => { routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
                           <span style={{ color: '#ffd700', fontSize: '14px' }}>★</span>
-                          <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700' }}>{p.name}</span>
-                          <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px' }}>プリセット</span>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                          <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>プリセット</span>
                         </div>
                         {isLocal && isEditMode && (
                           <button
-                            style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}
+                            style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
                             onClick={(e) => { e.stopPropagation(); setDefaultPresetId(defaultPresetId === p.id ? null : p.id); }}
                           >
                             {defaultPresetId === p.id ? '★ 基本' : '☆ 基本に設定'}
@@ -1728,25 +1792,34 @@ export default function App() {
                         {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
                         {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
                       </div>
-                      {isLocal && isEditMode && (
-                        <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                          <button
-                            className="btn-cyber"
-                            style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
-                            onClick={(e) => { e.stopPropagation(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
-                          >
-                            コピーして読込
-                          </button>
-                          {presetDeleteConfirmId === p.id ? (
+                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn-cyber"
+                          style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
+                          onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
+                          title="プリセットIDをクリップボードにコピー"
+                        >
+                          IDコピー
+                        </button>
+                        <button
+                          className="btn-cyber"
+                          style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
+                          onClick={(e) => { e.stopPropagation(); const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                          title="このプリセットを開くURLをコピー"
+                        >
+                          URLコピー
+                        </button>
+                        {isLocal && (
+                          presetDeleteConfirmId === p.id ? (
                             <>
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除する</button>
                               <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); setPresetDeleteConfirmId(null); }}>キャンセル</button>
                             </>
                           ) : (
                             <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除</button>
-                          )}
-                        </div>
-                      )}
+                          )
+                        )}
+                      </div>
                     </div>
                   ))}
 
@@ -1757,6 +1830,22 @@ export default function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
                         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          <button
+                            className="btn-cyber"
+                            style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
+                            onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(s.id); notification.show('セーブIDをコピーしました'); }}
+                            title="セーブIDをクリップボードにコピー"
+                          >
+                            ID
+                          </button>
+                          <button
+                            className="btn-cyber"
+                            style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
+                            onClick={(e) => { e.stopPropagation(); const url = `${window.location.origin}${window.location.pathname}?save=${s.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                            title="このセーブを開くURLをコピー"
+                          >
+                            URL
+                          </button>
                           {deleteConfirmId === s.id ? (
                             <>
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}>削除する</button>
@@ -1792,6 +1881,40 @@ export default function App() {
                   })()}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {urlLoadConfirm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 6000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setUrlLoadConfirm(null)}>
+          <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '420px', padding: '20px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)', marginBottom: '12px' }}>
+              {urlLoadConfirm.type === 'preset' ? 'プリセット' : 'セーブデータ'}を読み込みますか？
+            </div>
+            <div style={{ fontSize: '13px', color: '#b0b0b0', marginBottom: '16px' }}>
+              「<span style={{ color: urlLoadConfirm.type === 'preset' ? '#ffd700' : 'var(--cyan-neon)', fontWeight: 700 }}>{urlLoadConfirm.name}</span>」を読み込みます。<br />
+              現在の編集内容は破棄されます。
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button className="btn-cyber success" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => {
+                if (urlLoadConfirm.type === 'preset') {
+                  routeApi.loadFromLocal(`__preset__${urlLoadConfirm.id}`);
+                } else {
+                  const data = DataManager.loadFromLocalStorage(urlLoadConfirm.id);
+                  if (data) {
+                    const migrated = migrateRouteCoordinates(data);
+                    routeApi.setRouteWithGlobalDefaults(migrated);
+                    if (migrated.markerScale !== undefined) {
+                      setMarkerScale(migrated.markerScale);
+                      localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
+                    }
+                  }
+                }
+                notification.show(`読み込み完了: ${urlLoadConfirm.name}`);
+                setUrlLoadConfirm(null);
+              }}>読み込む</button>
+              <button className="btn-cyber" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => setUrlLoadConfirm(null)}>キャンセル</button>
             </div>
           </div>
         </div>

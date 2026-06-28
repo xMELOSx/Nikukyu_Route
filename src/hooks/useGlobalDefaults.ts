@@ -4,6 +4,9 @@ export interface GlobalDefaults {
   hiddenMarkers: string[];
   hiddenMarkerTypes: string[];
   startupFocusMarkerId?: string;
+  stopMarkerThreshold?: number;
+  movementMarkerThreshold?: number;
+  warpMarkerThreshold?: number;
 }
 
 /**
@@ -40,7 +43,10 @@ export function useGlobalDefaults(
           const normalized: GlobalDefaults = {
             hiddenMarkers: gd.hiddenMarkers || [],
             hiddenMarkerTypes: gd.hiddenMarkerTypes || [],
-            startupFocusMarkerId: gd.startupFocusMarkerId
+            startupFocusMarkerId: gd.startupFocusMarkerId,
+            stopMarkerThreshold: gd.stopMarkerThreshold,
+            movementMarkerThreshold: gd.movementMarkerThreshold,
+            warpMarkerThreshold: gd.warpMarkerThreshold
           };
           ref.current = normalized;
           if (onLoadRef.current) onLoadRef.current(normalized);

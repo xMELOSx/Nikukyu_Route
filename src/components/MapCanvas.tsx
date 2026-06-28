@@ -95,6 +95,7 @@ interface MapCanvasProps {
   warpColor?: string;
   stairsColor?: string;
   fuseMode?: boolean;
+  inactiveMarkersMode?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -152,7 +153,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onAutoStartMarkerChange,
   warpColor = '#ff00ff',
   stairsColor = '#ffaa00',
-  fuseMode = true
+  fuseMode = true,
+  inactiveMarkersMode = true
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -2181,7 +2183,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       textAlign: 'center',
                       cursor: 'move',
                       pointerEvents: passThrough ? 'none' : 'auto',
-                      opacity: isHidden ? 0.35 : (passedMarkerIds.has(m.id) ? 0.4 : 1),
+                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: isHidden ? 'grayscale(90%)' : 'none',
                       zIndex: 20,
                       userSelect: 'none'
@@ -2208,7 +2210,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
-                      opacity: isHidden ? 0.35 : (passedMarkerIds.has(m.id) ? 0.4 : 1),
+                     opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                      filter: isHidden ? 'grayscale(90%)' : 'none'
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}

@@ -105,7 +105,6 @@ export function useAutoRouteEngine({
   const followCameraRef = useRef<boolean>(false);
   followCameraRef.current = followCamera;
   const autoRouteElapsedRef = useRef<number>(0);
-  autoRouteElapsedRef.current = autoRouteElapsed;
   const markersRef = useRef<HeistMarker[]>(markers);
   markersRef.current = markers;
   const pickyMarkerIdsRef = useRef<{ [markerId: string]: boolean } | undefined>(pickyMarkerIds);
@@ -115,6 +114,7 @@ export function useAutoRouteEngine({
     setAutoRouteRunning(false);
     setAutoRouteActive(false);
     setAutoRouteElapsed(0);
+    autoRouteElapsedRef.current = 0;
     setAutoRouteSegments([]);
     setAutoRouteTiming({ totalTime: 0, totalDistance: 0, totalStopTime: 0, speed: 0 });
     if (autoRouteAnimRef.current) cancelAnimationFrame(autoRouteAnimRef.current);
@@ -165,6 +165,7 @@ export function useAutoRouteEngine({
     setAutoRouteSegments(routeSegments);
     setAutoRouteTiming(timing);
     setAutoRouteElapsed(0);
+    autoRouteElapsedRef.current = 0;
     setAutoRouteActive(true);
     setAutoRouteRunning(!waitEnabled);
     autoRouteStartTimeRef.current = performance.now();
@@ -313,6 +314,8 @@ export function useAutoRouteEngine({
       if (autoRouteSegments.length === 0 || autoRouteTiming.totalTime <= 0) return;
       const t = Math.max(0, Math.min(autoRouteTiming.totalTime, autoRouteCommand.seekTo));
       setAutoRouteElapsed(t);
+      autoRouteElapsedRef.current = t;
+      latestElapsedRef.current = t;
       autoRouteStartTimeRef.current = performance.now();
       autoRouteElapsedAtStartRef.current = t;
       autoRoutePrevSegmentIdRef.current = '';
@@ -320,6 +323,10 @@ export function useAutoRouteEngine({
         const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, t);
         if (interp && interp.position && isFinite(interp.position.x) && isFinite(interp.position.y)) {
           setCurrentPosition({ x: interp.position.x, y: interp.position.y });
+          latestPositionRef.current = { x: interp.position.x, y: interp.position.y };
+          if (onTick) {
+            onTick(t, interp.position);
+          }
           if (followCamera && wrapperRef.current) {
             const W_v = wrapperRef.current.clientWidth;
             const H_v = wrapperRef.current.clientHeight;
