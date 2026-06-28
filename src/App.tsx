@@ -925,7 +925,7 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {(['start', 'checkpoint', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'] as MarkerType[]).map(t => {
+                      {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
                         const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                         return (
@@ -1088,7 +1088,7 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">マーカー</div>
                 <div className="marker-list">
-                  {(['start', 'checkpoint', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext'] as MarkerType[]).map(t => {
+                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
                     return (
                       <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
