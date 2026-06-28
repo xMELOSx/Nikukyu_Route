@@ -11,7 +11,7 @@ function backfillDefaults(m: HeistMarker): HeistMarker {
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (updated.pickingDurationSeconds === undefined) updated.pickingDurationSeconds = 5;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
-    if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 7;
+    if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 8;
   }
   return updated;
 }

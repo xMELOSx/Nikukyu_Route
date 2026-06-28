@@ -1239,6 +1239,12 @@ export default function App() {
             stairsColor={stairsColor}
             fuseMode={autoRoute.fuseMode}
             inactiveMarkersMode={autoRoute.inactiveMarkersMode}
+            onAutoRouteStart={() => {
+              const updated = globalMarkersStore.globalMarkers.map(m =>
+                m.type === 'phone' && !m.phoneLocked ? { ...m, phoneActive: false } : m
+              );
+              globalMarkersStore.replace(updated);
+            }}
           />
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -1324,18 +1330,6 @@ export default function App() {
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>
                     <Upload size={12} /> インポート
                   </button>
-                  {isLocal && (
-                    <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px', borderColor: '#ffd700', color: '#ffd700' }} onClick={() => {
-                      routeApi.saveAsPreset({
-                        name: routeApi.route.title,
-                        description: routeApi.route.description || '',
-                        author: xorDecrypt(routeApi.route.author, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)),
-                        originalAuthor: xorDecrypt(routeApi.route.originalAuthor, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt))
-                      });
-                    }}>
-                      ★ プリセット登録
-                    </button>
-                  )}
                   <input
                     type="file"
                     ref={fileIO.jsonFileInputRef}
@@ -1820,6 +1814,16 @@ export default function App() {
                         >
                           URLコピー
                         </button>
+                        {isLocal && isEditMode && (
+                          <button
+                            className="btn-cyber"
+                            style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
+                            onClick={() => { routeApi.overwritePreset(p.id); }}
+                            title="現在の編集データでこのプリセットを上書き"
+                          >
+                            上書き
+                          </button>
+                        )}
                         {isLocal && (
                           presetDeleteConfirmId === p.id ? (
                             <>

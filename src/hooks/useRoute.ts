@@ -76,6 +76,8 @@ export interface UseRouteApi {
     author: string;
     originalAuthor: string;
   }) => void;
+  /** Overwrite the preset that the current route was loaded from, keeping its ID. */
+  overwritePreset: (presetId: string) => void;
   /** Replace presets and persist to server (used by quick-add). */
   savePresetsToServer: (next: PresetData[]) => void;
   deletePreset: (presetId: string) => void;
@@ -365,6 +367,27 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     showNotificationRef.current('プリセットを削除しました');
   }, [presets, savePresetsToServer]);
 
+  const overwritePreset = useCallback((presetId: string) => {
+    const idx = presets.findIndex(p => p.id === presetId);
+    if (idx === -1) return;
+    const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
+    const updatedPreset: PresetData = {
+      ...presets[idx],
+      name: route.title,
+      description: route.description || '',
+      targetCash: route.targetCash,
+      targetCoins: route.targetCoins,
+      author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
+      originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
+      updatedAt: Date.now(),
+      routeData: toSave
+    };
+    const nextPresets = [...presets];
+    nextPresets[idx] = updatedPreset;
+    savePresetsToServer(nextPresets);
+    showNotificationRef.current(`プリセットを上書きしました: ${updatedPreset.name}`);
+  }, [presets, route, initialMarkerScale, savePresetsToServer]);
+
   const setBossCustomDuration = useCallback((id: string, duration: number | undefined) => {
     setRouteRaw(prev => {
       const next = { ...(prev.bossCustomDurations || {}) };
@@ -435,7 +458,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     saves, presets, setPresets, refreshSavesList,
     saveToLocal, saveAsCopy, createNewPlan,
     loadFromLocal, deleteFromLocal,
-    saveAsPreset, savePresetsToServer, deletePreset,
+    saveAsPreset, overwritePreset, savePresetsToServer, deletePreset,
     setBossCustomDuration, setBattleCustomDuration,
     setPickingCustomDuration, setLongPickingCustomDuration,
     setPickyMarker,
@@ -453,7 +476,7 @@ function backfillMarkerDefaults(m: HeistMarker): HeistMarker {
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
-    if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 7;
+    if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 8;
   }
   return m;
 }

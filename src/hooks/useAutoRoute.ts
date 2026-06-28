@@ -1,5 +1,31 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { loadAutoRouteCollapsed, saveAutoRouteCollapsed } from '../utils/PlayDataManager';
+
+const AUTO_ROUTE_SETTINGS_KEY = 'heist_auto_route_settings';
+
+interface AutoRouteSettingsPersisted {
+  waitEnabled: boolean;
+  waitSeconds: number;
+  speedMultiplier: 1 | 2 | 3 | 5 | 10;
+  followCamera: boolean;
+  fuseMode: boolean;
+  inactiveMarkersMode: boolean;
+}
+
+function loadAutoRouteSettings(): Partial<AutoRouteSettingsPersisted> {
+  try {
+    const raw = localStorage.getItem(AUTO_ROUTE_SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAutoRouteSettings(settings: AutoRouteSettingsPersisted): void {
+  try {
+    localStorage.setItem(AUTO_ROUTE_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {}
+}
 
 export interface AutoRouteStatus {
   active: boolean;
@@ -52,15 +78,20 @@ export interface AutoRouteSettings {
  * reports status back via `onAutoRouteStatusChange` (set to `setStatus`).
  */
 export function useAutoRoute() {
+  const savedSettings = loadAutoRouteSettings();
   const [status, setStatus] = useState<AutoRouteStatus>(INITIAL_STATUS);
   const [command, setCommand] = useState<AutoRouteCommand | null>(null);
-  const [waitEnabled, setWaitEnabled] = useState(false);
-  const [waitSeconds, setWaitSeconds] = useState(5);
-  const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3 | 5 | 10>(1);
-  const [followCamera, setFollowCamera] = useState(true);
-  const [fuseMode, setFuseMode] = useState(true);
-  const [inactiveMarkersMode, setInactiveMarkersMode] = useState(true);
+  const [waitEnabled, setWaitEnabled] = useState(savedSettings.waitEnabled ?? false);
+  const [waitSeconds, setWaitSeconds] = useState(savedSettings.waitSeconds ?? 5);
+  const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3 | 5 | 10>(savedSettings.speedMultiplier ?? 1);
+  const [followCamera, setFollowCamera] = useState(savedSettings.followCamera ?? true);
+  const [fuseMode, setFuseMode] = useState(savedSettings.fuseMode ?? true);
+  const [inactiveMarkersMode, setInactiveMarkersMode] = useState(savedSettings.inactiveMarkersMode ?? true);
   const [collapsed, setCollapsed] = useState<boolean>(() => loadAutoRouteCollapsed());
+
+  useEffect(() => {
+    saveAutoRouteSettings({ waitEnabled, waitSeconds, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode });
+  }, [waitEnabled, waitSeconds, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode]);
 
   const sendCommand = useCallback((action: AutoRouteAction, seekTo?: number) => {
     setCommand({ action, ts: Date.now(), seekTo });

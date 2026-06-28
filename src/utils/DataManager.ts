@@ -487,7 +487,7 @@ export function getStopDurationSeconds(
   }
   if (marker.type === 'long_picking' || marker.type === 'glong_picking') {
     if (isPicky) return 0;
-    return marker.longPickingDurationSeconds ?? 7;
+    return marker.longPickingDurationSeconds ?? 8;
   }
   if (marker.type === 'boss') {
     return marker.bossDurationSeconds ?? 60;

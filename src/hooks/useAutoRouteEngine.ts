@@ -41,6 +41,7 @@ export interface UseAutoRouteEngineParams {
   onAutoStartMarkerSet?: (marker: HeistMarker | null) => void;
   onTick?: (elapsed: number, pos: { x: number; y: number }) => void;
   onStartPlayback?: () => void;
+  onStart?: () => void;
 }
 
 function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): string {
@@ -87,6 +88,7 @@ export function useAutoRouteEngine({
   zoom,
   onAutoStartMarkerSet,
   onTick,
+  onStart,
 }: UseAutoRouteEngineParams) {
   const latestElapsedRef = useRef<number>(0);
   const latestPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -123,6 +125,7 @@ export function useAutoRouteEngine({
   };
 
   const startAutoRoute = () => {
+    onStart?.();
     setAutoRouteError(null);
     prewarmAudio();
     const startMarker = markers.find(m => m.type === 'start');

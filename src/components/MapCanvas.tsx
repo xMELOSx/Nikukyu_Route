@@ -96,6 +96,7 @@ interface MapCanvasProps {
   stairsColor?: string;
   fuseMode?: boolean;
   inactiveMarkersMode?: boolean;
+  onAutoRouteStart?: () => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -154,7 +155,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   warpColor = '#ff00ff',
   stairsColor = '#ffaa00',
   fuseMode = true,
-  inactiveMarkersMode = true
+  inactiveMarkersMode = true,
+  onAutoRouteStart
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -311,7 +313,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [bossDurationSeconds, setBossDurationSeconds] = useState(60);
   const [battleDurationSeconds, setBattleDurationSeconds] = useState(20);
   const [pickingDurationSeconds, setPickingDurationSeconds] = useState(5);
-  const [longPickingDurationSeconds, setLongPickingDurationSeconds] = useState(7);
+  const [longPickingDurationSeconds, setLongPickingDurationSeconds] = useState(8);
   const [pickingPicky, setPickingPicky] = useState(false);
   const [ehHighRate, setEhHighRate] = useState(false);
   const [cardkeyHighRate, setCardkeyHighRate] = useState(false);
@@ -383,7 +385,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         runnerDotRef.current.style.top = `${pos.y}px`;
       }
       redrawStrokes(elapsed);
-    }
+    },
+    onStart: onAutoRouteStart
   });
 
   // Pre-calculate passed marker IDs to optimize performance from O(N*M) to O(N+M)
@@ -1053,7 +1056,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.pickingExpanded = false;
       }
       if (activeMarkerType === 'long_picking' || activeMarkerType === 'glong_picking') {
-        newMarker.longPickingDurationSeconds = 7;
+        newMarker.longPickingDurationSeconds = 8;
         newMarker.pickingExpanded = false;
       }
       onMarkersChange([...markers, newMarker], true);
@@ -1656,7 +1659,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setBossDurationSeconds(m.bossDurationSeconds !== undefined ? m.bossDurationSeconds : 60);
     setBattleDurationSeconds(m.battleDurationSeconds !== undefined ? m.battleDurationSeconds : 20);
     setPickingDurationSeconds(m.pickingDurationSeconds !== undefined ? m.pickingDurationSeconds : 5);
-    setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 7);
+    setLongPickingDurationSeconds(m.longPickingDurationSeconds !== undefined ? m.longPickingDurationSeconds : 8);
     setPickingPicky(!!pickyMarkerIds[m.id]);
     setEhHighRate(!!m.ehHighRate);
     setCardkeyHighRate(!!m.cardkeyHighRate);
@@ -1680,7 +1683,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Load custom durations if it exists for Long Picking
     const hasLongPickingCustom = longPickingCustomDurations && longPickingCustomDurations[m.id] !== undefined;
     setUseLongPickingCustomDuration(hasLongPickingCustom);
-    setLongPickingCustomDurationVal(hasLongPickingCustom ? longPickingCustomDurations[m.id] : m.longPickingDurationSeconds || 7);
+    setLongPickingCustomDurationVal(hasLongPickingCustom ? longPickingCustomDurations[m.id] : m.longPickingDurationSeconds || 8);
 
     // Checkpoint fields
     setCheckpointTargetTime(m.checkpointTargetTime ?? 60);
@@ -2847,7 +2850,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 if (mk.id === m.id) {
                                   const updated = { ...mk };
                                   if (isLong) {
-                                    updated.longPickingDurationSeconds = updatedPicky ? 0 : 7;
+                                    updated.longPickingDurationSeconds = updatedPicky ? 0 : 8;
                                   } else {
                                     updated.pickingDurationSeconds = updatedPicky ? 0 : 5;
                                   }
@@ -2891,7 +2894,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
                                 <div style={{ fontSize: '14px', color: isPicky ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
-                                  {isPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '7秒' : '5秒')}
+                                  {isPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '8秒' : '5秒')}
                                 </div>
                               </div>
                             </>
@@ -3602,7 +3605,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </div>
 
                 <div style={{ fontSize: '11px', color: 'var(--text-primary)', marginTop: '2px' }}>
-                  現在の設定: <strong style={{ color: 'var(--cyan-neon)' }}>{pickingPicky ? '0秒' : (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking' ? '7秒' : '5秒')}</strong>
+                  現在の設定: <strong style={{ color: 'var(--cyan-neon)' }}>{pickingPicky ? '0秒' : (activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking' ? '8秒' : '5秒')}</strong>
                 </div>
 
                 {pickingPicky && (

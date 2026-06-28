@@ -64,7 +64,7 @@ function backfillMarker(m: HeistMarker): HeistMarker {
   } else if (m.type === 'picking' || m.type === 'gpicking') {
     if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
-    if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 7;
+    if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 8;
   }
   return m;
 }
