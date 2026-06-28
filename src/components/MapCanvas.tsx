@@ -74,6 +74,8 @@ interface MapCanvasProps {
     speed: number;
     error: string | null;
     nextMarkerLabel: string;
+    currentStopLabel: string;
+    stopRemaining: number;
     waitRemaining: number; // seconds left in initial wait (0 when not waiting)
     checkpoints: { elapsed: number; label: string; passed: boolean }[];
   }) => void;
@@ -2220,7 +2222,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       textAlign: 'center',
                       cursor: 'move',
                       pointerEvents: passThrough ? 'none' : 'auto',
-                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
+                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && !isWarp && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
                       zIndex: 20,
                       userSelect: 'none'
@@ -2247,8 +2249,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
-                     opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
-                     filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
+                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && !isWarp && passedMarkerIds.has(m.id)) ? 0.4 : 1),
+                      filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
                   onClick={(e) => handleMarkerClick(e, m)}

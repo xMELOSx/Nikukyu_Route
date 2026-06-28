@@ -1683,8 +1683,11 @@ export default function App() {
                             </button>
                           </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>停止 {formatTime(autoRoute.status.totalStopTime)}</span>
-                            {autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRoute.status.nextMarkerLabel}</span>}
+                            <span>累計停止 {formatTime(autoRoute.status.totalStopTime)}</span>
+                            {autoRoute.status.currentStopLabel
+                              ? <span style={{ color: 'var(--yellow-neon)' }}>停止中: {autoRoute.status.currentStopLabel} (残り {formatTime(autoRoute.status.stopRemaining)})</span>
+                              : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRoute.status.nextMarkerLabel}</span>
+                            }
                           </div>
                         </>
                       )}
@@ -1748,7 +1751,8 @@ export default function App() {
                     const q = saveLoadSearchQuery.toLowerCase().trim();
                     const matchPreset = (p: PresetData) => {
                       if (!q) return true;
-                      return p.name.toLowerCase().includes(q)
+                      return p.id.toLowerCase().includes(q)
+                        || p.name.toLowerCase().includes(q)
                         || (p.description || '').toLowerCase().includes(q)
                         || (p.author || '').toLowerCase().includes(q)
                         || (p.originalAuthor || '').toLowerCase().includes(q);

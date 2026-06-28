@@ -37,6 +37,8 @@ export interface AutoRouteStatus {
   speed: number;
   error: string | null;
   nextMarkerLabel: string;
+  currentStopLabel: string;
+  stopRemaining: number;
   waitRemaining: number;
   checkpoints: { elapsed: number; label: string; passed: boolean }[];
 }
@@ -51,6 +53,8 @@ const INITIAL_STATUS: AutoRouteStatus = {
   speed: 0,
   error: null,
   nextMarkerLabel: '',
+  currentStopLabel: '',
+  stopRemaining: 0,
   waitRemaining: 0,
   checkpoints: []
 };

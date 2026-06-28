@@ -44,24 +44,45 @@ export interface UseAutoRouteEngineParams {
   onStart?: () => void;
 }
 
-function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): string {
-  if (segments.length === 0) return '';
+function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): { label: string; currentStopLabel: string; stopRemaining: number } {
+  if (segments.length === 0) return { label: '', currentStopLabel: '', stopRemaining: 0 };
   let remaining = elapsed;
-  for (const seg of segments) {
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
     const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
     const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-    if (remaining <= travelTime) return '';
-    remaining -= travelTime;
-    if (remaining <= seg.stopDuration) {
+
+    if (remaining < travelTime) {
       if (seg.markerType && MARKER_META[seg.markerType as keyof typeof MARKER_META]) {
         const meta = MARKER_META[seg.markerType as keyof typeof MARKER_META];
-        return `${meta.emoji} ${meta.label} (停止中)`;
+        return { label: `${meta.emoji} ${meta.label}`, currentStopLabel: '', stopRemaining: 0 };
       }
-      return seg.markerType || '';
+      return { label: seg.markerType || '', currentStopLabel: '', stopRemaining: 0 };
+    }
+    remaining -= travelTime;
+
+    if (remaining < seg.stopDuration) {
+      const stopRemaining = seg.stopDuration - remaining;
+      let nextLabel = '';
+      for (let j = i + 1; j < segments.length; j++) {
+        const nseg = segments[j];
+        if (nseg.markerType && MARKER_META[nseg.markerType as keyof typeof MARKER_META]) {
+          const meta = MARKER_META[nseg.markerType as keyof typeof MARKER_META];
+          nextLabel = `${meta.emoji} ${meta.label}`;
+          break;
+        }
+      }
+      let currentLabel = '';
+      if (seg.markerType && MARKER_META[seg.markerType as keyof typeof MARKER_META]) {
+        const meta = MARKER_META[seg.markerType as keyof typeof MARKER_META];
+        currentLabel = `${meta.emoji} ${meta.label}`;
+      }
+      return { label: nextLabel, currentStopLabel: currentLabel, stopRemaining };
     }
     remaining -= seg.stopDuration;
   }
-  return '';
+  return { label: '', currentStopLabel: '', stopRemaining: 0 };
 }
 
 export function useAutoRouteEngine({
@@ -234,6 +255,7 @@ export function useAutoRouteEngine({
       const elapsed = autoRouteElapsedAtStartRef.current + realElapsed * mult;
       if (elapsed >= autoRouteTiming.totalTime) {
         latestElapsedRef.current = autoRouteTiming.totalTime;
+        autoRouteElapsedRef.current = autoRouteTiming.totalTime;
         const last = autoRouteSegments[autoRouteSegments.length - 1];
         latestPositionRef.current = { x: last.end.x, y: last.end.y };
         setAutoRouteRunning(false);
@@ -382,16 +404,19 @@ export function useAutoRouteEngine({
         }
       }
 
+      const nextResult = nextMarkerLabel(autoRouteSegments, elapsed, autoRouteTiming.speed);
       onAutoRouteStatusChange({
         active: autoRouteActive,
         running: autoRouteRunning,
         elapsed,
         totalTime: autoRouteTiming.totalTime,
         totalDistance: autoRouteTiming.totalDistance,
-        totalStopTime: autoRouteTiming.totalTime - autoRouteTiming.totalDistance / Math.max(1, autoRouteTiming.speed),
+        totalStopTime: autoRouteBaseTiming.totalStopTime,
         speed: autoRouteTiming.speed,
         error: autoRouteError,
-        nextMarkerLabel: nextMarkerLabel(autoRouteSegments, elapsed, autoRouteTiming.speed),
+        nextMarkerLabel: nextResult.label,
+        currentStopLabel: nextResult.currentStopLabel,
+        stopRemaining: nextResult.stopRemaining,
         waitRemaining,
         checkpoints: cpList
       });
