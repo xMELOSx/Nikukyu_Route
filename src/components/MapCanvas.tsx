@@ -1288,28 +1288,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!canInteract) return;
 
     if (toolMode === 'erase-marker') {
-      // Eraser mode always actually deletes from the current view, regardless
-      // of whether the marker is global or local. Global markers will be
-      // re-merged from global_markers.json on the next page load, but during
-      // this session the marker is gone — matching the user's mental model
-      // of "the eraser removed this pin". A history snapshot is pushed so the
-      // user can undo with Ctrl+Z.
-      //
-      // 削除の意味論: incoming をそのまま正として反映 (マージではなく
-      // 置換) したいので isDelete フラグを渡し、App 側で replace させる。
-      onMarkersChange(
-        markers
-          .filter(item => item.id !== m.id)
-          .map(item => {
-            if (item.linkedWarpId === m.id) {
-              const { linkedWarpId, ...rest } = item;
-              return rest;
-            }
-            return item;
-          }),
-        true,
-        { isDelete: true }
-      );
+      if (!isLocal && !isIndivMarker) {
+        // 個人表示モード（!isLocal）かつグローバルピン（!isIndivMarker）の場合：
+        // 削除するのではなく、非表示にします。
+        if (onHideGlobalMarker) {
+          onHideGlobalMarker(m.id);
+        }
+      } else {
+        // ローカル編集モードまたは個人ピンの場合：削除します。
+        onMarkersChange(
+          markers
+            .filter(item => item.id !== m.id)
+            .map(item => {
+              if (item.linkedWarpId === m.id) {
+                const { linkedWarpId, ...rest } = item;
+                return rest;
+              }
+              return item;
+            }),
+          true,
+          { isDelete: true }
+        );
+      }
       if (activeNoteMarkerId === m.id) {
         setActiveNoteMarkerId(null);
       }

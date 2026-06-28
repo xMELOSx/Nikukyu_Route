@@ -227,8 +227,8 @@ export default function App() {
   const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
     routeApi.setRouteWithGlobalDefaults(prev => ({
       ...prev,
-      hiddenMarkers: gd.hiddenMarkers || [],
-      hiddenMarkerTypes: gd.hiddenMarkerTypes || []
+      hiddenMarkers: [...new Set([...(prev.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
+      hiddenMarkerTypes: [...new Set([...(prev.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])]
     }));
   });
   const defaultsLoaded = globalDefaults.loaded;
