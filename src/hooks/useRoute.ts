@@ -11,7 +11,8 @@ import {
   xorEncrypt,
   xorDecrypt,
   getAuthorKey,
-  getOriginalAuthorKey
+  getOriginalAuthorKey,
+  generateId
 } from '../utils/DataManager';
 import type { GlobalDefaults } from './useGlobalDefaults';
 import type { UseGlobalMarkersApi } from './useGlobalMarkers';
@@ -197,7 +198,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }, [route, initialMarkerScale, refreshSavesList]);
 
   const saveAsCopy = useCallback(() => {
-    const newId = `route_${Date.now()}`;
+    const newId = generateId('route');
     const newCreatedAt = Date.now();
     const copy: RouteData = {
       ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt
@@ -217,7 +218,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const createNewPlan = useCallback(() => {
     const currentAuthor = route.author;
-    const newId = `route_${Date.now()}`;
+    const newId = generateId('route');
     const newCreatedAt = Date.now();
     const newRoute = DEFAULT_ROUTE(newId);
     if (currentAuthor) {
@@ -238,7 +239,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         if (!preset) return;
         data = {
           ...preset.routeData,
-          id: `route_${Date.now()}`,
+          id: generateId('route'),
           title: `${preset.routeData.title} (COPY)`
         };
       } else {
@@ -324,7 +325,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }
     refreshSavesList();
     if (route.id === id) {
-      const newId = `route_${Date.now()}`;
+      const newId = generateId('route');
       setRouteWithGlobalDefaults(DEFAULT_ROUTE(newId));
       localStorage.setItem('heist_last_used_route_id', newId);
     }
@@ -345,7 +346,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }) => {
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
     const newPreset: PresetData = {
-      id: `preset_${Date.now()}`,
+      id: generateId('preset'),
       name: input.name.trim() || route.title,
       description: input.description,
       targetCash: route.targetCash,

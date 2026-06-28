@@ -19,7 +19,8 @@ import {
   xorEncrypt,
   xorDecrypt,
   getAuthorKey,
-  getOriginalAuthorKey
+  getOriginalAuthorKey,
+  generateId
 } from './utils/DataManager';
 import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
@@ -611,7 +612,7 @@ export default function App() {
     if (!save) return;
     const toSave: RouteData = { ...save, mapVersion: 2, markerScale };
     const newPreset: PresetData = {
-      id: `preset_${Date.now()}`,
+      id: generateId('preset'),
       name: save.title,
       description: save.description || '',
       targetCash: save.targetCash || '',
@@ -1152,6 +1153,7 @@ export default function App() {
             onAutoStartMarkerChange={setAutoStartMarker}
             warpColor={warpColor}
             stairsColor={stairsColor}
+            fuseMode={autoRoute.fuseMode}
           />
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -1256,7 +1258,7 @@ export default function App() {
                         const orig = e.target.dataset.origTitle || '';
                         const next = e.target.value.trim();
                         if (!next || next === orig) return;
-                        const newRoute: RouteData = { ...routeApi.route, id: `route_${Date.now()}`, title: next, createdAt: Date.now() };
+                        const newRoute: RouteData = { ...routeApi.route, id: generateId('route'), title: next, createdAt: Date.now() };
                         DataManager.saveToLocalStorage(newRoute);
                         routeApi.setRoute(newRoute);
                         routeApi.refreshSavesList();
@@ -1488,6 +1490,10 @@ export default function App() {
                           開始前に待機 (<input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />秒)
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                          💣 導火線モード(高負荷)
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           🎥 カメラ追従
                         </label>
@@ -1631,6 +1637,13 @@ export default function App() {
                       </div>
                       {isLocal && isEditMode && (
                         <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
+                          <button
+                            className="btn-cyber"
+                            style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
+                            onClick={(e) => { e.stopPropagation(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
+                          >
+                            コピーして読込
+                          </button>
                           {presetDeleteConfirmId === p.id ? (
                             <>
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除する</button>

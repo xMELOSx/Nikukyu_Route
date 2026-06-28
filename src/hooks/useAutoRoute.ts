@@ -58,6 +58,7 @@ export function useAutoRoute() {
   const [waitSeconds, setWaitSeconds] = useState(5);
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3 | 5 | 10>(1);
   const [followCamera, setFollowCamera] = useState(true);
+  const [fuseMode, setFuseMode] = useState(true);
   const [collapsed, setCollapsed] = useState<boolean>(() => loadAutoRouteCollapsed());
 
   const sendCommand = useCallback((action: AutoRouteAction, seekTo?: number) => {
@@ -85,6 +86,8 @@ export function useAutoRoute() {
     setSpeedMultiplier,
     followCamera,
     setFollowCamera,
+    fuseMode,
+    setFuseMode,
     collapsed,
     toggleCollapsed
   } as const;

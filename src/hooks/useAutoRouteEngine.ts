@@ -416,4 +416,11 @@ export function useAutoRouteEngine({
     autoRouteElapsedAtStartRef.current = autoRouteElapsed;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRouteSettings?.speedMultiplier, autoRouteActive]);
+
+  return {
+    autoRouteActive,
+    autoRouteElapsed,
+    autoRouteSegments,
+    autoRouteTiming
+  };
 }

@@ -94,6 +94,7 @@ interface MapCanvasProps {
   onAutoStartMarkerChange?: (marker: HeistMarker | null) => void;
   warpColor?: string;
   stairsColor?: string;
+  fuseMode?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -150,7 +151,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   autoStartMarker = null,
   onAutoStartMarkerChange,
   warpColor = '#ff00ff',
-  stairsColor = '#ffaa00'
+  stairsColor = '#ffaa00',
+  fuseMode = true
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -218,7 +220,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
+  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'].includes(type);
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -320,7 +322,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   animZoomRef.current = zoom;
 
   // Auto-route engine
-  useAutoRouteEngine({
+  const {
+    autoRouteActive,
+    autoRouteElapsed,
+    autoRouteSegments,
+    autoRouteTiming
+  } = useAutoRouteEngine({
     markers,
     strokes,
     floor,
@@ -344,6 +351,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     zoom,
     onAutoStartMarkerSet: onAutoStartMarkerChange,
   });
+
+  // Pre-calculate passed marker IDs to optimize performance from O(N*M) to O(N+M)
+  const passedMarkerIds = useMemo(() => {
+    if (!autoRouteActive || !autoRouteSegments || autoRouteSegments.length === 0) return new Set<string>();
+    const passed = new Set<string>();
+    const speed = autoRouteTiming.speed;
+    autoRouteSegments.forEach(seg => {
+      if (seg.markerId) {
+        const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+        const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+        const passedTime = seg.cumulativeDistance / Math.max(segSpeed, 0.0001) + seg.cumulativeStopTime + travelTime;
+        if (autoRouteElapsed >= passedTime) {
+          passed.add(seg.markerId);
+        }
+      }
+    });
+    return passed;
+  }, [autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed]);
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -606,6 +631,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [strokes]);
 
+  // Redraw strokes when animation ticks (highly efficient)
+  useEffect(() => {
+    redrawStrokes();
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode]);
+
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -683,27 +713,69 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     ctx.clearRect(0, 0, 1600, 4550);
 
-    strokes.forEach(stroke => {
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = stroke.width;
+    if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
+      const speed = autoRouteTiming.speed;
+      let remaining = autoRouteElapsed;
 
-      const isDashed = stroke.type === 'dashed';
+      autoRouteSegments.forEach(seg => {
+        const isWarp = seg.distance === 0 && seg.stopDuration === 0;
+        if (isWarp) return;
 
-      if (isDashed) {
-        ctx.setLineDash([8, 6]);
-      } else {
+        const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+        const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+
+        ctx.strokeStyle = '#ff0055';
+        ctx.lineWidth = 3;
         ctx.setLineDash([]);
-      }
 
-      ctx.beginPath();
-      stroke.points.forEach((pt, idx) => {
-        if (idx === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
+        if (remaining > 0) {
+          if (remaining < travelTime) {
+            const t = remaining / travelTime;
+            const startPt = {
+              x: seg.start.x + (seg.end.x - seg.start.x) * t,
+              y: seg.start.y + (seg.end.y - seg.start.y) * t
+            };
+            ctx.beginPath();
+            ctx.moveTo(startPt.x, startPt.y);
+            ctx.lineTo(seg.end.x, seg.end.y);
+            ctx.stroke();
+            remaining = 0;
+          } else {
+            remaining -= travelTime;
+            if (remaining < seg.stopDuration) {
+              remaining = 0;
+            } else {
+              remaining -= seg.stopDuration;
+            }
+          }
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(seg.start.x, seg.start.y);
+          ctx.lineTo(seg.end.x, seg.end.y);
+          ctx.stroke();
+        }
       });
-      ctx.stroke();
-      // No arrowhead drawn. Direction is conveyed by line continuity and the
-      // auto-route animation, not by an arrow tip at the end of each line.
-    });
+    } else {
+      strokes.forEach(stroke => {
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = stroke.width;
+
+        const isDashed = stroke.type === 'dashed';
+
+        if (isDashed) {
+          ctx.setLineDash([8, 6]);
+        } else {
+          ctx.setLineDash([]);
+        }
+
+        ctx.beginPath();
+        stroke.points.forEach((pt, idx) => {
+          if (idx === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+      });
+    }
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
@@ -2003,8 +2075,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
-          {visibleMarkers
-            .map(m => {
+          {visibleMarkers.map(m => {
               const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
               if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
@@ -2060,7 +2131,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       textAlign: 'center',
                       cursor: 'move',
                       pointerEvents: passThrough ? 'none' : 'auto',
-                      opacity: isHidden ? 0.35 : 1,
+                      opacity: isHidden ? 0.35 : (passedMarkerIds.has(m.id) ? 0.4 : 1),
                       filter: isHidden ? 'grayscale(90%)' : 'none',
                       zIndex: 20,
                       userSelect: 'none'
@@ -2087,7 +2158,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
-                      opacity: isHidden ? 0.35 : 1,
+                      opacity: isHidden ? 0.35 : (passedMarkerIds.has(m.id) ? 0.4 : 1),
                      filter: isHidden ? 'grayscale(90%)' : 'none'
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
