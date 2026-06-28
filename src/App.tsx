@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
@@ -273,14 +273,26 @@ export default function App() {
     }
   });
 
+  const autoRoute = useAutoRoute();
+
+  // Auto-route 起動中に「新規作成 / セーブ読込 / インポート」が走ると、
+  // 古いルートを参照し続けたまま再生を続けようとして不整合になる。
+  // ルートを書き換える前に必ずリセットを送り、再生状態を停止させる。
+  const autoRouteRef = useRef(autoRoute);
+  autoRouteRef.current = autoRoute;
+  const stopAutoRouteIfActive = useCallback(() => {
+    if (autoRouteRef.current.status.active) {
+      autoRouteRef.current.sendCommand('reset');
+    }
+  }, []);
+
   const fileIO = useFileIO({
     routeApi,
     globalMarkersStore,
     markerScale,
-    showNotification: notification.show
+    showNotification: notification.show,
+    onBeforeLoad: stopAutoRouteIfActive
   });
-
-  const autoRoute = useAutoRoute();
 
   useKeyboardShortcuts({
     onUndo: historyApi.undo,
@@ -676,6 +688,7 @@ export default function App() {
       return;
     }
     setNewPlanConfirm(false);
+    stopAutoRouteIfActive();
     routeApi.createNewPlan();
   };
 
@@ -1776,7 +1789,7 @@ export default function App() {
                     return (<>
                       {filteredPresets.map(p => (
                     <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
-                      onClick={() => { routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
+                      onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
@@ -1844,7 +1857,7 @@ export default function App() {
 
                   {filteredSaves.map(s => (
                     <div key={s.id} style={{ padding: '10px 12px', background: routeApi.route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: routeApi.route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
-                      onClick={() => { routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
+                      onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
@@ -1901,6 +1914,7 @@ export default function App() {
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
               <button className="btn-cyber success" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => {
+                stopAutoRouteIfActive();
                 if (urlLoadConfirm.type === 'preset') {
                   routeApi.loadFromLocal(`__preset__${urlLoadConfirm.id}`);
                 } else {

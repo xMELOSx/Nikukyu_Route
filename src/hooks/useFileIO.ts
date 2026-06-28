@@ -17,6 +17,10 @@ export interface UseFileIOOptions {
   globalMarkersStore: UseGlobalMarkersApi;
   markerScale: number;
   showNotification: (msg: string, ms?: number) => void;
+  /** Called at the start of any import (JSON / PNG) that overwrites the
+   *  current route. Use this to stop long-running features (e.g. the
+   *  auto-route guide) before the route is replaced. */
+  onBeforeLoad?: () => void;
 }
 
 export interface UseFileIOApi {
@@ -75,7 +79,7 @@ function backfillMarker(m: HeistMarker): HeistMarker {
  * `.json` and `.png` files to the appropriate code path.
  */
 export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
-  const { routeApi, globalMarkersStore, markerScale, showNotification } = options;
+  const { routeApi, globalMarkersStore, markerScale, showNotification, onBeforeLoad } = options;
 
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +118,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
 
   const importFromJsonText = useCallback((text: string) => {
     try {
+      onBeforeLoad?.();
       const raw = JSON.parse(text) as RouteData;
       if (!raw.strokes || !raw.markers) {
         showNotification('JSONファイルの形式が無効です', 2000);
@@ -166,11 +171,12 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     } catch (err) {
       showNotification('JSONファイルの読み込みに失敗しました', 2000);
     }
-  }, [globalMarkersStore, routeApi, showNotification]);
+  }, [globalMarkersStore, routeApi, showNotification, onBeforeLoad]);
 
   const importPngFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.png')) return;
     try {
+      onBeforeLoad?.();
       // Read raw bytes first (for metadata fallback) and create blob URL for image display
       const rawBuffer = await file.arrayBuffer();
       const img = new Image();
@@ -220,7 +226,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     } catch (err) {
       showNotification('PNG読み込みに失敗しました', 3000);
     }
-  }, [globalMarkersStore, routeApi, showNotification]);
+  }, [globalMarkersStore, routeApi, showNotification, onBeforeLoad]);
 
   const onJsonFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
