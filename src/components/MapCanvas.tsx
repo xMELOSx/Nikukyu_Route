@@ -99,6 +99,10 @@ interface MapCanvasProps {
   fuseMode?: boolean;
   inactiveMarkersMode?: boolean;
   onAutoRouteStart?: () => void;
+  hideRouteLines?: boolean;
+  routeLines1px?: boolean;
+  hideBranchLines?: boolean;
+  branchLines1px?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -158,7 +162,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   stairsColor = '#ffaa00',
   fuseMode = true,
   inactiveMarkersMode = true,
-  onAutoRouteStart
+  onAutoRouteStart,
+  hideRouteLines = false,
+  routeLines1px = false,
+  hideBranchLines = false,
+  branchLines1px = false
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -669,7 +677,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
@@ -804,10 +812,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.stroke();
     } else {
       strokes.forEach(stroke => {
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = stroke.width;
-
         const isDashed = stroke.type === 'dashed';
+
+        if (isDashed && hideBranchLines) return;
+        if (!isDashed && hideRouteLines) return;
+
+        ctx.strokeStyle = stroke.color;
+
+        if (isDashed && branchLines1px) {
+          ctx.lineWidth = 1;
+        } else if (!isDashed && routeLines1px) {
+          ctx.lineWidth = 1;
+        } else {
+          ctx.lineWidth = stroke.width;
+        }
 
         if (isDashed) {
           ctx.setLineDash([8, 6]);

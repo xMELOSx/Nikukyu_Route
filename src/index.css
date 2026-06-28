@@ -1199,3 +1199,35 @@ select.input-cyber {
   background-color: #ffffff !important;
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.9) !important;
 }
+
+/* Route line operation toggles (mild hover style) */
+.btn-toggle-route {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  color: var(--cyan-neon);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.btn-toggle-route:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: rgba(0, 240, 255, 0.5);
+  /* No box-shadow or text-shadow to avoid glare */
+}
+
+.btn-toggle-route.active {
+  background: rgba(0, 240, 255, 0.35);
+  color: #fff;
+  border-color: var(--cyan-neon);
+}
+
+.btn-toggle-route.active:hover {
+  background: rgba(0, 240, 255, 0.5);
+  border-color: var(--cyan-neon);
+}

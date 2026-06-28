@@ -196,6 +196,38 @@ export default function App() {
   const [autoStartMarker, setAutoStartMarker] = useState<HeistMarker | null>(null);
   const [showOcrDebugModal, setShowOcrDebugModal] = useState<boolean>(false);
 
+  const [hideRouteLines, setHideRouteLines] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_hide_route_lines');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_hide_route_lines', String(hideRouteLines));
+  }, [hideRouteLines]);
+
+  const [routeLines1px, setRouteLines1px] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_route_lines_1px');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_route_lines_1px', String(routeLines1px));
+  }, [routeLines1px]);
+
+  const [hideBranchLines, setHideBranchLines] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_hide_branch_lines');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_hide_branch_lines', String(hideBranchLines));
+  }, [hideBranchLines]);
+
+  const [branchLines1px, setBranchLines1px] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_branch_lines_1px');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_branch_lines_1px', String(branchLines1px));
+  }, [branchLines1px]);
+
 
   // Preset editor state was previously used by an inline "Save as preset" form
   // that was removed during the hook extraction. Kept removed; the saveAsPreset
@@ -1116,6 +1148,40 @@ export default function App() {
               </div>
             )}
 
+            <div className="panel-section" style={{ borderTop: '1px solid rgba(255, 0, 255, 0.1)', paddingTop: '6px' }}>
+              <div className="panel-title">📈 ルート線操作</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <button
+                  className={`btn-toggle-route ${hideRouteLines ? 'active' : ''}`}
+                  style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
+                  onClick={() => setHideRouteLines(!hideRouteLines)}
+                >
+                  ルート非表示
+                </button>
+                <button
+                  className={`btn-toggle-route ${routeLines1px ? 'active' : ''}`}
+                  style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
+                  onClick={() => setRouteLines1px(!routeLines1px)}
+                >
+                  ルート 1px化
+                </button>
+                <button
+                  className={`btn-toggle-route ${hideBranchLines ? 'active' : ''}`}
+                  style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
+                  onClick={() => setHideBranchLines(!hideBranchLines)}
+                >
+                  分岐非表示
+                </button>
+                <button
+                  className={`btn-toggle-route ${branchLines1px ? 'active' : ''}`}
+                  style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
+                  onClick={() => setBranchLines1px(!branchLines1px)}
+                >
+                  分岐 1px化
+                </button>
+              </div>
+            </div>
+
             {(() => {
               const allPhones = globalMarkersStore.globalMarkers.filter(m => m.type === 'phone');
               const activeCount = allPhones.filter(m => m.phoneActive).length;
@@ -1223,6 +1289,10 @@ export default function App() {
             onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
             pickyMarkerIds={routeApi.route.pickyMarkerIds}
             onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
+            hideRouteLines={hideRouteLines}
+            routeLines1px={routeLines1px}
+            hideBranchLines={hideBranchLines}
+            branchLines1px={branchLines1px}
             disablePinsDuringDraw={disablePinsDuringDraw}
             textPinPassThrough={textPinPassThrough}
             onMarkersDragStart={historyApi.startDragSnapshot}
