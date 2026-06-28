@@ -40,6 +40,7 @@ export interface UseAutoRouteEngineParams {
   zoom: number;
   onAutoStartMarkerSet?: (marker: HeistMarker | null) => void;
   onTick?: (elapsed: number, pos: { x: number; y: number }) => void;
+  onStartPlayback?: () => void;
 }
 
 function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): string {

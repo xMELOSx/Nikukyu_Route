@@ -597,8 +597,8 @@ export default function App() {
   //  in the new UI; left as comments for future reference if needed.)
 
   // Wire handleExportPNG with the current refs/state
-  const handleExportPNG = () => {
-    fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString });
+  const handleExportPNG = (e?: React.MouseEvent) => {
+    fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString, skipDataBar: !!e?.altKey });
   };
 
   const handleExportJSON = () => {
@@ -1140,22 +1140,33 @@ export default function App() {
             })()}
 
             {(() => {
-              const allInfos = globalMarkersStore.globalMarkers.filter(m => m.type === 'info');
-              if (allInfos.length === 0) return null;
+              const allGlobalInfos = globalMarkersStore.globalMarkers.filter(m => m.type === 'info');
+              const allIndivInfos = (routeApi.route.markers || []).filter(m => m.type === 'iinfo');
+              const totalCount = allGlobalInfos.length + allIndivInfos.length;
+              if (totalCount === 0) return null;
+              const expandedCount = allGlobalInfos.filter(m => m.infoExpanded).length + allIndivInfos.filter(m => m.infoExpanded).length;
               return (
                 <div className="panel-section" style={{ borderTop: '1px solid rgba(79, 195, 247, 0.15)', paddingTop: '6px' }}>
                   <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>ℹ️ INFO</span>
-                    <span style={{ fontSize: '10px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold' }}>{allInfos.filter(m => m.infoExpanded).length}/{allInfos.length}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold' }}>{expandedCount}/{totalCount}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button className="btn-cyber success" style={{ flex: 1, padding: '4px 6px', fontSize: '10px' }} onClick={() => {
-                      const updated = globalMarkersStore.globalMarkers.map(m => m.type === 'info' ? { ...m, infoExpanded: true } : m);
-                      globalMarkersStore.replace(updated);
+                      const updatedGlobal = globalMarkersStore.globalMarkers.map(m => m.type === 'info' ? { ...m, infoExpanded: true } : m);
+                      globalMarkersStore.replace(updatedGlobal);
+                      routeApi.setRoute(prev => ({
+                        ...prev,
+                        markers: (prev.markers || []).map(m => m.type === 'iinfo' ? { ...m, infoExpanded: true } : m)
+                      }));
                     }}>すべて開く</button>
                     <button className="btn-cyber danger" style={{ flex: 1, padding: '4px 6px', fontSize: '10px' }} onClick={() => {
-                      const updated = globalMarkersStore.globalMarkers.map(m => m.type === 'info' ? { ...m, infoExpanded: false } : m);
-                      globalMarkersStore.replace(updated);
+                      const updatedGlobal = globalMarkersStore.globalMarkers.map(m => m.type === 'info' ? { ...m, infoExpanded: false } : m);
+                      globalMarkersStore.replace(updatedGlobal);
+                      routeApi.setRoute(prev => ({
+                        ...prev,
+                        markers: (prev.markers || []).map(m => m.type === 'iinfo' ? { ...m, infoExpanded: false } : m)
+                      }));
                     }}>すべて閉じる</button>
                   </div>
                 </div>
@@ -1307,7 +1318,7 @@ export default function App() {
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
                     <Download size={12} /> JSON保存
                   </button>
-                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG}>
+                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title="ALT+クリックでデータバー無し">
                     <ImageIcon size={12} /> 画像保存
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>

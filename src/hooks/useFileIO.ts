@@ -27,6 +27,7 @@ export interface UseFileIOApi {
     floor: FloorType;
     canvas: HTMLCanvasElement | null;
     svgString: string;
+    skipDataBar?: boolean;
   }) => void;
   onJsonFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBgFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -87,7 +88,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   }, [routeApi.route, markerScale]);
 
   const exportPNG = useCallback((params: {
-    floor: FloorType; canvas: HTMLCanvasElement | null; svgString: string;
+    floor: FloorType; canvas: HTMLCanvasElement | null; svgString: string; skipDataBar?: boolean;
   }) => {
     const routeForExport: RouteData = {
       ...routeApi.route,
@@ -106,7 +107,8 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-      }
+      },
+      params.skipDataBar
     );
   }, [routeApi.route, globalMarkersStore.globalMarkers, markerScale]);
 
@@ -169,6 +171,8 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   const importPngFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.png')) return;
     try {
+      // Read raw bytes first (for metadata fallback) and create blob URL for image display
+      const rawBuffer = await file.arrayBuffer();
       const img = new Image();
       const url = URL.createObjectURL(file);
       await new Promise<void>((resolve, reject) => {
@@ -177,7 +181,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         img.src = url;
       });
       URL.revokeObjectURL(url);
-      const data = await DataManager.decodePngData(img);
+      const data = await DataManager.decodePngData(img, rawBuffer);
       if (!data) {
         showNotification('PNGからデータを読み取れませんでした（データバー未検出）', 3000);
         return;

@@ -233,9 +233,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Viewport State (Zoom & Pan)
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [pan, setPanState] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
+
+  const getClampedPan = (p: Point, z: number): Point => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return p;
+    const W_v = wrapper.clientWidth;
+    const H_v = wrapper.clientHeight;
+
+    const minPanX = -800 - 800 * z + 100;
+    const maxPanX = W_v - 800 + 800 * z - 100;
+    const minPanY = -2275 - 2275 * z + 100;
+    const maxPanY = H_v - 2275 + 2275 * z - 100;
+
+    return {
+      x: Math.max(minPanX, Math.min(maxPanX, p.x)),
+      y: Math.max(minPanY, Math.min(maxPanY, p.y))
+    };
+  };
+
+  const setPan = (p: Point | ((prev: Point) => Point)) => {
+    setPanState(prev => {
+      const next = typeof p === 'function' ? p(prev) : p;
+      return getClampedPan(next, animZoomRef.current);
+    });
+  };
 
   // Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
@@ -2009,7 +2033,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             })
           }
           {/* Guide lines from pins to their corresponding draggable popups */}
-          {markers
+          {zoom >= 0.25 && markers
             .filter(m => (isInfoType(m.type) || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
               const isHidden = hiddenMarkers.includes(m.id);
@@ -2184,15 +2208,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       color: displayColor,
                       fontSize: `${displayScaleWithMap ? displaySize * scaleMultiplier : displaySize}px`,
                       fontWeight: 'bold',
-                textShadow: displayGlow
-                  ? `0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5), 0 0 12px ${displayColor}, 0 0 20px ${displayColor}`
-                  : '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)',
+                      textShadow: (zoom < 0.25)
+                        ? 'none'
+                        : (displayGlow
+                          ? `0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5), 0 0 12px ${displayColor}, 0 0 20px ${displayColor}`
+                          : '0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)'),
                       whiteSpace: 'pre',
                       textAlign: 'center',
                       cursor: 'move',
                       pointerEvents: passThrough ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
-                      filter: isHidden ? 'grayscale(90%)' : 'none',
+                      filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
                       zIndex: 20,
                       userSelect: 'none'
                     } as React.CSSProperties}
@@ -2219,7 +2245,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
-                     filter: isHidden ? 'grayscale(90%)' : 'none'
+                     filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
                   } as React.CSSProperties}
                   onMouseDown={(e) => handleMarkerMouseDown(e, m)}
                   onClick={(e) => handleMarkerClick(e, m)}
@@ -2229,12 +2255,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     style={{
                       fontSize: `${(isLargePin ? 10 : 9) * scaleMultiplier}px`,
                       borderWidth: `${1.5 * scaleMultiplier}px`,
-                      boxShadow: `0 0 ${6 * scaleMultiplier}px var(--theme-color, var(--cyan-neon))`
+                      boxShadow: zoom < 0.25 ? 'none' : `0 0 ${6 * scaleMultiplier}px var(--theme-color, var(--cyan-neon))`
                     }}
                   >
                     {displayEmoji}
                   </div>
-                  {showMarkerLabels && (m.note.trim() || (isInfoType(m.type) && m.infoLabel?.trim())) && !isLargePin && (isEditMode || !isInfoType(m.type)) && (
+                  {showMarkerLabels && zoom >= 0.25 && (m.note.trim() || (isInfoType(m.type) && m.infoLabel?.trim())) && !isLargePin && (isEditMode || !isInfoType(m.type)) && (
                     <div 
                       className="map-marker-label"
                       style={{

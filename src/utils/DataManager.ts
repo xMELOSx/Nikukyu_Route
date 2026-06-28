@@ -76,6 +76,132 @@ export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
     .filter(s => s.points.length >= 2);
 }
 
+// --- PNG metadata helpers (CRC32 + tEXt chunk insertion) ---
+
+const CRC_TABLE: Uint32Array = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c;
+  }
+  return table;
+})();
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) {
+    crc = CRC_TABLE[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function makeChunk(type: string, data: Uint8Array): Uint8Array {
+  const typeBytes = new TextEncoder().encode(type);
+  const lenBuf = new Uint8Array(4);
+  new DataView(lenBuf.buffer).setUint32(0, data.length, false);
+  const combined = new Uint8Array(typeBytes.length + data.length);
+  combined.set(typeBytes, 0);
+  combined.set(data, typeBytes.length);
+  const crcVal = crc32(combined);
+  const crcBuf = new Uint8Array(4);
+  new DataView(crcBuf.buffer).setUint32(0, crcVal, false);
+  const chunk = new Uint8Array(4 + typeBytes.length + data.length + 4);
+  chunk.set(lenBuf, 0);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 4 + typeBytes.length);
+  chunk.set(crcBuf, 4 + typeBytes.length + data.length);
+  return chunk;
+}
+
+/**
+ * Insert tEXt metadata chunks into a PNG data-URL.
+ * Chunks are inserted just before the IEND chunk.
+ */
+export function insertPngMetadata(
+  dataUrl: string,
+  metadata: Record<string, string>
+): string {
+  const base64 = dataUrl.split(',')[1];
+  if (!base64) return dataUrl;
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+  // Find IEND chunk (always the last chunk: 00 00 00 00 49 45 4E 44 ...)
+  const iendSig = new Uint8Array([0x49, 0x45, 0x4E, 0x44]);
+  let iendOffset = -1;
+  for (let i = bytes.length - 12; i >= 8; i--) {
+    if (bytes[i + 4] === iendSig[0] && bytes[i + 5] === iendSig[1] &&
+        bytes[i + 6] === iendSig[2] && bytes[i + 7] === iendSig[3]) {
+      iendOffset = i;
+      break;
+    }
+  }
+  if (iendOffset < 0) return dataUrl;
+
+  // Build tEXt chunks
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  for (const [key, value] of Object.entries(metadata)) {
+    const keyBytes = encoder.encode(key);
+    const valBytes = encoder.encode(value);
+    const data = new Uint8Array(keyBytes.length + 1 + valBytes.length);
+    data.set(keyBytes, 0);
+    data[keyBytes.length] = 0; // null separator
+    data.set(valBytes, keyBytes.length + 1);
+    chunks.push(makeChunk('tEXt', data));
+  }
+
+  // Assemble new PNG
+  const totalExtra = chunks.reduce((s, c) => s + c.length, 0);
+  const newBytes = new Uint8Array(bytes.length + totalExtra);
+  newBytes.set(bytes.subarray(0, iendOffset), 0);
+  let offset = iendOffset;
+  for (const chunk of chunks) {
+    newBytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  newBytes.set(bytes.subarray(iendOffset), offset);
+
+  // Re-encode to base64
+  let newBase64 = '';
+  for (let i = 0; i < newBytes.length; i++) {
+    newBase64 += String.fromCharCode(newBytes[i]);
+  }
+  return `data:image/png;base64,${btoa(newBase64)}`;
+}
+
+/**
+ * Extract tEXt metadata chunks from a PNG ArrayBuffer.
+ * Returns a map of keyword → value.
+ */
+export function extractPngMetadata(pngBuffer: ArrayBuffer): Record<string, string> {
+  const bytes = new Uint8Array(pngBuffer);
+  const decoder = new TextDecoder();
+  const result: Record<string, string> = {};
+  // PNG signature is 8 bytes; each chunk: 4 len + 4 type + data + 4 crc
+  let offset = 8;
+  while (offset + 8 <= bytes.length) {
+    const len = new DataView(bytes.buffer, bytes.byteOffset + offset).getUint32(0, false);
+    const type = decoder.decode(bytes.subarray(offset + 4, offset + 8));
+    if (type === 'tEXt' && offset + 12 + len <= bytes.length) {
+      const chunkData = bytes.subarray(offset + 8, offset + 8 + len);
+      const nullIdx = chunkData.indexOf(0);
+      if (nullIdx > 0) {
+        const key = decoder.decode(chunkData.subarray(0, nullIdx));
+        const val = decoder.decode(chunkData.subarray(nullIdx + 1));
+        result[key] = val;
+      }
+    }
+    if (type === 'IEND') break;
+    offset += 12 + len;
+  }
+  return result;
+}
+
 // --- Stroke compression for PNG pixel-encoded data bar ---
 
 interface CompressedStroke {
@@ -566,7 +692,8 @@ export class DataManager {
     route: RouteData,
     _svgString: string,
     canvasElement: HTMLCanvasElement | null,
-    onComplete: (dataUrl: string) => void
+    onComplete: (dataUrl: string) => void,
+    skipDataBar?: boolean
   ): void {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = 1600;
@@ -810,62 +937,83 @@ export class DataManager {
         fctx.fillText(`原作者: ${originalAuthor}`, ax, 115);
       }
 
-      // Draw pixel-encoded JSON data bar BELOW the map (appended, not overwriting).
-      // Stroke points are delta+zigzag compressed to drastically reduce JSON size.
-      // Format: [8 magenta pixels][4 magic N-K-N-Y][4 length BE][JSON data][8 magenta end]
-      const sanitized = DataManager.sanitizeRouteForExport(route);
-      const compressed: any = { ...sanitized, _v: 2 };
-      for (const floorKey of Object.keys(sanitized.strokes) as FloorType[]) {
-        compressed.strokes = { ...compressed.strokes, [floorKey]: compressStrokes(sanitized.strokes[floorKey]) };
+      let dataUrl: string;
+
+      if (!skipDataBar) {
+        // Draw pixel-encoded JSON data bar BELOW the map (appended, not overwriting).
+        // Stroke points are delta+zigzag compressed to drastically reduce JSON size.
+        // Format: [8 magenta pixels][4 magic N-K-N-Y][4 length BE][JSON data][8 magenta end]
+        const sanitized = DataManager.sanitizeRouteForExport(route);
+        const compressed: any = { ...sanitized, _v: 2 };
+        for (const floorKey of Object.keys(sanitized.strokes) as FloorType[]) {
+          compressed.strokes = { ...compressed.strokes, [floorKey]: compressStrokes(sanitized.strokes[floorKey]) };
+        }
+        const jsonStr = JSON.stringify(compressed);
+        const dataBytes = new TextEncoder().encode(jsonStr);
+        const MAGIC = [0x4E, 0x4B, 0x4E, 0x59]; // "N K N Y"
+        const HEADER_SIZE = 8 + 4 + 4; // 8 marker + 4 magic + 4 length
+        const dataRows = Math.ceil((HEADER_SIZE + dataBytes.length + 8) / EXTW);
+        const dataBarHeight = Math.max(dataRows, 2);
+
+        // Extend the final canvas to fit the data bar below the map content
+        const finalH = EXTH + dataBarHeight;
+        const finalCanvas2 = document.createElement('canvas');
+        finalCanvas2.width = EXTW;
+        finalCanvas2.height = finalH;
+        const fctx2 = finalCanvas2.getContext('2d');
+        if (!fctx2) return;
+
+        // Copy the already-drawn map content onto the extended canvas
+        fctx2.drawImage(finalCanvas, 0, 0);
+
+        const allBytes = new Uint8Array(HEADER_SIZE + dataBytes.length + 8);
+        // Start marker: 8 magenta pixels
+        for (let j = 0; j < 8; j++) { allBytes[j] = 0xFF; }
+        // Magic
+        for (let j = 0; j < 4; j++) { allBytes[8 + j] = MAGIC[j]; }
+        // Length (big-endian)
+        const len = dataBytes.length;
+        allBytes[12] = (len >> 24) & 0xff;
+        allBytes[13] = (len >> 16) & 0xff;
+        allBytes[14] = (len >> 8) & 0xff;
+        allBytes[15] = len & 0xff;
+        // Data
+        allBytes.set(dataBytes, HEADER_SIZE);
+        // End marker: 8 magenta pixels
+        for (let j = 0; j < 8; j++) { allBytes[HEADER_SIZE + dataBytes.length + j] = 0xFF; }
+
+        const imgData = fctx2.createImageData(EXTW, dataBarHeight);
+        for (let i = 0; i < allBytes.length; i++) {
+          const px = i % EXTW;
+          const row = Math.floor(i / EXTW);
+          const idx = (row * EXTW + px) * 4;
+          const isMarker = (allBytes[i] === 0xFF && i < 8) || i >= HEADER_SIZE + dataBytes.length;
+          imgData.data[idx] = isMarker ? 255 : 0;     // R: marker=255, data=0
+          imgData.data[idx + 1] = isMarker ? 0 : allBytes[i]; // G: marker=0, data=byte value
+          imgData.data[idx + 2] = isMarker ? 255 : 0; // B: marker=255, data=0
+          imgData.data[idx + 3] = 255;
+        }
+        fctx2.putImageData(imgData, 0, EXTH);
+
+        dataUrl = finalCanvas2.toDataURL('image/png');
+      } else {
+        dataUrl = finalCanvas.toDataURL('image/png');
       }
-      const jsonStr = JSON.stringify(compressed);
-      const dataBytes = new TextEncoder().encode(jsonStr);
-      const MAGIC = [0x4E, 0x4B, 0x4E, 0x59]; // "N K N Y"
-      const HEADER_SIZE = 8 + 4 + 4; // 8 marker + 4 magic + 4 length
-      const dataRows = Math.ceil((HEADER_SIZE + dataBytes.length + 8) / EXTW);
-      const dataBarHeight = Math.max(dataRows, 2);
 
-      // Extend the final canvas to fit the data bar below the map content
-      const finalH = EXTH + dataBarHeight;
-      const finalCanvas2 = document.createElement('canvas');
-      finalCanvas2.width = EXTW;
-      finalCanvas2.height = finalH;
-      const fctx2 = finalCanvas2.getContext('2d');
-      if (!fctx2) return;
+      // Embed route metadata as PNG tEXt chunks (always, regardless of data bar)
+      const decAuthor = xorDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
+      const routeJson = JSON.stringify(DataManager.sanitizeRouteForExport(route));
+      dataUrl = insertPngMetadata(dataUrl, {
+        Title: route.title || '',
+        Description: route.description || '',
+        Author: decAuthor,
+        TargetCash: route.targetCash || '',
+        TargetCoins: route.targetCoins || '',
+        TargetDuration: route.targetDuration || '',
+        CreatedAt: String(route.createdAt || ''),
+        RouteData: routeJson
+      });
 
-      // Copy the already-drawn map content onto the extended canvas
-      fctx2.drawImage(finalCanvas, 0, 0);
-
-      const allBytes = new Uint8Array(HEADER_SIZE + dataBytes.length + 8);
-      // Start marker: 8 magenta pixels
-      for (let j = 0; j < 8; j++) { allBytes[j] = 0xFF; }
-      // Magic
-      for (let j = 0; j < 4; j++) { allBytes[8 + j] = MAGIC[j]; }
-      // Length (big-endian)
-      const len = dataBytes.length;
-      allBytes[12] = (len >> 24) & 0xff;
-      allBytes[13] = (len >> 16) & 0xff;
-      allBytes[14] = (len >> 8) & 0xff;
-      allBytes[15] = len & 0xff;
-      // Data
-      allBytes.set(dataBytes, HEADER_SIZE);
-      // End marker: 8 magenta pixels
-      for (let j = 0; j < 8; j++) { allBytes[HEADER_SIZE + dataBytes.length + j] = 0xFF; }
-
-      const imgData = fctx2.createImageData(EXTW, dataBarHeight);
-      for (let i = 0; i < allBytes.length; i++) {
-        const px = i % EXTW;
-        const row = Math.floor(i / EXTW);
-        const idx = (row * EXTW + px) * 4;
-        const isMarker = (allBytes[i] === 0xFF && i < 8) || i >= HEADER_SIZE + dataBytes.length;
-        imgData.data[idx] = isMarker ? 255 : 0;     // R: marker=255, data=0
-        imgData.data[idx + 1] = isMarker ? 0 : allBytes[i]; // G: marker=0, data=byte value
-        imgData.data[idx + 2] = isMarker ? 255 : 0; // B: marker=255, data=0
-        imgData.data[idx + 3] = 255;
-      }
-      fctx2.putImageData(imgData, 0, EXTH);
-
-      const dataUrl = finalCanvas2.toDataURL('image/png');
       onComplete(dataUrl);
     };
 
@@ -883,7 +1031,45 @@ export class DataManager {
   }
 
   // Decode pixel-encoded JSON from a PNG image
-  static decodePngData(image: HTMLImageElement): Promise<RouteData | null> {
+  static async decodePngData(image: HTMLImageElement, rawBuffer?: ArrayBuffer): Promise<RouteData | null> {
+    // --- Pass 1: pixel data bar (existing logic) ---
+    const fromBar = await DataManager.decodePngDataBar(image);
+    if (fromBar) return fromBar;
+
+    // --- Pass 2: PNG tEXt metadata fallback ---
+    try {
+      let buf = rawBuffer;
+      if (!buf) {
+        const src = image.src;
+        if (src && (src.startsWith('data:image/png') || src.startsWith('blob:'))) {
+          const resp = await fetch(src);
+          buf = await resp.arrayBuffer();
+        }
+      }
+      if (buf) {
+        const meta = extractPngMetadata(buf);
+        if (meta.RouteData) {
+          const parsed = JSON.parse(meta.RouteData);
+          if (parsed && parsed.id && typeof parsed.title === 'string') {
+            if (parsed._v === 2 && parsed.strokes && typeof parsed.strokes === 'object') {
+              for (const floorKey of Object.keys(parsed.strokes)) {
+                const val = parsed.strokes[floorKey];
+                if (Array.isArray(val) && val.length > 0 && val[0].p && Array.isArray(val[0].p)) {
+                  parsed.strokes[floorKey] = decompressStrokes(val);
+                }
+              }
+              delete parsed._v;
+            }
+            return parsed as RouteData;
+          }
+        }
+      }
+    } catch { /* ignore metadata fallback errors */ }
+
+    return null;
+  }
+
+  private static decodePngDataBar(image: HTMLImageElement): Promise<RouteData | null> {
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
       // The encoder writes a data bar at the bottom whose height scales

@@ -64,16 +64,69 @@ function findStartMarker(pixels, width, height) {
   return -1;
 }
 
+function extractPngMetadata(pngBuffer) {
+  const result = {};
+  // PNG signature is 8 bytes; each chunk: 4 len + 4 type + data + 4 crc
+  let offset = 8;
+  while (offset + 8 <= pngBuffer.length) {
+    const len = pngBuffer.readUInt32BE(offset);
+    const type = pngBuffer.toString('ascii', offset + 4, offset + 8);
+    if (type === 'tEXt' && offset + 12 + len <= pngBuffer.length) {
+      const chunkData = pngBuffer.subarray(offset + 8, offset + 8 + len);
+      const nullIdx = chunkData.indexOf(0);
+      if (nullIdx > 0) {
+        const key = chunkData.subarray(0, nullIdx).toString('utf8');
+        const val = chunkData.subarray(nullIdx + 1).toString('utf8');
+        result[key] = val;
+      }
+    }
+    if (type === 'IEND') break;
+    offset += 12 + len;
+  }
+  return result;
+}
+
 function decodePngData(inputPath) {
   const buf = readFileSync(inputPath);
   const png = PNG.sync.read(buf);
   const { width, height, data } = png;
 
+  // --- Pass 1: pixel data bar ---
   const markerStart = findStartMarker(data, width, height);
-  if (markerStart < 0) {
-    throw new Error('Start marker not found (no magenta run detected)');
+  if (markerStart >= 0) {
+    return decodePngDataBar(data, markerStart);
   }
 
+  // --- Pass 2: PNG tEXt metadata fallback ---
+  const meta = extractPngMetadata(buf);
+  if (meta.RouteData) {
+    const parsed = JSON.parse(meta.RouteData);
+    // Decompress v2 strokes (delta+zigzag encoded) if present
+    if (parsed._v === 2 && parsed.strokes && typeof parsed.strokes === 'object') {
+      for (const floorKey of Object.keys(parsed.strokes)) {
+        const val = parsed.strokes[floorKey];
+        if (Array.isArray(val) && val.length > 0 && val[0].p && Array.isArray(val[0].p)) {
+          parsed.strokes[floorKey] = val.map(cs => {
+            const points = [];
+            let x = 0, y = 0;
+            for (let i = 0; i < cs.p.length; i += 2) {
+              x += (cs.p[i] >>> 1) ^ -(cs.p[i] & 1);
+              y += (cs.p[i + 1] >>> 1) ^ -(cs.p[i + 1] & 1);
+              points.push({ x, y });
+            }
+            return { points, color: cs.c, width: cs.w, type: cs.t };
+          });
+        }
+      }
+      delete parsed._v;
+    }
+    return parsed;
+  }
+
+  throw new Error('Start marker not found (no magenta run detected) and no tEXt metadata found');
+}
+
+function decodePngDataBar(data, markerStart) {
   // Skip 8 marker pixels (32 byte-stride entries).
   const afterMarker = markerStart + 32;
 
