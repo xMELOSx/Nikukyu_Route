@@ -727,16 +727,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const speed = autoRouteTiming.speed;
       let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+
       autoRouteSegments.forEach(seg => {
         const isWarp = seg.distance === 0 && seg.stopDuration === 0;
         if (isWarp) return;
 
         const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
         const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-
-        ctx.strokeStyle = '#ff0055';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([]);
 
         if (remaining > 0) {
           if (remaining < travelTime) {
@@ -745,10 +746,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               x: seg.start.x + (seg.end.x - seg.start.x) * t,
               y: seg.start.y + (seg.end.y - seg.start.y) * t
             };
-            ctx.beginPath();
             ctx.moveTo(startPt.x, startPt.y);
             ctx.lineTo(seg.end.x, seg.end.y);
-            ctx.stroke();
             remaining = 0;
           } else {
             remaining -= travelTime;
@@ -759,12 +758,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
           }
         } else {
-          ctx.beginPath();
           ctx.moveTo(seg.start.x, seg.start.y);
           ctx.lineTo(seg.end.x, seg.end.y);
-          ctx.stroke();
         }
       });
+      ctx.stroke();
     } else {
       strokes.forEach(stroke => {
         ctx.strokeStyle = stroke.color;

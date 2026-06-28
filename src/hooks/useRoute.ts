@@ -240,7 +240,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         data = {
           ...preset.routeData,
           id: generateId('route'),
-          title: `${preset.routeData.title} (COPY)`
+          title: preset.routeData.title
         };
       } else {
         data = DataManager.loadFromLocalStorage(id);

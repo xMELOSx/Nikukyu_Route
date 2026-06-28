@@ -659,9 +659,9 @@ export default function App() {
     }
   };
 
-  const handleDeleteFromLocal = (e: React.MouseEvent, id: string) => {
+  const handleDeleteFromLocal = (id: string) => {
     if (deleteConfirmId === id) {
-      routeApi.deleteFromLocal(e, id);
+      routeApi.deleteFromLocal({ stopPropagation: () => {} } as React.MouseEvent, id);
       setDeleteConfirmId(null);
     } else {
       setDeleteConfirmId(id);
@@ -1792,11 +1792,11 @@ export default function App() {
                         {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
                         {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
                       </div>
-                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }}>
+                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
                         <button
                           className="btn-cyber"
                           style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                          onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
+                          onClick={() => { navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
                           title="プリセットIDをクリップボードにコピー"
                         >
                           IDコピー
@@ -1804,7 +1804,7 @@ export default function App() {
                         <button
                           className="btn-cyber"
                           style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                          onClick={(e) => { e.stopPropagation(); const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                          onClick={() => { const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
                           title="このプリセットを開くURLをコピー"
                         >
                           URLコピー
@@ -1812,11 +1812,11 @@ export default function App() {
                         {isLocal && (
                           presetDeleteConfirmId === p.id ? (
                             <>
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除する</button>
-                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); setPresetDeleteConfirmId(null); }}>キャンセル</button>
+                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>削除する</button>
+                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>キャンセル</button>
                             </>
                           ) : (
-                            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); handleDeletePreset(p.id); }}>削除</button>
+                            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>削除</button>
                           )
                         )}
                       </div>
@@ -1829,11 +1829,11 @@ export default function App() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
-                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                           <button
                             className="btn-cyber"
                             style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                            onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(s.id); notification.show('セーブIDをコピーしました'); }}
+                            onClick={() => { navigator.clipboard.writeText(s.id); notification.show('セーブIDをコピーしました'); }}
                             title="セーブIDをクリップボードにコピー"
                           >
                             ID
@@ -1841,22 +1841,22 @@ export default function App() {
                           <button
                             className="btn-cyber"
                             style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                            onClick={(e) => { e.stopPropagation(); const url = `${window.location.origin}${window.location.pathname}?save=${s.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                            onClick={() => { const url = `${window.location.origin}${window.location.pathname}?save=${s.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
                             title="このセーブを開くURLをコピー"
                           >
                             URL
                           </button>
                           {deleteConfirmId === s.id ? (
                             <>
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}>削除する</button>
-                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}>キャンセル</button>
+                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除する</button>
+                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>キャンセル</button>
                             </>
                           ) : (
                             <>
                               {isLocal && isEditMode && (
-                                <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }} onClick={(e) => { e.stopPropagation(); handleQuickPreset(s); }}>プリセット登録</button>
+                                <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }} onClick={() => handleQuickPreset(s)}>プリセット登録</button>
                               )}
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={(e) => { e.stopPropagation(); handleDeleteFromLocal(e, s.id); }}>削除</button>
+                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除</button>
                             </>
                           )}
                         </div>
