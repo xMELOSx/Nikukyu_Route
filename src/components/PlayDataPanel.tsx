@@ -1182,13 +1182,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               justifyContent: 'center',
               gap: '4px',
               fontSize: '12px',
-              color: state.requiem15 ? '#ff9500' : 'var(--text-muted)',
+              color: state.requiem15 ? '#a855f7' : 'var(--text-muted)',
               cursor: 'pointer',
               userSelect: 'none',
               padding: '5px 6px',
-              border: `1px solid ${state.requiem15 ? 'rgba(255,149,0,0.6)' : 'rgba(255,255,255,0.08)'}`,
+              border: `1px solid ${state.requiem15 ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.08)'}`,
               borderRadius: '4px',
-              background: state.requiem15 ? 'rgba(255,149,0,0.15)' : 'transparent',
+              background: state.requiem15 ? 'rgba(168,85,247,0.15)' : 'transparent',
               fontWeight: state.requiem15 ? 700 : 400
             }}
           >
@@ -1196,7 +1196,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               type="checkbox"
               checked={state.requiem15}
               onChange={(e) => setRequiem15(e.target.checked)}
-              style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+              style={{ accentColor: '#a855f7', cursor: 'pointer' }}
             />
             +15% レクイエム
           </label>
@@ -1208,13 +1208,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               justifyContent: 'center',
               gap: '4px',
               fontSize: '12px',
-              color: state.requiem20 ? '#ff00ff' : 'var(--text-muted)',
+              color: state.requiem20 ? 'var(--yellow-neon, #ffe600)' : 'var(--text-muted)',
               cursor: 'pointer',
               userSelect: 'none',
               padding: '5px 6px',
-              border: `1px solid ${state.requiem20 ? 'rgba(255,0,255,0.6)' : 'rgba(255,255,255,0.08)'}`,
+              border: `1px solid ${state.requiem20 ? 'rgba(255,230,0,0.6)' : 'rgba(255,255,255,0.08)'}`,
               borderRadius: '4px',
-              background: state.requiem20 ? 'rgba(255,0,255,0.15)' : 'transparent',
+              background: state.requiem20 ? 'rgba(255,230,0,0.15)' : 'transparent',
               fontWeight: state.requiem20 ? 700 : 400
             }}
           >
@@ -1222,7 +1222,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               type="checkbox"
               checked={state.requiem20}
               onChange={(e) => setRequiem20(e.target.checked)}
-              style={{ accentColor: '#ff00ff', cursor: 'pointer' }}
+              style={{ accentColor: 'var(--yellow-neon, #ffe600)', cursor: 'pointer' }}
             />
             +20% レクイエム
           </label>

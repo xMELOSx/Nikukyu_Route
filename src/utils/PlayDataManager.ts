@@ -52,6 +52,7 @@ export const AUTO_ROUTE_COLLAPSED_KEY = 'heist_auto_route_collapsed';
 export const BIWEEKLY_FANS_CAP = 1_000_000;
 export const BIWEEKLY_COINS_CAP = 100_000;
 export const FANS_PER_NIKUKYUU_POINT = 2400;
+export const NIKUKYUU_POINTS_CAP = 90;
 export const PERIOD_LENGTH_MS = 14 * 24 * 60 * 60 * 1000;
 export const RESET_HOUR = 5; // 5 AM local time on the reset Monday
 
@@ -210,11 +211,12 @@ export function checkAutoReset(state: PlayDataState, now: number = Date.now()): 
 
 /**
  * Calculate にくきゅうポイント from current fans. 1 point per 2400 fans.
+ * Capped at NIKUKYUU_POINTS_CAP (90) per the help spec (216,000 fans = 90pt).
  * NOT affected by requiem bonus — based on the original acquisition count.
  */
 export function calculateNikukyuuPoints(fans: number): number {
   if (fans <= 0) return 0;
-  return Math.floor(fans / FANS_PER_NIKUKYUU_POINT);
+  return Math.min(NIKUKYUU_POINTS_CAP, Math.floor(fans / FANS_PER_NIKUKYUU_POINT));
 }
 
 /**
