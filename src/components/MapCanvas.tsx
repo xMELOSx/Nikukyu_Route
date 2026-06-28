@@ -1169,7 +1169,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     y: Math.max(0, Math.min(4550, coords.y))
                   };
                   return { ...mk, warpWaypoints: nextWaypoints };
-                } else if (mk.id === conn.partner.id && mk.id !== conn.primary.id) {
+                } else if (conn.isMutuallyLinked && mk.id === conn.partner.id && mk.id !== conn.primary.id) {
                   return { ...mk, warpWaypoints: [] };
                 }
               }
@@ -3960,7 +3960,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             onMarkersChange(
                               markers.map(m => {
                                 if (m.id === primary.id) return { ...m, warpWaypoints: [...waypoints, midpoint] };
-                                if (m.id === partner.id) return { ...m, warpWaypoints: [] };
+                                if (conn.isMutuallyLinked && m.id === partner.id) return { ...m, warpWaypoints: [] };
                                 return m;
                               }),
                               true
@@ -3977,7 +3977,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             onMarkersChange(
                               markers.map(m => {
                                 if (m.id === primary.id) return { ...m, warpWaypoints: [midpoint, ...waypoints] };
-                                if (m.id === activeNoteMarker.id) return { ...m, warpWaypoints: [] };
+                                if (conn.isMutuallyLinked && m.id === activeNoteMarker.id) return { ...m, warpWaypoints: [] };
                                 return m;
                               }),
                               true
@@ -4005,7 +4005,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                     : waypoints.slice(0, -1);
                                   return { ...m, warpWaypoints: nextWaypoints };
                                 }
-                                if (m.id === partner.id || m.id === activeNoteMarker.id) {
+                                if (conn.isMutuallyLinked && (m.id === partner.id || m.id === activeNoteMarker.id)) {
                                   if (m.id !== primary.id) return { ...m, warpWaypoints: [] };
                                 }
                                 return m;
