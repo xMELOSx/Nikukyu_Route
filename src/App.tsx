@@ -1830,22 +1830,6 @@ export default function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
                         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                          <button
-                            className="btn-cyber"
-                            style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                            onClick={() => { navigator.clipboard.writeText(s.id); notification.show('セーブIDをコピーしました'); }}
-                            title="セーブIDをクリップボードにコピー"
-                          >
-                            ID
-                          </button>
-                          <button
-                            className="btn-cyber"
-                            style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                            onClick={() => { const url = `${window.location.origin}${window.location.pathname}?save=${s.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
-                            title="このセーブを開くURLをコピー"
-                          >
-                            URL
-                          </button>
                           {deleteConfirmId === s.id ? (
                             <>
                               <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除する</button>
