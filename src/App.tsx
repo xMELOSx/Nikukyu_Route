@@ -179,6 +179,7 @@ export default function App() {
     return saved !== null ? parseInt(saved) : 30;
   });
   const [presetListVisible, setPresetListVisible] = useState(false);
+  const [saveLoadSearchQuery, setSaveLoadSearchQuery] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -456,6 +457,45 @@ export default function App() {
       .catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // URL parameter auto-open: ?preset=ID or ?save=ID
+  const urlParamsHandledRef = useRef(false);
+  useEffect(() => {
+    if (urlParamsHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const presetId = params.get('preset');
+    const saveId = params.get('save');
+
+    if (saveId) {
+      urlParamsHandledRef.current = true;
+      const data = DataManager.loadFromLocalStorage(saveId);
+      if (data) {
+        const migrated = migrateRouteCoordinates(data);
+        routeApi.setRouteWithGlobalDefaults(migrated);
+        if (migrated.markerScale !== undefined) {
+          setMarkerScale(migrated.markerScale);
+          localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
+        }
+        notification.show(`URLから読み込み: ${migrated.title}`);
+      } else {
+        notification.show(`セーブデータが見つかりません: ${saveId}`, 3000);
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (presetId && routeApi.presets.length > 0) {
+      urlParamsHandledRef.current = true;
+      const preset = routeApi.presets.find(p => p.id === presetId);
+      if (preset) {
+        routeApi.loadFromLocal(`__preset__${presetId}`);
+        notification.show(`URLからプリセットを読み込み: ${preset.name}`);
+      } else {
+        notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [routeApi.presets]);
 
   // Sync target duration slider DOM value with state when the user is NOT
   // actively interacting with the slider. The slider is uncontrolled
@@ -1239,6 +1279,18 @@ export default function App() {
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>
                     <Upload size={12} /> インポート
                   </button>
+                  {isLocal && (
+                    <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px', borderColor: '#ffd700', color: '#ffd700' }} onClick={() => {
+                      routeApi.saveAsPreset({
+                        name: routeApi.route.title,
+                        description: routeApi.route.description || '',
+                        author: xorDecrypt(routeApi.route.author, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)),
+                        originalAuthor: xorDecrypt(routeApi.route.originalAuthor, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt))
+                      });
+                    }}>
+                      ★ プリセット登録
+                    </button>
+                  )}
                   <input
                     type="file"
                     ref={fileIO.jsonFileInputRef}
@@ -1601,14 +1653,55 @@ export default function App() {
           <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>セーブデータ読み込み</div>
-              <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => setPresetListVisible(false)}>✕ 閉じる</button>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="input-cyber"
+                  placeholder="検索..."
+                  value={saveLoadSearchQuery}
+                  onChange={(e) => setSaveLoadSearchQuery(e.target.value)}
+                  style={{ width: '160px', padding: '4px 8px', fontSize: '11px' }}
+                />
+                {saveLoadSearchQuery && (
+                  <button className="btn-cyber" style={{ padding: '4px 6px', fontSize: '10px' }} onClick={() => setSaveLoadSearchQuery('')}>
+                    ✕
+                  </button>
+                )}
+                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>✕ 閉じる</button>
+              </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
               {routeApi.presets.length === 0 && routeApi.saves.length === 0 ? (
                 <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>セーブデータはまだありません</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {routeApi.presets.map(p => (
+                  {(() => {
+                    const q = saveLoadSearchQuery.toLowerCase().trim();
+                    const matchPreset = (p: PresetData) => {
+                      if (!q) return true;
+                      return p.name.toLowerCase().includes(q)
+                        || (p.description || '').toLowerCase().includes(q)
+                        || (p.author || '').toLowerCase().includes(q)
+                        || (p.originalAuthor || '').toLowerCase().includes(q);
+                    };
+                    const matchSave = (s: SaveInfo) => {
+                      if (!q) return true;
+                      const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
+                      const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                      return s.title.toLowerCase().includes(q)
+                        || (s.description || '').toLowerCase().includes(q)
+                        || sa.toLowerCase().includes(q)
+                        || so.toLowerCase().includes(q);
+                    };
+                    const filteredPresets = routeApi.presets.filter(matchPreset);
+                    const filteredSaves = routeApi.saves.filter(matchSave);
+                    if (q && filteredPresets.length === 0 && filteredSaves.length === 0) {
+                      return <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
+                        「{saveLoadSearchQuery}」に一致するデータが見つかりません
+                      </div>;
+                    }
+                    return (<>
+                      {filteredPresets.map(p => (
                     <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
                       onClick={() => { routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
                     >
@@ -1657,7 +1750,7 @@ export default function App() {
                     </div>
                   ))}
 
-                  {routeApi.saves.map(s => (
+                  {filteredSaves.map(s => (
                     <div key={s.id} style={{ padding: '10px 12px', background: routeApi.route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: routeApi.route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
                       onClick={() => { routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
                     >
@@ -1695,6 +1788,8 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+                    </>);
+                  })()}
                 </div>
               )}
             </div>

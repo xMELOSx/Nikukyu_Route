@@ -39,6 +39,7 @@ export interface UseAutoRouteEngineParams {
   setCurrentPosition: (pos: { x: number; y: number } | null) => void;
   zoom: number;
   onAutoStartMarkerSet?: (marker: HeistMarker | null) => void;
+  onTick?: (elapsed: number, pos: { x: number; y: number }) => void;
 }
 
 function nextMarkerLabel(segments: RouteSegment[], elapsed: number, speed: number): string {
@@ -84,7 +85,10 @@ export function useAutoRouteEngine({
   setCurrentPosition,
   zoom,
   onAutoStartMarkerSet,
+  onTick,
 }: UseAutoRouteEngineParams) {
+  const latestElapsedRef = useRef<number>(0);
+  const latestPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [autoRouteActive, setAutoRouteActive] = useState(false);
   const [autoRouteRunning, setAutoRouteRunning] = useState(false);
   const [autoRouteElapsed, setAutoRouteElapsed] = useState(0);
@@ -224,16 +228,22 @@ export function useAutoRouteEngine({
       const mult = autoRouteTiming.speed / baseSpd;
       const elapsed = autoRouteElapsedAtStartRef.current + realElapsed * mult;
       if (elapsed >= autoRouteTiming.totalTime) {
-        setAutoRouteElapsed(autoRouteTiming.totalTime);
+        latestElapsedRef.current = autoRouteTiming.totalTime;
         const last = autoRouteSegments[autoRouteSegments.length - 1];
-        setCurrentPosition({ x: last.end.x, y: last.end.y });
+        latestPositionRef.current = { x: last.end.x, y: last.end.y };
         setAutoRouteRunning(false);
+        setAutoRouteElapsed(autoRouteTiming.totalTime);
+        setCurrentPosition({ x: last.end.x, y: last.end.y });
         return;
       }
-      setAutoRouteElapsed(elapsed);
+      latestElapsedRef.current = elapsed;
+      autoRouteElapsedRef.current = elapsed;
       const interp = interpolateRoute(autoRouteSegments, autoRouteTiming.speed, autoRouteTiming.totalTime, elapsed);
       if (interp) {
-        setCurrentPosition({ x: interp.position.x, y: interp.position.y });
+        latestPositionRef.current = { x: interp.position.x, y: interp.position.y };
+        if (onTick) {
+          onTick(elapsed, interp.position);
+        }
 
         const segId = `${interp.segment.markerId || interp.segment.start.x},${interp.segment.start.y}`;
         if (autoRoutePrevSegmentIdRef.current && autoRoutePrevSegmentIdRef.current !== segId) {
@@ -336,6 +346,10 @@ export function useAutoRouteEngine({
   useEffect(() => {
     if (!onAutoRouteStatusChange) return;
     const sendStatus = () => {
+      setAutoRouteElapsed(autoRouteElapsedRef.current);
+      if (latestPositionRef.current) {
+        setCurrentPosition(latestPositionRef.current);
+      }
       const elapsed = autoRouteElapsedRef.current;
       const mks = markersRef.current;
       const waitRemaining = autoRouteWaitUntilRef.current > 0

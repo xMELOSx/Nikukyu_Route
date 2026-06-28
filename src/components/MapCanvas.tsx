@@ -162,6 +162,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const runnerDotRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
 
   // Helper to resolve connection properties between Warp/Stairs
@@ -350,6 +351,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setCurrentPosition,
     zoom,
     onAutoStartMarkerSet: onAutoStartMarkerChange,
+    onTick: (elapsed, pos) => {
+      if (runnerDotRef.current) {
+        runnerDotRef.current.style.left = `${pos.x}px`;
+        runnerDotRef.current.style.top = `${pos.y}px`;
+      }
+      redrawStrokes(elapsed);
+    }
   });
 
   // Pre-calculate passed marker IDs to optimize performance from O(N*M) to O(N+M)
@@ -708,14 +716,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [currentPosition, markers, floor, onMarkersChange, activeNoteMarkerId]);
 
   // Redraw all strokes on canvas
-  const redrawStrokes = () => {
+  const redrawStrokes = (overrideElapsed?: number) => {
     const ctx = ctxRef.current;
     if (!ctx) return;
     ctx.clearRect(0, 0, 1600, 4550);
 
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       const speed = autoRouteTiming.speed;
-      let remaining = autoRouteElapsed;
+      let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
       autoRouteSegments.forEach(seg => {
         const isWarp = seg.distance === 0 && seg.stopDuration === 0;
@@ -1057,7 +1065,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'erase') {
-      eraseStrokesAtPoint(coords);
+      eraseStrokesAtPoint(coords, e.altKey);
       setIsDrawing(true);
       return;
     }
@@ -1230,7 +1238,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           };
         }
       }
-      const newPoints = [...currentPoints, coords];
+      const newPoints = [...currentPoints, effectiveCoord];
       setCurrentPoints(newPoints);
       const ctx = ctxRef.current;
       if (ctx) {
@@ -1241,7 +1249,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (isDrawing && toolMode === 'erase') {
-      eraseStrokesAtPoint(coords);
+      eraseStrokesAtPoint(coords, e.altKey);
       return;
     }
 
@@ -1276,7 +1284,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
         // to maintain a connected route network.
         if (strokeType === 'solid') {
-          const SNAP_THRESHOLD = 25;
+          const SNAP_THRESHOLD = drawMode === 'straight' ? 25 : 8;
           const first = points[0];
           const last = points[points.length - 1];
           const snap = (pt: Point): Point => {
@@ -1316,14 +1324,55 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
-  const eraseStrokesAtPoint = (pt: Point) => {
-    const threshold = 12;
-    const filteredStrokes = strokes.filter(stroke => {
-      const dist = getDistanceToStroke(pt, stroke);
-      return dist > threshold;
-    });
-    if (filteredStrokes.length !== strokes.length) {
-      onStrokesChange(filteredStrokes);
+  const eraseStrokesAtPoint = (pt: Point, isAltPressed: boolean = false) => {
+    if (isAltPressed) {
+      const threshold = 16;
+      let anySplit = false;
+      const nextStrokes: DrawingStroke[] = [];
+
+      strokes.forEach(stroke => {
+        const groups: Point[][] = [];
+        let currentGroup: Point[] = [];
+
+        stroke.points.forEach(p => {
+          const dist = Math.hypot(p.x - pt.x, p.y - pt.y);
+          if (dist > threshold) {
+            currentGroup.push(p);
+          } else {
+            if (currentGroup.length >= 2) {
+              groups.push(currentGroup);
+            }
+            currentGroup = [];
+            anySplit = true;
+          }
+        });
+
+        if (currentGroup.length >= 2) {
+          groups.push(currentGroup);
+        }
+
+        if (groups.length > 0) {
+          groups.forEach(group => {
+            nextStrokes.push({
+              ...stroke,
+              points: group
+            });
+          });
+        }
+      });
+
+      if (anySplit) {
+        onStrokesChange(nextStrokes);
+      }
+    } else {
+      const threshold = 12;
+      const filteredStrokes = strokes.filter(stroke => {
+        const dist = getDistanceToStroke(pt, stroke);
+        return dist > threshold;
+      });
+      if (filteredStrokes.length !== strokes.length) {
+        onStrokesChange(filteredStrokes);
+      }
     }
   };
 
@@ -2037,12 +2086,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Current Position Marker (▼) */}
-          {currentPosition && (
+          {autoRouteActive && (
             <div
+              ref={runnerDotRef}
               className="current-position-marker"
               style={{
-                left: `${currentPosition.x}px`,
-                top: `${currentPosition.y}px`,
+                left: `${currentPosition ? currentPosition.x : 0}px`,
+                top: `${currentPosition ? currentPosition.y : 0}px`,
                 transform: `translate(-50%, -100%) scale(${1 / Math.sqrt(zoom)})`,
                 transformOrigin: 'bottom center'
               }}
