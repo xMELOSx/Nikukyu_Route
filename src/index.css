@@ -273,6 +273,8 @@ button, select, input {
   gap: 12px;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+  z-index: 200;
 }
 
 .sidebar-right {
@@ -284,6 +286,8 @@ button, select, input {
   gap: 12px;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+  z-index: 200;
 }
 
 .sidebar-fixed {

@@ -27,6 +27,8 @@ interface OcrPreset {
   id: string;
   name: string;
   regions: OcrRegion[];
+  baseWidth?: number;
+  baseHeight?: number;
 }
 
 
@@ -34,6 +36,7 @@ interface OcrPreset {
 export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imgSize, setImgSize] = useState({ w: 0, h: 0 });
+  const prevImgSizeRef = useRef({ w: 0, h: 0 });
 
   // Multiple OCR regions list
   const [regions, setRegions] = useState<OcrRegion[]>([
@@ -235,16 +238,38 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   // Handle image load
   const handleImageLoaded = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
-    setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
-    
-    // Bounds check crop coordinates for all regions
+    const newW = img.naturalWidth;
+    const newH = img.naturalHeight;
+    setImgSize({ w: newW, h: newH });
+
+    const oldW = prevImgSizeRef.current.w;
+    const oldH = prevImgSizeRef.current.h;
+
+    // Bounds check and scale crop coordinates for all regions
     setRegions(prev => prev.map(r => {
-      const x = Math.min(r.x, img.naturalWidth - 10);
-      const y = Math.min(r.y, img.naturalHeight - 10);
-      const w = Math.min(r.w, img.naturalWidth - x);
-      const h = Math.min(r.h, img.naturalHeight - y);
+      let x = r.x;
+      let y = r.y;
+      let w = r.w;
+      let h = r.h;
+
+      // If we transitioned to a different image size, scale coordinates
+      if (oldW > 0 && oldH > 0 && (oldW !== newW || oldH !== newH)) {
+        const scaleX = newW / oldW;
+        const scaleY = newH / oldH;
+        x = Math.round(x * scaleX);
+        y = Math.round(y * scaleY);
+        w = Math.max(5, Math.round(w * scaleX));
+        h = Math.max(5, Math.round(h * scaleY));
+      }
+
+      x = Math.max(0, Math.min(x, newW - 10));
+      y = Math.max(0, Math.min(y, newH - 10));
+      w = Math.max(5, Math.min(w, newW - x));
+      h = Math.max(5, Math.min(h, newH - y));
       return { ...r, x, y, w, h };
     }));
+
+    prevImgSizeRef.current = { w: newW, h: newH };
   };
 
   // Perform Image Preprocessing on Preview Canvas for each region
@@ -444,7 +469,9 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
     const newPreset: OcrPreset = {
       id: `ocr_preset_${Date.now()}`,
       name: newPresetName.trim(),
-      regions: regions.map(r => ({ ...r, result: '' })) // Clear results before save
+      regions: regions.map(r => ({ ...r, result: '' })), // Clear results before save
+      baseWidth: imgSize.w || 3840,
+      baseHeight: imgSize.h || 2160
     };
 
     const updated = [...presets, newPreset];
@@ -467,7 +494,22 @@ export function OcrDebugModal({ show, onClose }: OcrDebugModalProps) {
   const applyPreset = (preset: OcrPreset) => {
     setActivePresetId(preset.id);
     if (preset.regions && preset.regions.length > 0) {
-      setRegions(preset.regions);
+      const baseW = preset.baseWidth || 3840;
+      const baseH = preset.baseHeight || 2160;
+      const currentW = imgSize.w || baseW;
+      const currentH = imgSize.h || baseH;
+
+      const scaleX = currentW / baseW;
+      const scaleY = currentH / baseH;
+
+      const scaledRegions = preset.regions.map(r => ({
+        ...r,
+        x: Math.round(r.x * scaleX),
+        y: Math.round(r.y * scaleY),
+        w: Math.max(5, Math.round(r.w * scaleX)),
+        h: Math.max(5, Math.round(r.h * scaleY))
+      }));
+      setRegions(scaledRegions);
       setSelectedRegionId(preset.regions[0].id);
     }
   };

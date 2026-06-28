@@ -421,8 +421,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       m.trackSide === 'auto' || !m.trackSide
         ? (m.x < midX ? 'left' : 'right')
         : m.trackSide;
-    if (side === 'left') return leftSidebarCollapsed ? 0 : 280;
-    return rightSidebarCollapsed ? 0 : -340;
+    const isMobile = window.innerWidth < 768;
+    if (side === 'left') return leftSidebarCollapsed ? 0 : (isMobile ? 320 : 280);
+    return rightSidebarCollapsed ? 0 : (isMobile ? -320 : -340);
   };
 
   // Sync state to anim refs whenever state changes
@@ -811,7 +812,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       top: `${m.y + offset.y}px`,
       width: `${w}px`,
       ...(h > 0 ? { height: `${h}px`, maxHeight: `${h}px` } : {}),
-      transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+      transform: `translate(-50%, -50%) scale(${Math.min(3, 1 / zoom)})`,
       transformOrigin: 'center center',
       zIndex: 1000,
       cursor: isEditMode ? 'move' : 'default',
@@ -1900,7 +1901,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         style={{
           width: '1600px',
           height: '4550px',
-          transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
         <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
@@ -2102,7 +2103,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               style={{
                 left: `${currentPosition ? currentPosition.x : 0}px`,
                 top: `${currentPosition ? currentPosition.y : 0}px`,
-                transform: `translate(-50%, -100%) scale(${1 / Math.sqrt(zoom)})`,
+                transform: `translate(-50%, -100%) scale(${Math.min(3, 1 / Math.sqrt(zoom))})`,
                 transformOrigin: 'bottom center'
               }}
             >
@@ -2921,7 +2922,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   pointerEvents: passThrough ? 'none' : 'auto',
                   opacity: isHidden ? 0.35 : 1,
                   filter: isHidden ? 'grayscale(90%)' : 'none',
-                  zIndex: 9000,
+                  zIndex: 100,
                   userSelect: 'none'
                 } as React.CSSProperties}
                 onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}

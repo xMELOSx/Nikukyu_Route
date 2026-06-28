@@ -705,10 +705,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
       // Try to load user's actual preset coordinates
       let activePresetRegions: any[] | null = null;
+      let activePresetBaseWidth = 3840;
+      let activePresetBaseHeight = 2160;
       if (selectedPresetId) {
         const found = ocrPresets.find(x => x.id === selectedPresetId);
         if (found && found.regions && found.regions.length > 0) {
           activePresetRegions = found.regions;
+          activePresetBaseWidth = found.baseWidth || 3840;
+          activePresetBaseHeight = found.baseHeight || 2160;
         }
       }
 
@@ -729,14 +733,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
       // Fallback/Default specs (3840x2160 screen)
       let cropSpecs = [
-        { name: 'R1_text', x: 1250, y: 795, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R1_reward', x: 2548, y: 795, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R2_text', x: 1250, y: 925, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R2_reward', x: 2548, y: 925, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R3_text', x: 1250, y: 1055, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R3_reward', x: 2548, y: 1055, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R4_text', x: 1250, y: 1185, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false },
-        { name: 'R4_reward', x: 2548, y: 1185, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false }
+        { name: 'R1_text', x: 1250, y: 795, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R1_reward', x: 2548, y: 795, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R2_text', x: 1250, y: 925, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R2_reward', x: 2548, y: 925, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R3_text', x: 1250, y: 1055, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R3_reward', x: 2548, y: 1055, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R4_text', x: 1250, y: 1185, w: 1200, h: 40, whitelist: '', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 },
+        { name: 'R4_reward', x: 2548, y: 1185, w: 120, h: 40, whitelist: '0123456789$,.', psm: '7', scale: 2, thresholdVal: 128, thresholdEnabled: true, grayscaleEnabled: true, invertEnabled: false, baseWidth: 3840, baseHeight: 2160 }
       ];
 
       if (activePresetRegions) {
@@ -752,7 +756,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
           thresholdVal: typeof r.thresholdVal === 'number' ? r.thresholdVal : 128,
           thresholdEnabled: r.thresholdEnabled !== false,
           grayscaleEnabled: r.grayscaleEnabled !== false,
-          invertEnabled: !!r.invertEnabled
+          invertEnabled: !!r.invertEnabled,
+          baseWidth: activePresetBaseWidth,
+          baseHeight: activePresetBaseHeight
         }));
       }
 
@@ -766,17 +772,25 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             const ctx = canvas.getContext('2d');
             if (!ctx) { resolve(''); return; }
 
-            const w = Math.max(1, spec.w);
-            const h = Math.max(1, spec.h);
+            const baseW = (spec as any).baseWidth || 3840;
+            const baseH = (spec as any).baseHeight || 2160;
+            const scaleX = img.width / baseW;
+            const scaleY = img.height / baseH;
+
+            const rx = Math.round(spec.x * scaleX);
+            const ry = Math.round(spec.y * scaleY);
+            const rw = Math.max(1, Math.round(spec.w * scaleX));
+            const rh = Math.max(1, Math.round(spec.h * scaleY));
+
             const currentScale = spec.scale;
-            canvas.width = w * currentScale;
-            canvas.height = h * currentScale;
+            canvas.width = rw * currentScale;
+            canvas.height = rh * currentScale;
 
             ctx.imageSmoothingEnabled = false;
             // Draw image cropped
             ctx.drawImage(
               img,
-              spec.x, spec.y, w, h,
+              rx, ry, rw, rh,
               0, 0, canvas.width, canvas.height
             );
 
