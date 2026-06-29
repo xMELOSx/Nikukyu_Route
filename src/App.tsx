@@ -479,11 +479,6 @@ export default function App() {
   });
   const [presetListVisible, setPresetListVisible] = useState(false);
   const [saveLoadSearchQuery, setSaveLoadSearchQuery] = useState('');
-  // プリセット一覧のフィルタ (限定公開/非公開を一覧に出すか)
-  // - showUnlisted: デフォルト false (限定公開は基本一覧に出さない、URL 経由で開く想定)
-  // - showPrivate : デフォルト true  (非公開プリセットをローカルモードで見つけられるように)
-  const [showUnlistedPresets, setShowUnlistedPresets] = useState(false);
-  const [showPrivatePresets, setShowPrivatePresets] = useState(true);
   const [urlLoadConfirm, setUrlLoadConfirm] = useState<{ type: 'preset' | 'save'; id: string; name: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
@@ -2302,26 +2297,9 @@ export default function App() {
                 <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>✕ 閉じる</button>
               </div>
             </div>
-            {/* 公開レベルフィルタ (限定公開 / 非公開) */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '6px 12px', background: 'rgba(79,195,247,0.05)', borderBottom: '1px solid rgba(79,195,247,0.15)', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>表示フィルタ:</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#ffe600', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showUnlistedPresets} onChange={(e) => setShowUnlistedPresets(e.target.checked)} style={{ accentColor: '#ffe600', cursor: 'pointer' }} />
-                🔗 限定公開
-              </label>
-              {isLocal && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#ff0055', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={showPrivatePresets} onChange={(e) => setShowPrivatePresets(e.target.checked)} style={{ accentColor: '#ff0055', cursor: 'pointer' }} />
-                  🔒 非公開 (ローカル限定)
-                </label>
-              )}
-              {!isLocal && (
-                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>※ 本番モードでは 🔒 非公開 は表示されません</span>
-              )}
-            </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
               {(() => {
-                const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: showUnlistedPresets, showPrivate: showPrivatePresets });
+                const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: true, showPrivate: true });
                 if (visiblePresets.length === 0 && routeApi.saves.length === 0) {
                   return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>セーブデータはまだありません</div>;
                 }
