@@ -9,17 +9,148 @@ export type FloorType = 'main';
 
 export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd';
 
-// Simple XOR cipher for author name obfuscation
-export function xorEncrypt(plain: string, key: string): string {
-  if (!plain) return '';
-  let result = '';
-  for (let i = 0; i < plain.length; i++) {
-    result += String.fromCharCode(plain.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+// ---------------------------------------------------------------------------
+// 作者名 / 原作者名 の難読化
+// ---------------------------------------------------------------------------
+//
+// 旧実装 (xorEncrypt / xorDecrypt):
+//   - ベース鍵 'Fans' / 'Colins' をクライアント JS に平文で持つだけ
+//   - JSON を開いて暗号文を別の暗号文に貼り替えるだけで原作者を差し替え可能
+//   - 鍵のエクスポートも容易 (DevTools で関数を読めば XOR 復号できる)
+//
+// 新実装 (aesGcmEncrypt / aesGcmDecrypt):
+//   - Web Crypto API の AES-GCM (256bit) で暗号化
+//   - 暗号文はランダム IV を含むので、同じ平文でも毎回異なる暗号文になる
+//   - auth tag (16byte) による完全性検証付き。改ざんされた暗号文は復号失敗する
+//   - 旧 XOR 暗号文は "legacy:" プレフィックスをつけて区別し、保存時に新形式へ
+//     マイグレートする。マイグレートに失敗した値 (鍵違いや改ざん) は "異常" 扱い。
+//
+// MIT ライセンス: Web Crypto API はブラウザ標準 API なので追加依存なし。
+// ---------------------------------------------------------------------------
+
+/** 暗号化済みデータのセンチネル値。復号失敗 / 改ざん時に表示用文字列として返す。 */
+export const AUTHOR_TAMPERED = '__author_tampered__';
+
+/**
+ * author / originalAuthor のデフォルト平文。空文字 (未設定) は許可せず、
+ * ロード時にこの文字列を AES-GCM 暗号化で自動補完する。
+ * 表示は "No name"、UI 上の編集ではこの値に書き戻すことで「未設定」状態に戻る。
+ */
+export const AUTHOR_DEFAULT_PLAIN = 'No name';
+
+const AES_GCM_PREFIX = 'v2:';
+const AES_GCM_LEGACY_PREFIX = 'legacy:';
+/**
+ * "不明" マーカー。
+ * 暗号文 (originalAuthor) がこの値なら「ユーザがクリアした or 改ざんで消えた」を
+ * 表し、aesGcmDecrypt は AUTHOR_TAMPERED を返す。空文字 '' は「元々未設定」
+ * と区別される (例: プリセットに originalAuthor がない新規ルート)。
+ */
+export const AUTHOR_UNKNOWN_MARKER = 'v2:0:';
+const IV_BYTES = 12;
+
+/** パスフレーズ文字列を AES-GCM 用 256bit 鍵に伸長。 */
+async function deriveAesKey(passphrase: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
+  if (!subtle || !subtle.importKey) {
+    throw new Error('Web Crypto API が利用できない環境です');
   }
-  return btoa(unescape(encodeURIComponent(result)));
+  return subtle.importKey(
+    'raw',
+    enc.encode(passphrase),
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
 }
 
-export function xorDecrypt(encoded: string, key: string): string {
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * AES-GCM で暗号化する。戻り値は "v2:" + base64(IV ‖ ciphertext ‖ authTag)。
+ * 失敗時は例外を投げる (呼び出し側で AUTHOR_TAMPERED にフォールバック)。
+ *
+ * author / originalAuthor のフィールドは「空」を許容しないため、空文字が渡された
+ * 場合は AUTHOR_DEFAULT_PLAIN ('No name') を暗号化する。復号側で平文が 'No name'
+ * なら「未設定」相当として表示する。
+ */
+export async function aesGcmEncrypt(plain: string, passphrase: string): Promise<string> {
+  if (!plain) return aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, passphrase);
+  const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
+  if (!subtle) throw new Error('Web Crypto API が利用できない環境です');
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const key = await deriveAesKey(passphrase);
+  const enc = new TextEncoder();
+  const cipherBuf = await subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new Uint8Array() },
+    key,
+    enc.encode(plain)
+  );
+  const cipher = new Uint8Array(cipherBuf);
+  const out = new Uint8Array(IV_BYTES + cipher.length);
+  out.set(iv, 0);
+  out.set(cipher, IV_BYTES);
+  return AES_GCM_PREFIX + bytesToBase64(out);
+}
+
+/**
+ * AES-GCM 暗号文を復号する。失敗時 (改ざん / 鍵違い / フォーマット不正) は
+ * AUTHOR_TAMPERED を返す。呼び出し側はこの値を表示用カラムに「異常」として出す。
+ *
+ * "legacy:" プレフィックスの旧 XOR 暗号文もここに来る可能性がある。xorDecrypt
+ * で復号を試み、成功したら新形式にマイグレートせず平文を返す (呼び出し側で再暗号化)。
+ * 旧復号も失敗したら AUTHOR_TAMPERED。
+ */
+export async function aesGcmDecrypt(encoded: string, passphrase: string): Promise<string> {
+  if (!encoded) return '';
+  // "不明" マーカー (v2:0:) は復号せず AUTHOR_TAMPERED を返す。
+  // 設定されるケース: ロード時に originalAuthor が空かつ author と異なる場合 (= 改ざんの疑い)
+  if (encoded === AUTHOR_UNKNOWN_MARKER) return AUTHOR_TAMPERED;
+  // AES-GCM 新形式
+  if (encoded.startsWith(AES_GCM_PREFIX)) {
+    try {
+      const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
+      if (!subtle) return AUTHOR_TAMPERED;
+      const payload = base64ToBytes(encoded.slice(AES_GCM_PREFIX.length));
+      if (payload.length < IV_BYTES + 16) return AUTHOR_TAMPERED;
+      const iv = payload.slice(0, IV_BYTES);
+      const cipher = payload.slice(IV_BYTES);
+      const key = await deriveAesKey(passphrase);
+      const plainBuf = await subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: new Uint8Array() },
+        key,
+        cipher
+      );
+      return new TextDecoder().decode(plainBuf);
+    } catch {
+      return AUTHOR_TAMPERED;
+    }
+  }
+  // 旧 XOR 暗号文 (互換)
+  if (encoded.startsWith(AES_GCM_LEGACY_PREFIX)) {
+    const legacyPayload = encoded.slice(AES_GCM_LEGACY_PREFIX.length);
+    const plain = legacyXorDecrypt(legacyPayload, passphrase);
+    return plain || AUTHOR_TAMPERED;
+  }
+  // プレフィックスなし: 旧 XOR 形式 (プレフィックス追加前のレガシー) とみなす
+  const plain = legacyXorDecrypt(encoded, passphrase);
+  return plain || AUTHOR_TAMPERED;
+}
+
+/** 旧 XOR 暗号実装 (互換用途のみ。新規保存には使わない)。 */
+function legacyXorDecrypt(encoded: string, key: string): string {
   if (!encoded) return '';
   try {
     const decoded = decodeURIComponent(escape(atob(encoded)));
@@ -29,8 +160,37 @@ export function xorDecrypt(encoded: string, key: string): string {
     }
     return result;
   } catch {
-    return encoded;
+    return '';
   }
+}
+
+/**
+ * 同期版 XOR 復号 (旧コードの置き換え)。
+ * 旧セーブデータを読み取った直後など、await せずに復号したい場面用。
+ * 成功時は平文、失敗時は AUTHOR_TAMPERED。
+ *
+ * 同期では AES-GCM 復号できないため、旧 XOR 復号のみサポート。
+ * 表示時に AUTHOR_TAMPERED になった箇所は別途バックグラウンドで AES-GCM 復号を
+ * 試みる (useRoute の migrateLegacyAuthorField 経由)。
+ */
+export function xorDecrypt(encoded: string, key: string): string {
+  if (!encoded) return '';
+  if (encoded.startsWith(AES_GCM_PREFIX) || encoded.startsWith(AES_GCM_LEGACY_PREFIX)) {
+    // 同期では AES-GCM / legacy を復号できない。呼び出し側で別途非同期復号が必要。
+    return AUTHOR_TAMPERED;
+  }
+  // プレフィックスなし旧 XOR
+  return legacyXorDecrypt(encoded, key) || AUTHOR_TAMPERED;
+}
+
+/** 旧コード互換の同期 XOR 暗号化。新規保存には使わず、旧データを持ち越す時だけ使う。 */
+export function xorEncrypt(plain: string, key: string): string {
+  if (!plain) return '';
+  let result = '';
+  for (let i = 0; i < plain.length; i++) {
+    result += String.fromCharCode(plain.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return btoa(unescape(encodeURIComponent(result)));
 }
 
 export const AUTHOR_KEY = 'Fans';
@@ -374,8 +534,20 @@ export interface RouteData {
   targetCash: string;
   targetCoins: string;
   targetDuration: string; // Target duration in seconds (0-720)
+  /**
+   * 作者名 (AES-GCM 暗号化済み)。
+   * 形式: "v2:" + base64(IV 12byte ‖ ciphertext ‖ authTag 16byte)
+   * 派生鍵 = AUTHOR_KEY ('Fans') | routeId | createdAt
+   */
   author: string;
-  originalAuthor: string; // XOR-encrypted with key 'Colins'
+  /**
+   * 原作者名 (AES-GCM 暗号化済み)。
+   * 形式: "v2:" + base64(IV 12byte ‖ ciphertext ‖ authTag 16byte)
+   * 派生鍵 = ORIGINAL_AUTHOR_KEY ('Colins') | routeId | createdAt
+   * 旧 "legacy:" プレフィックスは旧 XOR 暗号文 (互換読み取り用)
+   * 改ざん / 鍵違いで復号失敗時は表示側で AUTHOR_TAMPERED センチネル
+   */
+  originalAuthor: string;
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
   customBg: { [key in FloorType]: string | null }; // base64 images
@@ -398,6 +570,114 @@ export interface RouteData {
  * 後から判別できるようにする。デバッグタブの上部に表示される。
  */
 export const APP_VERSION = '0.9.1';
+
+/**
+ * セーブデータ マイグレーション定義。
+ *
+ * 新しいバージョンを追加するときは SAVE_DATA_VERSION_HISTORY と
+ * SAVE_DATA_MIGRATIONS の両方を更新する。
+ *  - SAVE_DATA_VERSION_HISTORY: リリース済みバージョンの配列 (古い順)
+ *  - SAVE_DATA_MIGRATIONS:     連続する from→to マイグレーションの配列
+ *    (App.tsx の migrateRouteCoordinates をここに段階的に移管する)。
+ *
+ * マイグレーションは saveDataVersion を持たない旧データを "最初の登録済みバージョン"
+ * として扱い、それ以降のすべてのステップを順に適用する。リストにないバージョン
+ * からのマイグレーションは安全のため適用せず、読み込み時に警告を出す。
+ */
+
+export const SAVE_DATA_VERSION_HISTORY: string[] = [
+  // 新しいバージョンを末尾に追加していく (例: '0.9.0', '0.9.1', '0.10.0')
+  // ※ 0.9.1 より前は saveDataVersion 自体が存在しないため、このリストは
+  //    「0.9.1 で saveDataVersion が付与された」以降のバージョンを表す。
+  '0.9.1'
+];
+
+export interface SaveDataMigration {
+  /** 適用前のセーブバージョン (このリストに含まれない値の場合は未登録) */
+  fromVersion: string;
+  /** 適用後のセーブバージョン */
+  toVersion: string;
+  /** 1 行で説明する変更内容 (デバッグ表示用) */
+  description: string;
+  /** マイグレーション本体。データを破壊しないこと。 */
+  migrate: (data: RouteData) => RouteData;
+}
+
+/**
+ * 旧 → 新 のセーブデータ変換リスト。
+ * 新しいマイグレーションはここに追加する。
+ */
+export const SAVE_DATA_MIGRATIONS: SaveDataMigration[] = [
+  // 例:
+  // {
+  //   fromVersion: '0.9.1',
+  //   toVersion: '0.10.0',
+  //   description: '○○フィールドを追加',
+  //   migrate: (d) => ({ ...d, newField: defaultNewField })
+  // }
+];
+
+/**
+ * マイグレーション適用の結果。
+ *  - data:         マイグレーション適用後の RouteData (input と同じ参照の可能性あり)
+ *  - applied:      実際に適用されたマイグレーション (古い順)
+ *  - finalVersion: 適用後の saveDataVersion (未登録の場合は incoming のまま)
+ *  - unknown:      true の場合、incoming が SAVE_DATA_VERSION_HISTORY にも
+ *                  SAVE_DATA_MIGRATIONS にも存在しない値 (警告対象)
+ *  - unknownVersion: unknown=true のときのバージョン文字列
+ */
+export interface MigrationResult {
+  data: RouteData;
+  applied: SaveDataMigration[];
+  finalVersion: string;
+  unknown: boolean;
+  unknownVersion?: string;
+}
+
+function getKnownVersionIndex(v: string): number {
+  return SAVE_DATA_VERSION_HISTORY.findIndex(x => x === v);
+}
+
+function findNextMigration(fromVersion: string): SaveDataMigration | undefined {
+  return SAVE_DATA_MIGRATIONS.find(m => m.fromVersion === fromVersion);
+}
+
+/**
+ * セーブデータにマイグレーションを適用する。
+ * 不明バージョン (履歴にも fromVersion にも存在しない) の場合は適用せず unknown=true。
+ * 不明バージョンはそのまま残し、上書きしない (ユーザーデータ保護)。
+ */
+export function runSaveDataMigrations(data: RouteData): MigrationResult {
+  const incoming = data.saveDataVersion;
+  // バージョン未記録 (旧データ) は「最初の履歴バージョン」とみなして処理する
+  const knownIndex = incoming ? getKnownVersionIndex(incoming) : 0;
+  const unknown = incoming !== undefined && incoming !== null && incoming !== '' && knownIndex < 0;
+
+  if (unknown) {
+    return { data, applied: [], finalVersion: incoming!, unknown: true, unknownVersion: incoming };
+  }
+
+  let current = data;
+  const applied: SaveDataMigration[] = [];
+  let next = findNextMigration(current.saveDataVersion ?? SAVE_DATA_VERSION_HISTORY[0]);
+  let safety = SAVE_DATA_MIGRATIONS.length + 1;
+  while (next && safety-- > 0) {
+    current = next.migrate(current);
+    current = { ...current, saveDataVersion: next.toVersion };
+    applied.push(next);
+    next = findNextMigration(current.saveDataVersion ?? '');
+  }
+  return { data: current, applied, finalVersion: current.saveDataVersion ?? incoming ?? '', unknown: false };
+}
+
+/**
+ * マイグレーションが必要かどうかだけを軽量に判定する。
+ * (実際に変換は行わない、UI の警告用)
+ */
+export function needsSaveDataMigration(data: RouteData): boolean {
+  const result = runSaveDataMigrations(data);
+  return result.unknown || result.applied.length > 0;
+}
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   id,
@@ -674,7 +954,7 @@ export function getSkillCdRemaining(marker: HeistMarker, currentElapsed: number,
 
 // Preset Maps metadata with local paths
 export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; label: string } } = {
-  main: { path: `${import.meta.env.BASE_URL}nikukyu_map.webp`, label: 'にくきゅうまっぷ' }
+  main: { path: `${import.meta.env.BASE_URL}nikukyu_map.webp`, label: 'にくきゅう大強盗マップ' }
 };
 
 export class DataManager {
@@ -872,14 +1152,14 @@ export class DataManager {
   }
 
   // Export merged map to PNG
-  static exportToPNG(
+  static async exportToPNG(
     floor: FloorType,
     route: RouteData,
     _svgString: string,
     canvasElement: HTMLCanvasElement | null,
     onComplete: (dataUrl: string) => void,
     skipDataBar?: boolean
-  ): void {
+  ): Promise<void> {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = 1600;
     exportCanvas.height = 4550;
@@ -888,8 +1168,27 @@ export class DataManager {
 
     // Draw Background Map
     const bgImg = new Image();
-    
-    bgImg.onload = () => {
+
+    // メイン描画ロジック。Promise でラップして exportToPNG の await で待機可能にする。
+    const drawAll = new Promise<void>((resolveAll) => {
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      bgImg.onload = async () => {
+        try {
+          await drawAllImpl();
+        } finally {
+          resolveAll();
+        }
+      };
+      bgImg.onerror = () => { resolveAll(); };
+    });
+
+    const drawAllImpl = async (): Promise<void> => {
+      ctx.drawImage(bgImg, 0, 0, 1600, 4550);
+
+      // Draw Stroke Lines
+      if (canvasElement) {
+        ctx.drawImage(canvasElement, 0, 0, 1600, 4550);
+      }
       ctx.drawImage(bgImg, 0, 0, 1600, 4550);
       
       // Draw Stroke Lines
@@ -1136,13 +1435,13 @@ export class DataManager {
       }
 
       // Author info
-      const author = xorDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
-      const originalAuthor = xorDecrypt(route.originalAuthor || '', getOriginalAuthorKey(route.id, route.createdAt));
-      const showOriginal = originalAuthor && originalAuthor !== author;
+      const author = await aesGcmDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
+      const originalAuthor = await aesGcmDecrypt(route.originalAuthor || '', getOriginalAuthorKey(route.id, route.createdAt));
+      const showOriginal = originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED && author !== AUTHOR_TAMPERED;
       fctx.font = 'bold 18px Rajdhani, Orbitron, Arial';
       fctx.fillStyle = '#ffffff';
       let ax = 20;
-      if (author) {
+      if (author && author !== AUTHOR_TAMPERED) {
         fctx.fillText(`作者: ${author}`, ax, 115);
         ax += fctx.measureText(`作者: ${author}`).width + 16;
       }
@@ -1215,12 +1514,12 @@ export class DataManager {
       }
 
       // Embed route metadata as PNG tEXt chunks (always, regardless of data bar)
-      const decAuthor = xorDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
+      const decAuthor = await aesGcmDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
       const routeJson = JSON.stringify(DataManager.sanitizeRouteForExport(route));
       dataUrl = insertPngMetadata(dataUrl, {
         Title: route.title || '',
         Description: route.description || '',
-        Author: decAuthor,
+        Author: decAuthor === AUTHOR_TAMPERED ? '' : decAuthor,
         TargetCash: route.targetCash || '',
         TargetCoins: route.targetCoins || '',
         TargetDuration: route.targetDuration || '',
@@ -1242,6 +1541,8 @@ export class DataManager {
         bgImg.src = `${import.meta.env.BASE_URL}nikukyu_map.webp`;
       }
     }
+
+    await drawAll;
   }
 
   // Decode pixel-encoded JSON from a PNG image

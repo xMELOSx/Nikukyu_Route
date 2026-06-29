@@ -5,6 +5,14 @@ import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
 import { PlayDataPanel } from './components/PlayDataPanel';
 import { OcrDebugModal } from './components/OcrDebugModal';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
+import { t, useLangState } from './i18n';
+
+function LangSync(): null {
+  // 言語切替時に App 全体を再レンダリングさせるための空レンダーコンポーネント
+  useLangState();
+  return null;
+}
 
 import {
   type FloorType,
@@ -22,11 +30,15 @@ import {
   DataManager,
   normalizeStrokes,
   smoothStrokePoints,
-  xorEncrypt,
   xorDecrypt,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+  AUTHOR_TAMPERED,
+  AUTHOR_DEFAULT_PLAIN,
   getAuthorKey,
   getOriginalAuthorKey,
-  generateId
+  generateId,
+  runSaveDataMigrations
 } from './utils/DataManager';
 import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
@@ -35,6 +47,8 @@ import { useGlobalMarkers } from './hooks/useGlobalMarkers';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
+import { useAuthorField } from './hooks/useAuthorField';
+import { SaveListRowAuthor } from './hooks/SaveListRowAuthor';
 import { useAutoRoute } from './hooks/useAutoRoute';
 import { PLAY_DATA_KEY, loadFloorNavCollapsed, saveFloorNavCollapsed } from './utils/PlayDataManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -87,6 +101,19 @@ const migrateRouteCoordinates = (data: RouteData): RouteData => {
     });
   }
   return { ...data, markers: migratedMarkers, strokes: migratedStrokes, mapVersion: 2 };
+};
+
+/**
+ * セーブデータを読み込み可能な最新形式に揃える。
+ * 1. レガシー座標マイグレーション (v1 → v2 座標系)
+ * 2. SAVE_DATA_MIGRATIONS に登録された from→to 変換
+ * 3. 結果 (適用されたマイグレーション、不明バージョン) を返す
+ */
+const migrateLoadedRoute = (data: RouteData): { data: RouteData; result: ReturnType<typeof runSaveDataMigrations>; legacyMigrated: boolean } => {
+  const legacyMigrated = !data.mapVersion || data.mapVersion < 2;
+  const afterLegacy = migrateRouteCoordinates(data);
+  const result = runSaveDataMigrations(afterLegacy);
+  return { data: result.data, result, legacyMigrated };
 };
 
 const formatTime = (seconds: number): string => {
@@ -207,15 +234,15 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
     : eraseDefaultBehavior;
   return (
     <div className="panel-section">
-      <div className="panel-title">消しゴム設定</div>
+      <div className="panel-title">{t('消しゴム設定')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>対象:</div>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>{t('対象:')}</div>
         <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
           {([
-            { v: 'all', label: '全部' },
-            { v: 'marker', label: 'マーカー' },
-            { v: 'route', label: '進行' },
-            { v: 'branch', label: '分岐' }
+            { v: 'all', label: t('全部') },
+            { v: 'marker', label: t('マーカー') },
+            { v: 'route', label: t('進行') },
+            { v: 'branch', label: t('分岐') }
           ] as const).map(opt => (
             <button
               key={opt.v}
@@ -223,10 +250,10 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
               style={{ height: 28, fontSize: '10px', padding: '2px 2px' }}
               onClick={() => setEraseTarget(opt.v)}
               title={
-                opt.v === 'all' ? 'マーカー・進行・分岐すべて' :
-                opt.v === 'marker' ? 'マーカーのみ削除' :
-                opt.v === 'route' ? '進行ルート(実線)のみ' :
-                '分岐ルート(破線)のみ'
+                opt.v === 'all' ? t('マーカー・進行・分岐すべて') :
+                  opt.v === 'marker' ? t('マーカーのみ削除') :
+                    opt.v === 'route' ? t('進行ルート(実線)のみ') :
+                      t('分岐ルート(破線)のみ')
               }
             >
               <span>{opt.label}</span>
@@ -235,7 +262,7 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
-            <span>🔵 マーカーサイズ:</span>
+            <span>{t('🔵 マーカーサイズ:')}</span>
             <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{eraseSize}px</span>
           </div>
           <input
@@ -248,14 +275,14 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
             style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
-            <span>最小 (5px)</span>
-            <span>最大 (30px)</span>
+            <span>{t('最小 (5px)')}</span>
+            <span>{t('最大 (30px)')}</span>
           </div>
         </div>
 
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 4px' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>線分削除モード：Altで反対挙動にシフト</div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{t('線分削除モード：Altで反対挙動にシフト')}</div>
           <span
             style={{
               fontSize: '9px',
@@ -558,6 +585,27 @@ export default function App() {
     }
   });
 
+  // 作者名 / 原作者名の表示用 hook (AES-GCM 復号、改ざん検知)
+  const authorField = useAuthorField(
+    routeApi.route.author || '',
+    getAuthorKey(routeApi.route.id, routeApi.route.createdAt),
+    { editable: true }
+  );
+  const originalAuthorField = useAuthorField(
+    routeApi.route.originalAuthor || '',
+    getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt),
+    { editable: false }
+  );
+
+  // 編集中は useAuthorField.plain は復号完了まで undefined or 前の値のままなので、
+  // input 制御用のローカル state を持つ。初期値は復号結果 (or AUTHOR_DEFAULT_PLAIN)。
+  // route.id / route.author が変わったら再同期する。
+  const [authorEdit, setAuthorEdit] = useState<string>(AUTHOR_DEFAULT_PLAIN);
+  useEffect(() => {
+    if (authorField.tampered) return;
+    setAuthorEdit(authorField.isDefault || !authorField.plain ? AUTHOR_DEFAULT_PLAIN : authorField.plain);
+  }, [authorField.plain, authorField.isDefault, authorField.tampered, routeApi.route.id, routeApi.route.author]);
+
   const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
     routeApi.setRouteWithGlobalDefaults(prev => ({
       ...prev,
@@ -758,7 +806,7 @@ export default function App() {
   useEffect(() => {
     const total = routeApi.route.markers.length + globalMarkersStore.globalMarkers.length;
     if (total > MAX_MARKERS_WARN && prevMarkerCountRef.current <= MAX_MARKERS_WARN) {
-      notification.show(`⚠ ピン数が${total}個あります。負荷が高くなる可能性があります`, 4000);
+      notification.show(t('⚠ ピン数が{0}個あります。負荷が高くなる可能性があります', total), 4000);
     }
     prevMarkerCountRef.current = total;
   }, [routeApi.route.markers.length, globalMarkersStore.globalMarkers.length]);
@@ -775,21 +823,32 @@ export default function App() {
         try {
           const data = DataManager.loadFromLocalStorage(lastId);
           if (data) {
-            const migrated = migrateRouteCoordinates(data);
-            if (migrated.mapVersion !== data.mapVersion) {
+            const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(data);
+            if (legacyMigrated || result.applied.length > 0) {
               DataManager.saveToLocalStorage(migrated);
+            }
+            if (result.unknown) {
+              notification.show(
+                t('⚠️ 未登録バージョンのセーブデータです (v{0})。破損の可能性があります。', result.unknownVersion ?? ''),
+                5000
+              );
+            } else if (result.applied.length > 0) {
+              notification.show(
+                t('セーブデータを {0} 件マイグレーションしました (→ v{1})', String(result.applied.length), result.finalVersion ?? ''),
+                3000
+              );
             }
             routeApi.setRouteWithGlobalDefaults(migrated);
             if (migrated.markerScale !== undefined) {
               setMarkerScale(migrated.markerScale);
               localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
             }
-            notification.show(`前回データを読み込みました: ${migrated.title}`);
+            notification.show(`${t('前回データを読み込みました: ')}${migrated.title}`);
           }
         } catch (e) {
           console.error('Auto-load failed: corrupted route data, clearing last-used ID', e);
           try { localStorage.removeItem('heist_last_used_route_id'); } catch { }
-          notification.show('前回データの読み込みに失敗しました（デフォルトを使用）', 3000);
+          notification.show(t('前回データの読み込みに失敗しました（デフォルトを使用）'), 3000);
         }
       }
     }
@@ -835,7 +894,18 @@ export default function App() {
             .then(res => res.ok ? res.json() : null)
             .then((d: RouteData | null) => {
               if (d) {
-                const migrated = migrateRouteCoordinates(d);
+                const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(d);
+                if (result.unknown) {
+                  notification.show(
+                    t('⚠️ 未登録バージョンのデフォルトプリセットです (v{0})', result.unknownVersion ?? ''),
+                    5000
+                  );
+                } else if (legacyMigrated || result.applied.length > 0) {
+                  notification.show(
+                    t('デフォルトプリセットをマイグレーションしました (→ v{0})', result.finalVersion || migrated.saveDataVersion || '?'),
+                    3000
+                  );
+                }
                 routeApi.setRouteWithGlobalDefaults({ ...migrated, id: 'default' });
               }
             })
@@ -857,7 +927,7 @@ export default function App() {
     if (saveId) {
       const data = DataManager.loadFromLocalStorage(saveId);
       if (!data) {
-        notification.show(`セーブデータが見つかりません: ${saveId}`, 3000);
+        notification.show(`${t('セーブデータが見つかりません: ')}${saveId}`, 3000);
         window.history.replaceState({}, '', window.location.pathname);
         return;
       }
@@ -875,18 +945,18 @@ export default function App() {
       const access = routeApi.checkPresetUrlAccess(presetId);
       if (!access.allowed) {
         if (access.reason === 'not_found') {
-          notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
+          notification.show(`${t('プリセットが見つかりません: ')}${presetId}`, 3000);
         } else if (access.reason === 'private_prod') {
-          notification.show('このプリセットは非公開です。ローカルモード (npm run dev) でのみ開けます。', 4000);
+          notification.show(t('このプリセットは非公開です。ローカルモード (npm run dev) でのみ開けます。'), 4000);
         } else {
-          notification.show('このプリセットを開くことができません', 3000);
+          notification.show(t('このプリセットを開くことができません'), 3000);
         }
         window.history.replaceState({}, '', window.location.pathname);
         return;
       }
       const preset = routeApi.presets.find(p => p.id === presetId);
       if (!preset) {
-        notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
+        notification.show(`${t('プリセットが見つかりません: ')}${presetId}`, 3000);
         window.history.replaceState({}, '', window.location.pathname);
         return;
       }
@@ -973,7 +1043,7 @@ export default function App() {
 
   const handleExportPlayData = () => {
     const raw = localStorage.getItem(PLAY_DATA_KEY);
-    if (!raw) { notification.show('エクスポートするプレイデータがありません'); return; }
+    if (!raw) { notification.show(t('エクスポートするプレイデータがありません')); return; }
     try {
       const parsed = JSON.parse(raw);
       const { records, ...exportData } = parsed;
@@ -987,9 +1057,9 @@ export default function App() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      notification.show('プレイデータをエクスポートしました');
+      notification.show(t('プレイデータをエクスポートしました'));
     } catch {
-      notification.show('エクスポートに失敗しました');
+      notification.show(t('エクスポートに失敗しました'));
     }
   };
 
@@ -1001,15 +1071,15 @@ export default function App() {
     reader.onload = (ev) => {
       try {
         const imported = JSON.parse(ev.target?.result as string);
-        if (!imported || typeof imported !== 'object') { notification.show('無効なファイル形式です'); return; }
+        if (!imported || typeof imported !== 'object') { notification.show(t('無効なファイル形式です')); return; }
         const existing = localStorage.getItem(PLAY_DATA_KEY);
         const current = existing ? JSON.parse(existing) : {};
         const merged = { ...current, ...imported };
         localStorage.setItem(PLAY_DATA_KEY, JSON.stringify(merged));
         setPlayDataRefreshKey(k => k + 1);
-        notification.show('プレイデータをインポートしました');
+        notification.show(t('プレイデータをインポートしました'));
       } catch {
-        notification.show('ファイルの読み込みに失敗しました');
+        notification.show(t('ファイルの読み込みに失敗しました'));
       }
     };
     reader.readAsText(file);
@@ -1027,7 +1097,7 @@ export default function App() {
 
   const handleDeleteFromLocal = (id: string) => {
     if (deleteConfirmId === id) {
-      routeApi.deleteFromLocal({ stopPropagation: () => {} } as React.MouseEvent, id);
+      routeApi.deleteFromLocal({ stopPropagation: () => { } } as React.MouseEvent, id);
       setDeleteConfirmId(null);
     } else {
       setDeleteConfirmId(id);
@@ -1048,18 +1118,20 @@ export default function App() {
 
   // Quick-add current save as a preset
   // visibility: 公開レベル ('public' | 'unlisted' | 'private')。未指定なら public。
-  const handleQuickPreset = (s: SaveInfo, visibility: PresetVisibility = 'public') => {
+  const handleQuickPreset = async (s: SaveInfo, visibility: PresetVisibility = 'public') => {
     const save = DataManager.loadFromLocalStorage(s.id);
     if (!save) return;
     const toSave: RouteData = { ...save, mapVersion: 2, markerScale };
+    const plainAuthor = await aesGcmDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt));
+    const plainOriginal = await aesGcmDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt));
     const newPreset: PresetData = {
       id: generateId('preset'),
       name: save.title,
       description: save.description || '',
       targetCash: save.targetCash || '',
       targetCoins: save.targetCoins || '',
-      author: xorDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt)),
-      originalAuthor: xorDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt)),
+      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
+      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(visibility),
       routeData: toSave
@@ -1070,7 +1142,7 @@ export default function App() {
       body: JSON.stringify([...routeApi.presets, newPreset])
     }).catch(() => { });
     routeApi.setPresets([...routeApi.presets, newPreset]);
-    notification.show(`プリセット追加: ${newPreset.name}`);
+    notification.show(`${t('プリセット追加: ')}${newPreset.name}`);
   };
 
   // -----------------------------------------------------------------------
@@ -1140,13 +1212,18 @@ export default function App() {
 
           <div className="sidebar-scroll">
             <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
-              <button
-                className="btn-cyber"
-                onClick={() => setShowHelpModal(true)}
-                style={{ width: '100%', padding: '6px', fontSize: '12px', clipPath: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-              >
-                ❓ ヘルプ・設定
-              </button>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <div style={{ flex: 1 }}>
+                  <LanguageSwitcher />
+                </div>
+                <button
+                  className="btn-cyber"
+                  onClick={() => setShowHelpModal(true)}
+                  style={{ flex: 1, padding: '6px', fontSize: '12px', clipPath: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                >
+                  ❓ ヘルプ・設定
+                </button>
+              </div>
             </div>
 
             <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
@@ -1168,8 +1245,8 @@ export default function App() {
                   fontWeight: 'bold'
                 }}
               >
-                <span>🏷️ マーカー表示設定</span>
-                <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{markerVisExpanded ? '▼ 折りたたむ' : '▶ 展開'}</span>
+                <span>{t('🏷️ マーカー表示設定')}</span>
+                <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{markerVisExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
               </button>
 
               {markerVisExpanded && (
@@ -1184,11 +1261,11 @@ export default function App() {
                       }}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                     />
-                    🏷️ ラベル表示
+                    <span>{t('🏷️ ラベル表示')}</span>
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                      <span>📌 ピン・ラベル倍率:</span>
+                      <span>{t('📌 ピン・ラベル倍率:')}</span>
                       <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{markerScale}%</span>
                     </div>
                     <input
@@ -1205,8 +1282,8 @@ export default function App() {
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
-                      <span>最小 (30%)</span>
-                      <span>最大 (200%)</span>
+                      <span>{t('最小 (30%)')}</span>
+                      <span>{t('最大 (200%)')}</span>
                     </div>
                   </div>
 
@@ -1313,15 +1390,15 @@ export default function App() {
 
             <div className="panel-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="panel-title" style={{ marginBottom: 0 }}>階層移動</div>
+                <div className="panel-title" style={{ marginBottom: 0 }}>{t('階層移動')}</div>
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }} onClick={() => setCurrentPosTrigger(Date.now())} title="現在の自動ルート位置にカメラを移動">
-                    📍 現在位置に移動
+                  <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }} onClick={() => setCurrentPosTrigger(Date.now())} title={t('現在の自動ルート位置にカメラを移動')}>
+                    {t('📍 現在位置に移動')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setFloorNavCollapsed(prev => !prev)}
-                    title={floorNavCollapsed ? '展開' : '折りたたむ'}
+                    title={floorNavCollapsed ? t('展開') : t('折りたたむ')}
                     style={{
                       padding: '3px 6px',
                       fontSize: '11px',
@@ -1366,46 +1443,46 @@ export default function App() {
 
             {isEditMode && (
               <div className="panel-section">
-                <div className="panel-title">モード選択</div>
+                <div className="panel-title">{t('モード選択')}</div>
                 <div className="tool-grid">
                   <button className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`} onClick={() => setToolMode('draw')} id="tool-draw-btn">
-                    <Paintbrush size={18} /><span>ルート線</span>
+                    <Paintbrush size={18} /><span>{t('ルート線')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
-                    <Eraser size={18} /><span>消しゴム</span>
+                    <Eraser size={18} /><span>{t('消しゴム')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
-                    <Move size={18} /><span>移動</span>
+                    <Move size={18} /><span>{t('移動')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'measure' ? 'active' : ''}`} onClick={() => setToolMode('measure')} id="tool-measure-btn">
-                    <Ruler size={18} /><span>距離計測</span>
+                    <Ruler size={18} /><span>{t('距離計測')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
-                    <EyeOff size={18} /><span>表示切替</span>
+                    <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
                   {!resetTarget ? (
                     <button className="tool-btn" onClick={() => setResetTarget('both')} id="tool-reset-btn">
-                      <RotateCcw size={18} /><span>リセット</span>
+                      <RotateCcw size={18} /><span>{t('リセット')}</span>
                     </button>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px', background: 'rgba(255,100,100,0.1)', borderRadius: '6px', border: '1px solid rgba(255,100,100,0.3)' }}>
-                      <div style={{ fontSize: '10px', color: '#ff6b6b', textAlign: 'center', marginBottom: '2px' }}>削除対象を選択:</div>
+                      <div style={{ fontSize: '10px', color: '#ff6b6b', textAlign: 'center', marginBottom: '2px' }}>{t('削除対象を選択:')}</div>
                       <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
                         historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
                         routeApi.setRoute(prev => ({ ...prev, strokes: { main: [] } }));
                         setResetTarget(null);
-                      }}>📝 ラインのみ</button>
+                      }}>{t('📝 ラインのみ')}</button>
                       <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
                         historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
                         routeApi.setRoute(prev => ({ ...prev, markers: [], hiddenMarkers: [] }));
                         setResetTarget(null);
-                      }}>📍 ピンのみ</button>
+                      }}>{t('📍 ピンのみ')}</button>
                       <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => {
                         historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
                         routeApi.setRoute(prev => ({ ...prev, strokes: { main: [] }, markers: [], hiddenMarkers: [] }));
                         setResetTarget(null);
-                      }}>🗑️ 両方削除</button>
-                      <button className="btn-cyber" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => setResetTarget(null)}>キャンセル</button>
+                      }}>{t('🗑️ 両方削除')}</button>
+                      <button className="btn-cyber" style={{ width: '100%', fontSize: '10px', padding: '4px' }} onClick={() => setResetTarget(null)}>{t('キャンセル')}</button>
                     </div>
                   )}
                 </div>
@@ -1426,7 +1503,7 @@ export default function App() {
 
             {toolMode === 'draw' && (
               <div className="panel-section">
-                <div className="panel-title">3. BRUSH CONFIG</div>
+                <div className="panel-title">{t('ルート線設定')}</div>
                 <div className="color-picker">
                   {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
                     <div key={c} className={`color-dot ${strokeColor === c ? 'active' : ''}`} style={{ backgroundColor: c, color: c }} onClick={() => setStrokeColor(c)} />
@@ -1442,7 +1519,7 @@ export default function App() {
                 <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
                   {(['free', 'smooth', 'straight'] as const).map(m => (
                     <button key={m} className={`btn-cyber ${drawMode === m ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }} onClick={() => setDrawMode(m)} title={m === 'free' ? '通常描画 (全ポイント記録)' : m === 'smooth' ? '間引き描画 (滑らかな線)' : '直線ツール (始点→終点のみ)'}>
-                      {m === 'free' ? 'FREE' : m === 'smooth' ? 'SMOOTH' : '直線'}
+                      {m === 'free' ? 'フリー' : m === 'smooth' ? 'スムーズ' : '直線'}
                     </button>
                   ))}
                 </div>
@@ -1465,7 +1542,7 @@ export default function App() {
                   ✨ 最後の線を平滑化
                 </button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Brush Width: {strokeWidth}px</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>線の太さ: {strokeWidth}px</span>
                   <input type="range" min="2" max="12" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '8px', userSelect: 'none' }}>
@@ -1477,7 +1554,7 @@ export default function App() {
 
             {isEditMode && isLocal && (
               <div className="panel-section">
-                <div className="panel-title">マーカー(グローバル)</div>
+                <div className="panel-title">{t('マーカー(グローバル)')}</div>
                 <div className="marker-list">
                   {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
@@ -1496,18 +1573,18 @@ export default function App() {
 
             {isEditMode && (
               <div className="panel-section">
-                <div className="panel-title">マーカー</div>
+                <div className="panel-title">{t('マーカー')}</div>
                 <div className="marker-list">
-                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
-                    const meta = MARKER_META[t];
-                    const isActive = toolMode === 'add-marker' && activeMarkerType === t;
+                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(mt => {
+                    const meta = MARKER_META[mt];
+                    const isActive = toolMode === 'add-marker' && activeMarkerType === mt;
                     return (
-                      <button key={t} className={`marker-item ${isActive ? 'active' : ''}`}
-                        onClick={() => { setToolMode('add-marker'); setActiveMarkerType(t); }}
+                      <button key={mt} className={`marker-item ${isActive ? 'active' : ''}`}
+                        onClick={() => { setToolMode('add-marker'); setActiveMarkerType(mt); }}
                         style={{ '--theme-color': meta.color } as React.CSSProperties}
-                        title={t === 'skill_cd' ? 'スキルクールタイム (P1の前に配置。通過時にCD秒ぶん停止して、自動案内の累計停止行の下に残時間を表示)' : undefined}>
+                        title={mt === 'skill_cd' ? t('スキルクールタイム (P1の前に配置。通過時にCD秒ぶん停止して、自動案内の累計停止行の下に残時間を表示)') : undefined}>
                         <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{t === 'start' ? 'START' : t === 'iwarp' ? 'I-WARP' : t === 'skill_cd' ? 'SKILL CD' : meta.label}</span>
+                        <span>{mt === 'start' ? 'START' : mt === 'iwarp' ? 'I-WARP' : mt === 'skill_cd' ? 'SKILL CD' : meta.label}</span>
                       </button>
                     );
                   })}
@@ -1516,35 +1593,35 @@ export default function App() {
             )}
 
             <div className="panel-section" style={{ borderTop: '1px solid rgba(255, 0, 255, 0.1)', paddingTop: '6px' }}>
-              <div className="panel-title">📈 ルート線操作</div>
+              <div className="panel-title">{t('📈 ルート線操作')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 <button
                   className={`btn-toggle-route ${hideRouteLines ? 'active' : ''}`}
                   style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
                   onClick={() => setHideRouteLines(!hideRouteLines)}
                 >
-                  ルート非表示
+                  {t('ルート非表示')}
                 </button>
                 <button
                   className={`btn-toggle-route ${routeLines1px ? 'active' : ''}`}
                   style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
                   onClick={() => setRouteLines1px(!routeLines1px)}
                 >
-                  ルート 1px化
+                  {t('ルート 1px化')}
                 </button>
                 <button
                   className={`btn-toggle-route ${hideBranchLines ? 'active' : ''}`}
                   style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
                   onClick={() => setHideBranchLines(!hideBranchLines)}
                 >
-                  分岐非表示
+                  {t('分岐非表示')}
                 </button>
                 <button
                   className={`btn-toggle-route ${branchLines1px ? 'active' : ''}`}
                   style={{ padding: '6px 4px', fontSize: '10px', width: '100%', clipPath: 'none' }}
                   onClick={() => setBranchLines1px(!branchLines1px)}
                 >
-                  分岐 1px化
+                  {t('分岐 1px化')}
                 </button>
               </div>
             </div>
@@ -1556,7 +1633,7 @@ export default function App() {
               return (
                 <div className="panel-section" style={{ borderTop: '1px solid rgba(255, 0, 255, 0.1)', paddingTop: '6px' }}>
                   <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📞 ReroRero電話ボックス</span>
+                    <span>{t('📞 ReroRero電話ボックス')}</span>
                     <span style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', fontWeight: 'bold' }}>{activeCount}/{allPhones.length}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -1605,7 +1682,7 @@ export default function App() {
                         ...prev,
                         markers: (prev.markers || []).map(m => m.type === 'iinfo' ? { ...m, infoExpanded: true } : m)
                       }));
-                    }}>すべて開く</button>
+                    }}>{t('すべて開く')}</button>
                     <button className="btn-cyber danger" style={{ flex: 1, padding: '4px 6px', fontSize: '10px' }} onClick={() => {
                       const updatedGlobal = globalMarkersStore.globalMarkers.map(m => m.type === 'info' ? { ...m, infoExpanded: false } : m);
                       globalMarkersStore.replace(updatedGlobal);
@@ -1613,7 +1690,7 @@ export default function App() {
                         ...prev,
                         markers: (prev.markers || []).map(m => m.type === 'iinfo' ? { ...m, infoExpanded: false } : m)
                       }));
-                    }}>すべて閉じる</button>
+                    }}>{t('すべて閉じる')}</button>
                   </div>
                 </div>
               );
@@ -1759,8 +1836,8 @@ export default function App() {
         >
           <div className="sidebar-fixed">
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
-              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>ルート計画</button>
-              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>プレイデータ</button>
+              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
+              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
             </div>
           </div>
 
@@ -1769,25 +1846,25 @@ export default function App() {
               <div className="panel-section">
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
                   <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={routeApi.saveToLocal}>
-                    <Save size={12} /> セーブ
+                    <Save size={12} /> {t('セーブ')}
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => setPresetListVisible(true)}>
-                    <Upload size={12} /> 読込
+                    <Upload size={12} /> {t('読込')}
                   </button>
                   <button className="btn-cyber danger" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={createNewPlan}>
-                    <FilePlus size={12} /> {newPlanConfirm ? '実行?' : '新規'}
+                    <FilePlus size={12} /> {newPlanConfirm ? t('実行?') : t('新規')}
                   </button>
                 </div>
 
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
-                    <Download size={12} /> JSON保存
+                    <Download size={12} /> {t('JSON保存')}
                   </button>
-                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title="ALT+クリックでデータバー無し">
-                    <ImageIcon size={12} /> 画像保存
+                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title={t('ALT+クリックでデータバー無し')}>
+                    <ImageIcon size={12} /> {t('画像保存')}
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>
-                    <Upload size={12} /> インポート
+                    <Upload size={12} /> {t('インポート')}
                   </button>
                   <input
                     type="file"
@@ -1799,7 +1876,7 @@ export default function App() {
                 </div>
 
                 <div className={isEditMode ? 'route-plan-fields' : 'route-plan-fields display-mode'} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>プラン名</label>
+                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('プラン名')}</label>
                   {isEditMode ? (
                     <input type="text" className="input-cyber" value={routeApi.route.title}
                       onChange={(e) => routeApi.setRoute({ ...routeApi.route, title: e.target.value })}
@@ -1815,12 +1892,12 @@ export default function App() {
                       }}
                     />
                   ) : (
-                    <div className="display-field">{routeApi.route.title || <span className="empty">(未設定)</span>}</div>
+                    <div className="display-field">{routeApi.route.title || <span className="empty">{t('(未設定)')}</span>}</div>
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                     <div>
-                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>想定獲得ファンス</label>
+                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('想定獲得ファンス')}</label>
                       {isEditMode ? (
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                           <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>$</span>
@@ -1839,11 +1916,11 @@ export default function App() {
                           />
                         </div>
                       ) : (
-                        <div className="display-field"><span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>$</span>{routeApi.route.targetCash || <span className="empty">(未設定)</span>}</div>
+                        <div className="display-field"><span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>$</span>{routeApi.route.targetCash || <span className="empty">{t('(未設定)')}</span>}</div>
                       )}
                     </div>
                     <div>
-                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>にくきゅうコイン</label>
+                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('にくきゅうコイン')}</label>
                       {isEditMode ? (
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                           <span style={{ position: 'absolute', left: '10px', color: 'var(--yellow-neon)', fontWeight: 700 }}>🪙</span>
@@ -1862,14 +1939,14 @@ export default function App() {
                           />
                         </div>
                       ) : (
-                        <div className="display-field"><span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>🪙</span>{routeApi.route.targetCoins || <span className="empty">(未設定)</span>}</div>
+                        <div className="display-field"><span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginRight: '4px' }}>🪙</span>{routeApi.route.targetCoins || <span className="empty">{t('(未設定)')}</span>}</div>
                       )}
                     </div>
                   </div>
 
                   <div style={{ marginTop: '6px' }}>
                     <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
-                      目標所要時間{isEditMode && (
+                      {t('目標所要時間')}{isEditMode && (
                         <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginLeft: '4px' }}>
                           {(() => { const s = parseInt(routeApi.route.targetDuration || '0'); return !isNaN(s) ? `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : '--:--'; })()}
                         </span>
@@ -1913,34 +1990,46 @@ export default function App() {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                     <div>
-                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>作者名</label>
+                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('作者名')}</label>
                       {isEditMode ? (
                         <input type="text" className="input-cyber" style={{ width: '100%', boxSizing: 'border-box' }}
-                          value={xorDecrypt(routeApi.route.author, getAuthorKey(routeApi.route.id, routeApi.route.createdAt))}
-                          onChange={(e) => routeApi.setRoute({ ...routeApi.route, author: xorEncrypt(e.target.value, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)) })}
-                          placeholder="名前"
+                          value={authorField.tampered ? '' : authorEdit}
+                          onChange={async (e) => {
+                            const v = e.target.value;
+                            setAuthorEdit(v);
+                            const cipher = await aesGcmEncrypt(v, getAuthorKey(routeApi.route.id, routeApi.route.createdAt));
+                            routeApi.setRoute({ ...routeApi.route, author: cipher });
+                          }}
+                          placeholder={AUTHOR_DEFAULT_PLAIN}
                         />
                       ) : (
-                        <div className="display-field">
-                          {(() => { const v = xorDecrypt(routeApi.route.author, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)); return v || <span className="empty">(未設定)</span>; })()}
+                        <div className="display-field" style={authorField.tampered ? { color: 'var(--red-neon, #f44)' } : (authorField.isDefault ? { color: 'var(--text-muted)' } : undefined)}>
+                          {authorField.tampered
+                            ? <span style={{ color: 'var(--red-neon, #f44)' }}>Anomaly</span>
+                            : (authorField.loading
+                              ? <span className="empty">…</span>
+                              : (authorField.isDefault || !authorField.plain
+                                ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
+                                : authorField.plain))}
                         </div>
                       )}
                     </div>
                     {isLocal && (
                       <div>
-                        <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>原作者名</label>
-                        {isEditMode ? (
-                          <input type="text" className="input-cyber" style={{ width: '100%', boxSizing: 'border-box' }}
-                            value={xorDecrypt(routeApi.route.originalAuthor, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt))}
-                            onChange={(e) => routeApi.setRoute({ ...routeApi.route, originalAuthor: xorEncrypt(e.target.value, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt)) })}
-                            disabled={routeApi.route.originalAuthor !== undefined && routeApi.route.originalAuthor !== ''}
-                            placeholder="元の作者"
-                          />
-                        ) : (
-                          <div className="display-field">
-                            {(() => { const v = xorDecrypt(routeApi.route.originalAuthor, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt)); return v || <span className="empty">(未設定)</span>; })()}
-                          </div>
-                        )}
+                        <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('原作者名')}</label>
+                        {/*
+                          originalAuthor は編集 UI を出さない。変更手段は「クリアボタン (No name リセット)」のみ。
+                          設定後は表示専用 (Anomaly / No name / 平文 の3パターン表示)。
+                        */}
+                        <div className="display-field" style={originalAuthorField.tampered ? { color: 'var(--red-neon, #f44)' } : (originalAuthorField.isDefault ? { color: 'var(--text-muted)' } : undefined)}>
+                          {originalAuthorField.tampered
+                            ? <span style={{ color: 'var(--red-neon, #f44)' }}>Anomaly</span>
+                            : (originalAuthorField.loading
+                              ? <span className="empty">…</span>
+                              : (originalAuthorField.isDefault || !originalAuthorField.plain
+                                ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
+                                : originalAuthorField.plain))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1958,7 +2047,7 @@ export default function App() {
                           </>
                         ) : (
                           <div className="display-field" style={{ marginTop: '4px' }}>
-                            {routeApi.route.customBg[currentFloor] ? 'カスタムBG: 設定済み' : <span className="empty">デフォルトBG使用中</span>}
+                            {routeApi.route.customBg[currentFloor] ? t('カスタムBG: 設定済み') : <span className="empty">{t('デフォルトBG使用中')}</span>}
                           </div>
                         )}
                       </div>
@@ -1970,19 +2059,19 @@ export default function App() {
                     )}
                   </div>
 
-                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>備考</label>
+                  <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginTop: '4px' }}>{t('備考')}</label>
                   {isEditMode ? (
                     <textarea className="textarea-cyber" placeholder="Write overall heist instructions..." value={routeApi.route.description} onChange={(e) => routeApi.setRoute({ ...routeApi.route, description: e.target.value })} />
                   ) : (
-                    <div className="display-field display-field-multi">{routeApi.route.description || <span className="empty">(未設定)</span>}</div>
+                    <div className="display-field display-field-multi">{routeApi.route.description || <span className="empty">{t('(未設定)')}</span>}</div>
                   )}
                 </div>
               </div>
 
               <div className="panel-section">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div className="panel-title" style={{ flex: 1 }}>マーカー編集履歴 (50件)</div>
-                  <button className="btn-cyber" onClick={() => setShowHistoryModal(true)} style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none' }}>全履歴</button>
+                  <div className="panel-title" style={{ flex: 1 }}>{t('マーカー編集履歴 (50件)')}</div>
+                  <button className="btn-cyber" onClick={() => setShowHistoryModal(true)} style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none' }}>{t('全履歴')}</button>
                   <button className="btn-cyber" onClick={historyApi.undo} disabled={!historyApi.canUndo} title="Undo (Ctrl+Z)" style={{ padding: '2px 6px', fontSize: '10px', opacity: historyApi.canUndo ? 1 : 0.4, cursor: historyApi.canUndo ? 'pointer' : 'not-allowed', clipPath: 'none' }}><Undo size={12} /></button>
                   <button className="btn-cyber" onClick={historyApi.redo} disabled={!historyApi.canRedo} title="Redo (Ctrl+Y)" style={{ padding: '2px 6px', fontSize: '10px', opacity: historyApi.canRedo ? 1 : 0.4, cursor: historyApi.canRedo ? 'pointer' : 'not-allowed', clipPath: 'none' }}><Redo size={12} /></button>
                 </div>
@@ -1992,7 +2081,7 @@ export default function App() {
                       ? [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]
                       : [...routeApi.route.markers];
                     if (historyMarkers.length === 0) {
-                      return <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>マーカーがありません</div>;
+                      return <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>{t('マーカーがありません')}</div>;
                     }
                     return historyMarkers.reverse().slice(0, 50).map(m => {
                       const meta = MARKER_META[m.type];
@@ -2003,14 +2092,14 @@ export default function App() {
                             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>X:{m.x} Y:{m.y}</span>
                             {isEditMode && (historyDeleteConfirmId === m.id ? (
                               <>
-                                <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); routeApi.setRoute(prev => ({ ...prev, markers: prev.markers.filter(x => x.id !== m.id) })); globalMarkersStore.setGlobalMarkers(prev => prev.filter(x => x.id !== m.id)); setHistoryDeleteConfirmId(null); notification.show('マーカーを削除しました'); }}>削除する</button>
+                                <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); routeApi.setRoute(prev => ({ ...prev, markers: prev.markers.filter(x => x.id !== m.id) })); globalMarkersStore.setGlobalMarkers(prev => prev.filter(x => x.id !== m.id)); setHistoryDeleteConfirmId(null); notification.show(t('マーカーを削除しました')); }}>{t('削除する')}</button>
                                 <button className="btn-cyber" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(null); }}>×</button>
                               </>
                             ) : (
-                              <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(m.id); setTimeout(() => setHistoryDeleteConfirmId(null), 3000); }}>削除</button>
+                              <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(m.id); setTimeout(() => setHistoryDeleteConfirmId(null), 3000); }}>{t('削除')}</button>
                             ))}
                           </div>
-                          <div className="placed-note-text">{m.note.trim() ? m.note : <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No text note details</span>}</div>
+                          <div className="placed-note-text">{m.note.trim() ? m.note : <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>{t('No text note details')}</span>}</div>
                           <div style={{ fontSize: '9px', color: m.scrollConfig ? 'var(--cyan-neon)' : 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>{m.scrollConfig ? '🎯 Click to Pan ➔' : 'Click to Pan ➔'}</div>
                         </div>
                       );
@@ -2022,32 +2111,33 @@ export default function App() {
 
             {rightTab === 'play' && (
               <>
+                <LangSync />
                 <div className="panel-section">
-                  <button type="button" onClick={autoRoute.toggleCollapsed} style={{ width: '100%', padding: '4px 8px', fontSize: '11px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px', color: 'var(--cyan-neon)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: autoRoute.collapsed ? 0 : '8px' }} title="自動ルート案内を使わない場合は畳んで非表示にできます">
-                    <span>🐾 自動ルート案内</span>
-                    <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{autoRoute.collapsed ? '▶ 展開' : '▼ 折りたたむ'}</span>
+                  <button type="button" onClick={autoRoute.toggleCollapsed} style={{ width: '100%', padding: '4px 8px', fontSize: '11px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px', color: 'var(--cyan-neon)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: autoRoute.collapsed ? 0 : '8px' }} title={t('自動ルート案内を使わない場合は畳んで非表示にできます')}>
+                    <span>{t('🐾 自動ルート案内')}</span>
+                    <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{autoRoute.collapsed ? t('▶ 展開') : t('▼ 折りたたみ')}</span>
                   </button>
 
                   {!autoRoute.collapsed && (
                     <div style={{ background: 'rgba(10, 15, 28, 0.6)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '6px', padding: '8px' }}>
                       {autoRoute.status.error && (
-                        <div style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', padding: '4px', background: 'rgba(255,0,85,0.1)', borderRadius: '3px', marginBottom: '4px' }}>⚠ {autoRoute.status.error}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--magenta-neon, #ff00ff)', padding: '4px', background: 'rgba(255,0,85,0.1)', borderRadius: '3px', marginBottom: '4px' }}>⚠ <span>{t(autoRoute.status.error)}</span></div>
                       )}
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
                           <input type="checkbox" checked={autoRoute.waitEnabled} onChange={(e) => autoRoute.setWaitEnabled(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)' }} />
-                          <span>開始前に待機 (</span>
+                          <span>{t('開始前に待機 (')}</span>
                           <input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
-                          <span>秒)</span>
+                          <span>{t('秒)')}</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                          <span>🐾 スタート停止 (</span>
+                          <span>{t('🐾 スタート停止 (')}</span>
                           <input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
-                          <span>秒)</span>
+                          <span>{t('秒)')}</span>
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                          <span>移動速度:</span>
+                          <span>{t('移動速度:')}</span>
                           {(['time', 'speed'] as const).map(mode => (
                             <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer', opacity: autoRoute.status.active ? 0.5 : 1 }}>
                               <input
@@ -2058,7 +2148,7 @@ export default function App() {
                                 disabled={autoRoute.status.active}
                                 style={{ accentColor: 'var(--cyan-neon)', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer' }}
                               />
-                              <span>{mode === 'time' ? '所要時間ベース' : '速度ベース'}</span>
+                              <span>{mode === 'time' ? t('所要時間ベース') : t('速度ベース')}</span>
                             </label>
                           ))}
                           {autoRoute.speedMode === 'speed' && (
@@ -2073,22 +2163,22 @@ export default function App() {
                               style={{ width: '56px', fontSize: '12px', fontWeight: 700, textAlign: 'center', padding: '2px 4px', background: 'rgba(5,7,10,0.95)', border: '1px solid rgba(0,240,255,0.5)', color: 'var(--yellow-neon, #ffe600)', borderRadius: '3px', fontFamily: 'monospace', opacity: autoRoute.status.active ? 0.5 : 1, cursor: autoRoute.status.active ? 'not-allowed' : 'text' }}
                             />
                           )}
-                          {autoRoute.speedMode === 'speed' && <span style={{ color: 'var(--text-muted)' }}>px/秒</span>}
+                          {autoRoute.speedMode === 'speed' && <span style={{ color: 'var(--text-muted)' }}>{t('px/秒')}</span>}
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          <span>💣 導火線モード</span>
+                          <span>{t('💣 導火線モード')}</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.inactiveMarkersMode} onChange={(e) => autoRoute.setInactiveMarkersMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          <span>🔘 通過マーカー半透明化</span>
+                          <span>{t('🔘 通過マーカー半透明化')}</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          <span>🎥 カメラ追従</span>
+                          <span>{t('🎥 カメラ追従')}</span>
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                          <span>倍速:</span>
+                          <span>{t('倍速:')}</span>
                           {([1, 2, 3, 5, 10] as const).map(m => (
                             <button key={m} translate="no" className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '10px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
                           ))}
@@ -2099,33 +2189,33 @@ export default function App() {
                         {(() => {
                           const finished = autoRoute.status.active && !autoRoute.status.running && autoRoute.status.totalTime > 0 && autoRoute.status.elapsed >= autoRoute.status.totalTime;
                           if (autoRoute.status.waitRemaining > 0) {
-                            return <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}><span>待機中... </span><span translate="no">{autoRoute.status.waitRemaining.toFixed(1)}s</span></div>;
+                            return <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}><span>{t('待機中... ')}</span><span translate="no">{autoRoute.status.waitRemaining.toFixed(1)}s</span></div>;
                           } else if (!autoRoute.status.active) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><Play size={12} /></span> <span>スタート</span></button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><Play size={12} /></span> <span>{t('スタート')}</span></button>;
                           } else if (finished) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><RotateCcw size={11} /></span> <span>リスタート</span></button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><RotateCcw size={11} /></span> <span>{t('リスタート')}</span></button>;
                           } else if (autoRoute.status.running) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><span translate="no"><Pause size={11} /></span> <span>一時停止</span></button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><span translate="no"><Pause size={11} /></span> <span>{t('一時停止')}</span></button>;
                           } else {
-                            return <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><span translate="no"><Play size={11} /></span> <span>再開</span></button>;
+                            return <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><span translate="no"><Play size={11} /></span> <span>{t('再開')}</span></button>;
                           }
                         })()}
                         <button className={`btn-cyber ${autoRoute.status.active ? 'danger' : ''}`} style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRoute.status.active ? 1 : 0.4 }} disabled={!autoRoute.status.active} onClick={() => autoRoute.sendCommand('reset')}>
-                          <span translate="no"><Square size={11} /></span> <span>停止</span>
+                          <span translate="no"><Square size={11} /></span> <span>{t('停止')}</span>
                         </button>
                       </div>
 
                       {autoRoute.status.active && (
                         <>
-                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>Space キーで一時停止 / 再開 (終端でリスタート)</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>{t('Space キーで一時停止 / 再開 (終端でリスタート)')}</div>
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>
+                              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('経過')}</span>
                               <span translate="no" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.elapsed)}</span>
                             </div>
                             <div style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '0 4px' }}>/</div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>合計</span>
+                              <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('合計')}</span>
                               <span translate="no" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.totalTime)}</span>
                             </div>
                           </div>
@@ -2139,13 +2229,13 @@ export default function App() {
                                 const target = Math.max(0, autoRoute.status.elapsed - 30);
                                 autoRoute.sendCommand('seek', target);
                               }}
-                              title="30秒戻る"
+                              title={t('30秒戻る')}
                             >
                               ◀30s
                             </button>
                             <div
                               style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', cursor: 'pointer', position: 'relative' }}
-                              title="クリックでシーク"
+                              title={t('クリックでシーク')}
                               onClick={(e) => {
                                 if (!autoRoute.status.active || autoRoute.status.totalTime <= 0) return;
                                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -2161,21 +2251,21 @@ export default function App() {
                                 if (autoRoute.status.totalTime <= 0) return null;
                                 const ratio = cp.elapsed / autoRoute.status.totalTime;
                                 const left = Math.min(100, Math.max(0, ratio * 100));
-                                const ignored = !!cp.ignored;   // マイナス値
-                                const unset = !!cp.unset;       // 0 (未設定)
-                                const conflicted = !!cp.conflicted; // 順序矛盾
+                                const ignored = !!cp.ignored;
+                                const unset = !!cp.unset;
+                                const conflicted = !!cp.conflicted;
                                 const passed = !!cp.passed;
                                 let color: string;
                                 if (ignored || conflicted) color = '#ff4444';
                                 else if (unset) color = '#ffd000';
                                 else color = passed ? '#39ff14' : '#ff9500';
                                 const tip = ignored
-                                  ? `⚠🏁 ${cp.label} @ 異常値 (目標時間 ${formatTime(cp.targetTime)} — マイナス値は無視)\nマーカーを編集して 0 以上の値を設定してください`
+                                  ? t('⚠🏁 {0} @ 異常値 (目標時間 {1} — マイナス値は無視)\nマーカーを編集して 0 以上の値を設定してください', cp.label, formatTime(cp.targetTime))
                                   : conflicted
-                                    ? `⚠🏁 ${cp.label} @ ${formatTime(cp.targetTime)}\n順序矛盾: 前のチェックポイントより小さい目標時間です。${formatTime(cp.targetTime)} が他のチェックポイントより前に来ています。`
+                                    ? t('⚠🏁 {0} @ {1}\n順序矛盾: 前のチェックポイントより小さい目標時間です。{1} が他のチェックポイントより前に来ています。', cp.label, formatTime(cp.targetTime))
                                     : unset
-                                      ? `⚠🏁 ${cp.label} @ 未設定 (目標時間 0秒)\nマーカーを編集して目標時間を設定してください`
-                                      : `🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${passed ? ' (通過済)' : ''}`;
+                                      ? t('⚠🏁 {0} @ 未設定 (目標時間 0秒)\nマーカーを編集して目標時間を設定してください', cp.label)
+                                      : t('🏁 {0} @ {1}{2}', cp.label, formatTime(cp.elapsed), passed ? t(' (通過済)') : '');
                                 const isAlert = ignored || conflicted;
                                 return (
                                   <div key={`cp-line-${i}`} title={tip} translate="no" style={{ position: 'absolute', top: 0, bottom: 0, left: `${left}%`, transform: 'translateX(-50%)', width: isAlert ? '5px' : '4px', background: color, opacity: 0.95, pointerEvents: 'none', boxShadow: isAlert ? '0 0 5px rgba(255,68,68,0.95), 0 0 10px rgba(255,68,68,0.6)' : (unset ? '0 0 4px rgba(255,208,0,0.7)' : `0 0 4px ${color}cc`), borderRadius: '1px', animation: isAlert ? 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' : 'none', zIndex: isAlert ? 2 : 1 }}>
@@ -2193,16 +2283,16 @@ export default function App() {
                                 const target = Math.min(autoRoute.status.totalTime, autoRoute.status.elapsed + 30);
                                 autoRoute.sendCommand('seek', target);
                               }}
-                              title="30秒進む"
+                              title={t('30秒進む')}
                             >
                               30s▶
                             </button>
                           </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span><span>累計停止 </span><span translate="no">{formatTime(autoRoute.status.totalStopTime)}</span></span>
+                            <span><span>{t('累計停止 ')}</span><span translate="no">{formatTime(autoRoute.status.totalStopTime)}</span></span>
                             {autoRoute.status.currentStopLabel
-                              ? <span style={{ color: 'var(--yellow-neon)' }}><span>停止中: </span><span translate="no">{autoRoute.status.currentStopLabel}</span><span> (残り </span><span translate="no">{formatTime(autoRoute.status.stopRemaining)}</span><span>)</span></span>
-                              : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}><span>次: </span><span translate="no">{autoRoute.status.nextMarkerLabel}</span></span>
+                              ? <span style={{ color: 'var(--yellow-neon)' }}><span>{t('停止中: ')}</span><span translate="no">{autoRoute.status.currentStopLabel}</span><span>{t(' (残り ')}</span><span translate="no">{formatTime(autoRoute.status.stopRemaining)}</span><span>{t(')')}</span></span>
+                              : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}><span>{t('次: ')}</span><span translate="no">{autoRoute.status.nextMarkerLabel}</span></span>
                             }
                           </div>
                           {autoRoute.status.skillCdInfo && (
@@ -2211,7 +2301,7 @@ export default function App() {
                                 <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '50%', background: 'rgba(10,15,28,0.85)', color: autoRoute.status.skillCdInfo.color, border: `1.5px solid ${autoRoute.status.skillCdInfo.color}`, textAlign: 'center', lineHeight: '12px', fontSize: '10px', fontWeight: 700, boxShadow: `0 0 6px ${autoRoute.status.skillCdInfo.color}80` }}>
                                   {(autoRoute.status.skillCdInfo.label || 'S').charAt(0)}
                                 </span>
-                                <span style={{ color: autoRoute.status.skillCdInfo.color, fontWeight: 700 }}><span>CD: </span><span translate="no">{autoRoute.status.skillCdInfo.label}</span></span>
+                                <span style={{ color: autoRoute.status.skillCdInfo.color, fontWeight: 700 }}><span>{t('CD: ')}</span><span translate="no">{autoRoute.status.skillCdInfo.label}</span></span>
                               </span>
                               <span translate="no" style={{ fontFamily: 'monospace', fontWeight: 700, color: autoRoute.status.skillCdInfo.color }}>
                                 {autoRoute.status.skillCdInfo.remaining.toFixed(1)}s / {autoRoute.status.skillCdInfo.total}s
@@ -2228,20 +2318,20 @@ export default function App() {
                                 {ignoredCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ff4444', boxShadow: '0 0 4px #ff4444', animation: 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' }} />
-                                    <span>⚠ チェックポイント <span translate="no">{ignoredCp.length}</span> 件が異常値 (マイナス) (赤マーカー) — 0 以上に修正してください</span>
+                                    <span><span>{t('⚠ チェックポイント ')}</span><span translate="no">{ignoredCp.length}</span><span>{t(' 件が異常値 (マイナス) (赤マーカー) — 0 以上に修正してください')}</span></span>
                                   </div>
                                 )}
                                 {unsetCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ffd000' }}>
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ffd000', boxShadow: '0 0 4px #ffd000' }} />
-                                    <span>⚠ チェックポイント <span translate="no">{unsetCp.length}</span> 件が目標未設定 (黄色マーカー) — 編集して目標時間を設定してください</span>
+                                    <span><span>{t('⚠ チェックポイント ')}</span><span translate="no">{unsetCp.length}</span><span>{t(' 件が目標未設定 (黄色マーカー) — 編集して目標時間を設定してください')}</span></span>
                                   </div>
                                 )}
                                 {conflictedCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', paddingLeft: '12px' }}>
-                                    <span>⚠ 順序矛盾 <span translate="no">{conflictedCp.length}</span> 件: </span>
+                                    <span><span>{t('⚠ 順序矛盾 ')}</span><span translate="no">{conflictedCp.length}</span><span>{t(' 件: ')}</span></span>
                                     <span style={{ color: '#ffaaaa', fontWeight: 'normal' }}>
-                                      <span translate="no">{conflictedCp.map(cp => `${cp.label} (${formatTime(cp.targetTime)})`).join(', ')}</span> — 目標時間が前のチェックポイントより小さい
+                                      <span translate="no">{conflictedCp.map(cp => `${cp.label} (${formatTime(cp.targetTime)})`).join(', ')}</span> {t(' — 目標時間が前のチェックポイントより小さい')}
                                     </span>
                                   </div>
                                 )}
@@ -2256,7 +2346,7 @@ export default function App() {
 
                 <div className="panel-section">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                    <div className="panel-title" style={{ marginBottom: 0 }}>プレイデータ</div>
+                    <div className="panel-title" style={{ marginBottom: 0 }}>{t('プレイデータ')}</div>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: '3px' }}>
                       <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px' }} onClick={handleExportPlayData} title="履歴CSV以外の全データをJSONで保存">
                         <Download size={9} /> 保存
@@ -2283,7 +2373,7 @@ export default function App() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPresetListVisible(false)}>
           <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
-              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>セーブデータ読み込み</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('セーブデータ読み込み')}</div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <input
                   type="text"
@@ -2298,14 +2388,14 @@ export default function App() {
                     ✕
                   </button>
                 )}
-                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>✕ 閉じる</button>
+                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>{t('✕ 閉じる')}</button>
               </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
               {(() => {
                 const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: true, showPrivate: true });
                 if (visiblePresets.length === 0 && routeApi.saves.length === 0) {
-                  return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>セーブデータはまだありません</div>;
+                  return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>{t('セーブデータはまだありません')}</div>;
                 }
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2321,12 +2411,19 @@ export default function App() {
                       };
                       const matchSave = (s: SaveInfo) => {
                         if (!q) return true;
-                        const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
-                        const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                        // 同期では AES-GCM 復号できないので、暗号文プレフィックスで簡易判定。
+                        // v2 形式は復号しないと中身が分からないため、q が 'no name' /
+                        // 'anomaly' 系のキーワードなら一致とみなす。
+                        const isV2 = (enc: string) =>
+                          enc.startsWith('v2:') || enc.startsWith('legacy:');
+                        const sa = isV2(s.author || '') ? '' : xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
+                        const so = isV2(s.originalAuthor || '') ? '' : xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
                         return s.title.toLowerCase().includes(q)
                           || (s.description || '').toLowerCase().includes(q)
                           || sa.toLowerCase().includes(q)
-                          || so.toLowerCase().includes(q);
+                          || so.toLowerCase().includes(q)
+                          || (q.toLowerCase().includes('no name') && (isV2(s.author || '') || isV2(s.originalAuthor || '')))
+                          || (q.toLowerCase().includes('anomaly') && (!s.author || !s.originalAuthor));
                       };
                       const filteredPresets = visiblePresets.filter(matchPreset);
                       const filteredSaves = routeApi.saves.filter(matchSave);
@@ -2347,7 +2444,7 @@ export default function App() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
                                   <span style={{ color: '#ffd700', fontSize: '14px' }}>★</span>
                                   <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                                  <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>プリセット</span>
+                                  <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>{t('プリセット')}</span>
                                   {v !== 'public' && (
                                     <span
                                       title={vMeta.description}
@@ -2367,14 +2464,28 @@ export default function App() {
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                <span>獲得値: <span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
-                                {p.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
+                                <span>{t('獲得値: ')}<span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
+                                {p.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
                                 {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
-                                {p.author && <span>作者: {p.author}</span>}
-                                {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
-                                {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
+                                {p.author && <span>{t('作者: ')}{p.author}</span>}
+                                {p.originalAuthor && p.originalAuthor !== p.author && <span>{t('原作者: ')}{p.originalAuthor}</span>}
+                                {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>{t('最終更新: ')}{new Date(p.updatedAt).toLocaleString()}</span>}
                               </div>
                               <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                                 {isLocal && (
+                                  <button
+                                    className="btn-cyber"
+                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
+                                    onClick={() => {
+                                      const url = `https://xmelosx.github.io/Nikukyu_Route/?preset=${p.id}`;
+                                      navigator.clipboard.writeText(url);
+                                      notification.show('本URLをコピーしました (GitHub Pages)');
+                                    }}
+                                    title="GitHub Pagesベースの本URLをコピーします (限定公開URL確認用)"
+                                  >
+                                    本URLコピー
+                                  </button>
+                                )}
                                 <button
                                   className="btn-cyber"
                                   style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
@@ -2395,7 +2506,7 @@ export default function App() {
                                 ) : null}
                                 {isLocal && isEditMode && (
                                   <div style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>公開:</span>
+                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('公開:')}</span>
                                     {(['public', 'unlisted', 'private'] as PresetVisibility[]).map(opt => {
                                       const optMeta = PRESET_VISIBILITY_META[opt];
                                       const isActive = v === opt;
@@ -2440,11 +2551,11 @@ export default function App() {
                                 {isLocal && (
                                   presetDeleteConfirmId === p.id ? (
                                     <>
-                                      <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>削除する</button>
-                                      <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>キャンセル</button>
+                                      <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>{t('削除する')}</button>
+                                      <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>{t('キャンセル')}</button>
                                     </>
                                   ) : (
-                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>削除</button>
+                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>{t('削除')}</button>
                                   )
                                 )}
                               </div>
@@ -2461,8 +2572,8 @@ export default function App() {
                               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                                 {deleteConfirmId === s.id ? (
                                   <>
-                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除する</button>
-                                    <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>キャンセル</button>
+                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>{t('削除する')}</button>
+                                    <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>{t('キャンセル')}</button>
                                   </>
                                 ) : (
                                   isLocal && isEditMode ? (
@@ -2473,22 +2584,20 @@ export default function App() {
                                   ) : null
                                 )}
                                 {!deleteConfirmId && (
-                                  <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除</button>
+                                  <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>{t('削除')}</button>
                                 )}
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                              <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
-                              {s.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
+                              <span>{t('獲得値: ')}<span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
+                              {s.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
                               {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
-                              {(() => {
-                                const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
-                                const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
-                                return (<>
-                                  {sa && <span>作者: {sa}</span>}
-                                  {so && so !== sa && <span>原作者: {so}</span>}
-                                </>);
-                              })()}
+                              <SaveListRowAuthor
+                                authorEnc={s.author || ''}
+                                originalAuthorEnc={s.originalAuthor || ''}
+                                routeId={s.id}
+                                createdAt={s.createdAt}
+                              />
                               <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
                             </div>
                           </div>
@@ -2507,11 +2616,11 @@ export default function App() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 6000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setUrlLoadConfirm(null)}>
           <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '420px', padding: '20px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)', marginBottom: '12px' }}>
-              {urlLoadConfirm.type === 'preset' ? 'プリセット' : 'セーブデータ'}を読み込みますか？
+              {urlLoadConfirm.type === 'preset' ? t('プリセット') : t('セーブデータ')}{t('を読み込みますか？')}
             </div>
             <div style={{ fontSize: '13px', color: '#b0b0b0', marginBottom: '16px' }}>
-              「<span style={{ color: urlLoadConfirm.type === 'preset' ? '#ffd700' : 'var(--cyan-neon)', fontWeight: 700 }}>{urlLoadConfirm.name}</span>」を読み込みます。<br />
-              現在の編集内容は破棄されます。
+              「<span style={{ color: urlLoadConfirm.type === 'preset' ? '#ffd700' : 'var(--cyan-neon)', fontWeight: 700 }}>{urlLoadConfirm.name}</span>」{t('を読み込みます。')}<br />
+              {t('現在の編集内容は破棄されます。')}
               {urlLoadConfirm.type === 'preset' && (() => {
                 const p = routeApi.presets.find(x => x.id === urlLoadConfirm.id);
                 if (!p) return null;
@@ -2535,7 +2644,21 @@ export default function App() {
                 } else {
                   const data = DataManager.loadFromLocalStorage(urlLoadConfirm.id);
                   if (data) {
-                    const migrated = migrateRouteCoordinates(data);
+                    const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(data);
+                    if (legacyMigrated || result.applied.length > 0) {
+                      DataManager.saveToLocalStorage(migrated);
+                    }
+                    if (result.unknown) {
+                      notification.show(
+                        `⚠️ 未登録バージョンのセーブデータです (v${result.unknownVersion})。そのまま読み込みます。`,
+                        5000
+                      );
+                    } else if (result.applied.length > 0) {
+                      notification.show(
+                        `セーブデータを ${result.applied.length} 件マイグレーションしました (→ v${result.finalVersion})`,
+                        3000
+                      );
+                    }
                     routeApi.setRouteWithGlobalDefaults(migrated);
                     if (migrated.markerScale !== undefined) {
                       setMarkerScale(migrated.markerScale);
@@ -2543,10 +2666,10 @@ export default function App() {
                     }
                   }
                 }
-                notification.show(`読み込み完了: ${urlLoadConfirm.name}`);
+                notification.show(`${t('読み込み完了: ')}${urlLoadConfirm.name}`);
                 setUrlLoadConfirm(null);
-              }}>読み込む</button>
-              <button className="btn-cyber" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => setUrlLoadConfirm(null)}>キャンセル</button>
+              }}>{t('読み込む')}</button>
+              <button className="btn-cyber" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => setUrlLoadConfirm(null)}>{t('キャンセル')}</button>
             </div>
           </div>
         </div>
@@ -2573,9 +2696,15 @@ export default function App() {
         onShowGlobalMarker={handleShowGlobalMarker}
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
         onSetStartupFocus={(markerId) => globalDefaults.setStartupFocusMarkerId(markerId || null)}
-        onClearOriginalAuthor={() => {
-          routeApi.setRoute(prev => ({ ...prev, originalAuthor: '' }));
-          notification.show('原作者名をクリアしました');
+        onClearOriginalAuthor={async () => {
+          // 両方とも AUTHOR_DEFAULT_PLAIN ('No name') を暗号化した状態に戻す。
+          // これにより表示は「No name」になり、ロード時も異常扱いされない。
+          const [a, o] = await Promise.all([
+            aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)),
+            aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt))
+          ]);
+          routeApi.setRoute(prev => ({ ...prev, author: a, originalAuthor: o }));
+          notification.show('作者名・原作者名を No name にリセットしました');
         }}
         showDetectionRanges={showDetectionRanges}
         onSetShowDetectionRanges={setShowDetectionRanges}

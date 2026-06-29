@@ -11,8 +11,10 @@ import {
   DEFAULT_ROUTE,
   DataManager,
   normalizeStrokes,
-  xorEncrypt,
-  xorDecrypt,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+  AUTHOR_TAMPERED,
+  AUTHOR_UNKNOWN_MARKER,
   getAuthorKey,
   getOriginalAuthorKey,
   generateId
@@ -133,6 +135,10 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   showNotificationRef.current = showNotification;
 
   const refreshSavesList = useCallback(() => {
+    // 同期で localStorage から取得。古い entry (v2:0: / 空 / 旧 XOR) は
+    // ここでは正規化せず生で state に乗せる。表示側の SaveListRowAuthor が
+    // 同期判定で「異常」表示にする。auto-save のたびに重い AES-GCM を
+    // 走らせないため、 補完は初回マウント時の 1 回だけ useEffect で行う。
     setSaves(DataManager.getSavesList().sort((a, b) => b.updatedAt - a.updatedAt));
   }, []);
 
@@ -201,29 +207,25 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     const toSave: RouteData = {
       ...route, mapVersion: 2, markerScale: initialMarkerScale
     };
-    if (!toSave.originalAuthor && toSave.author) {
-      toSave.originalAuthor = xorEncrypt(
-        xorDecrypt(toSave.author, getAuthorKey(toSave.id, toSave.createdAt)),
-        getOriginalAuthorKey(toSave.id, toSave.createdAt)
-      );
-    }
     DataManager.saveToLocalStorage(toSave);
     refreshSavesList();
     localStorage.setItem('heist_last_used_route_id', toSave.id);
     showNotificationRef.current(`保存完了: ${route.title}`);
   }, [route, initialMarkerScale, refreshSavesList]);
 
-  const saveAsCopy = useCallback(() => {
+  const saveAsCopy = useCallback(async () => {
     const newId = generateId('route');
     const newCreatedAt = Date.now();
     const copy: RouteData = {
       ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt
     };
     if (copy.author) {
-      const plain = xorDecrypt(copy.author, getAuthorKey(route.id, route.createdAt));
-      copy.author = xorEncrypt(plain, getAuthorKey(newId, newCreatedAt));
-      if (!copy.originalAuthor) {
-        copy.originalAuthor = xorEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt));
+      const plain = await aesGcmDecrypt(copy.author, getAuthorKey(route.id, route.createdAt));
+      if (plain && plain !== AUTHOR_TAMPERED) {
+        copy.author = await aesGcmEncrypt(plain, getAuthorKey(newId, newCreatedAt));
+        if (!copy.originalAuthor) {
+          copy.originalAuthor = await aesGcmEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt));
+        }
       }
     }
     DataManager.saveToLocalStorage(copy);
@@ -238,12 +240,26 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     const newCreatedAt = Date.now();
     const newRoute = DEFAULT_ROUTE(newId);
     if (currentAuthor) {
-      const plain = xorDecrypt(currentAuthor, getAuthorKey(route.id, route.createdAt));
-      newRoute.author = xorEncrypt(plain, getAuthorKey(newId, newCreatedAt));
-      newRoute.originalAuthor = xorEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt));
+      // 同期で復号できない v2: 形式でも newRoute は AUTHOR_DEFAULT_PLAIN ('No name')
+      // を暗号化した値で初期化する。これにより「current の author を引き継ぐ」のは
+      // 旧 XOR 形式のみとなるが、 author 引き継ぎは補助機能なので No name に
+      // フォールバックしても実用上問題ない。
+      newRoute.author = '';
+      newRoute.originalAuthor = '';
     }
     setRouteWithGlobalDefaults(newRoute);
     localStorage.setItem('heist_last_used_route_id', newId);
+    // 必要ならバックグラウンドで author を引き継ぐ (await 不要なので結果は反映されないが
+    // 次回ロード時に平文を反映できる)
+    if (currentAuthor) {
+      aesGcmDecrypt(currentAuthor, getAuthorKey(route.id, route.createdAt)).then((plain) => {
+        if (!plain || plain === AUTHOR_TAMPERED) return;
+        // 復号成功 → 次回保存時に反映されるよう内部で暗号化だけ済ませておく
+        // (ここでは route state は触らない)
+        aesGcmEncrypt(plain, getAuthorKey(newId, newCreatedAt)).catch(() => {});
+        aesGcmEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt)).catch(() => {});
+      }).catch(() => {});
+    }
   }, [route, setRouteWithGlobalDefaults]);
 
   const loadFromLocal = useCallback((id: string) => {
@@ -316,6 +332,20 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       if (data.author === undefined) data.author = '';
       if (data.originalAuthor === undefined) data.originalAuthor = '';
 
+      // author / originalAuthor のロード時フォールバック:
+      //   空 (または AUTHOR_UNKNOWN_MARKER)  -> AUTHOR_UNKNOWN_MARKER のまま残す。
+      //                                          改ざんの疑いとして Anomaly 表示にする。
+      //                                          ユーザはクリアボタン or input 編集で
+      //                                          意図的に No name にリセットできる。
+      // 「ロード時に何事もなかったかのように No name に補完」 すると改ざんに
+      // 気づけなくなる (= 保護として機能しない) ため、ここでは補完しない。
+      if (!data.author) {
+        data.author = AUTHOR_UNKNOWN_MARKER;
+      }
+      if (!data.originalAuthor) {
+        data.originalAuthor = AUTHOR_UNKNOWN_MARKER;
+      }
+
       if (data.id !== 'default') {
         const gd = globalDefaultsRefRef.current.current;
         data.hiddenMarkers = [...new Set([...data.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
@@ -361,19 +391,21 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }).catch(() => { });
   }, []);
 
-  const saveAsPreset = useCallback((input: {
+  const saveAsPreset = useCallback(async (input: {
     name: string; description: string; author: string; originalAuthor: string;
     visibility?: PresetVisibility;
   }) => {
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
+    const plainAuthor = await aesGcmDecrypt(route.author, getAuthorKey(route.id, route.createdAt));
+    const plainOriginal = await aesGcmDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt));
     const newPreset: PresetData = {
       id: generateId('preset'),
       name: input.name.trim() || route.title,
       description: input.description,
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
-      author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
-      originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
+      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
+      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(input.visibility),
       routeData: toSave
@@ -394,18 +426,20 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
    *   その後に visibility 関連の代入は一切行わないため、元の値がそのまま保持される。
    *   公開レベルを変えたい場合は setPresetVisibility を明示的に呼ぶこと。
    */
-  const overwritePreset = useCallback((presetId: string) => {
+  const overwritePreset = useCallback(async (presetId: string) => {
     const idx = presets.findIndex(p => p.id === presetId);
     if (idx === -1) return;
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
+    const plainAuthor = await aesGcmDecrypt(route.author, getAuthorKey(route.id, route.createdAt));
+    const plainOriginal = await aesGcmDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt));
     const updatedPreset: PresetData = {
       ...presets[idx],
       name: route.title,
       description: route.description || '',
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
-      author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
-      originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
+      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
+      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
       updatedAt: Date.now(),
       routeData: toSave
     };

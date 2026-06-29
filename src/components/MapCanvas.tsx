@@ -17,6 +17,7 @@ import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
+import { t, tNote } from '../i18n';
 
 interface MapCanvasProps {
   floor: FloorType;
@@ -2625,7 +2626,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const showTooltip = isEditing ? textTooltip : !!m.textTooltip;
                 const displayGlow = isEditing ? textGlow : !!m.textGlow;
                 const tooltipText = showTooltip
-                  ? (displayDesc || m.note || 'Text')
+                  ? (displayDesc || tNote(m.note) || t('Text'))
                   : '';
                 // 表示モード中はクリック判定を透過させ、UI 操作の邪魔にならないようにする。
                 // 編集モードではドラッグ・選択のため従来通りクリックを拾う。
@@ -2662,11 +2663,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
                     onClick={passThrough ? undefined : (e) => handleMarkerClick(e, m)}
                   >
-                    {m.note || 'Text'}
+                    {tNote(m.note) || t('Text')}
                   </div>
                 );
               }
-              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? (m.note?.trim() || 'Boss') : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : isSkillCd ? `${(m.skillLabel || m.note || 'スキル').trim() || 'スキル'} (CD ${m.skillCdSeconds ?? 0}秒)` : '');
+              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || t('Info Pin')) : isNoteType(m.type) ? (tNote(m.note) || t('Memo')) : tNote(m.note) || (isWarp ? t('Warp Point') : isStairs ? t('Stairs') : isPhone ? (m.phoneLocked ? t('🔒 Always On') : (m.phoneActive ? t('ACTIVE') : t('Inactive'))) : m.type === 'boss' ? (tNote(m.note)?.trim() || t('Boss')) : (m.type === 'battle' || m.type === 'gbattle') ? t('Battle') : (m.type === 'picking' || m.type === 'gpicking') ? t('Picking') : (m.type === 'long_picking' || m.type === 'glong_picking') ? t('Long Picking') : m.type === 'eh' ? t('エターナルハート発見地点') : m.type === 'cardkey' ? t('カードキー発見ポイント') : m.type === 'checkpoint' ? t('🏁 Checkpoint') : isSkillCd ? `${(m.skillLabel || tNote(m.note) || t('スキル')).trim() || t('スキル')} (CD ${m.skillCdSeconds ?? 0}${t('秒')})` : '');
               return (
                 <div
                   key={m.id}
@@ -2710,7 +2711,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         boxShadow: `0 ${2 * scaleMultiplier}px ${5 * scaleMultiplier}px rgba(0, 0, 0, 0.5)`
                       }}
                     >
-                      {isInfoType(m.type) ? (m.infoLabel?.trim() || m.note) : m.note}
+                      {isInfoType(m.type) ? (tNote(m.infoLabel)?.trim() || tNote(m.note)) : tNote(m.note)}
                     </div>
                   )}
                 </div>
@@ -2794,7 +2795,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <span>ⓘ</span> {meta.label}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>{t('(ヘッダーをドラッグで移動)')}</span>}
                         </span>
                         <button 
                           className="info-popup-close"
@@ -2812,12 +2813,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <div className="info-popup-content">
                         {m.infoLabel?.trim() && (
                           <div style={{ fontWeight: 'bold', fontSize: '13px', color: meta.color, marginBottom: '6px' }}>
-                            {m.infoLabel}
+                            {tNote(m.infoLabel)}
                           </div>
                         )}
                         {m.note.trim() && (
                           <div className="info-popup-desc">
-                            {m.note}
+                            {tNote(m.note)}
                           </div>
                         )}
                         {isEditMode && <MediaManager marker={m} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
@@ -2829,7 +2830,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>{t('YouTube URLが無効')}</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -2874,7 +2875,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <div className="info-popup-content">
                         {m.note.trim() && (
                           <div className="info-popup-desc">
-                            {m.note}
+                            {tNote(m.note)}
                           </div>
                         )}
                       </div>
@@ -2967,8 +2968,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onMouseDown={(e) => handlePopupMouseDown(e)}
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>📝</span> MEMO
-                          <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>
+                          <span>📝</span> {t('MEMO')}
+                          <span style={{ fontSize: '9px', opacity: 0.6 }}>{t('(ヘッダーをドラッグで移動)')}</span>
                         </span>
                         <button
                           className="info-popup-close"
@@ -3024,8 +3025,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onMouseDown={(e) => handlePopupMouseDown(e)}
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>😈</span> {m.note.trim() ? m.note : 'BOSS STATUS'}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
+                          <span>😈</span> {m.note.trim() ? tNote(m.note) : t('BOSS STATUS')}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>{t('(ヘッダーをドラッグで移動)')}</span>}
                         </span>
                         <button 
                           className="info-popup-close"
@@ -3044,13 +3045,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {/* Boss description display */}
                         {m.bossDescription && m.bossDescription.trim() && (
                           <div style={{ fontSize: '12px', color: '#e0e0e0', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(255, 0, 85, 0.08)', border: '1px solid rgba(255, 0, 85, 0.25)', borderRadius: '4px', whiteSpace: 'pre-wrap' }}>
-                            {m.bossDescription}
+                            {tNote(m.bossDescription)}
                           </div>
                         )}
 
                         {/* Drops display */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>ボスドロップ:</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('ボスドロップ:')}</span>
                           {m.bossDrops && m.bossDrops.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {m.bossDrops.map(item => (
@@ -3060,7 +3061,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               ))}
                             </div>
                           ) : (
-                            <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>設定なし</span>
+                            <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{t('設定なし')}</span>
                           )}
                         </div>
 
@@ -3073,7 +3074,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>{t('YouTube URLが無効')}</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -3099,7 +3100,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px', marginTop: '4px' }}>
-                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('所要時間:')}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
                                   className="btn-cyber danger" 
@@ -3153,8 +3154,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onMouseDown={(e) => handlePopupMouseDown(e)}
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>⚔️</span> {m.note.trim() ? m.note : 'BATTLE STATUS'}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
+                          <span>⚔️</span> {m.note.trim() ? tNote(m.note) : t('BATTLE STATUS')}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>{t('(ヘッダーをドラッグで移動)')}</span>}
                         </span>
                         <button 
                           className="info-popup-close"
@@ -3179,7 +3180,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             {item.type === 'youtube' && (() => {
                               const ytMatch = item.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
                               const videoId = ytMatch ? ytMatch[1] : null;
-                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>YouTube URLが無効</div>;
+                              return videoId ? <iframe src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <div style={{ color: '#f44', fontSize: '10px' }}>{t('YouTube URLが無効')}</div>;
                             })()}
                             {item.description && <div style={{ fontSize: '12px', color: '#e8e8e8', marginTop: '2px', lineHeight: 1.4 }}>{item.description}</div>}
                           </div>
@@ -3207,7 +3208,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('所要時間:')}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
                                   className="btn-cyber danger" 
@@ -3265,8 +3266,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         onMouseDown={(e) => handlePopupMouseDown(e)}
                       >
                         <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>{meta.emoji}</span> {m.note.trim() ? m.note : `${meta.label} STATUS`}
-                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>(ヘッダーをドラッグで移動)</span>}
+                          <span>{meta.emoji}</span> {m.note.trim() ? tNote(m.note) : `${t(meta.label)} ${t('STATUS')}`}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6 }}>{t('(ヘッダーをドラッグで移動)')}</span>}
                         </span>
                         <button 
                           className="info-popup-close"
@@ -3339,7 +3340,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
                               {/* Duration settings - read-only display */}
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
+                                <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('所要時間:')}</span>
                                 <div style={{ fontSize: '14px', color: isPicky ? '#39ff14' : 'var(--cyan-neon, #00f0ff)', fontWeight: 'bold', padding: '2px 0' }}>
                                   {isPicky ? '0秒' : (m.type === 'long_picking' || m.type === 'glong_picking' ? '8秒' : '5秒')}
                                 </div>
@@ -3532,9 +3533,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 minWidth: '180px',
                 fontFamily: 'var(--font-cyber)',
               }}>
-              <div style={{ fontSize: '11px', color: '#ff9500', fontWeight: 'bold', marginBottom: '4px' }}>🏁 チェックポイント</div>
+              <div style={{ fontSize: '11px', color: '#ff9500', fontWeight: 'bold', marginBottom: '4px' }}>{t('🏁 チェックポイント')}</div>
               <div style={{ fontSize: '12px', color: '#ffffff', marginBottom: '4px' }}>
-                目標時間: <strong style={{ color: '#ffb84d' }}>{target === 0 ? '未設定' : `${target}秒`}</strong>
+                {t('目標時間: ')}<strong style={{ color: '#ffb84d' }}>{target === 0 ? t('未設定') : `${target}${t('秒')}`}</strong>
               </div>
               <label
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#ffffff', cursor: 'pointer', userSelect: 'none' }}
@@ -3638,7 +3639,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           
           {isInfoType(activeNoteMarker.type) && (
             <div style={{ marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>ラベル</label>
+              <label style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{t('ラベル')}</label>
               <input
                 type="text"
                 className="input-cyber"
@@ -3676,7 +3677,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 marginTop: '6px'
               }}
             >
-              <span>▼ 詳細設定</span>
+              <span>{t('▼ 詳細設定')}</span>
               <span style={{ fontSize: '9px', opacity: 0.6 }}>{noteSettingsExpanded ? '折りたたむ' : '展開する'}</span>
             </button>
           )}
@@ -3687,10 +3688,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Text marker color & size editing */}
           {isTextType(activeNoteMarker.type) && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 255, 255, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>テキスト設定:</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>{t('テキスト設定:')}</div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontSize: '10px', color: '#b0b0b0' }}>色:</label>
+                <label style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('色:')}</label>
                 <input
                   type="color"
                   value={textColor}
@@ -3708,7 +3709,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
-                  <span>サイズ:</span>
+                  <span>{t('サイズ:')}</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{textSize}px</span>
                 </div>
                 <input
@@ -3769,7 +3770,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </label>
               {textFixedPosition && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginLeft: '18px' }}>
-                  <div style={{ fontSize: '9px', color: '#b0b0b0' }}>ペイン追従:</div>
+                  <div style={{ fontSize: '9px', color: '#b0b0b0' }}>{t('ペイン追従:')}</div>
                   <div style={{ display: 'flex', gap: '8px', fontSize: '9px', color: '#b0b0b0' }}>
                     {(['auto', 'left', 'right'] as const).map(opt => (
                       <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
@@ -3795,13 +3796,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <label style={{ fontSize: '9px', color: '#b0b0b0' }}>説明文:</label>
+                <label style={{ fontSize: '9px', color: '#b0b0b0' }}>{t('説明文:')}</label>
                 <textarea
                   className="input-cyber"
                   style={{ fontSize: '10px', padding: '4px', resize: 'vertical', minHeight: '40px', fontFamily: 'inherit' }}
                   value={textDescription}
                   onChange={(e) => setTextDescription(e.target.value)}
-                  placeholder="テキストの説明（任意）"
+                  placeholder={t('テキストの説明（任意）')}
                 />
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#b0b0b0', cursor: 'pointer' }}>
@@ -3836,7 +3837,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 rows={3}
                 style={{ width: '100%', fontSize: '12px', padding: '4px 6px', resize: 'vertical', minHeight: '50px', fontFamily: 'inherit' }}
               />
-              <div style={{ fontSize: '10px', color: '#ff6b9d', marginTop: '4px' }}>ボスドロップ:</div>
+              <div style={{ fontSize: '10px', color: '#ff6b9d', marginTop: '4px' }}>{t('ボスドロップ:')}</div>
 
               {/* Drops List */}
               {bossDrops.length > 0 ? (
@@ -3854,7 +3855,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: '9px', color: '#666', fontStyle: 'italic' }}>登録アイテムなし</div>
+                <div style={{ fontSize: '9px', color: '#666', fontStyle: 'italic' }}>{t('登録アイテムなし')}</div>
               )}
 
               {/* Custom Drop Input */}
@@ -3901,12 +3902,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               {/* Duration Setting */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', borderTop: '1px dotted rgba(255, 0, 85, 0.2)', paddingTop: '6px' }}>
-                <div style={{ fontSize: '10px', color: '#ff6b9d', fontWeight: 'bold' }}>所要時間</div>
+                <div style={{ fontSize: '10px', color: '#ff6b9d', fontWeight: 'bold' }}>{t('所要時間')}</div>
                 
                 {/* Global Default Duration */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: '#b0b0b0' }}>デフォルト:</span>
+                    <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('デフォルト:')}</span>
                     <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
                       {Math.floor(bossDurationSeconds / 60)}分 {bossDurationSeconds % 60}秒
                     </span>
@@ -3921,8 +3922,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     style={{ accentColor: '#ff6b9d', cursor: 'pointer', width: '100%' }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                    <span>0秒</span>
-                    <span>12分</span>
+                    <span>{t('0秒')}</span>
+                    <span>{t('12分')}</span>
                   </div>
                 </div>
 
@@ -3949,7 +3950,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   {useBossCustomDuration && (
                     <div style={{ marginTop: '4px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('個別設定値:')}</span>
                         <span style={{ fontSize: '11px', color: 'var(--red-neon)', fontWeight: 'bold' }}>
                           {Math.floor((bossCustomDurationVal || 60) / 60)}分 {(bossCustomDurationVal || 60) % 60}秒
                         </span>
@@ -3964,8 +3965,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         style={{ accentColor: 'var(--red-neon)', cursor: 'pointer', width: '100%' }}
                       />
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                        <span>0秒</span>
-                        <span>12分</span>
+                        <span>{t('0秒')}</span>
+                        <span>{t('12分')}</span>
                       </div>
                     </div>
                   )}
@@ -3980,14 +3981,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             return (
               <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                  <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>所要時間</div>
+                  <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>{t('所要時間')}</div>
                   
                   {isGlobal ? (
                     <>
                       {/* Global Default Duration */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255, 255, 255, 0.02)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>デフォルト:</span>
+                          <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('デフォルト:')}</span>
                           <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>
                             {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                           </span>
@@ -4002,8 +4003,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           style={{ accentColor: '#7ec8e3', cursor: 'pointer', width: '100%' }}
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                          <span>0秒</span>
-                          <span>12分</span>
+                          <span>{t('0秒')}</span>
+                          <span>{t('12分')}</span>
                         </div>
                       </div>
 
@@ -4030,7 +4031,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         {useBattleCustomDuration && (
                           <div style={{ marginTop: '4px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>個別設定値:</span>
+                              <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('個別設定値:')}</span>
                               <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
                                 {Math.floor((battleCustomDurationVal || 60) / 60)}分 {(battleCustomDurationVal || 60) % 60}秒
                               </span>
@@ -4045,8 +4046,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                               style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                             />
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                              <span>0秒</span>
-                              <span>12分</span>
+                              <span>{t('0秒')}</span>
+                              <span>{t('12分')}</span>
                             </div>
                           </div>
                         )}
@@ -4056,7 +4057,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     /* Individual Pin Duration */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(0, 240, 255, 0.03)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>所要時間:</span>
+                        <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('所要時間:')}</span>
                         <span style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>
                           {Math.floor(battleDurationSeconds / 60)}分 {battleDurationSeconds % 60}秒
                         </span>
@@ -4071,8 +4072,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                       />
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
-                        <span>0秒</span>
-                        <span>12分</span>
+                        <span>{t('0秒')}</span>
+                        <span>{t('12分')}</span>
                       </div>
                     </div>
                   )}
@@ -4085,7 +4086,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {(activeNoteMarker.type === 'picking' || activeNoteMarker.type === 'gpicking' || activeNoteMarker.type === 'long_picking' || activeNoteMarker.type === 'glong_picking') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>所要時間</div>
+                <div style={{ fontSize: '10px', color: '#7ec8e3', fontWeight: 'bold' }}>{t('所要時間')}</div>
                 
                 {/* Picky Checkbox */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(57, 255, 20, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(57, 255, 20, 0.15)', marginBottom: '4px' }}>
@@ -4136,7 +4137,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* I-MEMO (inote) marker media manager - personal memo with media URLs */}
           {activeNoteMarker.type === 'inote' && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(57, 255, 20, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold' }}>📝 I-MEMO 添付メディア</div>
+              <div style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold' }}>{t('📝 I-MEMO 添付メディア')}</div>
               {activeNoteMarker && <MediaManager marker={activeNoteMarker} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
             </div>
           )}
@@ -4162,7 +4163,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Checkpoint marker: target time + sound */}
           {activeNoteMarker && activeNoteMarker.type === 'checkpoint' && (
             <div style={{ marginTop: '10px', borderTop: '1px dashed rgba(255, 149, 0, 0.4)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '14px', color: '#ff9500', fontWeight: 'bold' }}>🏁 チェックポイント設定</div>
+              <div style={{ fontSize: '14px', color: '#ff9500', fontWeight: 'bold' }}>{t('🏁 チェックポイント設定')}</div>
 
               {/* Target arrival time */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -4186,8 +4187,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   />
                 </div>
                 <div style={{ fontSize: '13px', color: '#ffffff', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '3px' }}>
-                  設定した秒数に自動追従がこの場所へ辿り着くよう、<br />
-                  <strong style={{ color: '#ffb84d' }}>移動速度が自動で調整</strong>されます。<br />
+                  {t('設定した秒数に自動追従がこの場所へ辿り着くよう、')}<br />
+                  <strong style={{ color: '#ffb84d' }}>{t('移動速度が自動で調整')}</strong>{t('されます。')}<br />
                   <span style={{ color: '#e0e0e0', fontSize: '12px' }}>
                     ※ 0 = このチェックポイントは速度調整に使用されません (タイムライン上で赤マーカーになります)
                   </span>
@@ -4231,7 +4232,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
           {activeNoteMarker && activeNoteMarker.type === 'skill_cd' && (
             <div style={{ marginTop: '10px', borderTop: '1px dashed rgba(57, 255, 20, 0.4)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '14px', color: skillCdColor, fontWeight: 'bold' }}>⏱️ スキルCD</div>
+              <div style={{ fontSize: '14px', color: skillCdColor, fontWeight: 'bold' }}>{t('⏱️ スキルCD')}</div>
 
               {/* プリセット選択 + 設定画面ボタン */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -4283,7 +4284,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   }}
                   style={{ flex: 1, fontSize: '12px', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: 'var(--text-primary)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px' }}
                 >
-                  <option value="">(なし)</option>
+                  <option value="">{t('(なし)')}</option>
                   {skillCdPresets.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.label} {p.mode === 'per_second'
@@ -4306,7 +4307,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
               {/* 色 + アイコンプレビュー */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 'bold', minWidth: '40px' }}>色</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 'bold', minWidth: '40px' }}>{t('色')}</span>
                 <input
                   type="color"
                   value={/^#[0-9a-fA-F]{6}$/.test(skillCdColor) ? skillCdColor : '#39ff14'}
@@ -4329,17 +4330,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 })()}
               </div>
 
-              {/* モード + CD秒数 or 使用秒数×係数 */}
+              {/* モード表示: プリセットで設定 (= ここでは個別上書き不可)。
+                  モードを変更したい場合は、設定タブでプリセットを編集する。 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>モード</span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  <input type="radio" checked={skillCdMode === 'per_second'} onChange={() => setSkillCdMode('per_second')} style={{ accentColor: skillCdColor }} />
-                  変動 (使用秒×係数)
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  <input type="radio" checked={skillCdMode === 'fixed'} onChange={() => setSkillCdMode('fixed')} style={{ accentColor: skillCdColor }} />
-                  固定
-                </label>
+                <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>モード:</span>
+                <span style={{ fontSize: '11px', color: skillCdColor, fontWeight: 700 }}>
+                  {skillCdMode === 'per_second' ? '変動 (使用秒×係数)' : '固定 (CD秒数)'}
+                </span>
+                {!activeNoteMarker.skillPresetId && (
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(プリセット未選択)</span>
+                )}
               </div>
 
               {skillCdMode === 'per_second' ? (
@@ -4396,14 +4396,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               )}
 
               {activeNoteMarker.skillPresetId
-                ? <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ プリセットの名称と色が反映。色・モード・秒数は個別上書き可。</div>
+                ? <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ プリセットの名称と色が反映。色は個別変更可。使用秒数/CD秒数も上書き可。</div>
                 : <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ 上の「メモ」がスキル名。先頭1文字がアイコン。</div>}
             </div>
           )}
 
           <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>スクロールターゲット:</div>
-            <div style={{ fontSize: '9px', color: '#b0b0b0', marginBottom: '4px' }}>マップを自由に移動・ズームしてから、以下をクリックでこのビューを記録。</div>
+            <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>{t('スクロールターゲット:')}</div>
+            <div style={{ fontSize: '9px', color: '#b0b0b0', marginBottom: '4px' }}>{t('マップを自由に移動・ズームしてから、以下をクリックでこのビューを記録。')}</div>
             {activeNoteMarker.scrollConfig ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ fontSize: '10px', color: 'var(--green-neon)' }}>
@@ -4474,7 +4474,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '4px' }}>({conn.isMutuallyLinked ? '双方向' : '片道'})</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '10px', color: '#b0b0b0' }}>接続線の色:</span>
+                      <span style={{ fontSize: '10px', color: '#b0b0b0' }}>{t('接続線の色:')}</span>
                       <input
                         type="color"
                         value={activeNoteMarker.connectionColor || conn.partner.connectionColor || (activeNoteMarker.type === 'stairs' ? '#ffaa00' : '#ff00ff')}
@@ -4541,7 +4541,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       disabled={!canLink}
                       onChange={(e) => setWarpLinkTargetId(e.target.value)}
                     >
-                      <option value="">-- またはドロップダウンで選択 --</option>
+                      <option value="">{t('-- またはドロップダウンで選択 --')}</option>
                       {markers
                         .filter(m => {
                           if (m.id === activeNoteMarker.id) return false;
@@ -4694,7 +4694,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Appearance (Direction & Size) configuration for Info & Boss markers */}
           {(isInfoType(activeNoteMarker.type) || activeNoteMarker.type === 'boss') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>ポップアップ表示設定:</div>
+              <div style={{ fontSize: '10px', color: '#7ec8e3' }}>{t('ポップアップ表示設定:')}</div>
               
               {/* Reset offset button */}
               <button
@@ -4709,7 +4709,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               {/* Width slider */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
-                  <span>ポップアップの幅:</span>
+                  <span>{t('ポップアップの幅:')}</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupWidth}px</span>
                 </div>
                 <input
@@ -4726,7 +4726,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               {/* Height slider */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#b0b0b0' }}>
-                  <span>ポップアップの高さ:</span>
+                  <span>{t('ポップアップの高さ:')}</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{popupHeight === 0 ? 'AUTO' : `${popupHeight}px`}</span>
                 </div>
                 <input

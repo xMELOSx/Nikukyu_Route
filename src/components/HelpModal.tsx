@@ -1,6 +1,9 @@
 import React, { memo, useState } from 'react';
 import { MARKER_META, APP_VERSION, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
 import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
+import { t } from '../i18n';
+import { DictionaryEditor } from './DictionaryEditor';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 // Isolated component that only re-renders when the HTML string actually changes.
 // Prevents parent re-renders (e.g. auto-route engine ticks) from re-evaluating
@@ -134,33 +137,33 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 🔧 デバッグメニュー（グローバル編集モード専用）
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '4px' }}>
-                <span>🏷️ アプリバージョン</span>
+                <span>{t('🏷️ アプリバージョン')}</span>
                 <span style={{ fontFamily: 'monospace', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>v{APP_VERSION}</span>
                 <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)' }}>
-                  セーブ: <span style={{ fontFamily: 'monospace', color: route.saveDataVersion ? 'var(--yellow-neon, #ffe600)' : 'var(--text-muted)' }}>{route.saveDataVersion ? `v${route.saveDataVersion}` : '未記録'}</span>
+                  {t('セーブ: ')}<span style={{ fontFamily: 'monospace', color: route.saveDataVersion ? 'var(--yellow-neon, #ffe600)' : 'var(--text-muted)' }}>{route.saveDataVersion ? `v${route.saveDataVersion}` : t('未記録')}</span>
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); setTimeout(() => bgFileInputRef.current?.click(), 100); }}>
-                  🗺️ カスタムBGを変更
+                  🗺️ {t('カスタムBGを変更')}
                 </button>
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); setLeftSidebarCollapsed(false); }}>
-                  📌 マーカー表示設定を開く
+                  📌 {t('マーカー表示設定を開く')}
                 </button>
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); setRightSidebarCollapsed(false); }}>
-                  📋 プラン一覧を開く
+                  📋 {t('プラン一覧を開く')}
                 </button>
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); localStorage.clear(); window.location.reload(); }}>
-                  🗑️ 全データをリセット
+                  🗑️ {t('全データをリセット')}
                 </button>
                 {onClearOriginalAuthor && (
                   <button className="btn-cyber danger" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClearOriginalAuthor(); onClose(); }}>
-                    🔓 原作者名をクリア
+                    🔓 {t('原作者名をクリア')}
                   </button>
                 )}
                 {onShowOcrDebug && (
                   <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px', borderColor: 'var(--magenta-neon, #ff00ff)', color: 'var(--magenta-neon, #ff00ff)' }} onClick={() => { onShowOcrDebug(); onClose(); }}>
-                    ⚙️ OCR調整テストベンチを開く
+                    ⚙️ {t('OCR調整テストベンチを開く')}
                   </button>
                 )}
 
@@ -177,12 +180,26 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     setGlobalMarkerSaveMsg('');
                   }
                 }}>
-                  🌐 {globalMarkerEditorOpen ? 'グローバルピン編集を閉じる' : 'グローバルピンを編集'}
+                  🌐 {globalMarkerEditorOpen ? t('グローバルピン編集を閉じる') : t('グローバルピンを編集')}
                 </button>
+
+                <div style={{ borderTop: '1px solid rgba(255,215,0,0.3)', paddingTop: '12px', marginTop: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#ffd700', marginBottom: '8px' }}>
+                    🌐 {t('言語切替')}
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <LanguageSwitcher />
+                  </div>
+
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#ffd700', marginBottom: '8px' }}>
+                    📖 {t('翻訳辞書エディタ')}
+                  </div>
+                  <DictionaryEditor />
+                </div>
 
                 {/* Startup focus selector */}
                 <div style={{ padding: '4px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>起動時のマップ移動先:</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>{t('起動時のマップ移動先:')}</div>
                   <select
                     value={startupFocusMarkerId || ''}
                     onChange={async (e) => {
@@ -198,7 +215,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     }}
                     style={{ width: '100%', padding: '4px', fontSize: '10px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.2)', color: 'var(--text-primary)', borderRadius: '4px' }}
                   >
-                    <option value="">-- 移動しない --</option>
+                    <option value="">{t('-- 移動しない --')}</option>
                     {globalMarkers.filter(m => m.floor === currentFloor).map(m => {
                       const meta = MARKER_META[m.type];
                       return <option key={m.id} value={m.id}>{meta.emoji} {meta.label} {m.note ? `(${m.note.substring(0, 20)})` : ''} - X:{m.x} Y:{m.y}</option>;
@@ -230,7 +247,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               </div>
               {/* 設定 (Settings) — removed from debug tab; now in dedicated 設定 tab */}
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 149, 0, 0.04)', border: '1px solid rgba(255, 149, 0, 0.2)', borderRadius: '4px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#ff9500', marginBottom: '6px' }}>🛠 自動ルート デバッグ</div>
+                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#ff9500', marginBottom: '6px' }}>{t('🛠 自動ルート デバッグ')}</div>
                 {onSetShowDetectionRanges && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '8px' }}>
                     <input
@@ -246,10 +263,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 {/* Threshold sliders */}
                 {setStopMarkerThreshold && setMovementMarkerThreshold && setWarpMarkerThreshold && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 8px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>判定閾値 (px)</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{t('判定閾値 (px)')}</div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>🔴 停止</span>
+                      <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>{t('🔴 停止')}</span>
                       <input type="range" min="5" max="30" step="1" value={stopMarkerThreshold ?? 12}
                         onChange={(e) => setStopMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#ff4444' }} />
@@ -257,7 +274,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>🟢 階段</span>
+                      <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>{t('🟢 階段')}</span>
                       <input type="range" min="5" max="30" step="1" value={movementMarkerThreshold ?? 20}
                         onChange={(e) => setMovementMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#39ff14' }} />
@@ -265,7 +282,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '70px' }}>🟠 ワープ</span>
+                      <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '70px' }}>{t('🟠 ワープ')}</span>
                       <input type="range" min="5" max="30" step="1" value={warpMarkerThreshold ?? 12}
                         onChange={(e) => setWarpMarkerThreshold(parseInt(e.target.value))}
                         style={{ flex: 1, accentColor: '#ff9500' }} />
@@ -274,7 +291,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
                     {setSkillCdThreshold && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>⏱ スキルCD</span>
+                        <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>{t('⏱ スキルCD')}</span>
                         <input type="range" min="5" max="20" step="1" value={skillCdThreshold ?? 10}
                           onChange={(e) => setSkillCdThreshold(parseInt(e.target.value))}
                           style={{ flex: 1, accentColor: '#39ff14' }} />
@@ -291,7 +308,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </div>
               </div>
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>デバッグ情報:</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>{t('デバッグ情報:')}</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
                   <div>isLocal: {isLocal ? 'true' : 'false'}</div>
                   <div>isEditMode: {isEditMode ? 'true' : 'false'}</div>
@@ -302,9 +319,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               </div>
               {/* Marker visibility toggles */}
               <div style={{ marginTop: '4px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '6px' }}>マーカー表示切替:</div>
+                <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '6px' }}>{t('マーカー表示切替:')}</div>
                 <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  {globalMarkers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>グローバル:</div>}
+                  {globalMarkers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>{t('グローバル:')}</div>}
                   {globalMarkers
                     // チェックポイントピンをスタートピンの後ろ (リスト下段) に表示
                     .slice()
@@ -325,7 +342,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       </div>
                     );
                   })}
-                  {route.markers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>個別:</div>}
+                  {route.markers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>{t('個別:')}</div>}
                   {route.markers
                     // チェックポイントピンをスタートピンの後ろ (リスト下段) に表示
                     .slice()
@@ -346,7 +363,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       </div>
                     );
                   })}
-                  {globalMarkers.length === 0 && route.markers.length === 0 && <div style={{ fontSize: '10px', color: '#666', padding: '8px', textAlign: 'center' }}>マーカーがありません</div>}
+                  {globalMarkers.length === 0 && route.markers.length === 0 && <div style={{ fontSize: '10px', color: '#666', padding: '8px', textAlign: 'center' }}>{t('マーカーがありません')}</div>}
                 </div>
               </div>
             </div>
@@ -372,9 +389,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               {/* スキルCDプリセット管理 */}
               <div style={{ padding: '10px 14px', background: 'rgba(57, 255, 20, 0.04)', border: '1px solid rgba(57, 255, 20, 0.25)', borderRadius: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#39ff14' }}>⏱️ スキルCDプリセット</span>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#39ff14' }}>{t('⏱️ スキルCDプリセット')}</span>
                   {!isLocal && (
-                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '1px 4px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px' }}>閲覧のみ</span>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '1px 4px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px' }}>{t('閲覧のみ')}</span>
                   )}
                 </div>
                 {isLocal && onAddSkillCdPreset && (
@@ -401,7 +418,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             </div>
           ) : isEditMode && isLocal ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>※ グローバル編集モード: HTMLタグ（aタグ等含む）で自由に編集できます。</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('※ グローバル編集モード: HTMLタグ（aタグ等含む）で自由に編集できます。')}</div>
               {/* Stacked container: keep BOTH the textarea and the preview in the DOM at all
                   times so the browser preserves the textarea's native Undo/Redo history
                   when toggling preview. `display:none` would unmount the textarea from
@@ -448,12 +465,12 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     pointerEvents: isHelpPreviewMode ? 'auto' : 'none',
                   }}
                 >
-                  <HelpContentView html={currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'} />
+                  <HelpContentView html={currentText || `<p style="color:var(--text-muted);font-style:italic;">${t('表示する情報がありません。')}</p>`} />
                 </div>
               </div>
             </div>
           ) : (
-            <HelpContentView html={currentText || '<p style="color:var(--text-muted);font-style:italic;">表示する情報がありません。</p>'} />
+            <HelpContentView html={currentText || `<p style="color:var(--text-muted);font-style:italic;">${t('表示する情報がありません。')}</p>`} />
           )}
         </div>
 
@@ -525,14 +542,14 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
         </button>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>モード</span>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-          <input type="radio" checked={mode === 'per_second'} onChange={() => setMode('per_second')} style={{ accentColor: '#39ff14' }} />
-          変動 (使用秒数×係数)
-        </label>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>モード:</span>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
           <input type="radio" checked={mode === 'fixed'} onChange={() => setMode('fixed')} style={{ accentColor: '#39ff14' }} />
-          固定
+          固定 (CD秒数)
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+          <input type="radio" checked={mode === 'per_second'} onChange={() => setMode('per_second')} style={{ accentColor: '#39ff14' }} />
+          変動 (使用秒×係数)
         </label>
       </div>
       {mode === 'per_second' ? (
@@ -610,11 +627,11 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
           </button>
         )}
         {editable && onRemove && !confirmingRemove && (
-          <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setConfirmingRemove(true)}>削除</button>
+          <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setConfirmingRemove(true)}>{t('削除')}</button>
         )}
         {editable && onRemove && confirmingRemove && (
           <>
-            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => { onRemove(preset.id); setConfirmingRemove(false); }}>実行</button>
+            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => { onRemove(preset.id); setConfirmingRemove(false); }}>{t('実行')}</button>
             <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setConfirmingRemove(false)}>×</button>
           </>
         )}
@@ -636,14 +653,14 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>モード</span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-              <input type="radio" checked={isPer} onChange={() => onUpdate(preset.id, { mode: 'per_second' })} style={{ accentColor: '#39ff14' }} />
-              変動
-            </label>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>モード:</span>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
               <input type="radio" checked={!isPer} onChange={() => onUpdate(preset.id, { mode: 'fixed' })} style={{ accentColor: '#39ff14' }} />
-              固定
+              固定 (CD秒数)
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input type="radio" checked={isPer} onChange={() => onUpdate(preset.id, { mode: 'per_second' })} style={{ accentColor: '#39ff14' }} />
+              変動 (使用秒×係数)
             </label>
           </div>
           {isPer ? (

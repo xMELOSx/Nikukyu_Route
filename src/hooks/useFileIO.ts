@@ -4,10 +4,13 @@ import {
   type RouteData,
   type HeistMarker,
   DataManager,
-  xorEncrypt,
-  xorDecrypt,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+  AUTHOR_TAMPERED,
+  AUTHOR_UNKNOWN_MARKER,
   getAuthorKey,
-  getOriginalAuthorKey
+  getOriginalAuthorKey,
+  runSaveDataMigrations
 } from '../utils/DataManager';
 import type { UseRouteApi } from './useRoute';
 import type { UseGlobalMarkersApi } from './useGlobalMarkers';
@@ -162,12 +165,39 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       if (data.author === undefined) data.author = '';
       if (data.originalAuthor === undefined) data.originalAuthor = '';
 
-      routeApi.setRouteWithGlobalDefaults(data);
-      localStorage.setItem('heist_last_used_route_id', data.id);
-      if (data.markerScale !== undefined) {
-        localStorage.setItem('heist_marker_scale', String(data.markerScale));
+      // author / originalAuthor のロード時フォールバック:
+      //   空 -> AUTHOR_UNKNOWN_MARKER のまま残す (改ざんの疑いとして Anomaly 表示)。
+      //         ユーザはクリアボタン or input 編集で意図的に No name にリセットできる。
+      // 「ロード時に No name 補完」 は改ざんに気づけなくなる (= 保護として機能しない)
+      // ため、ここでは補完しない。
+      if (!data.author) {
+        data.author = AUTHOR_UNKNOWN_MARKER;
       }
-      showNotification(`インポート完了: ${data.title}`, 2000);
+      if (!data.originalAuthor) {
+        data.originalAuthor = AUTHOR_UNKNOWN_MARKER;
+      }
+
+      // バージョンアップ済みならマイグレーションを適用
+      const mig = runSaveDataMigrations(data);
+      if (mig.unknown) {
+        showNotification(
+          `⚠️ 未登録バージョンのJSONです (v${mig.unknownVersion})。そのまま読み込みます。`,
+          5000
+        );
+      } else if (mig.applied.length > 0) {
+        showNotification(
+          `JSONを ${mig.applied.length} 件マイグレーションしました (→ v${mig.finalVersion})`,
+          3000
+        );
+      }
+      const finalData: RouteData = mig.data;
+
+      routeApi.setRouteWithGlobalDefaults(finalData);
+      localStorage.setItem('heist_last_used_route_id', finalData.id);
+      if (finalData.markerScale !== undefined) {
+        localStorage.setItem('heist_marker_scale', String(finalData.markerScale));
+      }
+      showNotification(`インポート完了: ${finalData.title}`, 2000);
     } catch (err) {
       showNotification('JSONファイルの読み込みに失敗しました', 2000);
     }
@@ -193,11 +223,14 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         return;
       }
       const clean = DataManager.sanitizeRouteForExport(data);
+      // バージョンアップ済みならマイグレーションを適用
+      const mig = runSaveDataMigrations(clean);
+      const migrated = mig.data;
       const newId = `route_${Date.now()}`;
       const newCreatedAt = Date.now();
-      const plainAuthor = xorDecrypt(clean.author || '', getAuthorKey(clean.id, clean.createdAt));
-      const plainOriginal = xorDecrypt(clean.originalAuthor || '', getOriginalAuthorKey(clean.id, clean.createdAt));
-      const allMarkers = clean.markers || [];
+      const plainAuthor = await aesGcmDecrypt(migrated.author || '', getAuthorKey(migrated.id, migrated.createdAt));
+      const plainOriginal = await aesGcmDecrypt(migrated.originalAuthor || '', getOriginalAuthorKey(migrated.id, migrated.createdAt));
+      const allMarkers = migrated.markers || [];
       const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
       const importedGlobals = allMarkers.filter(m => isGlobalType(m.type));
       // Migrate legacy marker-level `pickingPicky` for BOTH individual
@@ -206,14 +239,16 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       for (const m of allMarkers) {
         if (m && m.pickingPicky) importedPickyMarkerIds[m.id] = true;
       }
+      const safeAuthor = plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || '');
+      const safeOriginal = plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || '');
       const importedRoute: RouteData = {
-        ...clean,
+        ...migrated,
         id: newId,
         createdAt: newCreatedAt,
         markers: individualMarkers,
-        pickyMarkerIds: { ...(clean.pickyMarkerIds || {}), ...importedPickyMarkerIds },
-        author: xorEncrypt(plainAuthor, getAuthorKey(newId, newCreatedAt)),
-        originalAuthor: xorEncrypt(plainOriginal, getOriginalAuthorKey(newId, newCreatedAt))
+        pickyMarkerIds: { ...(migrated.pickyMarkerIds || {}), ...importedPickyMarkerIds },
+        author: await aesGcmEncrypt(safeAuthor, getAuthorKey(newId, newCreatedAt)),
+        originalAuthor: await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt))
       };
       DataManager.saveToLocalStorage(importedRoute);
       routeApi.setRouteWithGlobalDefaults(importedRoute);
@@ -221,6 +256,17 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       routeApi.refreshSavesList();
       if (importedGlobals.length > 0) {
         globalMarkersStore.mergeFromImport(importedGlobals);
+      }
+      if (mig.unknown) {
+        showNotification(
+          `⚠️ 未登録バージョンのPNGです (v${mig.unknownVersion})。そのまま読み込みます。`,
+          5000
+        );
+      } else if (mig.applied.length > 0) {
+        showNotification(
+          `PNGを ${mig.applied.length} 件マイグレーションしました (→ v${mig.finalVersion})`,
+          3000
+        );
       }
       showNotification(`PNGインポート完了: ${importedRoute.title}`, 2000);
     } catch (err) {

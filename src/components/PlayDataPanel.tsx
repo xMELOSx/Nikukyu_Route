@@ -20,6 +20,7 @@ import {
   BIWEEKLY_COINS_CAP
 } from '../utils/PlayDataManager';
 import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat } from 'lucide-react';
+import { t } from '../i18n';
 
 declare global {
   interface Window {
@@ -1058,7 +1059,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
           <Clock size={14} color="var(--green-neon)" />
-          <span style={{ fontSize: '13px', color: 'var(--green-neon)', fontWeight: 700 }}>次回更新 (隔週月曜 5:00)</span>
+          <span style={{ fontSize: '13px', color: 'var(--green-neon)', fontWeight: 700 }}>{t('次回更新 (隔週月曜 5:00)')}</span>
         </div>
         <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 700, fontFamily: 'monospace' }}>
           {formatNextReset(state.periodStart)}
@@ -1090,22 +1091,22 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             fontSize: '12px'
           }}
         >
-          <span style={{ color: 'var(--text-muted)' }}>残りファンス</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t('残りファンス')}</span>
           <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>
             {remaining.fans.toLocaleString()}
           </span>
         </div>
-        <div style={{ ...smallText, marginTop: '4px' }}>ファンス上限と目標のリセット</div>
+        <div style={{ ...smallText, marginTop: '4px' }}>{t('ファンス上限と目標のリセット')}</div>
       </div>
 
       {/* ====================================================== */}
       {/* 今回の獲得                                              */}
       {/* ====================================================== */}
       <div style={sectionStyle}>
-        <div style={labelBaseStyle}>🐾 今回の獲得</div>
+        <div style={labelBaseStyle}>{t('🐾 今回の獲得')}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
           <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>$ ファンス</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('$ ファンス')}</div>
             <input
               type="number"
               min="0"
@@ -1126,7 +1127,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             />
           </div>
           <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>🪙 コイン</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('🪙 コイン')}</div>
             <input
               type="number"
               min="0"
@@ -1163,7 +1164,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '14px' }}>🐾</span>
-            <span style={{ fontSize: '11px', color: 'var(--yellow-neon)', fontWeight: 700 }}>にくきゅうポイント</span>
+            <span style={{ fontSize: '11px', color: 'var(--yellow-neon)', fontWeight: 700 }}>{t('にくきゅうポイント')}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
             <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--yellow-neon)', fontFamily: 'monospace' }}>
@@ -1241,13 +1242,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ボーナス適用後 $ ファンス</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('ボーナス適用後 $ ファンス')}</span>
             <span style={{ fontSize: '20px', fontWeight: 900, color: 'var(--yellow-neon)', fontFamily: 'monospace', textShadow: '0 0 4px rgba(255,230,0,0.5)' }}>
               {fansWithBonus.toLocaleString()}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ボーナス適用後 🪙 コイン</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('ボーナス適用後 🪙 コイン')}</span>
             <span style={{ fontSize: '20px', fontWeight: 900, color: 'var(--yellow-neon)', fontFamily: 'monospace', textShadow: '0 0 4px rgba(255,230,0,0.5)' }}>
               {coinsWithBonus.toLocaleString()}
             </span>
@@ -1293,14 +1294,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
           <BarChart3 size={12} color="var(--cyan-neon)" />
-          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>累計値 (クリックで編集 / ±で増減)</span>
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('累計値 (クリックで編集 / ±で増減)')}</span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '11px' }}>
               <span style={{ color: 'var(--text-muted)' }}>
-                $ ファンス累計 <span style={{ fontSize: '9px' }}>(隔週リセット)</span>:
+                {t('$ ファンス累計 ')}<span style={{ fontSize: '9px' }}>{t('(隔週リセット)')}</span>:
               </span>
               <span>
                 <NumberInput
@@ -1328,7 +1329,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '11px' }}>
               <span style={{ color: 'var(--text-muted)' }}>
-                🪙 コイン累計 <span style={{ fontSize: '9px' }}>(累積)</span>:
+                {t('🪙 コイン累計 ')}<span style={{ fontSize: '9px' }}>{t('(累積)')}</span>:
               </span>
               <span>
                 <NumberInput
@@ -1356,7 +1357,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '11px' }}>
             <span style={{ color: 'var(--text-muted)' }}>
-              🐾 にくきゅうpt累計 <span style={{ fontSize: '9px' }}>(累積)</span>:
+              {t('🐾 にくきゅうpt累計 ')}<span style={{ fontSize: '9px' }}>{t('(累積)')}</span>:
             </span>
             <span>
               <NumberInput
@@ -1649,7 +1650,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>平均 (除外 {state.records.filter(r => r.excluded).length}件除く):</span>
+                <span style={{ color: 'var(--text-muted)' }}>{t('平均 ')}({t('除外 ')}{state.records.filter(r => r.excluded).length}{t('件除く')}):</span>
                 <span style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>
                   {average.fans.toLocaleString()}f / 🪙{average.coins.toLocaleString()} / {average.nikukyuu}pt
                 </span>
@@ -1878,7 +1879,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,0,255,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Type size={14} color="var(--magenta-neon, #ff00ff)" />
-                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--magenta-neon, #ff00ff)' }}>テキストから目標を追加</span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--magenta-neon, #ff00ff)' }}>{t('テキストから目標を追加')}</span>
               </div>
               <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '10px' }} onClick={handleCloseTextGoalModal}>
                 ✕ 閉じる
@@ -1900,7 +1901,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 {/* 2-Screenshot Paste integration dropzones */}
                 <div style={{ marginTop: '8px', border: '1px dashed rgba(255,0,255,0.3)', borderRadius: '8px', padding: '10px', background: 'rgba(0,0,0,0.4)', boxSizing: 'border-box' }}>
                   <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--magenta-neon, #ff00ff)', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📷 画像(SS)直接 OCR 解析機能</span>
+                    <span>{t('📷 画像(SS)直接 OCR 解析機能')}</span>
                     {modalOcrStatus && <span style={{ color: 'var(--cyan-neon)', animation: 'pulse 1s infinite' }}>{modalOcrStatus}</span>}
                   </div>
                   
@@ -1952,7 +1953,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     >
                       {!ocrImg1 && (
                         <>
-                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>SS 1枚目 (1-4行目)</span>
+                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>{t('SS 1枚目 (1-4行目)')}</span>
                           <span style={{ fontSize: '8px', opacity: 0.8, color: focus1 ? 'var(--cyan-neon)' : 'inherit' }}>
                             {focus1 ? '【Ctrl+Vで貼り付け可能】' : 'クリックして選択し Ctrl+Vで貼付'}
                           </span>
@@ -2040,7 +2041,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     >
                       {!ocrImg2 && (
                         <>
-                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>SS 2枚目 (3-6行目)</span>
+                          <span style={{ fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>{t('SS 2枚目 (3-6行目)')}</span>
                           <span style={{ fontSize: '8px', opacity: 0.8, color: focus2 ? 'var(--cyan-neon)' : 'inherit' }}>
                             {focus2 ? '【Ctrl+Vで貼り付け可能】' : 'クリックして選択し Ctrl+Vで貼付'}
                           </span>
@@ -2309,7 +2310,7 @@ function RecordRow({
               className="btn-cyber success"
               style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
               onClick={() => onSaveEdit(rec.id)}
-            >保存</button>
+            >{t('保存')}</button>
             <button
               className="btn-cyber"
               style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', marginLeft: '2px' }}
