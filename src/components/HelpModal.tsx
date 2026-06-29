@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { MARKER_META, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
+import { MARKER_META, APP_VERSION, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
 import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
 
 // Isolated component that only re-renders when the HTML string actually changes.
@@ -132,6 +132,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px' }}>
               <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '4px' }}>
                 🔧 デバッグメニュー（グローバル編集モード専用）
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '4px' }}>
+                <span>🏷️ アプリバージョン</span>
+                <span style={{ fontFamily: 'monospace', color: 'var(--cyan-neon)', fontWeight: 'bold' }}>v{APP_VERSION}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)' }}>
+                  セーブ: <span style={{ fontFamily: 'monospace', color: route.saveDataVersion ? 'var(--yellow-neon, #ffe600)' : 'var(--text-muted)' }}>{route.saveDataVersion ? `v${route.saveDataVersion}` : '未記録'}</span>
+                </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => { onClose(); setIsHelpPreviewMode(false); setTimeout(() => bgFileInputRef.current?.click(), 100); }}>

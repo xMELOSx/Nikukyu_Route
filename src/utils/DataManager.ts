@@ -389,7 +389,15 @@ export interface RouteData {
   markerScale?: number; // Optional scale of markers (e.g. 30 = 100%)
   hiddenMarkers?: string[]; // Global markers hidden in this specific plan
   hiddenMarkerTypes?: string[]; // Marker types hidden in this plan (e.g. ['eh', 'boss'])
+  saveDataVersion?: string; // APP_VERSION at the time this save was last written
 }
+
+/**
+ * アプリ本体の現バージョン。
+ * セーブデータ (RouteData.saveDataVersion) に書き込まれ、どのバージョンで作られたか
+ * 後から判別できるようにする。デバッグタブの上部に表示される。
+ */
+export const APP_VERSION = '0.9.1';
 
 export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   id,
@@ -415,7 +423,8 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   hiddenMarkers: [],
   hiddenMarkerTypes: [],
   createdAt: Date.now(),
-  mapVersion: 2
+  mapVersion: 2,
+  saveDataVersion: APP_VERSION
 });
 
 /**
@@ -689,8 +698,9 @@ export class DataManager {
     } else {
       saves.push(entry);
     }
-    
-    localStorage.setItem(`heist_route_${route.id}`, JSON.stringify(route));
+
+    const stamped: RouteData = { ...route, saveDataVersion: APP_VERSION };
+    localStorage.setItem(`heist_route_${route.id}`, JSON.stringify(stamped));
     localStorage.setItem('heist_routes_list', JSON.stringify(saves));
   }
 
@@ -1073,6 +1083,32 @@ export class DataManager {
       fctx.shadowBlur = 12;
       fctx.fillText(route.title || 'UNTITLED PLAN', 20, 16);
       fctx.shadowBlur = 0;
+
+      // Save version badge (top-right of header)
+      const versionLabel = `v${route.saveDataVersion || APP_VERSION}`;
+      fctx.font = 'bold 16px Rajdhani, Orbitron, Arial';
+      const vPadX = 12;
+      const vTextW = fctx.measureText(versionLabel).width;
+      const vBoxW = vTextW + vPadX * 2;
+      const vBoxH = 28;
+      const vBoxX = EXTW - vBoxW - 16;
+      const vBoxY = 16;
+      fctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
+      fctx.strokeStyle = 'rgba(0, 240, 255, 0.7)';
+      fctx.lineWidth = 1.5;
+      fctx.beginPath();
+      fctx.rect(vBoxX, vBoxY, vBoxW, vBoxH);
+      fctx.fill();
+      fctx.stroke();
+      fctx.fillStyle = '#00f0ff';
+      fctx.textAlign = 'center';
+      fctx.textBaseline = 'middle';
+      fctx.shadowColor = 'rgba(0,240,255,0.5)';
+      fctx.shadowBlur = 6;
+      fctx.fillText(versionLabel, vBoxX + vBoxW / 2, vBoxY + vBoxH / 2);
+      fctx.shadowBlur = 0;
+      fctx.textAlign = 'left';
+      fctx.textBaseline = 'top';
 
       // Target values
       const toNum = (s: string | undefined | null) => {

@@ -2037,10 +2037,14 @@ export default function App() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
                           <input type="checkbox" checked={autoRoute.waitEnabled} onChange={(e) => autoRoute.setWaitEnabled(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)' }} />
-                          開始前に待機 (<input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />秒)
+                          <span>開始前に待機 (</span>
+                          <input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
+                          <span>秒)</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                          🐾 スタート停止 (<input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />秒)
+                          <span>🐾 スタート停止 (</span>
+                          <input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
+                          <span>秒)</span>
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                           <span>移動速度:</span>
@@ -2073,20 +2077,20 @@ export default function App() {
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          💣 導火線モード
+                          <span>💣 導火線モード</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.inactiveMarkersMode} onChange={(e) => autoRoute.setInactiveMarkersMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          🔘 通過マーカー半透明化
+                          <span>🔘 通過マーカー半透明化</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                          🎥 カメラ追従
+                          <span>🎥 カメラ追従</span>
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
                           <span>倍速:</span>
                           {([1, 2, 3, 5, 10] as const).map(m => (
-                            <button key={m} className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '10px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
+                            <button key={m} translate="no" className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '10px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
                           ))}
                         </div>
                       </div>
@@ -2095,19 +2099,19 @@ export default function App() {
                         {(() => {
                           const finished = autoRoute.status.active && !autoRoute.status.running && autoRoute.status.totalTime > 0 && autoRoute.status.elapsed >= autoRoute.status.totalTime;
                           if (autoRoute.status.waitRemaining > 0) {
-                            return <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}>待機中... {autoRoute.status.waitRemaining.toFixed(1)}s</div>;
+                            return <div style={{ flex: 1, padding: '5px', fontSize: '11px', textAlign: 'center', color: 'var(--yellow-neon)', fontWeight: 700 }}><span>待機中... </span><span translate="no">{autoRoute.status.waitRemaining.toFixed(1)}s</span></div>;
                           } else if (!autoRoute.status.active) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><Play size={12} /> スタート</button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><Play size={12} /></span> <span>スタート</span></button>;
                           } else if (finished) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><RotateCcw size={11} /> リスタート</button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('start')}><span translate="no"><RotateCcw size={11} /></span> <span>リスタート</span></button>;
                           } else if (autoRoute.status.running) {
-                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><Pause size={11} /> 一時停止</button>;
+                            return <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('pause')}><span translate="no"><Pause size={11} /></span> <span>一時停止</span></button>;
                           } else {
-                            return <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><Play size={11} /> 再開</button>;
+                            return <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px' }} onClick={() => autoRoute.sendCommand('resume')}><span translate="no"><Play size={11} /></span> <span>再開</span></button>;
                           }
                         })()}
                         <button className={`btn-cyber ${autoRoute.status.active ? 'danger' : ''}`} style={{ flex: 1, padding: '5px', fontSize: '11px', opacity: autoRoute.status.active ? 1 : 0.4 }} disabled={!autoRoute.status.active} onClick={() => autoRoute.sendCommand('reset')}>
-                          <Square size={11} /> 停止
+                          <span translate="no"><Square size={11} /></span> <span>停止</span>
                         </button>
                       </div>
 
@@ -2117,18 +2121,19 @@ export default function App() {
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px', padding: '4px 6px', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '3px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
                               <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>経過</span>
-                              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.elapsed)}</span>
+                              <span translate="no" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--cyan-neon)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.elapsed)}</span>
                             </div>
                             <div style={{ fontSize: '14px', color: 'var(--text-muted)', padding: '0 4px' }}>/</div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
                               <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>合計</span>
-                              <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.totalTime)}</span>
+                              <span translate="no" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>{formatTime(autoRoute.status.totalTime)}</span>
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                             <button
                               type="button"
                               className="btn-cyber"
+                              translate="no"
                               style={{ padding: '2px 4px', fontSize: '9px', minWidth: '32px' }}
                               onClick={() => {
                                 const target = Math.max(0, autoRoute.status.elapsed - 30);
@@ -2151,7 +2156,7 @@ export default function App() {
                                 autoRoute.sendCommand('seek', target);
                               }}
                             >
-                              <div style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', borderRadius: '2px', transition: 'width 0.1s' }} />
+                              <div translate="no" style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', borderRadius: '2px', transition: 'width 0.1s' }} />
                               {autoRoute.status.checkpoints.map((cp, i) => {
                                 if (autoRoute.status.totalTime <= 0) return null;
                                 const ratio = cp.elapsed / autoRoute.status.totalTime;
@@ -2160,8 +2165,6 @@ export default function App() {
                                 const unset = !!cp.unset;       // 0 (未設定)
                                 const conflicted = !!cp.conflicted; // 順序矛盾
                                 const passed = !!cp.passed;
-                                // 色: 順序矛盾 or マイナス値 → 赤 (アラート)、未設定 → 黄 (警告)、
-                                //    通過済は緑、それ以外は橙
                                 let color: string;
                                 if (ignored || conflicted) color = '#ff4444';
                                 else if (unset) color = '#ffd000';
@@ -2175,7 +2178,7 @@ export default function App() {
                                       : `🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${passed ? ' (通過済)' : ''}`;
                                 const isAlert = ignored || conflicted;
                                 return (
-                                  <div key={`cp-line-${i}`} title={tip} style={{ position: 'absolute', top: 0, bottom: 0, left: `${left}%`, transform: 'translateX(-50%)', width: isAlert ? '5px' : '4px', background: color, opacity: 0.95, pointerEvents: 'none', boxShadow: isAlert ? '0 0 5px rgba(255,68,68,0.95), 0 0 10px rgba(255,68,68,0.6)' : (unset ? '0 0 4px rgba(255,208,0,0.7)' : `0 0 4px ${color}cc`), borderRadius: '1px', animation: isAlert ? 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' : 'none', zIndex: isAlert ? 2 : 1 }}>
+                                  <div key={`cp-line-${i}`} title={tip} translate="no" style={{ position: 'absolute', top: 0, bottom: 0, left: `${left}%`, transform: 'translateX(-50%)', width: isAlert ? '5px' : '4px', background: color, opacity: 0.95, pointerEvents: 'none', boxShadow: isAlert ? '0 0 5px rgba(255,68,68,0.95), 0 0 10px rgba(255,68,68,0.6)' : (unset ? '0 0 4px rgba(255,208,0,0.7)' : `0 0 4px ${color}cc`), borderRadius: '1px', animation: isAlert ? 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' : 'none', zIndex: isAlert ? 2 : 1 }}>
                                     <div style={{ position: 'absolute', top: -4, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${color}`, filter: `drop-shadow(0 0 2px ${color})` }} />
                                   </div>
                                 );
@@ -2184,6 +2187,7 @@ export default function App() {
                             <button
                               type="button"
                               className="btn-cyber"
+                              translate="no"
                               style={{ padding: '2px 4px', fontSize: '9px', minWidth: '32px' }}
                               onClick={() => {
                                 const target = Math.min(autoRoute.status.totalTime, autoRoute.status.elapsed + 30);
@@ -2195,10 +2199,10 @@ export default function App() {
                             </button>
                           </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>累計停止 {formatTime(autoRoute.status.totalStopTime)}</span>
+                            <span><span>累計停止 </span><span translate="no">{formatTime(autoRoute.status.totalStopTime)}</span></span>
                             {autoRoute.status.currentStopLabel
-                              ? <span style={{ color: 'var(--yellow-neon)' }}>停止中: {autoRoute.status.currentStopLabel} (残り {formatTime(autoRoute.status.stopRemaining)})</span>
-                              : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRoute.status.nextMarkerLabel}</span>
+                              ? <span style={{ color: 'var(--yellow-neon)' }}><span>停止中: </span><span translate="no">{autoRoute.status.currentStopLabel}</span><span> (残り </span><span translate="no">{formatTime(autoRoute.status.stopRemaining)}</span><span>)</span></span>
+                              : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}><span>次: </span><span translate="no">{autoRoute.status.nextMarkerLabel}</span></span>
                             }
                           </div>
                           {autoRoute.status.skillCdInfo && (
@@ -2207,9 +2211,9 @@ export default function App() {
                                 <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '50%', background: 'rgba(10,15,28,0.85)', color: autoRoute.status.skillCdInfo.color, border: `1.5px solid ${autoRoute.status.skillCdInfo.color}`, textAlign: 'center', lineHeight: '12px', fontSize: '10px', fontWeight: 700, boxShadow: `0 0 6px ${autoRoute.status.skillCdInfo.color}80` }}>
                                   {(autoRoute.status.skillCdInfo.label || 'S').charAt(0)}
                                 </span>
-                                <span style={{ color: autoRoute.status.skillCdInfo.color, fontWeight: 700 }}>CD: {autoRoute.status.skillCdInfo.label}</span>
+                                <span style={{ color: autoRoute.status.skillCdInfo.color, fontWeight: 700 }}><span>CD: </span><span translate="no">{autoRoute.status.skillCdInfo.label}</span></span>
                               </span>
-                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: autoRoute.status.skillCdInfo.color }}>
+                              <span translate="no" style={{ fontFamily: 'monospace', fontWeight: 700, color: autoRoute.status.skillCdInfo.color }}>
                                 {autoRoute.status.skillCdInfo.remaining.toFixed(1)}s / {autoRoute.status.skillCdInfo.total}s
                               </span>
                             </div>
@@ -2224,20 +2228,20 @@ export default function App() {
                                 {ignoredCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ff4444', boxShadow: '0 0 4px #ff4444', animation: 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' }} />
-                                    <span>⚠ チェックポイント {ignoredCp.length} 件が異常値 (マイナス) (赤マーカー) — 0 以上に修正してください</span>
+                                    <span>⚠ チェックポイント <span translate="no">{ignoredCp.length}</span> 件が異常値 (マイナス) (赤マーカー) — 0 以上に修正してください</span>
                                   </div>
                                 )}
                                 {unsetCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ffd000' }}>
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ffd000', boxShadow: '0 0 4px #ffd000' }} />
-                                    <span>⚠ チェックポイント {unsetCp.length} 件が目標未設定 (黄色マーカー) — 編集して目標時間を設定してください</span>
+                                    <span>⚠ チェックポイント <span translate="no">{unsetCp.length}</span> 件が目標未設定 (黄色マーカー) — 編集して目標時間を設定してください</span>
                                   </div>
                                 )}
                                 {conflictedCp.length > 0 && (
                                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', paddingLeft: '12px' }}>
-                                    <span>⚠ 順序矛盾 {conflictedCp.length} 件: </span>
+                                    <span>⚠ 順序矛盾 <span translate="no">{conflictedCp.length}</span> 件: </span>
                                     <span style={{ color: '#ffaaaa', fontWeight: 'normal' }}>
-                                      {conflictedCp.map(cp => `${cp.label} (${formatTime(cp.targetTime)})`).join(', ')} — 目標時間が前のチェックポイントより小さい
+                                      <span translate="no">{conflictedCp.map(cp => `${cp.label} (${formatTime(cp.targetTime)})`).join(', ')}</span> — 目標時間が前のチェックポイントより小さい
                                     </span>
                                   </div>
                                 )}
