@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
@@ -12,6 +13,11 @@ import {
   type HeistMarker,
   type RouteData,
   type PresetData,
+  type PresetVisibility,
+  PRESET_VISIBILITY_META,
+  normalizePresetVisibility,
+  normalizePresets,
+  getPresetVisibility,
   MARKER_META,
   DataManager,
   normalizeStrokes,
@@ -30,7 +36,7 @@ import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
 import { useAutoRoute } from './hooks/useAutoRoute';
-import { PLAY_DATA_KEY } from './utils/PlayDataManager';
+import { PLAY_DATA_KEY, loadFloorNavCollapsed, saveFloorNavCollapsed } from './utils/PlayDataManager';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import {
   Save,
@@ -49,8 +55,8 @@ import {
   Play,
   Pause,
   Square,
-  Trash2,
-  EyeOff
+  EyeOff,
+  Ruler
 } from 'lucide-react';
 
 const migrateRouteCoordinates = (data: RouteData): RouteData => {
@@ -90,6 +96,218 @@ const formatTime = (seconds: number): string => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
+// クイックプリセット登録ボタン (公開レベルを 3 ボタンから選べる)
+// - デフォルトは 'public' (緑)
+// - 限定公開 (黄) / 非公開 (赤) もワンクリックで選択可
+// 親の再レンダ負荷を抑えるため独立コンポーネント化。
+interface QuickPresetButtonProps {
+  isLocal: boolean;
+  onAdd: (visibility: PresetVisibility) => void;
+}
+const QuickPresetButton: React.FC<QuickPresetButtonProps> = ({ isLocal, onAdd }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <div style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }}>
+        <button
+          className="btn-cyber"
+          style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
+          onClick={() => onAdd('public')}
+          title="公開プリセットとして登録"
+        >
+          プリセット登録
+        </button>
+        <button
+          className="btn-cyber"
+          style={{ fontSize: '9px', padding: '2px 4px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
+          onClick={() => setOpen(o => !o)}
+          title="公開レベルを選んで登録"
+        >
+          ▼
+        </button>
+      </div>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: '100%', right: 0, zIndex: 10, marginTop: '2px',
+            background: 'var(--panel-bg, #0a0e18)',
+            border: '1px solid rgba(79,195,247,0.3)',
+            borderRadius: '6px',
+            padding: '4px',
+            display: 'flex', flexDirection: 'column', gap: '2px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+            minWidth: '140px'
+          }}
+        >
+          {(['public', 'unlisted', 'private'] as PresetVisibility[]).map(v => {
+            const meta = PRESET_VISIBILITY_META[v];
+            const disabled = v === 'private' && !isLocal;
+            return (
+              <button
+                key={v}
+                disabled={disabled}
+                title={disabled ? 'ローカルモードでのみ登録可' : meta.description}
+                onClick={() => { onAdd(v); setOpen(false); }}
+                style={{
+                  fontSize: '10px', padding: '4px 8px', clipPath: 'none',
+                  background: 'transparent',
+                  color: disabled ? '#555' : meta.color,
+                  border: `1px solid ${disabled ? '#555' : meta.color}55`,
+                  borderRadius: '4px',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: disabled ? 0.4 : 1,
+                  display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <span>{meta.emoji}</span>
+                <span style={{ fontWeight: 700 }}>{meta.label}</span>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                  {v === 'public' ? '🌐 URL' : v === 'unlisted' ? '🔗 URL' : '🔒 ローカル'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 消しゴムサブメニュー — 親(App)のレンダリング最適化に左右されないよう
+// 独立コンポーネントとして切り出し。Alt 状態は props で受け取る。
+interface EraserSubMenuProps {
+  eraseTarget: 'all' | 'marker' | 'route' | 'branch';
+  setEraseTarget: (v: 'all' | 'marker' | 'route' | 'branch') => void;
+  eraseSize: number;
+  setEraseSize: (n: number) => void;
+  eraseDefaultBehavior: 'normal' | 'split';
+  setEraseDefaultBehavior: (v: 'normal' | 'split') => void;
+  isAltPressed: boolean;
+}
+const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
+  eraseTarget, setEraseTarget,
+  eraseSize, setEraseSize,
+  eraseDefaultBehavior, setEraseDefaultBehavior,
+  isAltPressed
+}) => {
+  // Alt を押している間だけ反対挙動を表示(放したら既定に戻る)
+  const effectiveEraseBehavior: 'normal' | 'split' = isAltPressed
+    ? (eraseDefaultBehavior === 'normal' ? 'split' : 'normal')
+    : eraseDefaultBehavior;
+  return (
+    <div className="panel-section">
+      <div className="panel-title">消しゴム設定</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>対象:</div>
+        <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          {([
+            { v: 'all', label: '全部' },
+            { v: 'marker', label: 'マーカー' },
+            { v: 'route', label: '進行' },
+            { v: 'branch', label: '分岐' }
+          ] as const).map(opt => (
+            <button
+              key={opt.v}
+              className={`tool-btn ${eraseTarget === opt.v ? 'active' : ''}`}
+              style={{ height: 28, fontSize: '10px', padding: '2px 2px' }}
+              onClick={() => setEraseTarget(opt.v)}
+              title={
+                opt.v === 'all' ? 'マーカー・進行・分岐すべて' :
+                opt.v === 'marker' ? 'マーカーのみ削除' :
+                opt.v === 'route' ? '進行ルート(実線)のみ' :
+                '分岐ルート(破線)のみ'
+              }
+            >
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
+            <span>🔵 マーカーサイズ:</span>
+            <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{eraseSize}px</span>
+          </div>
+          <input
+            type="range"
+            min="5"
+            max="30"
+            step="1"
+            value={eraseSize}
+            onChange={(e) => setEraseSize(parseInt(e.target.value))}
+            style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
+            <span>最小 (5px)</span>
+            <span>最大 (30px)</span>
+          </div>
+        </div>
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 4px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>線分削除モード：Altで反対挙動にシフト</div>
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              padding: '1px 6px',
+              borderRadius: '3px',
+              border: '1px solid',
+              letterSpacing: '0.5px',
+              transition: 'all 0.1s',
+              color: isAltPressed ? '#000' : 'var(--text-muted)',
+              background: isAltPressed ? 'var(--yellow-neon, #ffe600)' : 'transparent',
+              borderColor: isAltPressed ? 'var(--yellow-neon, #ffe600)' : 'rgba(255,255,255,0.2)',
+              boxShadow: isAltPressed ? '0 0 8px rgba(255,230,0,0.6)' : 'none'
+            }}
+          >
+            Alt{isAltPressed ? ' ●' : ''}
+          </span>
+        </div>
+        <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+          {([
+            { v: 'normal' as const, label: '通常' },
+            { v: 'split' as const, label: '部分' }
+          ]).map(opt => {
+            const isActiveNow = effectiveEraseBehavior === opt.v;
+            const isDefault = eraseDefaultBehavior === opt.v;
+            return (
+              <button
+                key={opt.v}
+                className={`tool-btn ${isActiveNow ? 'active' : ''}`}
+                style={{
+                  height: 28,
+                  fontSize: '11px',
+                  padding: '2px 2px',
+                  position: 'relative',
+                  outline: isDefault && isAltPressed
+                    ? '1px dashed var(--yellow-neon, #ffe600)'
+                    : 'none',
+                  outlineOffset: '2px'
+                }}
+                onClick={() => setEraseDefaultBehavior(opt.v)}
+                title={opt.v === 'normal' ? '既定=通常削除。Altを押している間だけ部分削除' : '既定=部分削除。Altを押している間だけ通常削除'}
+              >
+                <span>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const isLocal = window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
@@ -123,23 +341,34 @@ export default function App() {
     const v = parseInt(localStorage.getItem('heist_threshold_warp') || '');
     return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
   });
+  // スキルCDマーカー専用の判定閾値 (他のマーカーとは独立、デフォルト10px)
+  const [skillCdThreshold, setSkillCdThresholdState] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_threshold_skill_cd') || '');
+    return !isNaN(v) && v >= 5 && v <= 30 ? v : 10;
+  });
   const setStopMarkerThreshold = (n: number) => {
     const clamped = Math.max(5, Math.min(30, n));
     setStopMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_stop', String(clamped));
-    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], clamped, undefined, undefined);
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], clamped, undefined, undefined, skillCdThreshold);
   };
   const setMovementMarkerThreshold = (n: number) => {
     const clamped = Math.max(5, Math.min(30, n));
     setMovementMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_movement', String(clamped));
-    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, clamped, undefined);
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, clamped, undefined, skillCdThreshold);
   };
   const setWarpMarkerThreshold = (n: number) => {
     const clamped = Math.max(5, Math.min(30, n));
     setWarpMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_warp', String(clamped));
-    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, undefined, clamped);
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, undefined, clamped, skillCdThreshold);
+  };
+  const setSkillCdThreshold = (n: number) => {
+    const clamped = Math.max(5, Math.min(30, n));
+    setSkillCdThresholdState(clamped);
+    localStorage.setItem('heist_threshold_skill_cd', String(clamped));
+    postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], stopMarkerThreshold, movementMarkerThreshold, warpMarkerThreshold, clamped);
   };
   const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
@@ -147,8 +376,75 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
   const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
+  const [floorNavCollapsed, setFloorNavCollapsed] = useState<boolean>(() => loadFloorNavCollapsed());
+  useEffect(() => {
+    saveFloorNavCollapsed(floorNavCollapsed);
+  }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'erase-marker' | 'pan' | 'add-marker' | 'toggle-vis'>('pan');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'measure' | 'add-marker' | 'toggle-vis'>('pan');
+  const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
+  const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
+  const [eraseSize, setEraseSize] = useState<number>(16);
+  // Alt 押下状態(消しゴムモードのメニューを視覚的にシフトさせる)
+  // ref + state の二重管理。
+  // キーハンドラは document (capture) に張り、要素側の stopPropagation に
+  // 左右されないようにする。さらに flushSync で同期的に反映させ、
+  // mousemove / mouseup / wheel / pointer* / visibilitychange / blur の
+  // どれか一つが拾えれば ref 経由で state を強制再同期する。
+  const altPressedRef = useRef<boolean>(false);
+  const [isAltPressed, setIsAltPressed] = useState<boolean>(false);
+  useEffect(() => {
+    const applyPressed = (next: boolean) => {
+      if (altPressedRef.current === next) return;
+      altPressedRef.current = next;
+      // React 19 の自動バッチ / concurrent rendering で keyup 単独だと
+      // 再レンダが後ろに回ることがあるため flushSync で即時反映する。
+      flushSync(() => {
+        setIsAltPressed(next);
+      });
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey) applyPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.altKey) applyPressed(false);
+    };
+    const handleBlur = () => applyPressed(false);
+    const handleVisibilityChange = () => {
+      if (document.hidden) applyPressed(false);
+    };
+    // 任意のポインタ/マウス/ホイール操作で実状態と ref を突き合わせ、
+    // 食い違いがあれば即座に同期する(keyup 取りこぼしの最終防衛線)。
+    const handleInteraction = (e: MouseEvent) => {
+      if (e.altKey !== altPressedRef.current) {
+        applyPressed(e.altKey);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('keyup', handleKeyUp, true);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('mousemove', handleInteraction);
+    window.addEventListener('mousedown', handleInteraction);
+    window.addEventListener('mouseup', handleInteraction);
+    window.addEventListener('wheel', handleInteraction, { passive: true });
+    window.addEventListener('pointerdown', handleInteraction);
+    window.addEventListener('pointermove', handleInteraction);
+    window.addEventListener('pointerup', handleInteraction);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('keyup', handleKeyUp, true);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('mousemove', handleInteraction);
+      window.removeEventListener('mousedown', handleInteraction);
+      window.removeEventListener('mouseup', handleInteraction);
+      window.removeEventListener('wheel', handleInteraction);
+      window.removeEventListener('pointerdown', handleInteraction);
+      window.removeEventListener('pointermove', handleInteraction);
+      window.removeEventListener('pointerup', handleInteraction);
+    };
+  }, []);
   const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
@@ -183,6 +479,11 @@ export default function App() {
   });
   const [presetListVisible, setPresetListVisible] = useState(false);
   const [saveLoadSearchQuery, setSaveLoadSearchQuery] = useState('');
+  // プリセット一覧のフィルタ (限定公開/非公開を一覧に出すか)
+  // - showUnlisted: デフォルト false (限定公開は基本一覧に出さない、URL 経由で開く想定)
+  // - showPrivate : デフォルト true  (非公開プリセットをローカルモードで見つけられるように)
+  const [showUnlistedPresets, setShowUnlistedPresets] = useState(false);
+  const [showPrivatePresets, setShowPrivatePresets] = useState(true);
   const [urlLoadConfirm, setUrlLoadConfirm] = useState<{ type: 'preset' | 'save'; id: string; name: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
@@ -277,7 +578,10 @@ export default function App() {
     if (gd.warpMarkerThreshold !== undefined) {
       setWarpMarkerThresholdState(gd.warpMarkerThreshold);
     }
-  });
+    if (gd.skillCdThreshold !== undefined) {
+      setSkillCdThresholdState(gd.skillCdThreshold);
+    }
+  }, { isLocal });
   const defaultsLoaded = globalDefaults.loaded;
 
   const memoizedStrokes = useMemo(
@@ -355,7 +659,7 @@ export default function App() {
       historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
     }
     const isIndivType = (type: string) =>
-      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(type);
+      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'].includes(type);
     const incomingGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
     if (options.isDelete) {
@@ -379,11 +683,13 @@ export default function App() {
     hiddenMarkerTypes: string[],
     stopTh?: number,
     moveTh?: number,
-    warpTh?: number
+    warpTh?: number,
+    skillTh?: number
   ) {
     const sTh = stopTh !== undefined ? stopTh : stopMarkerThreshold;
     const mTh = moveTh !== undefined ? moveTh : movementMarkerThreshold;
     const wTh = warpTh !== undefined ? warpTh : warpMarkerThreshold;
+    const skTh = skillTh !== undefined ? skillTh : skillCdThreshold;
 
     globalDefaultsRef.current = {
       ...globalDefaultsRef.current,
@@ -391,7 +697,8 @@ export default function App() {
       hiddenMarkerTypes,
       stopMarkerThreshold: sTh,
       movementMarkerThreshold: mTh,
-      warpMarkerThreshold: wTh
+      warpMarkerThreshold: wTh,
+      skillCdThreshold: skTh
     };
 
     if (isLocal) {
@@ -404,7 +711,8 @@ export default function App() {
           startupFocusMarkerId: globalDefaultsRef.current.startupFocusMarkerId,
           stopMarkerThreshold: sTh,
           movementMarkerThreshold: mTh,
-          warpMarkerThreshold: wTh
+          warpMarkerThreshold: wTh,
+          skillCdThreshold: skTh
         })
       });
     }
@@ -495,16 +803,18 @@ export default function App() {
     fetch(`${import.meta.env.BASE_URL}api/presets`)
       .then(res => res.ok ? res.json() : [])
       .then((data: PresetData[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          routeApi.setPresets(data);
+        const normalized = normalizePresets(data);
+        if (normalized.length > 0) {
+          routeApi.setPresets(normalized);
           return;
         }
         // Fallback: try loading from static presets.json (shipped with dist build)
         fetch(`${import.meta.env.BASE_URL}presets.json`)
           .then(res => res.ok ? res.json() : [])
           .then((staticPresets: PresetData[]) => {
-            if (Array.isArray(staticPresets) && staticPresets.length > 0) {
-              routeApi.setPresets(staticPresets);
+            const normalizedStatic = normalizePresets(staticPresets);
+            if (normalizedStatic.length > 0) {
+              routeApi.setPresets(normalizedStatic);
               return;
             }
             // Legacy fallback: try old default_preset.json (single route)
@@ -516,7 +826,8 @@ export default function App() {
                     name: oldPreset.title || 'Default Preset',
                     description: '',
                     author: '',
-                    originalAuthor: ''
+                    originalAuthor: '',
+                    visibility: 'public'
                   });
                 }
               })
@@ -562,6 +873,22 @@ export default function App() {
     }
 
     if (presetId && routeApi.presets.length > 0) {
+      // 公開レベル (visibility) によるゲート:
+      //  - private はローカルモードのみ許可。本番ビルド (dist 配信) では拒否。
+      //  - unlisted はURLを知っていれば常に許可 (一覧に出ないだけ)。
+      //  - public は無条件。
+      const access = routeApi.checkPresetUrlAccess(presetId);
+      if (!access.allowed) {
+        if (access.reason === 'not_found') {
+          notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
+        } else if (access.reason === 'private_prod') {
+          notification.show('このプリセットは非公開です。ローカルモード (npm run dev) でのみ開けます。', 4000);
+        } else {
+          notification.show('このプリセットを開くことができません', 3000);
+        }
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
       const preset = routeApi.presets.find(p => p.id === presetId);
       if (!preset) {
         notification.show(`プリセットが見つかりません: ${presetId}`, 3000);
@@ -572,7 +899,7 @@ export default function App() {
       setUrlLoadConfirm({ type: 'preset', id: presetId, name: preset.name });
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [routeApi.presets]);
+  }, [routeApi.presets, routeApi.checkPresetUrlAccess]);
 
   // Sync target duration slider DOM value with state when the user is NOT
   // actively interacting with the slider. The slider is uncontrolled
@@ -725,7 +1052,8 @@ export default function App() {
   };
 
   // Quick-add current save as a preset
-  const handleQuickPreset = (s: SaveInfo) => {
+  // visibility: 公開レベル ('public' | 'unlisted' | 'private')。未指定なら public。
+  const handleQuickPreset = (s: SaveInfo, visibility: PresetVisibility = 'public') => {
     const save = DataManager.loadFromLocalStorage(s.id);
     if (!save) return;
     const toSave: RouteData = { ...save, mapVersion: 2, markerScale };
@@ -738,6 +1066,7 @@ export default function App() {
       author: xorDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt)),
       originalAuthor: xorDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt)),
       updatedAt: Date.now(),
+      visibility: normalizePresetVisibility(visibility),
       routeData: toSave
     };
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
@@ -990,31 +1319,52 @@ export default function App() {
             <div className="panel-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div className="panel-title" style={{ marginBottom: 0 }}>階層移動</div>
-                <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }} onClick={() => setCurrentPosTrigger(Date.now())} title="現在の自動ルート位置にカメラを移動">
-                  📍 現在位置に移動
-                </button>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }} onClick={() => setCurrentPosTrigger(Date.now())} title="現在の自動ルート位置にカメラを移動">
+                    📍 現在位置に移動
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFloorNavCollapsed(prev => !prev)}
+                    title={floorNavCollapsed ? '展開' : '折りたたむ'}
+                    style={{
+                      padding: '3px 6px',
+                      fontSize: '11px',
+                      background: 'rgba(0, 255, 255, 0.05)',
+                      border: '1px solid rgba(0, 255, 255, 0.15)',
+                      borderRadius: '4px',
+                      color: 'var(--cyan-neon)',
+                      cursor: 'pointer',
+                      lineHeight: 1
+                    }}
+                  >
+                    {floorNavCollapsed ? '▶' : '▼'}
+                  </button>
+                </div>
               </div>
-              <div className="saves-list" style={{ maxHeight: '175px' }}>
-                {globalMarkersStore.globalMarkers.filter(m => m.type === 'room').length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
-                    No room markers placed. Select 🚪 in markers below and click map to place.
-                  </div>
-                ) : (
-                  globalMarkersStore.globalMarkers
-                    .filter(m => m.type === 'room')
-                    .map(m => {
-                      const meta = MARKER_META[m.type];
-                      return (
-                        <div key={m.id} className="save-item" onClick={() => setFocusTrigger({ id: m.id, timestamp: Date.now() })}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
-                            <strong>{meta.emoji} {m.note.trim() ? m.note : `${meta.label} #${m.id.substring(m.id.length - 4)}`}</strong>
+              {!floorNavCollapsed && (
+                <div className="saves-list" style={{ maxHeight: '175px' }}>
+                  {globalMarkersStore.globalMarkers.filter(m => m.type === 'room').length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
+                      No room markers placed. Select 🚪 in markers below and click map to place.
+                    </div>
+                  ) : (
+                    globalMarkersStore.globalMarkers
+                      .filter(m => m.type === 'room')
+                      .map(m => {
+                        const meta = MARKER_META[m.type];
+                        return (
+                          <div key={m.id} className="save-item" onClick={() => setFocusTrigger({ id: m.id, timestamp: Date.now() })}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                              <strong>{meta.emoji} {m.note.trim() ? m.note : `${meta.label} #${m.id.substring(m.id.length - 4)}`}</strong>
+                            </div>
+                            <span style={{ fontSize: '11px', color: 'var(--cyan-neon)' }}>Go ➔</span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--cyan-neon)' }}>Go ➔</span>
-                        </div>
-                      );
-                    })
-                )}
-              </div>
+                        );
+                      })
+                  )}
+                </div>
+              )}
             </div>
 
 
@@ -1027,13 +1377,13 @@ export default function App() {
                     <Paintbrush size={18} /><span>ルート線</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
-                    <Eraser size={18} /><span>ライン消し</span>
+                    <Eraser size={18} /><span>消しゴム</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
                     <Move size={18} /><span>移動</span>
                   </button>
-                  <button className={`tool-btn ${toolMode === 'erase-marker' ? 'active' : ''}`} onClick={() => setToolMode('erase-marker')} id="tool-erase-marker-btn">
-                    <Trash2 size={18} /><span>マーカー消し</span>
+                  <button className={`tool-btn ${toolMode === 'measure' ? 'active' : ''}`} onClick={() => setToolMode('measure')} id="tool-measure-btn">
+                    <Ruler size={18} /><span>距離計測</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>表示切替</span>
@@ -1067,6 +1417,18 @@ export default function App() {
               </div>
             )}
 
+            {toolMode === 'erase' && (
+              <EraserSubMenu
+                eraseTarget={eraseTarget}
+                setEraseTarget={setEraseTarget}
+                eraseSize={eraseSize}
+                setEraseSize={setEraseSize}
+                eraseDefaultBehavior={eraseDefaultBehavior}
+                setEraseDefaultBehavior={setEraseDefaultBehavior}
+                isAltPressed={isAltPressed}
+              />
+            )}
+
             {toolMode === 'draw' && (
               <div className="panel-section">
                 <div className="panel-title">3. BRUSH CONFIG</div>
@@ -1094,7 +1456,15 @@ export default function App() {
                     const lastIdx = routeApi.route.strokes[currentFloor].length - 1;
                     const last = routeApi.route.strokes[currentFloor][lastIdx];
                     const smoothed = smoothStrokePoints(last.points, 3, 1500);
-                    updateStrokes([...routeApi.route.strokes[currentFloor].slice(0, lastIdx), { ...last, points: smoothed }]);
+                    // originalPoints も「補正後」の基準値として平滑化結果に追従させる
+                    // (元の originalPoints があればそれも平滑化、なければ points を使う)
+                    const baseForOriginal = last.originalPoints && last.originalPoints.length >= 2
+                      ? last.originalPoints
+                      : last.points;
+                    const smoothedOriginal = baseForOriginal.length === smoothed.length
+                      ? smoothed
+                      : smoothStrokePoints(baseForOriginal, 3, 1500);
+                    updateStrokes([...routeApi.route.strokes[currentFloor].slice(0, lastIdx), { ...last, points: smoothed, originalPoints: smoothedOriginal }]);
                   }
                 }}>
                   ✨ 最後の線を平滑化
@@ -1133,14 +1503,16 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">マーカー</div>
                 <div className="marker-list">
-                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
                     const meta = MARKER_META[t];
+                    const isActive = toolMode === 'add-marker' && activeMarkerType === t;
                     return (
-                      <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
+                      <button key={t} className={`marker-item ${isActive ? 'active' : ''}`}
                         onClick={() => { setToolMode('add-marker'); setActiveMarkerType(t); }}
-                        style={{ '--theme-color': meta.color } as React.CSSProperties}>
+                        style={{ '--theme-color': meta.color } as React.CSSProperties}
+                        title={t === 'skill_cd' ? 'スキルクールタイム (P1の前に配置。通過時にCD秒ぶん停止して、自動案内の累計停止行の下に残時間を表示)' : undefined}>
                         <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{t === 'start' ? 'START' : t === 'iwarp' ? 'I-WARP' : meta.label}</span>
+                        <span>{t === 'start' ? 'START' : t === 'iwarp' ? 'I-WARP' : t === 'skill_cd' ? 'SKILL CD' : meta.label}</span>
                       </button>
                     );
                   })}
@@ -1295,11 +1667,15 @@ export default function App() {
             branchLines1px={branchLines1px}
             disablePinsDuringDraw={disablePinsDuringDraw}
             textPinPassThrough={textPinPassThrough}
+            eraseTarget={eraseTarget}
+            eraseDefaultBehavior={eraseDefaultBehavior}
+            eraseSize={eraseSize}
             onMarkersDragStart={historyApi.startDragSnapshot}
             onMarkersDragEnd={historyApi.commitDragSnapshot}
             stopMarkerThreshold={stopMarkerThreshold}
             movementMarkerThreshold={movementMarkerThreshold}
             warpMarkerThreshold={warpMarkerThreshold}
+            skillCdThreshold={skillCdThreshold}
             showDetectionRanges={showDetectionRanges}
             hiddenMarkers={routeApi.route.hiddenMarkers || []}
             hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
@@ -1311,6 +1687,9 @@ export default function App() {
             autoRouteSettings={{
               waitEnabled: autoRoute.waitEnabled,
               waitSeconds: autoRoute.waitSeconds,
+              startStopSeconds: autoRoute.startStopSeconds,
+              speedMode: autoRoute.speedMode,
+              manualSpeed: autoRoute.manualSpeed,
               speedMultiplier: autoRoute.speedMultiplier,
               followCamera: autoRoute.followCamera
             }}
@@ -1322,6 +1701,8 @@ export default function App() {
             stairsColor={stairsColor}
             fuseMode={autoRoute.fuseMode}
             inactiveMarkersMode={autoRoute.inactiveMarkersMode}
+            skillCdPresets={globalDefaults.skillCdPresets}
+            onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
             onAutoRouteStart={() => {
               const updated = globalMarkersStore.globalMarkers.map(m =>
                 m.type === 'phone' && !m.phoneLocked ? { ...m, phoneActive: false } : m
@@ -1663,6 +2044,38 @@ export default function App() {
                           <input type="checkbox" checked={autoRoute.waitEnabled} onChange={(e) => autoRoute.setWaitEnabled(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)' }} />
                           開始前に待機 (<input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />秒)
                         </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                          🐾 スタート停止 (<input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />秒)
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                          <span>移動速度:</span>
+                          {(['time', 'speed'] as const).map(mode => (
+                            <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer', opacity: autoRoute.status.active ? 0.5 : 1 }}>
+                              <input
+                                type="radio"
+                                name="autoRouteSpeedMode"
+                                checked={autoRoute.speedMode === mode}
+                                onChange={() => autoRoute.setSpeedMode(mode)}
+                                disabled={autoRoute.status.active}
+                                style={{ accentColor: 'var(--cyan-neon)', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer' }}
+                              />
+                              <span>{mode === 'time' ? '所要時間ベース' : '速度ベース'}</span>
+                            </label>
+                          ))}
+                          {autoRoute.speedMode === 'speed' && (
+                            <input
+                              type="number"
+                              min="1"
+                              max="10000"
+                              step="1"
+                              value={autoRoute.manualSpeed}
+                              onChange={(e) => autoRoute.setManualSpeed(Math.max(1, Math.min(10000, parseInt(e.target.value) || 0)))}
+                              disabled={autoRoute.status.active}
+                              style={{ width: '56px', fontSize: '12px', fontWeight: 700, textAlign: 'center', padding: '2px 4px', background: 'rgba(5,7,10,0.95)', border: '1px solid rgba(0,240,255,0.5)', color: 'var(--yellow-neon, #ffe600)', borderRadius: '3px', fontFamily: 'monospace', opacity: autoRoute.status.active ? 0.5 : 1, cursor: autoRoute.status.active ? 'not-allowed' : 'text' }}
+                            />
+                          )}
+                          {autoRoute.speedMode === 'speed' && <span style={{ color: 'var(--text-muted)' }}>px/秒</span>}
+                        </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           💣 導火線モード
@@ -1731,7 +2144,7 @@ export default function App() {
                               ◀30s
                             </button>
                             <div
-                              style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
+                              style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', cursor: 'pointer', position: 'relative' }}
                               title="クリックでシーク"
                               onClick={(e) => {
                                 if (!autoRoute.status.active || autoRoute.status.totalTime <= 0) return;
@@ -1743,12 +2156,33 @@ export default function App() {
                                 autoRoute.sendCommand('seek', target);
                               }}
                             >
-                              <div style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', transition: 'width 0.1s' }} />
+                              <div style={{ height: '100%', width: `${Math.min(100, (autoRoute.status.elapsed / Math.max(autoRoute.status.totalTime, 0.001)) * 100)}%`, background: 'var(--cyan-neon)', borderRadius: '2px', transition: 'width 0.1s' }} />
                               {autoRoute.status.checkpoints.map((cp, i) => {
                                 if (autoRoute.status.totalTime <= 0) return null;
                                 const ratio = cp.elapsed / autoRoute.status.totalTime;
+                                const left = Math.min(100, Math.max(0, ratio * 100));
+                                const ignored = !!cp.ignored;   // マイナス値
+                                const unset = !!cp.unset;       // 0 (未設定)
+                                const conflicted = !!cp.conflicted; // 順序矛盾
+                                const passed = !!cp.passed;
+                                // 色: 順序矛盾 or マイナス値 → 赤 (アラート)、未設定 → 黄 (警告)、
+                                //    通過済は緑、それ以外は橙
+                                let color: string;
+                                if (ignored || conflicted) color = '#ff4444';
+                                else if (unset) color = '#ffd000';
+                                else color = passed ? '#39ff14' : '#ff9500';
+                                const tip = ignored
+                                  ? `⚠🏁 ${cp.label} @ 異常値 (目標時間 ${formatTime(cp.targetTime)} — マイナス値は無視)\nマーカーを編集して 0 以上の値を設定してください`
+                                  : conflicted
+                                    ? `⚠🏁 ${cp.label} @ ${formatTime(cp.targetTime)}\n順序矛盾: 前のチェックポイントより小さい目標時間です。${formatTime(cp.targetTime)} が他のチェックポイントより前に来ています。`
+                                    : unset
+                                      ? `⚠🏁 ${cp.label} @ 未設定 (目標時間 0秒)\nマーカーを編集して目標時間を設定してください`
+                                      : `🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${passed ? ' (通過済)' : ''}`;
+                                const isAlert = ignored || conflicted;
                                 return (
-                                  <div key={`cp-line-${i}`} title={`🏁 ${cp.label} @ ${formatTime(cp.elapsed)}${cp.passed ? ' (通過済)' : ''}`} style={{ position: 'absolute', top: 0, bottom: 0, left: `${Math.min(100, Math.max(0, ratio * 100))}%`, width: '2px', background: cp.passed ? '#39ff14' : '#ff9500', opacity: 0.85, pointerEvents: 'none', boxShadow: '0 0 3px rgba(255,149,0,0.8)' }} />
+                                  <div key={`cp-line-${i}`} title={tip} style={{ position: 'absolute', top: 0, bottom: 0, left: `${left}%`, transform: 'translateX(-50%)', width: isAlert ? '5px' : '4px', background: color, opacity: 0.95, pointerEvents: 'none', boxShadow: isAlert ? '0 0 5px rgba(255,68,68,0.95), 0 0 10px rgba(255,68,68,0.6)' : (unset ? '0 0 4px rgba(255,208,0,0.7)' : `0 0 4px ${color}cc`), borderRadius: '1px', animation: isAlert ? 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' : 'none', zIndex: isAlert ? 2 : 1 }}>
+                                    <div style={{ position: 'absolute', top: -4, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${color}`, filter: `drop-shadow(0 0 2px ${color})` }} />
+                                  </div>
                                 );
                               })}
                             </div>
@@ -1772,6 +2206,49 @@ export default function App() {
                               : autoRoute.status.nextMarkerLabel && <span style={{ color: 'var(--yellow-neon)' }}>次: {autoRoute.status.nextMarkerLabel}</span>
                             }
                           </div>
+                          {autoRoute.status.skillCdInfo && (
+                            <div style={{ fontSize: '10px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 6px', marginTop: '2px', background: `${autoRoute.status.skillCdInfo.color}1a`, border: `1px solid ${autoRoute.status.skillCdInfo.color}66`, borderRadius: '3px' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '50%', background: 'rgba(10,15,28,0.85)', color: autoRoute.status.skillCdInfo.color, border: `1.5px solid ${autoRoute.status.skillCdInfo.color}`, textAlign: 'center', lineHeight: '12px', fontSize: '10px', fontWeight: 700, boxShadow: `0 0 6px ${autoRoute.status.skillCdInfo.color}80` }}>
+                                  {(autoRoute.status.skillCdInfo.label || 'S').charAt(0)}
+                                </span>
+                                <span style={{ color: autoRoute.status.skillCdInfo.color, fontWeight: 700 }}>CD: {autoRoute.status.skillCdInfo.label}</span>
+                              </span>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: autoRoute.status.skillCdInfo.color }}>
+                                {autoRoute.status.skillCdInfo.remaining.toFixed(1)}s / {autoRoute.status.skillCdInfo.total}s
+                              </span>
+                            </div>
+                          )}
+                          {(() => {
+                            const ignoredCp = autoRoute.status.checkpoints.filter(cp => cp.ignored);
+                            const unsetCp = autoRoute.status.checkpoints.filter(cp => cp.unset);
+                            const conflictedCp = autoRoute.status.checkpoints.filter(cp => cp.conflicted);
+                            if (ignoredCp.length === 0 && unsetCp.length === 0 && conflictedCp.length === 0) return null;
+                            return (
+                              <div style={{ fontSize: '10px', color: '#ff6666', fontWeight: 'bold', padding: '3px 6px', marginTop: '2px', background: 'rgba(255,68,68,0.12)', border: '1px solid rgba(255,68,68,0.45)', borderRadius: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                {ignoredCp.length > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ff4444', boxShadow: '0 0 4px #ff4444', animation: 'checkpoint-ignored-pulse 1.2s ease-in-out infinite' }} />
+                                    <span>⚠ チェックポイント {ignoredCp.length} 件が異常値 (マイナス) (赤マーカー) — 0 以上に修正してください</span>
+                                  </div>
+                                )}
+                                {unsetCp.length > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ffd000' }}>
+                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ffd000', boxShadow: '0 0 4px #ffd000' }} />
+                                    <span>⚠ チェックポイント {unsetCp.length} 件が目標未設定 (黄色マーカー) — 編集して目標時間を設定してください</span>
+                                  </div>
+                                )}
+                                {conflictedCp.length > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', paddingLeft: '12px' }}>
+                                    <span>⚠ 順序矛盾 {conflictedCp.length} 件: </span>
+                                    <span style={{ color: '#ffaaaa', fontWeight: 'normal' }}>
+                                      {conflictedCp.map(cp => `${cp.label} (${formatTime(cp.targetTime)})`).join(', ')} — 目標時間が前のチェックポイントより小さい
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </>
                       )}
                     </div>
@@ -1825,148 +2302,220 @@ export default function App() {
                 <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>✕ 閉じる</button>
               </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-              {routeApi.presets.length === 0 && routeApi.saves.length === 0 ? (
-                <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>セーブデータはまだありません</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {(() => {
-                    const q = saveLoadSearchQuery.toLowerCase().trim();
-                    const matchPreset = (p: PresetData) => {
-                      if (!q) return true;
-                      return p.id.toLowerCase().includes(q)
-                        || p.name.toLowerCase().includes(q)
-                        || (p.description || '').toLowerCase().includes(q)
-                        || (p.author || '').toLowerCase().includes(q)
-                        || (p.originalAuthor || '').toLowerCase().includes(q);
-                    };
-                    const matchSave = (s: SaveInfo) => {
-                      if (!q) return true;
-                      const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
-                      const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
-                      return s.title.toLowerCase().includes(q)
-                        || (s.description || '').toLowerCase().includes(q)
-                        || sa.toLowerCase().includes(q)
-                        || so.toLowerCase().includes(q);
-                    };
-                    const filteredPresets = routeApi.presets.filter(matchPreset);
-                    const filteredSaves = routeApi.saves.filter(matchSave);
-                    if (q && filteredPresets.length === 0 && filteredSaves.length === 0) {
-                      return <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
-                        「{saveLoadSearchQuery}」に一致するデータが見つかりません
-                      </div>;
-                    }
-                    return (<>
-                      {filteredPresets.map(p => (
-                    <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
-                      onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
-                          <span style={{ color: '#ffd700', fontSize: '14px' }}>★</span>
-                          <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                          <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>プリセット</span>
-                        </div>
-                        {isLocal && isEditMode && (
-                          <button
-                            style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
-                            onClick={(e) => { e.stopPropagation(); setDefaultPresetId(defaultPresetId === p.id ? null : p.id); }}
-                          >
-                            {defaultPresetId === p.id ? '★ 基本' : '☆ 基本に設定'}
-                          </button>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>獲得値: <span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
-                        {p.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
-                        {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
-                        {p.author && <span>作者: {p.author}</span>}
-                        {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
-                        {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
-                      </div>
-                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
-                        <button
-                          className="btn-cyber"
-                          style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                          onClick={() => { navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
-                          title="プリセットIDをクリップボードにコピー"
-                        >
-                          IDコピー
-                        </button>
-                        <button
-                          className="btn-cyber"
-                          style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                          onClick={() => { const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
-                          title="このプリセットを開くURLをコピー"
-                        >
-                          URLコピー
-                        </button>
-                        {isLocal && isEditMode && (
-                          <button
-                            className="btn-cyber"
-                            style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
-                            onClick={() => { routeApi.overwritePreset(p.id); }}
-                            title="現在の編集データでこのプリセットを上書き"
-                          >
-                            上書き
-                          </button>
-                        )}
-                        {isLocal && (
-                          presetDeleteConfirmId === p.id ? (
-                            <>
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>削除する</button>
-                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>キャンセル</button>
-                            </>
-                          ) : (
-                            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>削除</button>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {filteredSaves.map(s => (
-                    <div key={s.id} style={{ padding: '10px 12px', background: routeApi.route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: routeApi.route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
-                      onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
-                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                          {deleteConfirmId === s.id ? (
-                            <>
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除する</button>
-                              <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>キャンセル</button>
-                            </>
-                          ) : (
-                            <>
-                              {isLocal && isEditMode && (
-                                <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }} onClick={() => handleQuickPreset(s)}>プリセット登録</button>
-                              )}
-                              <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除</button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
-                        {s.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
-                        {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
-                        {(() => {
-                          const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
-                          const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
-                          return (<>
-                            {sa && <span>作者: {sa}</span>}
-                            {so && so !== sa && <span>原作者: {so}</span>}
-                          </>);
-                        })()}
-                        <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                    </>);
-                  })()}
-                </div>
+            {/* 公開レベルフィルタ (限定公開 / 非公開) */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '6px 12px', background: 'rgba(79,195,247,0.05)', borderBottom: '1px solid rgba(79,195,247,0.15)', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>表示フィルタ:</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#ffe600', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showUnlistedPresets} onChange={(e) => setShowUnlistedPresets(e.target.checked)} style={{ accentColor: '#ffe600', cursor: 'pointer' }} />
+                🔗 限定公開
+              </label>
+              {isLocal && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#ff0055', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showPrivatePresets} onChange={(e) => setShowPrivatePresets(e.target.checked)} style={{ accentColor: '#ff0055', cursor: 'pointer' }} />
+                  🔒 非公開 (ローカル限定)
+                </label>
               )}
+              {!isLocal && (
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>※ 本番モードでは 🔒 非公開 は表示されません</span>
+              )}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+              {(() => {
+                const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: showUnlistedPresets, showPrivate: showPrivatePresets });
+                if (visiblePresets.length === 0 && routeApi.saves.length === 0) {
+                  return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>セーブデータはまだありません</div>;
+                }
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {(() => {
+                      const q = saveLoadSearchQuery.toLowerCase().trim();
+                      const matchPreset = (p: PresetData) => {
+                        if (!q) return true;
+                        return p.id.toLowerCase().includes(q)
+                          || p.name.toLowerCase().includes(q)
+                          || (p.description || '').toLowerCase().includes(q)
+                          || (p.author || '').toLowerCase().includes(q)
+                          || (p.originalAuthor || '').toLowerCase().includes(q);
+                      };
+                      const matchSave = (s: SaveInfo) => {
+                        if (!q) return true;
+                        const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
+                        const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                        return s.title.toLowerCase().includes(q)
+                          || (s.description || '').toLowerCase().includes(q)
+                          || sa.toLowerCase().includes(q)
+                          || so.toLowerCase().includes(q);
+                      };
+                      const filteredPresets = visiblePresets.filter(matchPreset);
+                      const filteredSaves = routeApi.saves.filter(matchSave);
+                      if (q && filteredPresets.length === 0 && filteredSaves.length === 0) {
+                        return <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
+                          「{saveLoadSearchQuery}」に一致するデータが見つかりません
+                        </div>;
+                      }
+                      return (<>
+                        {filteredPresets.map(p => {
+                          const v = getPresetVisibility(p);
+                          const vMeta = PRESET_VISIBILITY_META[v];
+                          return (
+                            <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
+                              onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                                  <span style={{ color: '#ffd700', fontSize: '14px' }}>★</span>
+                                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                                  <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>プリセット</span>
+                                  {v !== 'public' && (
+                                    <span
+                                      title={vMeta.description}
+                                      style={{ fontSize: '9px', padding: '1px 6px', background: `${vMeta.color}22`, color: vMeta.color, border: `1px solid ${vMeta.color}55`, borderRadius: '4px', flexShrink: 0, fontWeight: 700 }}
+                                    >
+                                      {vMeta.emoji} {vMeta.label}
+                                    </span>
+                                  )}
+                                </div>
+                                {isLocal && isEditMode && (
+                                  <button
+                                    style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
+                                    onClick={(e) => { e.stopPropagation(); setDefaultPresetId(defaultPresetId === p.id ? null : p.id); }}
+                                  >
+                                    {defaultPresetId === p.id ? '★ 基本' : '☆ 基本に設定'}
+                                  </button>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <span>獲得値: <span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
+                                {p.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
+                                {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
+                                {p.author && <span>作者: {p.author}</span>}
+                                {p.originalAuthor && p.originalAuthor !== p.author && <span>原作者: {p.originalAuthor}</span>}
+                                {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(p.updatedAt).toLocaleString()}</span>}
+                              </div>
+                              <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  className="btn-cyber"
+                                  style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
+                                  onClick={() => { navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
+                                  title="プリセットIDをクリップボードにコピー"
+                                >
+                                  IDコピー
+                                </button>
+                                {v !== 'private' || isLocal ? (
+                                  <button
+                                    className="btn-cyber"
+                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
+                                    onClick={() => { const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                                    title={v === 'unlisted' ? '限定公開のURL (?preset=ID) を知っている人だけが開けます' : v === 'private' ? 'ローカルモードでのみ有効なURL' : 'このプリセットを開くURLをコピー'}
+                                  >
+                                    URLコピー
+                                  </button>
+                                ) : null}
+                                {isLocal && isEditMode && (
+                                  <div style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>公開:</span>
+                                    {(['public', 'unlisted', 'private'] as PresetVisibility[]).map(opt => {
+                                      const optMeta = PRESET_VISIBILITY_META[opt];
+                                      const isActive = v === opt;
+                                      const disabled = opt === 'private' && !isLocal;
+                                      return (
+                                        <button
+                                          key={opt}
+                                          disabled={disabled}
+                                          title={disabled ? 'ローカルモードでのみ選択可' : optMeta.description}
+                                          onClick={() => {
+                                            if (disabled) return;
+                                            routeApi.setPresetVisibility(p.id, opt);
+                                            notification.show(`公開レベル変更: ${p.name} → ${optMeta.label}`);
+                                          }}
+                                          style={{
+                                            fontSize: '9px', padding: '2px 6px', clipPath: 'none',
+                                            background: isActive ? optMeta.color : 'transparent',
+                                            color: isActive ? '#000' : (disabled ? '#555' : optMeta.color),
+                                            border: `1px solid ${disabled ? '#555' : optMeta.color}`,
+                                            borderRadius: '4px',
+                                            cursor: disabled ? 'not-allowed' : 'pointer',
+                                            fontWeight: 700,
+                                            opacity: disabled ? 0.4 : 1
+                                          }}
+                                        >
+                                          {optMeta.emoji} {optMeta.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {isLocal && isEditMode && (
+                                  <button
+                                    className="btn-cyber"
+                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
+                                    onClick={() => { routeApi.overwritePreset(p.id); }}
+                                    title="現在の編集データでこのプリセットを上書き"
+                                  >
+                                    上書き
+                                  </button>
+                                )}
+                                {isLocal && (
+                                  presetDeleteConfirmId === p.id ? (
+                                    <>
+                                      <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>削除する</button>
+                                      <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>キャンセル</button>
+                                    </>
+                                  ) : (
+                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>削除</button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {filteredSaves.map(s => (
+                          <div key={s.id} style={{ padding: '10px 12px', background: routeApi.route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: routeApi.route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
+                            onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
+                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                                {deleteConfirmId === s.id ? (
+                                  <>
+                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除する</button>
+                                    <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>キャンセル</button>
+                                  </>
+                                ) : (
+                                  isLocal && isEditMode ? (
+                                    <QuickPresetButton
+                                      isLocal={isLocal}
+                                      onAdd={(vis) => handleQuickPreset(s, vis)}
+                                    />
+                                  ) : null
+                                )}
+                                {!deleteConfirmId && (
+                                  <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => handleDeleteFromLocal(s.id)}>削除</button>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span>獲得値: <span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
+                              {s.description && <span style={{ color: 'var(--text-muted)' }}>備考:</span>}
+                              {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
+                              {(() => {
+                                const sa = xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
+                                const so = xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                                return (<>
+                                  {sa && <span>作者: {sa}</span>}
+                                  {so && so !== sa && <span>原作者: {so}</span>}
+                                </>);
+                              })()}
+                              <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </>);
+                    })()}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1981,6 +2530,20 @@ export default function App() {
             <div style={{ fontSize: '13px', color: '#b0b0b0', marginBottom: '16px' }}>
               「<span style={{ color: urlLoadConfirm.type === 'preset' ? '#ffd700' : 'var(--cyan-neon)', fontWeight: 700 }}>{urlLoadConfirm.name}</span>」を読み込みます。<br />
               現在の編集内容は破棄されます。
+              {urlLoadConfirm.type === 'preset' && (() => {
+                const p = routeApi.presets.find(x => x.id === urlLoadConfirm.id);
+                if (!p) return null;
+                const v = getPresetVisibility(p);
+                if (v === 'public') return null;
+                const vMeta = PRESET_VISIBILITY_META[v];
+                return (
+                  <div style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', background: `${vMeta.color}22`, border: `1px solid ${vMeta.color}66`, borderRadius: '4px' }}>
+                    <span>{vMeta.emoji}</span>
+                    <span style={{ color: vMeta.color, fontWeight: 700, fontSize: '11px' }}>{vMeta.label}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}> — {vMeta.description}</span>
+                  </div>
+                );
+              })()}
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
               <button className="btn-cyber success" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => {
@@ -2040,9 +2603,15 @@ export default function App() {
         setMovementMarkerThreshold={setMovementMarkerThreshold}
         warpMarkerThreshold={warpMarkerThreshold}
         setWarpMarkerThreshold={setWarpMarkerThreshold}
+        skillCdThreshold={skillCdThreshold}
+        setSkillCdThreshold={setSkillCdThreshold}
         autoLoadLastRoute={autoLoadLastRoute}
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
+        skillCdPresets={globalDefaults.skillCdPresets}
+        onAddSkillCdPreset={globalDefaults.addSkillCdPreset}
+        onUpdateSkillCdPreset={globalDefaults.updateSkillCdPreset}
+        onRemoveSkillCdPreset={globalDefaults.removeSkillCdPreset}
       />
 
       <HistoryModal

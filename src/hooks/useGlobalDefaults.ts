@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { generateId, type SkillCdMode, type SkillCdPreset } from '../utils/DataManager';
 
 export interface GlobalDefaults {
   hiddenMarkers: string[];
@@ -7,6 +8,42 @@ export interface GlobalDefaults {
   stopMarkerThreshold?: number;
   movementMarkerThreshold?: number;
   warpMarkerThreshold?: number;
+  skillCdThreshold?: number;
+  skillCdPresets?: SkillCdPreset[];
+}
+
+export interface UseGlobalDefaultsOptions {
+  /** プリセットの追加/編集/削除を許可するか (ローカル編集モードのみ true) */
+  isLocal: boolean;
+}
+
+const SKILL_CD_PRESETS_CACHE_KEY = 'heist_skill_cd_presets_v1';
+
+function loadSkillCdPresetsFromCache(): SkillCdPreset[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(SKILL_CD_PRESETS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((p: any): SkillCdPreset => ({
+      id: typeof p?.id === 'string' ? p.id : generateId('skill'),
+      label: typeof p?.label === 'string' ? p.label : 'スキル',
+      color: typeof p?.color === 'string' ? p.color : '#39ff14',
+      mode: p?.mode === 'per_second' ? 'per_second' : 'fixed',
+      seconds: typeof p?.seconds === 'number' ? p.seconds : 0,
+      perSecondCd: typeof p?.perSecondCd === 'number' ? p.perSecondCd : 0
+    }));
+  } catch {
+    return null;
+  }
+}
+
+function saveSkillCdPresetsToCache(presets: SkillCdPreset[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SKILL_CD_PRESETS_CACHE_KEY, JSON.stringify(presets));
+  } catch { /* quota / unavailable: ignore */ }
 }
 
 /**
@@ -15,20 +52,25 @@ export interface GlobalDefaults {
  * ref is updated and the supplied `onLoad` callback fires so the host can
  * push the new defaults into the route.
  *
- * Returns a `loaded` boolean that flips to `true` once the JSON fetch
- * resolves (success or failure). Consumers that need to react to the loaded
- * `startupFocusMarkerId` should depend on `loaded` rather than reading the
- * ref directly — refs do not trigger re-renders, so reading the ref inside
- * an effect that doesn't list `loaded` in its deps will miss the update
- * when the markers finish loading before the defaults.
+ * プリセットは「常にグローバル」:
+ *  1) localStorage に個人キャッシュ (heist_skill_cd_presets_v1) があれば最優先
+ *  2) 無ければ global_defaults.json から読み込み
+ *  3) 追加/編集/削除時は localStorage とサーバ (あれば) 両方に書き込む
+ *  個人モード (=!isLocal) では追加/編集/削除のUIを出すと無駄なので、関数は
+ *  存在するが呼び出し側でガードする。
  */
 export function useGlobalDefaults(
   ref: React.MutableRefObject<GlobalDefaults>,
-  onLoad?: (defaults: GlobalDefaults) => void
+  onLoad?: (defaults: GlobalDefaults) => void,
+  options: UseGlobalDefaultsOptions = { isLocal: true }
 ) {
+  const { isLocal } = options;
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
   const [loaded, setLoaded] = useState(false);
+  const [skillCdPresets, setSkillCdPresetsState] = useState<SkillCdPreset[]>([]);
+  const isLocalRef = useRef(isLocal);
+  isLocalRef.current = isLocal;
 
   useEffect(() => {
     let cancelled = false;
@@ -39,23 +81,52 @@ export function useGlobalDefaults(
           setLoaded(true);
           return;
         }
-        if (gd) {
-          const normalized: GlobalDefaults = {
-            hiddenMarkers: gd.hiddenMarkers || [],
-            hiddenMarkerTypes: gd.hiddenMarkerTypes || [],
-            startupFocusMarkerId: gd.startupFocusMarkerId,
-            stopMarkerThreshold: gd.stopMarkerThreshold,
-            movementMarkerThreshold: gd.movementMarkerThreshold,
-            warpMarkerThreshold: gd.warpMarkerThreshold
-          };
-          ref.current = normalized;
-          if (onLoadRef.current) onLoadRef.current(normalized);
+        // 優先順位: localStorage (個人キャッシュ) > global_defaults.json
+        const cached = loadSkillCdPresetsFromCache();
+        const rawPresets = cached !== null
+          ? cached
+          : (Array.isArray(gd?.skillCdPresets) ? gd!.skillCdPresets : []);
+        const presets: SkillCdPreset[] = rawPresets.map(p => ({
+          id: p.id,
+          label: p.label,
+          color: p.color,
+          mode: p.mode === 'per_second' ? 'per_second' : 'fixed',
+          seconds: typeof p.seconds === 'number' ? p.seconds : 0,
+          perSecondCd: typeof p.perSecondCd === 'number' ? p.perSecondCd : 0
+        }));
+        // キャッシュから読み込んだ場合はファイル側に書き戻さない (上書き防止)
+        // キャッシュが無くてファイルにあった場合はキャッシュに保存 (次回以降キャッシュ使用)
+        if (cached === null && presets.length > 0) {
+          saveSkillCdPresetsToCache(presets);
         }
+        const normalized: GlobalDefaults = {
+          hiddenMarkers: gd?.hiddenMarkers || [],
+          hiddenMarkerTypes: gd?.hiddenMarkerTypes || [],
+          startupFocusMarkerId: gd?.startupFocusMarkerId,
+          stopMarkerThreshold: gd?.stopMarkerThreshold,
+          movementMarkerThreshold: gd?.movementMarkerThreshold,
+          warpMarkerThreshold: gd?.warpMarkerThreshold,
+          skillCdThreshold: gd?.skillCdThreshold,
+          skillCdPresets: presets
+        };
+        ref.current = normalized;
+        setSkillCdPresetsState(presets);
+        if (onLoadRef.current) onLoadRef.current(normalized);
         setLoaded(true);
       })
       .catch(err => {
         console.error('Failed to load global defaults:', err);
-        if (!cancelled) setLoaded(true);
+        if (!cancelled) {
+          // 取得失敗時は localStorage だけ参照
+          const cached = loadSkillCdPresetsFromCache() || [];
+          ref.current = {
+            hiddenMarkers: [],
+            hiddenMarkerTypes: [],
+            skillCdPresets: cached
+          };
+          setSkillCdPresetsState(cached);
+          setLoaded(true);
+        }
       });
     return () => { cancelled = true; };
   }, [ref]);
@@ -68,5 +139,67 @@ export function useGlobalDefaults(
     ref.current = { ...ref.current, hiddenMarkers, hiddenMarkerTypes };
   };
 
-  return { setStartupFocusMarkerId, setHidden, loaded } as const;
+  /**
+   * プリセット一覧を ref + localStorage キャッシュ + (あれば) サーバに永続化する。
+   * 個人モードでも動作 (UI 側で isLocal を見てガード)。
+   */
+  const persistSkillCdPresets = (presets: SkillCdPreset[]) => {
+    setSkillCdPresetsState(presets);
+    ref.current = { ...ref.current, skillCdPresets: presets };
+    // 1) localStorage キャッシュ (= 真の個人永続化)
+    saveSkillCdPresetsToCache(presets);
+    // 2) サーバ (あれば) にも書く (= 共有できるが GitHub Pages では機能しない)
+    if (typeof window !== 'undefined' && window.location.hostname) {
+      fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ref.current, skillCdPresets: presets })
+      }).catch(() => { /* ignore */ });
+    }
+  };
+
+  const addSkillCdPreset = (input: {
+    label: string;
+    color: string;
+    mode: SkillCdMode;
+    seconds: number;
+    perSecondCd: number;
+  }): SkillCdPreset => {
+    const newPreset: SkillCdPreset = {
+      id: generateId('skill'),
+      label: input.label.trim() || 'スキル',
+      color: input.color || '#39ff14',
+      mode: input.mode,
+      seconds: Math.max(0, Math.floor(input.seconds) || 0),
+      perSecondCd: Math.max(0, Math.floor(input.perSecondCd) || 0)
+    };
+    persistSkillCdPresets([...skillCdPresets, newPreset]);
+    return newPreset;
+  };
+
+  const updateSkillCdPreset = (id: string, patch: Partial<Omit<SkillCdPreset, 'id'>>) => {
+    persistSkillCdPresets(skillCdPresets.map(p => p.id === id ? {
+      ...p,
+      ...patch,
+      label: (patch.label ?? p.label).trim() || p.label,
+      color: patch.color ?? p.color,
+      seconds: patch.seconds !== undefined ? Math.max(0, Math.floor(patch.seconds)) : p.seconds,
+      perSecondCd: patch.perSecondCd !== undefined ? Math.max(0, Math.floor(patch.perSecondCd)) : p.perSecondCd
+    } : p));
+  };
+
+  const removeSkillCdPreset = (id: string) => {
+    persistSkillCdPresets(skillCdPresets.filter(p => p.id !== id));
+  };
+
+  return {
+    setStartupFocusMarkerId,
+    setHidden,
+    loaded,
+    isLocal: isLocalRef.current,
+    skillCdPresets,
+    addSkillCdPreset,
+    updateSkillCdPreset,
+    removeSkillCdPreset
+  } as const;
 }

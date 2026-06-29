@@ -3,7 +3,7 @@
 echo ============================================
 echo  Starting server...
 echo ============================================
-npm run dev
+cmd /c npm run dev
 echo.
 echo ============================================
 echo  Server stopped. Restarting in 3 seconds...

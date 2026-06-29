@@ -6,8 +6,11 @@ import {
   type HeistMarker,
   type MarkerType,
   type Point,
+  type SkillCdPreset,
   MARKER_META,
-  PRESET_MAPS_META
+  PRESET_MAPS_META,
+  getSkillCdIcon,
+  getSkillCdColor
 } from '../utils/DataManager';
 import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
 import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
@@ -20,8 +23,11 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'erase-marker' | 'pan' | 'add-marker' | 'toggle-vis';
+  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'measure' | 'add-marker' | 'toggle-vis';
   activeMarkerType: MarkerType | null;
+  eraseTarget?: 'all' | 'marker' | 'route' | 'branch';
+  eraseDefaultBehavior?: 'normal' | 'split';
+  eraseSize?: number;
   strokeColor: string;
   strokeWidth: number;
   strokeType: 'solid' | 'dashed';
@@ -57,6 +63,7 @@ interface MapCanvasProps {
   stopMarkerThreshold?: number;
   movementMarkerThreshold?: number;
   warpMarkerThreshold?: number;
+  skillCdThreshold?: number;
   onShowGlobalMarker?: (id: string) => void;
   onToggleMarkerVisibility?: (id: string) => void;
   leftSidebarCollapsed?: boolean;
@@ -77,7 +84,8 @@ interface MapCanvasProps {
     currentStopLabel: string;
     stopRemaining: number;
     waitRemaining: number; // seconds left in initial wait (0 when not waiting)
-    checkpoints: { elapsed: number; label: string; passed: boolean }[];
+    checkpoints: { elapsed: number; label: string; passed: boolean; ignored: boolean; unset: boolean; conflicted: boolean; targetTime: number }[];
+    skillCdInfo: { label: string; color: string; remaining: number; total: number } | null;
   }) => void;
   // Auto-route command from parent — when the ts changes, the action is run.
   autoRouteCommand?: { action: 'start' | 'pause' | 'resume' | 'reset' | 'seek'; ts: number; seekTo?: number } | null;
@@ -85,8 +93,11 @@ interface MapCanvasProps {
   autoRouteSettings?: {
     waitEnabled: boolean;
     waitSeconds: number;
+    speedMode: 'time' | 'speed';
+    manualSpeed: number;
     speedMultiplier: 1 | 2 | 3 | 5 | 10;
     followCamera: boolean;
+    startStopSeconds: number;
   };
   // Follow camera state — when true, the view scrolls to keep the current
   // position slightly below center during the auto-route animation.
@@ -103,6 +114,10 @@ interface MapCanvasProps {
   routeLines1px?: boolean;
   hideBranchLines?: boolean;
   branchLines1px?: boolean;
+  // スキルCDマーカー編集時のプリセット選択肢。App から渡される。
+  skillCdPresets?: SkillCdPreset[];
+  // ヘルプモーダル設定タブを開く (プリセット管理用)
+  onOpenSkillCdSettings?: () => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -112,6 +127,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   customBg,
   toolMode,
   activeMarkerType,
+  eraseTarget = 'all',
+  eraseDefaultBehavior = 'normal',
+  eraseSize = 16,
   strokeColor,
   strokeWidth,
   strokeType,
@@ -144,9 +162,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   hiddenMarkers = [],
   hiddenMarkerTypes = [],
   showDetectionRanges = false,
-  stopMarkerThreshold = 12,
-  movementMarkerThreshold = 20,
-  warpMarkerThreshold = 12,
+  stopMarkerThreshold = 10,
+  movementMarkerThreshold = 10,
+  warpMarkerThreshold = 10,
+  skillCdThreshold = 10,
   onShowGlobalMarker,
   onToggleMarkerVisibility,
   leftSidebarCollapsed = false,
@@ -166,7 +185,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   hideRouteLines = false,
   routeLines1px = false,
   hideBranchLines = false,
-  branchLines1px = false
+  branchLines1px = false,
+  skillCdPresets = [],
+  onOpenSkillCdSettings
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -236,7 +257,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'].includes(type);
+  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd'].includes(type);
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -277,6 +298,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
+
+  // Distance Measure mode: 選択中のストロークインデックス集合 (セッションをまたいで保持)
+  // - 通常クリック: 集合を「クリックした線だけ」に置き換える
+  // - Alt+クリック: 集合にトグル追加 (前の選択を保持)
+  // - 空所クリック: 通常はクリア、Alt 押下時は維持
+  // - 計測モード再突入時: 空集合なら最後に描画した線を自動追加、
+  //                       非空なら「最後に表示していたセット」を復元
+  const [highlightedStrokeIdxs, setHighlightedStrokeIdxs] = useState<Set<number>>(() => new Set());
+
+  // Eraser cursor tracking (薄い青円表示用)
+  const [eraseCursor, setEraseCursor] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
 
   // Drag-and-drop Marker State
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
@@ -352,6 +384,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
 
+  // スキルCD編集用ステート
+  // プリセット未使用時 (=skillPresetId が空) は note がラベルの役割。編集の頭文字がリアルタイムでアイコンに反映される。
+  // プリセット使用時は skillLabel がアイコン/名称の元になる (note はメモ扱い)。
+  const [skillCdColor, setSkillCdColor] = useState<string>('#39ff14');
+  const [skillCdMode, setSkillCdMode] = useState<'fixed' | 'per_second'>('fixed');
+  // skillCdSeconds: mode='fixed' の CD秒数 / mode='per_second' の「使用秒数」
+  const [skillCdSeconds, setSkillCdSeconds] = useState<number>(2);
+  // mode='per_second' の係数
+  const [skillCdPerSecondRate, setSkillCdPerSecondRate] = useState<number>(2);
+
   // Target states for smooth scrolling (use refs to avoid React 18 batching issues)
   const targetZoomRef = useRef<number>(1);
   const targetPanRef = useRef<Point>({ x: 0, y: 0 });
@@ -374,6 +416,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     stopMarkerThreshold,
     movementMarkerThreshold,
     warpMarkerThreshold,
+    skillCdThreshold,
     hiddenMarkers,
     targetDurationSeconds,
     autoRouteSettings,
@@ -417,6 +460,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     });
     return passed;
   }, [autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming.speed]);
+
+  // 違反状態 (= 速度計算/読み上げから除外された) のチェックポイントID セット
+  // useAutoRouteEngine.ts と同じ判定を MapCanvas 側でも行い、
+  // 違反しているピンにだけ赤いパルスグローを適用する。
+  // EH ピンの `eh-high-rate` と同様「単体で」光らせるための仕組み。
+  const violatingCheckpointIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!autoRouteSegments || autoRouteSegments.length === 0) return ids;
+    let prevCpTarget = -Infinity;
+    for (const seg of autoRouteSegments) {
+      if (seg.markerType !== 'checkpoint') continue;
+      const cpTarget = (seg as any)._checkpointTarget as number | undefined;
+      if (cpTarget === undefined) continue;
+      // ignored : マイナス (異常値) — 速度計算でも読み上げでも除外
+      // unset   : 0 (未設定) — 速度計算でも読み上げでも除外
+      // conflicted: 順序矛盾 (前の有効値より小さい) — 速度計算でも読み上げでも除外
+      const ignored = cpTarget < 0;
+      const unset = cpTarget === 0;
+      const conflicted = cpTarget > 0 && cpTarget < prevCpTarget;
+      if (ignored || unset || conflicted) {
+        if (seg.markerId) ids.add(seg.markerId);
+      }
+      if (cpTarget > 0 && !conflicted) prevCpTarget = cpTarget;
+    }
+    return ids;
+  }, [autoRouteSegments]);
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -683,7 +752,55 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, toolMode]);
+
+  // 距離計測モード:
+  // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
+  //                     セットに何かある → 「最後に表示していたセット」をそのまま復元
+  // - 計測モード解除時: セットを保持 (次回進入時に復元される)
+  // ストローク数の変化を監視:
+  // - 増加 (新規描画) → 旧選択を破棄し、「次回表示セット」として新規末尾だけ覚える
+  //   (計測モードに入ったらこれが点灯する)
+  // - 減少 (削除・分割) → 範囲外インデックスを掃除
+  // - 計測モード進入時 (strokes.length 変化とは別): セットが空なら新規末尾を点灯
+  useEffect(() => {
+    setHighlightedStrokeIdxs(prev => {
+      // まず範囲外を掃除
+      const cleaned = new Set<number>();
+      for (const idx of prev) {
+        if (idx < strokes.length) cleaned.add(idx);
+      }
+      return cleaned;
+    });
+  }, [strokes.length]);
+
+  // ストローク数が増加した瞬間に旧選択を破棄し、新規末尾を「次回表示セット」にする
+  const prevStrokesLengthRef = useRef<number>(strokes.length);
+  useEffect(() => {
+    const prev = prevStrokesLengthRef.current;
+    if (strokes.length > prev) {
+      // ライン追加 → 旧選択を破棄して新規末尾だけ覚える
+      setHighlightedStrokeIdxs(new Set([strokes.length - 1]));
+    }
+    prevStrokesLengthRef.current = strokes.length;
+  }, [strokes.length]);
+
+  // 距離計測モード:
+  // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
+  //                     セットに何かある → 「最後に表示していたセット」をそのまま復元
+  // - 計測モード解除時: セットを保持 (次回進入時に復元される)
+  useEffect(() => {
+    if (toolMode === 'measure') {
+      setHighlightedStrokeIdxs(prev => {
+        if (prev.size > 0) return prev; // 既に表示セットあり → 維持
+        if (strokes.length === 0) return prev; // 線がまだ無い → 何もしない
+        const next = new Set(prev);
+        next.add(strokes.length - 1);
+        return next;
+      });
+    }
+    // 計測モード解除時はクリアしない (セッションをまたいで保持)
+  }, [toolMode, strokes.length]);
 
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
@@ -864,6 +981,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         });
         ctx.stroke();
       });
+    }
+
+    // 距離計測: ハイライト中の線を光らせる (セット内の全線分) — 計測モード時のみ
+    if (toolMode === 'measure' && highlightedStrokeIdxs.size > 0) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([]);
+      for (const idx of highlightedStrokeIdxs) {
+        if (idx < 0 || idx >= strokes.length) continue;
+        const hs = strokes[idx];
+        if (!hs || !hs.points || hs.points.length < 2) continue;
+        const baseColor = hs.color || '#00ff00';
+        // 1. アウターハロー (白・半透明) — 黄色の線でも見えるよう白でコントラスト確保
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = (hs.width || 3) + 10;
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.75)';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        hs.points.forEach((pt, i) => {
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+        // 2. インナーコア — 元の線の色を保持 (元の色 + 同じ色のシャドウで「自発光」感)
+        ctx.shadowColor = baseColor;
+        ctx.shadowBlur = 12;
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth = (hs.width || 3) + 2;
+        ctx.beginPath();
+        hs.points.forEach((pt, i) => {
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+      }
+      ctx.restore();
     }
   };
 
@@ -1051,6 +1205,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const coords = getCanvasCoords(e);
 
+    // 距離計測モード: クリックで線を選択 (Alt でトグル追加、通常クリックで置き換え)
+    if (toolMode === 'measure' && isEditMode) {
+      const HIT_THRESHOLD = 16;
+      let bestIdx = -1;
+      let bestDist = HIT_THRESHOLD;
+      for (let i = 0; i < strokes.length; i++) {
+        const s = strokes[i];
+        if (!s || !s.points || s.points.length < 2) continue;
+        const d = getDistanceToStroke(coords, s);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        if (e.altKey) {
+          // Alt: セットにトグル (あれば外す、なければ追加) — 前の選択を保持
+          setHighlightedStrokeIdxs(prev => {
+            const next = new Set(prev);
+            if (next.has(bestIdx)) next.delete(bestIdx);
+            else next.add(bestIdx);
+            return next;
+          });
+        } else {
+          // 通常: クリックした線だけにする (置き換え)
+          setHighlightedStrokeIdxs(new Set([bestIdx]));
+        }
+      } else if (!e.altKey) {
+        // 空所クリック (Alt なし): クリア
+        setHighlightedStrokeIdxs(new Set());
+      }
+      // Alt 押下時の空所クリック → 何もせず前のセットを保持
+      return;
+    }
+
     if (toolMode === 'add-marker' && activeMarkerType) {
       if (!isLocal && !isIndiv(activeMarkerType)) {
         return;
@@ -1103,6 +1292,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.longPickingDurationSeconds = 8;
         newMarker.pickingExpanded = false;
       }
+      if (activeMarkerType === 'skill_cd') {
+        // スキルCDマーカー: プリセット未選択で配置 (アイコンは 'S')。
+        // 配置後にマーカー詳細設定でプリセットを選ぶと、その値 (色/名前/モード/CD秒数) が反映される。
+        newMarker.skillPresetId = undefined;
+        newMarker.skillLabel = '';
+        newMarker.skillColor = MARKER_META.skill_cd.color;
+        newMarker.skillMode = 'fixed';
+        newMarker.skillCdSeconds = 0;
+        newMarker.skillPerSecondCd = 0;
+        newMarker.note = '';
+      }
       onMarkersChange([...markers, newMarker], true);
       // If a real start marker is placed, remove the auto-placed dummy
       if (activeMarkerType === 'start' && autoStartMarker && onAutoStartMarkerChange) {
@@ -1127,6 +1327,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setLongPickingCustomDurationVal(7);
       setCheckpointTargetTime(60);
       setCheckpointSoundOn(false);
+      setCheckpointVoiceOn(false);
+      setSkillCdColor(MARKER_META.skill_cd.color);
+      setSkillCdMode('fixed');
+      setSkillCdSeconds(0);
+      setSkillCdPerSecondRate(0);
       return;
     }
 
@@ -1146,7 +1351,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'erase') {
-      eraseStrokesAtPoint(coords, e.altKey);
+      unifiedEraseAtPoint(coords, e.altKey);
       setIsDrawing(true);
       return;
     }
@@ -1161,6 +1366,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const coords = getCanvasCoords(e);
+
+    if (toolMode === 'erase' && isEditMode) {
+      setEraseCursor({ x: coords.x, y: coords.y, visible: true });
+    } else if (eraseCursor.visible) {
+      setEraseCursor(prev => ({ ...prev, visible: false }));
+    }
 
     if (isPanning) {
       const nextPan = {
@@ -1330,7 +1541,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (isDrawing && toolMode === 'erase') {
-      eraseStrokesAtPoint(coords, e.altKey);
+      unifiedEraseAtPoint(coords, e.altKey);
       return;
     }
 
@@ -1360,8 +1571,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'toggle-vis') {
         toggledIdsRef.current.clear();
       }
+      if (toolMode === 'erase') {
+        erasedMarkerIdsRef.current.clear();
+      }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
+        // 補正後 (smoothing applied during drawing) ・接続前 (pre-snap) の
+        // ポイント列を保持 — 距離計測モードでの「本来の長さ」の基準値。
+        const originalPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
         // to maintain a connected route network.
         if (strokeType === 'solid') {
@@ -1397,7 +1614,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           points,
           color: strokeColor,
           width: strokeWidth,
-          type: strokeType
+          type: strokeType,
+          originalPoints
         };
         onStrokesChange([...strokes, newStroke]);
       }
@@ -1405,13 +1623,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
-  const eraseStrokesAtPoint = (pt: Point, isAltPressed: boolean = false) => {
-    if (isAltPressed) {
-      const threshold = 16;
+  const eraseStrokesAtPoint = (pt: Point, isAltPressed: boolean = false, lineTypeFilter: 'all' | 'solid' | 'dashed' = 'all') => {
+    // Alt 動作: デフォルトが normal なら Alt で split、split なら Alt で normal
+    const effectiveSplit = eraseDefaultBehavior === 'split' ? !isAltPressed : isAltPressed;
+    // 共通の閾値(マーカーサイズ)を使用。normal/split とも同じ半径で判定する。
+    const threshold = eraseSize;
+
+    if (effectiveSplit) {
       let anySplit = false;
       const nextStrokes: DrawingStroke[] = [];
 
       strokes.forEach(stroke => {
+        if (lineTypeFilter === 'solid' && stroke.type !== 'solid') {
+          nextStrokes.push(stroke);
+          return;
+        }
+        if (lineTypeFilter === 'dashed' && stroke.type !== 'dashed') {
+          nextStrokes.push(stroke);
+          return;
+        }
         const groups: Point[][] = [];
         let currentGroup: Point[] = [];
 
@@ -1436,7 +1666,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           groups.forEach(group => {
             nextStrokes.push({
               ...stroke,
-              points: group
+              points: group,
+              // 部分削除で残った区間は「現在の長さ」を距離計測の基準にする
+              // (元の originalPoints は線全体の長さなので、分割後の points に揃える)
+              originalPoints: group,
             });
           });
         }
@@ -1446,8 +1679,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onStrokesChange(nextStrokes);
       }
     } else {
-      const threshold = 12;
       const filteredStrokes = strokes.filter(stroke => {
+        if (lineTypeFilter === 'solid' && stroke.type !== 'solid') return true;
+        if (lineTypeFilter === 'dashed' && stroke.type !== 'dashed') return true;
         const dist = getDistanceToStroke(pt, stroke);
         return dist > threshold;
       });
@@ -1457,7 +1691,70 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
+  const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
+  // 消しゴムカーソル円の半径はユーザー設定(eraseSize)に従う
+  const getEraseIndicatorRadius = (): number => eraseSize;
+
+  // 指定点でマーカーを削除 (グローバル or 個人ピン)
+  const eraseMarkersAtPoint = (pt: Point, threshold?: number) => {
+    const r = threshold ?? eraseSize;
+    const toErase: string[] = [];
+    markers.forEach(m => {
+      if (m.floor !== floor) return;
+      if (m.type === 'start') return;
+      if (erasedMarkerIdsRef.current.has(m.id)) return;
+      const dist = Math.hypot(m.x - pt.x, m.y - pt.y);
+      if (dist <= r) {
+        toErase.push(m.id);
+      }
+    });
+    if (toErase.length === 0) return;
+    toErase.forEach(id => erasedMarkerIdsRef.current.add(id));
+    const isIndivType = (type: string) =>
+      ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'].includes(type);
+    const remaining = markers
+      .filter(m => !toErase.includes(m.id))
+      .map(m => {
+        if (m.linkedWarpId && toErase.includes(m.linkedWarpId)) {
+          const { linkedWarpId, ...rest } = m;
+          return rest;
+        }
+        return m;
+      });
+    const removedGlobalIds = toErase.filter(id => {
+      const m = markers.find(x => x.id === id);
+      return m && !isIndivType(m.type);
+    });
+    if (removedGlobalIds.length > 0) {
+      // グローバルマーカーも一緒に削除。App 側の updateMarkers を経由するのが
+      // 正攻法だが、ここは drag 連続呼び出しのため onMarkersChange を直接呼ぶ
+      // (App 側 updateMarkers は isDelete=true 相当の動作)。
+      onMarkersChange(remaining, true, { isDelete: true });
+    } else {
+      onMarkersChange(remaining, true, { isDelete: true });
+    }
+    if (activeNoteMarkerId && toErase.includes(activeNoteMarkerId)) {
+      setActiveNoteMarkerId(null);
+    }
+  };
+
   const toggledIdsRef = useRef<Set<string>>(new Set());
+
+  // 統合消しゴム: 対象(全部/マーカー/進行/分岐)に応じて
+  // 線・マーカーをまとめて削除する。Alt キーはデフォルト挙動を
+  // シフト(反転)させる。
+  const unifiedEraseAtPoint = (pt: Point, isAltPressed: boolean) => {
+    const lineTypeFilter: 'all' | 'solid' | 'dashed' =
+      eraseTarget === 'route' ? 'solid' :
+      eraseTarget === 'branch' ? 'dashed' : 'all';
+
+    if (eraseTarget === 'all' || eraseTarget === 'route' || eraseTarget === 'branch') {
+      eraseStrokesAtPoint(pt, isAltPressed, lineTypeFilter);
+    }
+    if (eraseTarget === 'all' || eraseTarget === 'marker') {
+      eraseMarkersAtPoint(pt);
+    }
+  };
 
   const toggleVisibilityAtPoint = (pt: Point) => {
     if (!onToggleMarkerVisibility) return;
@@ -1486,10 +1783,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
 
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase-marker' ? true : isIndivMarker));
+    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
     if (!canInteract) return;
 
-    if (toolMode === 'erase-marker') {
+    if (toolMode === 'erase') {
       if (!isLocal && !isIndivMarker) {
         // 個人表示モード（!isLocal）かつグローバルピン（!isIndivMarker）の場合：
         // 削除するのではなく、非表示にします。
@@ -1734,6 +2031,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setCheckpointSoundOn(!!m.checkpointSoundOn);
     setCheckpointVoiceOn(m.checkpointVoiceOn !== false);
 
+    // スキルCD編集用: 既存値 or プリセット既定値
+    setSkillCdColor(m.skillColor || MARKER_META.skill_cd.color);
+    setSkillCdMode(m.skillMode || 'fixed');
+    setSkillCdSeconds(m.skillCdSeconds !== undefined ? m.skillCdSeconds : 0);
+    setSkillCdPerSecondRate(m.skillPerSecondCd !== undefined ? m.skillPerSecondCd : 0);
+
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
     setPopupHeight(m.popupHeight || 0);
@@ -1834,6 +2137,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.checkpointTargetTime = checkpointTargetTime;
               updated.checkpointSoundOn = checkpointSoundOn;
               updated.checkpointVoiceOn = checkpointVoiceOn;
+            }
+            if (m.type === 'skill_cd') {
+              // ラベルは presetId からのみ導出 (テキスト入力欄は廃止)。
+              // ユーザーが手動でラベルを変えたい場合はプリセットを再選択 or プリセット自体を編集する運用。
+              updated.skillColor = skillCdColor;
+              updated.skillMode = skillCdMode;
+              updated.skillCdSeconds = skillCdSeconds;
+              updated.skillPerSecondCd = skillCdPerSecondRate;
             }
             return updated;
           }
@@ -1945,9 +2256,59 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const activeNoteMarker = markers.find(m => m.id === activeNoteMarkerId);
 
+  // 距離計測: ハイライト中の全線の計測値を算出 (補正後・接続前のポイント列で計算)
+  const measureInfos = useMemo(() => {
+    if (highlightedStrokeIdxs.size === 0) return [] as {
+      strokeIdx: number;
+      lengthPx: number;
+      labelX: number;
+      labelY: number;
+    }[];
+    const result: {
+      strokeIdx: number;
+      lengthPx: number;
+      labelX: number;
+      labelY: number;
+    }[] = [];
+    // 安定した表示順を確保するためインデックス昇順で処理
+    const sortedIdxs = Array.from(highlightedStrokeIdxs).sort((a, b) => a - b);
+    for (const idx of sortedIdxs) {
+      if (idx < 0 || idx >= strokes.length) continue;
+      const hs = strokes[idx];
+      if (!hs || !hs.points || hs.points.length < 2) continue;
+      // 補正後・接続前のポイント列を使う (なければ現在の points)
+      const pts = (hs.originalPoints && hs.originalPoints.length >= 2)
+        ? hs.originalPoints
+        : hs.points;
+      let length = 0;
+      let lowerLeftIdx = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        if (i > 0) {
+          const prev = pts[i - 1];
+          length += Math.hypot(p.x - prev.x, p.y - prev.y);
+        }
+        // 「左下」 = y が大きい方の中で x が小さい方
+        if (p.y > pts[lowerLeftIdx].y || (p.y === pts[lowerLeftIdx].y && p.x < pts[lowerLeftIdx].x)) {
+          lowerLeftIdx = i;
+        }
+      }
+      const anchor = pts[lowerLeftIdx];
+      result.push({
+        strokeIdx: idx,
+        lengthPx: Math.round(length),
+        labelX: anchor.x,
+        labelY: anchor.y,
+      });
+    }
+    return result;
+  }, [highlightedStrokeIdxs, strokes]);
+
   let cursorClass = '';
   if (toolMode === 'pan' || !isEditMode) {
     cursorClass = isPanning ? 'grabbing' : 'grab';
+  } else if (toolMode === 'measure') {
+    cursorClass = 'measure-cursor';
   }
 
   return (
@@ -1957,7 +2318,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={() => {
+        handleMouseUp();
+        if (eraseCursor.visible) setEraseCursor(prev => ({ ...prev, visible: false }));
+      }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1966,7 +2330,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setCurrentPosition(coords);
       }}
     >
-      <div 
+      <div
         className="canvas-container"
         ref={containerRef}
         style={{
@@ -1975,6 +2339,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
+        {/* 消しゴムカーソル: 対象範囲を示す薄い青円 */}
+        {toolMode === 'erase' && isEditMode && eraseCursor.visible && (
+          <div
+            className="erase-cursor-indicator"
+            style={{
+              position: 'absolute',
+              left: `${eraseCursor.x}px`,
+              top: `${eraseCursor.y}px`,
+              width: `${getEraseIndicatorRadius() * 2}px`,
+              height: `${getEraseIndicatorRadius() * 2}px`,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(80, 180, 255, 0.18) 0%, rgba(80, 180, 255, 0.10) 60%, rgba(80, 180, 255, 0.0) 100%)',
+              border: '1.5px dashed rgba(80, 180, 255, 0.7)',
+              boxShadow: '0 0 12px rgba(80, 180, 255, 0.35) inset',
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 50,
+            }}
+          />
+        )}
         <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
           {customBg ? (
             <img src={customBg} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', opacity: 1, zIndex: 1 }} />
@@ -2132,10 +2516,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const isStairs = m.type === 'stairs';
                 const isStart = m.type === 'start';
                 const isStop = ['picking','gpicking','long_picking','glong_picking','boss','gbattle','battle'].includes(m.type);
+                const isSkillCd = m.type === 'skill_cd';
                 const isCheckpoint = m.type === 'checkpoint';
-                const radius = isWarp ? warpMarkerThreshold : isStairs ? movementMarkerThreshold : isStart ? movementMarkerThreshold : isStop ? stopMarkerThreshold : isCheckpoint ? movementMarkerThreshold : 0;
+                const radius = isWarp ? warpMarkerThreshold : isStairs ? movementMarkerThreshold : isStart ? movementMarkerThreshold : isStop ? stopMarkerThreshold : isSkillCd ? skillCdThreshold : isCheckpoint ? movementMarkerThreshold : 0;
                 if (radius === 0) return null;
-                const color = isWarp ? '#ff9500' : isStairs ? '#39ff14' : isStart ? '#39ff14' : isStop ? '#ff4444' : isCheckpoint ? '#ff9500' : '#888';
+                const color = isWarp ? '#ff9500' : isStairs ? '#39ff14' : isStart ? '#39ff14' : isStop ? '#ff4444' : isSkillCd ? '#39ff14' : isCheckpoint ? '#ff9500' : '#888';
                 return (
                   <g key={`range-${m.id}`}>
                     <circle
@@ -2216,11 +2601,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const isPhone = m.type === 'phone';
               const isText = isTextType(m.type);
               const isLargePin = isWarp || isStairs;
+              const isSkillCd = m.type === 'skill_cd';
               const meta = MARKER_META[m.type];
               // Dynamic emoji for phone markers
               const displayEmoji = isPhone
                 ? (m.phoneActive ? '📞' : '☎')
-                : meta.emoji;
+                : isSkillCd
+                  ? getSkillCdIcon(m)
+                  : meta.emoji;
+              // スキルCDマーカーは個別上書きの色を優先 (テーマカラーに渡す)
+              const skillColor = isSkillCd ? getSkillCdColor(m) : null;
               // Phone markers that are locked show a small lock indicator
               const phoneClass = isPhone ? (m.phoneActive ? 'phone-active' : 'phone-inactive') : '';
               const scaleMultiplier = markerScale / 30;
@@ -2276,11 +2666,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 );
               }
-              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? (m.note?.trim() || 'Boss') : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : '');
+              const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || 'Info Pin') : isNoteType(m.type) ? (m.note || 'Memo') : m.note || (isWarp ? 'Warp Point' : isStairs ? 'Stairs' : isPhone ? (m.phoneLocked ? '🔒 Always On' : (m.phoneActive ? 'ACTIVE' : 'Inactive')) : m.type === 'boss' ? (m.note?.trim() || 'Boss') : (m.type === 'battle' || m.type === 'gbattle') ? 'Battle' : (m.type === 'picking' || m.type === 'gpicking') ? 'Picking' : (m.type === 'long_picking' || m.type === 'glong_picking') ? 'Long Picking' : m.type === 'eh' ? 'エターナルハート発見地点' : m.type === 'cardkey' ? 'カードキー発見ポイント' : m.type === 'checkpoint' ? '🏁 Checkpoint' : isSkillCd ? `${(m.skillLabel || m.note || 'スキル').trim() || 'スキル'} (CD ${m.skillCdSeconds ?? 0}秒)` : '');
               return (
                 <div
                   key={m.id}
-                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${(m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && pickyMarkerIds[m.id] ? 'picking-picky' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                   className={`map-marker ${isWarp ? 'warp-marker' : ''} ${isStairs ? 'stairs-marker' : ''} ${phoneClass} ${m.type === 'eh' && m.ehHighRate ? 'eh-high-rate' : ''} ${m.type === 'cardkey' && m.cardkeyHighRate ? 'cardkey-high-rate' : ''} ${m.type === 'checkpoint' && violatingCheckpointIds.has(m.id) ? 'checkpoint-marker' : ''} ${(m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && pickyMarkerIds[m.id] ? 'picking-picky' : ''} ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
                    onMouseEnter={nonTextTooltip ? (e) => { setHoveredMarkerId(m.id); setHoverPos({ x: e.clientX, y: e.clientY }); } : undefined}
                    onMouseMove={nonTextTooltip ? (e) => setHoverPos({ x: e.clientX, y: e.clientY }) : undefined}
                    onMouseLeave={nonTextTooltip ? () => setHoveredMarkerId(null) : undefined}
@@ -2289,7 +2679,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      top: `${m.y}px`,
                      width: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
-                     '--theme-color': m.phoneActive ? '#39ff14' : meta.color,
+                     '--theme-color': m.phoneActive ? '#39ff14' : (isSkillCd && skillColor ? skillColor : meta.color),
                      pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : ((inactiveMarkersMode && !isWarp && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
@@ -2537,6 +2927,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             style={{ accentColor: '#ff9500', cursor: 'pointer' }}
                           />
                           🔔 通過時に音を鳴らす
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#ffffff', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                          <input
+                            type="checkbox"
+                            checked={m.checkpointVoiceOn !== false}
+                            onChange={(e) => {
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, checkpointVoiceOn: e.target.checked } : mk)
+                              );
+                            }}
+                            style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                          />
+                          🗣 通過時に「X秒地点です」と読み上げ
                         </label>
                       </div>
                     </div>
@@ -2951,6 +3354,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               );
             })}
 
+          {/* 距離計測モード: ハイライト中の各線の左下に距離ラベルを表示 */}
+          {toolMode === 'measure' && measureInfos.map((info, infoIdx) => (
+            <div
+              key={`measure-label-${info.strokeIdx}-${infoIdx}`}
+              className="measure-label"
+              style={{
+                position: 'absolute',
+                // 線の左下点をアンカーに、ラベル本体を左下方向へオフセット
+                left: `${info.labelX}px`,
+                top: `${info.labelY}px`,
+                transform: `translate(-100%, 8px) scale(${Math.min(3, 1 / Math.sqrt(zoom))})`,
+                transformOrigin: '0 0',
+                pointerEvents: 'none',
+                zIndex: 200 + infoIdx,
+                background: 'rgba(5, 7, 10, 0.92)',
+                border: '1px solid #ffff66',
+                borderRadius: '4px',
+                padding: '3px 8px',
+                color: '#ffff66',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                fontFamily: 'var(--font-cyber, monospace)',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 0 10px rgba(255, 255, 102, 0.6), 0 2px 6px rgba(0, 0, 0, 0.7)',
+                textShadow: '0 0 4px rgba(255, 255, 0, 0.8)',
+                userSelect: 'none',
+              }}
+            >
+              <span style={{ marginRight: '4px', opacity: 0.75 }}>📏</span>
+              {info.lengthPx.toLocaleString()} px
+            </div>
+          ))}
+
         </div>
       </div>
 
@@ -3020,7 +3456,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const showTT = isEditing ? textTooltip : !!hm.textTooltip;
             if (showTT) text = desc || hm.note || 'Text';
           } else {
-            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? (hm.note?.trim() || 'Boss') : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : '');
+            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? (hm.note?.trim() || 'Boss') : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : hm.type === 'skill_cd' ? `${(hm.skillLabel || hm.note || 'スキル').trim() || 'スキル'} (CD ${hm.skillCdSeconds ?? 0}秒)` : '');
           }
           if (!text) return null;
           const pad = 14;
@@ -3066,9 +3502,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           if (!hm || hm.type !== 'checkpoint') return null;
           const target = hm.checkpointTargetTime ?? 0;
           const soundOn = !!hm.checkpointSoundOn;
+          const voiceOn = hm.checkpointVoiceOn !== false;
           const pad = 14;
-          const ttW = 200;
-          const ttH = 70;
+          const ttW = 220;
+          const ttH = 110;
           const vw = window.innerWidth;
           let tx = hoverPos.x - ttW / 2;
           let ty = hoverPos.y - ttH - pad;
@@ -3114,6 +3551,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: '#ff9500', cursor: 'pointer' }}
                 />
                 🔔 通過時に音を鳴らす
+              </label>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#ffffff', cursor: 'pointer', userSelect: 'none', marginTop: '2px' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={voiceOn}
+                  onChange={(e) => {
+                    onMarkersChange(
+                      markers.map(mk => mk.id === hm.id ? { ...mk, checkpointVoiceOn: e.target.checked } : mk)
+                    );
+                  }}
+                  style={{ accentColor: '#ff9500', cursor: 'pointer' }}
+                />
+                🗣 通過時に「X秒地点です」と読み上げ
               </label>
             </div>
           );
@@ -3736,7 +4189,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   設定した秒数に自動追従がこの場所へ辿り着くよう、<br />
                   <strong style={{ color: '#ffb84d' }}>移動速度が自動で調整</strong>されます。<br />
                   <span style={{ color: '#e0e0e0', fontSize: '12px' }}>
-                    ※ 0 = 速度調整なし (デフォルト 200 px/s)
+                    ※ 0 = このチェックポイントは速度調整に使用されません (タイムライン上で赤マーカーになります)
                   </span>
                 </div>
                 {checkpointTargetTime > 0 && checkpointTargetTime < 1 && (
@@ -3773,6 +4226,178 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   🗣 「X秒地点です」と読み上げ
                 </label>
               </label>
+            </div>
+          )}
+
+          {activeNoteMarker && activeNoteMarker.type === 'skill_cd' && (
+            <div style={{ marginTop: '10px', borderTop: '1px dashed rgba(57, 255, 20, 0.4)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '14px', color: skillCdColor, fontWeight: 'bold' }}>⏱️ スキルCD</div>
+
+              {/* プリセット選択 + 設定画面ボタン */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <select
+                  value={activeNoteMarker.skillPresetId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (!id) {
+                      onMarkersChange(
+                        markers.map(mk => mk.id === activeNoteMarker.id ? {
+                          ...mk,
+                          skillPresetId: undefined,
+                          skillLabel: '',
+                          skillColor: MARKER_META.skill_cd.color,
+                          skillMode: 'fixed',
+                          skillCdSeconds: 0,
+                          skillPerSecondCd: 0
+                        } : mk),
+                        true
+                      );
+                      setSkillCdColor(MARKER_META.skill_cd.color);
+                      setSkillCdMode('fixed');
+                      setSkillCdSeconds(0);
+                      setSkillCdPerSecondRate(0);
+                      return;
+                    }
+                    const preset = skillCdPresets.find(p => p.id === id);
+                    if (!preset) return;
+                    // プリセット反映: ラベル/色/モード/秒数 をマーカーに反映し、
+                    // note (=ラベル) もプリセット名で上書きする。
+                    onMarkersChange(
+                      markers.map(mk => mk.id === activeNoteMarker.id ? {
+                        ...mk,
+                        skillPresetId: preset.id,
+                        skillLabel: preset.label,
+                        skillColor: preset.color,
+                        skillMode: preset.mode,
+                        skillCdSeconds: preset.seconds,
+                        skillPerSecondCd: preset.perSecondCd,
+                        note: preset.label
+                      } : mk),
+                      true
+                    );
+                    setSkillCdColor(preset.color);
+                    setSkillCdMode(preset.mode);
+                    setSkillCdSeconds(preset.seconds);
+                    setSkillCdPerSecondRate(preset.perSecondCd);
+                    setNoteText(preset.label);
+                  }}
+                  style={{ flex: 1, fontSize: '12px', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: 'var(--text-primary)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px' }}
+                >
+                  <option value="">(なし)</option>
+                  {skillCdPresets.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.label} {p.mode === 'per_second'
+                        ? `(${p.seconds}秒 × ${p.perSecondCd}秒CD/秒 = ${(p.seconds || 0) * (p.perSecondCd || 0)}秒)`
+                        : `(CD ${p.seconds}秒)`}
+                    </option>
+                  ))}
+                </select>
+                {onOpenSkillCdSettings && (
+                  <button
+                    className="btn-cyber"
+                    style={{ fontSize: '10px', padding: '4px 8px', clipPath: 'none' }}
+                    onClick={onOpenSkillCdSettings}
+                    title="スキルCDプリセットの管理画面を開く"
+                  >
+                    ⚙️ 設定
+                  </button>
+                )}
+              </div>
+
+              {/* 色 + アイコンプレビュー */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 'bold', minWidth: '40px' }}>色</span>
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(skillCdColor) ? skillCdColor : '#39ff14'}
+                  onChange={(e) => setSkillCdColor(e.target.value)}
+                  style={{ width: '32px', height: '24px', padding: 0, border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px', cursor: 'pointer' }}
+                />
+                {/* リアルタイムプレビュー: プリセット使用時は skillLabel、未使用時は noteText の頭文字 */}
+                {(() => {
+                  const iconChar = activeNoteMarker.skillPresetId
+                    ? ((activeNoteMarker.skillLabel || '').trim() || 'S').charAt(0)
+                    : (noteText.trim() || 'S').charAt(0);
+                  return (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                      プレビュー
+                      <span style={{ display: 'inline-block', width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(10,15,28,0.85)', color: skillCdColor, border: `1.5px solid ${skillCdColor}`, textAlign: 'center', lineHeight: '18px', fontSize: '12px', fontWeight: 700, boxShadow: `0 0 6px ${skillCdColor}80` }}>
+                        {iconChar}
+                      </span>
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* モード + CD秒数 or 使用秒数×係数 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold' }}>モード</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  <input type="radio" checked={skillCdMode === 'per_second'} onChange={() => setSkillCdMode('per_second')} style={{ accentColor: skillCdColor }} />
+                  変動 (使用秒×係数)
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  <input type="radio" checked={skillCdMode === 'fixed'} onChange={() => setSkillCdMode('fixed')} style={{ accentColor: skillCdColor }} />
+                  固定
+                </label>
+              </div>
+
+              {skillCdMode === 'per_second' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 'bold', minWidth: '70px' }}>使用秒数</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={9999}
+                      value={skillCdSeconds}
+                      onChange={(e) => setSkillCdSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                      style={{ flex: 1, fontSize: '13px', textAlign: 'center', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: skillCdColor, border: `1px solid ${skillCdColor}80`, borderRadius: '3px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>秒 ×</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={9999}
+                      value={skillCdPerSecondRate}
+                      onChange={(e) => setSkillCdPerSecondRate(Math.max(0, parseInt(e.target.value) || 0))}
+                      style={{ width: '50px', fontSize: '13px', textAlign: 'center', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: skillCdColor, border: `1px solid ${skillCdColor}80`, borderRadius: '3px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>秒CD/秒</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: skillCdColor, fontWeight: 'bold', textAlign: 'right' }}>
+                    合計CD: {skillCdSeconds * skillCdPerSecondRate}秒
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 'bold', minWidth: '60px' }}>CD秒数</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={9999}
+                      value={skillCdSeconds}
+                      onChange={(e) => setSkillCdSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                      style={{ flex: 1, fontSize: '14px', textAlign: 'center', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: skillCdColor, border: `1px solid ${skillCdColor}80`, borderRadius: '3px' }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>秒</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={300}
+                    step={1}
+                    value={skillCdSeconds}
+                    onChange={(e) => setSkillCdSeconds(parseInt(e.target.value))}
+                    style={{ width: '100%', accentColor: skillCdColor, height: '20px' }}
+                  />
+                </div>
+              )}
+
+              {activeNoteMarker.skillPresetId
+                ? <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ プリセットの名称と色が反映。色・モード・秒数は個別上書き可。</div>
+                : <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ 上の「メモ」がスキル名。先頭1文字がアイコン。</div>}
             </div>
           )}
 

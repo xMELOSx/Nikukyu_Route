@@ -48,6 +48,7 @@ export interface PlayDataState {
 
 export const PLAY_DATA_KEY = 'heist_play_data_v1';
 export const AUTO_ROUTE_COLLAPSED_KEY = 'heist_auto_route_collapsed';
+export const FLOOR_NAV_COLLAPSED_KEY = 'heist_floor_nav_collapsed';
 
 export const BIWEEKLY_FANS_CAP = 1_000_000;
 export const BIWEEKLY_COINS_CAP = 100_000;
@@ -102,6 +103,15 @@ export function loadAutoRouteCollapsed(): boolean {
 
 export function saveAutoRouteCollapsed(collapsed: boolean): void {
   localStorage.setItem(AUTO_ROUTE_COLLAPSED_KEY, String(collapsed));
+}
+
+export function loadFloorNavCollapsed(): boolean {
+  const raw = localStorage.getItem(FLOOR_NAV_COLLAPSED_KEY);
+  return raw === 'true';
+}
+
+export function saveFloorNavCollapsed(collapsed: boolean): void {
+  localStorage.setItem(FLOOR_NAV_COLLAPSED_KEY, String(collapsed));
 }
 
 /**

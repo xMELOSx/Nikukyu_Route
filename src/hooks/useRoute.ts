@@ -5,6 +5,9 @@ import {
   type HeistMarker,
   type RouteData,
   type PresetData,
+  type PresetVisibility,
+  normalizePresetVisibility,
+  normalizePresets,
   DEFAULT_ROUTE,
   DataManager,
   normalizeStrokes,
@@ -22,7 +25,7 @@ import type { UseGlobalMarkersApi } from './useGlobalMarkers';
 // グローバルタイプが route.markers に混入した場合はここで必ず弾く。
 const ROUTE_INDIV_TYPES = new Set<string>([
   'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
-  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'
+  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'
 ]);
 const stripGlobalMarkersFromRoute = (markers: HeistMarker[] | undefined): HeistMarker[] => {
   if (!Array.isArray(markers) || markers.length === 0) return [];
@@ -75,12 +78,23 @@ export interface UseRouteApi {
     description: string;
     author: string;
     originalAuthor: string;
+    visibility?: PresetVisibility;
   }) => void;
-  /** Overwrite the preset that the current route was loaded from, keeping its ID. */
+  /**
+   * プリセットの内容 (ルートデータ + メタ情報) を現在の編集データで上書きする。
+   * 公開レベル (visibility) は絶対に変更しない。公開レベルを変えたい場合は
+   * setPresetVisibility を明示的に呼ぶこと。
+   */
   overwritePreset: (presetId: string) => void;
   /** Replace presets and persist to server (used by quick-add). */
   savePresetsToServer: (next: PresetData[]) => void;
   deletePreset: (presetId: string) => void;
+  /** 公開レベル変更 (public / unlisted / private) */
+  setPresetVisibility: (presetId: string, visibility: PresetVisibility) => void;
+  /** 表示フィルタ (public 以外を出すか) を適用したプリセット一覧を返す */
+  filterVisiblePresets: (opts: { showUnlisted: boolean; showPrivate: boolean }) => PresetData[];
+  /** URL (?preset=ID) でのアクセス可否を判定する */
+  checkPresetUrlAccess: (presetId: string) => { allowed: boolean; reason?: 'not_found' | 'private_prod' };
   setBossCustomDuration: (id: string, duration: number | undefined) => void;
   setBattleCustomDuration: (id: string, duration: number | undefined) => void;
   setPickingCustomDuration: (id: string, duration: number | undefined) => void;
@@ -107,7 +121,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const [route, setRouteRaw] = useState<RouteData>(DEFAULT_ROUTE());
   const [saves, setSaves] = useState<SaveInfo[]>([]);
-  const [presets, setPresetsState] = useState<PresetData[]>(() => DataManager.loadPresetsFromLocalStorage());
+  const [presets, setPresetsState] = useState<PresetData[]>(() => normalizePresets(DataManager.loadPresetsFromLocalStorage()));
 
   const isLocalRef = useRef(isLocal);
   isLocalRef.current = isLocal;
@@ -254,7 +268,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
       );
       const isIndiv = (t: string) =>
-        ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'].includes(t);
+        ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'].includes(t);
       const planIndiv = data.markers
         .filter(m => isIndiv(m.type))
         .map(m => backfillMarkerDefaults({ ...m, floor: 'main' as FloorType }));
@@ -337,17 +351,19 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }, [route, setRouteWithGlobalDefaults, refreshSavesList]);
 
   const savePresetsToServer = useCallback((next: PresetData[]) => {
-    setPresetsState(next);
-    DataManager.savePresetsToLocalStorage(next);
+    const normalized = normalizePresets(next);
+    setPresetsState(normalized);
+    DataManager.savePresetsToLocalStorage(normalized);
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(next)
+      body: JSON.stringify(normalized)
     }).catch(() => { });
   }, []);
 
   const saveAsPreset = useCallback((input: {
     name: string; description: string; author: string; originalAuthor: string;
+    visibility?: PresetVisibility;
   }) => {
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
     const newPreset: PresetData = {
@@ -359,6 +375,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       author: xorDecrypt(route.author, getAuthorKey(route.id, route.createdAt)),
       originalAuthor: xorDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt)),
       updatedAt: Date.now(),
+      visibility: normalizePresetVisibility(input.visibility),
       routeData: toSave
     };
     savePresetsToServer([...presets, newPreset]);
@@ -370,6 +387,13 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     showNotificationRef.current('プリセットを削除しました');
   }, [presets, savePresetsToServer]);
 
+  /**
+   * プリセットの内容 (ルートデータ + メタ情報) を現在の編集データで上書きする。
+   * 注意: 公開レベル (visibility) は絶対に変更しない。
+   *   既存の { ...presets[idx] } スプレッドに visibility フィールドが含まれ、
+   *   その後に visibility 関連の代入は一切行わないため、元の値がそのまま保持される。
+   *   公開レベルを変えたい場合は setPresetVisibility を明示的に呼ぶこと。
+   */
   const overwritePreset = useCallback((presetId: string) => {
     const idx = presets.findIndex(p => p.id === presetId);
     if (idx === -1) return;
@@ -390,6 +414,57 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     savePresetsToServer(nextPresets);
     showNotificationRef.current(`プリセットを上書きしました: ${updatedPreset.name}`);
   }, [presets, route, initialMarkerScale, savePresetsToServer]);
+
+  /**
+   * 指定プリセットの公開レベルを変更する。サーバ + localStorage 両方を更新する。
+   */
+  const setPresetVisibility = useCallback((presetId: string, visibility: PresetVisibility) => {
+    const idx = presets.findIndex(p => p.id === presetId);
+    if (idx === -1) return;
+    const next = [...presets];
+    next[idx] = { ...next[idx], visibility: normalizePresetVisibility(visibility) };
+    savePresetsToServer(next);
+  }, [presets, savePresetsToServer]);
+
+  /**
+   * 現在のモード (isLocal) と表示フィルタに応じて、表示してよいプリセットを返す。
+   *  - public:  常に表示
+   *  - unlisted: URL (?preset=ID) 経由で開く想定。一覧ではフィルタ out (showUnlisted=true で表示)
+   *  - private:  ローカルモードでのみ表示。showPrivate は基本 true 固定 (private の存在を
+   *              知らせないとアップロード済みの private を見つけられないため)。本番モードでは
+   *              一切出さない。
+   */
+  const filterVisiblePresets = useCallback((opts: {
+    showUnlisted: boolean;
+    showPrivate: boolean;
+  }): PresetData[] => {
+    return presets.filter(p => {
+      const v = normalizePresetVisibility(p.visibility);
+      if (v === 'public') return true;
+      if (v === 'unlisted') return !!opts.showUnlisted;
+      if (v === 'private')  return isLocalRef.current && !!opts.showPrivate;
+      return true;
+    });
+  }, [presets]);
+
+  /**
+   * URL パラメータ経由 (?preset=ID) で開く際のゲート。
+   * プリセットが見つかっても現在のモードで許可されていなければ拒否する。
+   * 戻り値: { allowed, reason?: 'not_found' | 'private_prod' }
+   *   - 'not_found'    : プリセット ID が存在しない
+   *   - 'private_prod' : 本番モードで private を開こうとした
+   *  - public / unlisted は URL 経由で開ける (unlisted は URL を知っている人だけ
+   *    がたどり着ける前提なので、本番モードでも拒否しない)
+   */
+  const checkPresetUrlAccess = useCallback((presetId: string): { allowed: boolean; reason?: 'not_found' | 'private_prod' } => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return { allowed: false, reason: 'not_found' };
+    const v = normalizePresetVisibility(preset.visibility);
+    if (v === 'private' && !isLocalRef.current) {
+      return { allowed: false, reason: 'private_prod' };
+    }
+    return { allowed: true };
+  }, [presets]);
 
   const setBossCustomDuration = useCallback((id: string, duration: number | undefined) => {
     setRouteRaw(prev => {
@@ -451,9 +526,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   // Note: presets are normally updated via savePresetsToServer above.
   // setPresets mirrors the list to localStorage so the list survives
   // transient server failures (avoids "temporarily empty" preset list).
+  // visibility は常に normalizePresets で正規化してから保存する (レガシーデータ
+  // や壊れた JSON でも公開レベルが 'public' 補完される)。
   const setPresets = useCallback((next: PresetData[]) => {
-    setPresetsState(next);
-    DataManager.savePresetsToLocalStorage(next);
+    const normalized = normalizePresets(next);
+    setPresetsState(normalized);
+    DataManager.savePresetsToLocalStorage(normalized);
   }, []);
 
   return {
@@ -462,6 +540,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     saveToLocal, saveAsCopy, createNewPlan,
     loadFromLocal, deleteFromLocal,
     saveAsPreset, overwritePreset, savePresetsToServer, deletePreset,
+    setPresetVisibility, filterVisiblePresets, checkPresetUrlAccess,
     setBossCustomDuration, setBattleCustomDuration,
     setPickingCustomDuration, setLongPickingCustomDuration,
     setPickyMarker,

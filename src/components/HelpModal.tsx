@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { MARKER_META, type HeistMarker, type RouteData } from '../utils/DataManager';
+import { MARKER_META, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
 import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
 
 // Isolated component that only re-renders when the HTML string actually changes.
@@ -49,7 +49,14 @@ interface HelpModalProps {
   setMovementMarkerThreshold?: (n: number) => void;
   warpMarkerThreshold?: number;
   setWarpMarkerThreshold?: (n: number) => void;
+  skillCdThreshold?: number;
+  setSkillCdThreshold?: (n: number) => void;
   onShowOcrDebug?: () => void;
+  // スキルCDプリセット管理 (設定タブから操作)
+  skillCdPresets?: SkillCdPreset[];
+  onAddSkillCdPreset?: (input: { label: string; color: string; mode: 'fixed' | 'per_second'; seconds: number; perSecondCd: number }) => void;
+  onUpdateSkillCdPreset?: (id: string, patch: Partial<Omit<SkillCdPreset, 'id'>>) => void;
+  onRemoveSkillCdPreset?: (id: string) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -72,7 +79,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   setMovementMarkerThreshold,
   warpMarkerThreshold,
   setWarpMarkerThreshold,
-  onShowOcrDebug
+  skillCdThreshold,
+  setSkillCdThreshold,
+  onShowOcrDebug,
+  skillCdPresets = [],
+  onAddSkillCdPreset,
+  onUpdateSkillCdPreset,
+  onRemoveSkillCdPreset
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -251,11 +264,22 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                         style={{ flex: 1, accentColor: '#ff9500' }} />
                       <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{warpMarkerThreshold}px</span>
                     </div>
+
+                    {setSkillCdThreshold && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>⏱ スキルCD</span>
+                        <input type="range" min="5" max="20" step="1" value={skillCdThreshold ?? 10}
+                          onChange={(e) => setSkillCdThreshold(parseInt(e.target.value))}
+                          style={{ flex: 1, accentColor: '#39ff14' }} />
+                        <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{skillCdThreshold}px</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
                   スライダーで各マーカーの判定距離を変更できます。<br />
+                  スキルCDは 5〜20px の範囲で他とは別に調整できます (デフォルト10px)。<br />
                   値は即座に自動ルート・判定範囲の円に反映されます。
                 </div>
               </div>
@@ -337,6 +361,36 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   </label>
                 </div>
               )}
+
+              {/* スキルCDプリセット管理 */}
+              <div style={{ padding: '10px 14px', background: 'rgba(57, 255, 20, 0.04)', border: '1px solid rgba(57, 255, 20, 0.25)', borderRadius: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#39ff14' }}>⏱️ スキルCDプリセット</span>
+                  {!isLocal && (
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '1px 4px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px' }}>閲覧のみ</span>
+                  )}
+                </div>
+                {isLocal && onAddSkillCdPreset && (
+                  <SkillCdPresetAddForm onAdd={onAddSkillCdPreset} />
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto', marginTop: '8px' }}>
+                  {skillCdPresets.length === 0 ? (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '8px', textAlign: 'center' }}>
+                      なし
+                    </div>
+                  ) : (
+                    skillCdPresets.map(p => (
+                      <SkillCdPresetRow
+                        key={p.id}
+                        preset={p}
+                        editable={isLocal}
+                        onUpdate={onUpdateSkillCdPreset}
+                        onRemove={onRemoveSkillCdPreset}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           ) : isEditMode && isLocal ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, height: '100%' }}>
@@ -409,6 +463,220 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ---- スキルCDプリセット管理用サブコンポーネント ----
+
+interface SkillCdPresetAddFormProps {
+  onAdd: (input: { label: string; color: string; mode: 'fixed' | 'per_second'; seconds: number; perSecondCd: number }) => void;
+}
+const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) => {
+  const [label, setLabel] = useState('');
+  const [color, setColor] = useState('#39ff14');
+  const [mode, setMode] = useState<'fixed' | 'per_second'>('per_second');
+  const [seconds, setSeconds] = useState(2);     // per_second: 使用秒数
+  const [perSecondCd, setPerSecondCd] = useState(2); // per_second: 係数
+
+  const submit = () => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    onAdd({ label: trimmed, color, mode, seconds, perSecondCd });
+    setLabel('');
+    setColor('#39ff14');
+    setMode('per_second');
+    setSeconds(2);
+    setPerSecondCd(2);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        <input
+          type="text"
+          value={label}
+          placeholder="スキル名"
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          style={{ flex: 1, fontSize: '12px', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: 'var(--text-primary)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px' }}
+        />
+        <input
+          type="color"
+          value={color}
+          onChange={(e) => setColor(e.target.value)}
+          title="色"
+          style={{ width: '32px', height: '26px', padding: 0, border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px', cursor: 'pointer' }}
+        />
+        <button
+          className="btn-cyber"
+          style={{ fontSize: '11px', padding: '4px 10px', clipPath: 'none' }}
+          onClick={submit}
+          disabled={!label.trim()}
+        >
+          追加
+        </button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>モード</span>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+          <input type="radio" checked={mode === 'per_second'} onChange={() => setMode('per_second')} style={{ accentColor: '#39ff14' }} />
+          変動 (使用秒数×係数)
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+          <input type="radio" checked={mode === 'fixed'} onChange={() => setMode('fixed')} style={{ accentColor: '#39ff14' }} />
+          固定
+        </label>
+      </div>
+      {mode === 'per_second' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>使用秒数</span>
+          <input
+            type="number"
+            min={0}
+            max={9999}
+            value={seconds}
+            onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+            style={{ width: '60px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
+          />
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒 ×</span>
+          <input
+            type="number"
+            min={0}
+            max={9999}
+            value={perSecondCd}
+            onChange={(e) => setPerSecondCd(Math.max(0, parseInt(e.target.value) || 0))}
+            style={{ width: '50px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
+          />
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒CD/秒 =</span>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', color: color, minWidth: '40px', textAlign: 'right' }}>{seconds * perSecondCd}秒</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>CD秒数</span>
+          <input
+            type="number"
+            min={0}
+            max={9999}
+            value={seconds}
+            onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+            style={{ width: '80px', fontSize: '13px', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
+          />
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface SkillCdPresetRowProps {
+  preset: SkillCdPreset;
+  editable?: boolean;
+  onUpdate?: (id: string, patch: Partial<Omit<SkillCdPreset, 'id'>>) => void;
+  onRemove?: (id: string) => void;
+}
+const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = true, onUpdate, onRemove }) => {
+  const [editing, setEditing] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const isPer = preset.mode === 'per_second';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px 6px', background: 'rgba(255, 255, 255, 0.03)', border: `1px solid ${preset.color}55`, borderRadius: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(10, 15, 28, 0.85)', color: preset.color, border: `1.5px solid ${preset.color}`, textAlign: 'center', lineHeight: '16px', fontSize: '11px', fontWeight: 700, boxShadow: `0 0 6px ${preset.color}66` }}>
+          {(preset.label || 'S').charAt(0)}
+        </span>
+        <span style={{ fontSize: '12px', color: preset.color, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preset.label}</span>
+        {isPer ? (
+          <>
+            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace' }}>{preset.seconds}秒×{preset.perSecondCd}</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>= {(preset.seconds || 0) * (preset.perSecondCd || 0)}秒</span>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CD</span>
+            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace', minWidth: '40px', textAlign: 'right' }}>{preset.seconds}秒</span>
+          </>
+        )}
+        {editable && onUpdate && (
+          <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setEditing(v => !v)}>
+            {editing ? '×' : '✎'}
+          </button>
+        )}
+        {editable && onRemove && !confirmingRemove && (
+          <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setConfirmingRemove(true)}>削除</button>
+        )}
+        {editable && onRemove && confirmingRemove && (
+          <>
+            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => { onRemove(preset.id); setConfirmingRemove(false); }}>実行</button>
+            <button className="btn-cyber" style={{ fontSize: '9px', padding: '1px 5px', clipPath: 'none' }} onClick={() => setConfirmingRemove(false)}>×</button>
+          </>
+        )}
+      </div>
+      {editing && onUpdate && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <input
+              type="text"
+              defaultValue={preset.label}
+              onBlur={(e) => onUpdate(preset.id, { label: e.target.value })}
+              style={{ flex: 1, fontSize: '11px', padding: '3px 6px', background: 'rgba(5, 7, 10, 0.85)', color: 'var(--text-primary)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px' }}
+            />
+            <input
+              type="color"
+              defaultValue={preset.color}
+              onChange={(e) => onUpdate(preset.id, { color: e.target.value })}
+              style={{ width: '28px', height: '24px', padding: 0, border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px', cursor: 'pointer' }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>モード</span>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input type="radio" checked={isPer} onChange={() => onUpdate(preset.id, { mode: 'per_second' })} style={{ accentColor: '#39ff14' }} />
+              変動
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input type="radio" checked={!isPer} onChange={() => onUpdate(preset.id, { mode: 'fixed' })} style={{ accentColor: '#39ff14' }} />
+              固定
+            </label>
+          </div>
+          {isPer ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>使用秒数</span>
+              <input
+                type="number"
+                min={0}
+                max={9999}
+                defaultValue={preset.seconds}
+                onBlur={(e) => onUpdate(preset.id, { seconds: Math.max(0, parseInt(e.target.value) || 0) })}
+                style={{ width: '55px', fontSize: '11px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
+              />
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒 ×</span>
+              <input
+                type="number"
+                min={0}
+                max={9999}
+                defaultValue={preset.perSecondCd}
+                onBlur={(e) => onUpdate(preset.id, { perSecondCd: Math.max(0, parseInt(e.target.value) || 0) })}
+                style={{ width: '45px', fontSize: '11px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
+              />
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒CD/秒</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>CD秒数</span>
+              <input
+                type="number"
+                min={0}
+                max={9999}
+                defaultValue={preset.seconds}
+                onBlur={(e) => onUpdate(preset.id, { seconds: Math.max(0, parseInt(e.target.value) || 0) })}
+                style={{ width: '70px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
+              />
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

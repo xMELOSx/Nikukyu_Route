@@ -7,7 +7,7 @@ export function generateId(prefix: string = ''): string {
 
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd';
 
 // Simple XOR cipher for author name obfuscation
 export function xorEncrypt(plain: string, key: string): string {
@@ -59,20 +59,32 @@ export interface DrawingStroke {
   width: number;
   // 'solid' = 進行ルート (route, with arrowhead), 'dashed' = 分岐ルート (branch, no arrowhead)
   type: 'solid' | 'dashed';
+  // 補正後・接続前のポイント列 (post-smooth, pre-snap) — 距離計測用
+  // 未設定なら points を使う (古いデータとの後方互換)
+  originalPoints?: Point[];
 }
 
 export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
   if (!Array.isArray(strokes)) return [];
   return strokes
     .filter(s => s && typeof s === 'object' && Array.isArray(s.points) && s.points.length >= 2)
-    .map(s => ({
-      points: s.points
+    .map(s => {
+      const normPoints = s.points
         .filter((p: any) => p && typeof p === 'object' && typeof p.x === 'number' && typeof p.y === 'number' && isFinite(p.x) && isFinite(p.y))
-        .map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-      color: typeof s.color === 'string' ? s.color : '#00ff00',
-      width: typeof s.width === 'number' && s.width > 0 ? s.width : 3,
-      type: (s.type === 'dashed' ? 'dashed' : 'solid') as 'solid' | 'dashed',
-    }))
+        .map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+      const normOriginal = Array.isArray(s.originalPoints)
+        ? s.originalPoints
+            .filter((p: any) => p && typeof p === 'object' && typeof p.x === 'number' && typeof p.y === 'number' && isFinite(p.x) && isFinite(p.y))
+            .map((p: any) => ({ x: Math.round(p.x), y: Math.round(p.y) }))
+        : undefined;
+      return {
+        points: normPoints,
+        originalPoints: normOriginal && normOriginal.length >= 2 ? normOriginal : undefined,
+        color: typeof s.color === 'string' ? s.color : '#00ff00',
+        width: typeof s.width === 'number' && s.width > 0 ? s.width : 3,
+        type: (s.type === 'dashed' ? 'dashed' : 'solid') as 'solid' | 'dashed',
+      };
+    })
     .filter(s => s.points.length >= 2);
 }
 
@@ -342,6 +354,17 @@ export interface HeistMarker {
   checkpointVoiceOn?: boolean;   // Voice announcement "X秒地点です" when passing
   checkpointExpanded?: boolean;  // Whether the popup is expanded in presentation mode
   connectionColor?: string;      // Custom color for warp/stairs connection lines
+  // Skill CD marker fields (type === 'skill_cd')
+  // CDは「セッション開始時にリセット」なので永続化はしない。
+  // 同じプリセット（時間泥棒等）を何度でも呼び出せるよう、識別子として presetId を保持する。
+  // label/color/mode/seconds/perSecondCd は呼び出された時点のプリセット値をスナップショットとして固定し、
+  // 後からプリセットを編集しても過去の配置済みのマーカーは変わらない（予測可能性のため）。
+  skillPresetId?: string;        // 詳細設定で定義したプリセットの id
+  skillLabel?: string;           // 個別上書きしたラベル（空文字なら note を使う）
+  skillColor?: string;           // 個別上書きした色（hex）
+  skillMode?: SkillCdMode;       // CD計算モード (fixed / per_second)
+  skillCdSeconds?: number;       // mode='fixed' の CD秒数 / mode='per_second' の「使用秒数」
+  skillPerSecondCd?: number;     // mode='per_second' の係数 (1秒使用→N秒CD)
 }
 
 export interface RouteData {
@@ -395,6 +418,21 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   mapVersion: 2
 });
 
+/**
+ * プリセットの公開レベル。
+ *  - 'public':   一覧に表示、URL(?preset=ID)でも開ける (デフォルト)
+ *  - 'unlisted': 一覧には出さないが URL (?preset=ID) を知っていれば開ける (限定公開)
+ *  - 'private':  ローカルモード (npm run dev) でのみ一覧/URL 双方で開ける (非公開)。
+ *                本番ビルド (dist 配信) では一覧/URL ともに非表示・ロード不可。
+ */
+export type PresetVisibility = 'public' | 'unlisted' | 'private';
+
+export const PRESET_VISIBILITY_META: { [key in PresetVisibility]: { label: string; emoji: string; color: string; description: string } } = {
+  public:   { label: '公開',       emoji: '🌐', color: '#39ff14', description: '一覧に表示され、URL共有でも開ける' },
+  unlisted: { label: '限定公開',   emoji: '🔗', color: '#ffe600', description: '一覧には出ない。URL (?preset=ID) を知っていれば開ける' },
+  private:  { label: '非公開',     emoji: '🔒', color: '#ff0055', description: 'ローカルモード (npm run dev) でのみ開ける。本番ビルドでは不可' }
+};
+
 export interface PresetData {
   id: string;
   name: string;
@@ -404,7 +442,65 @@ export interface PresetData {
   author: string;
   originalAuthor: string;
   updatedAt: number;
+  /**
+   * 公開レベル (省略時 / 不正値 は 'public' 扱い)。
+   * 後方互換のため undefined を許容し、DataManager.normalizePreset で補完する。
+   */
+  visibility?: PresetVisibility;
   routeData: RouteData;
+}
+
+/** プリセットを公開レベル別に分類する。unknown は public に正規化。 */
+export function normalizePresetVisibility(v: unknown): PresetVisibility {
+  return v === 'unlisted' || v === 'private' ? v : 'public';
+}
+
+export function getPresetVisibility(preset: Pick<PresetData, 'visibility'>): PresetVisibility {
+  return normalizePresetVisibility(preset.visibility);
+}
+
+/**
+ * プリセット配列を正規化する。
+ *  - 不正な型 / null / プリセット以外の値を除去
+ *  - 公開レベル (visibility) を normalizePresetVisibility で 'public' 補完
+ * サーバ (presets.json) や localStorage から読み込んだ直後に必ず通すこと。
+ */
+export function normalizePresets(raw: unknown): PresetData[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p: any) => p && typeof p === 'object' && typeof p.id === 'string' && typeof p.name === 'string' && p.routeData && typeof p.routeData === 'object')
+    .map((p: any) => ({
+      id: String(p.id),
+      name: String(p.name),
+      description: typeof p.description === 'string' ? p.description : '',
+      targetCash: typeof p.targetCash === 'string' ? p.targetCash : '',
+      targetCoins: typeof p.targetCoins === 'string' ? p.targetCoins : '',
+      author: typeof p.author === 'string' ? p.author : '',
+      originalAuthor: typeof p.originalAuthor === 'string' ? p.originalAuthor : '',
+      updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : Date.now(),
+      visibility: normalizePresetVisibility(p.visibility),
+      routeData: p.routeData
+    }));
+}
+
+/**
+ * スキルCDプリセット。詳細設定で「時間泥棒 / 緑 / 50秒」のように登録する。
+ * 呼び出された時点の値をマーカーにスナップショットとして固定するため、
+ * 後から編集しても過去のマーカーには影響しない。
+ *
+ * mode:
+ *   - 'fixed':      単純CD。stopDuration = seconds (固定秒数ぶん停止)
+ *   - 'per_second': 変動CD。stopDuration = useSeconds * perSecondCd (使用秒数×係数ぶん停止)
+ */
+export type SkillCdMode = 'fixed' | 'per_second';
+
+export interface SkillCdPreset {
+  id: string;
+  label: string;                // 表示名 (例: "時間泥棒")
+  color: string;                // 表示色 (例: "#39ff14")
+  mode: SkillCdMode;            // CD計算モード
+  seconds: number;              // mode='fixed' の時の CD秒数 (例: 50)
+  perSecondCd: number;          // mode='per_second' の時の 1秒あたりCD秒数 (例: 2)
 }
 
 // Marker Metadata helper for styling and emoji representation
@@ -436,7 +532,8 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   inote: { emoji: '📝', label: 'I-MEMO', color: '#39ff14' },
   itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' },
   start: { emoji: '🐾', label: 'START', color: '#39ff14' },
-  checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' }
+  checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' },
+  skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' }
 };
 
 /**
@@ -495,7 +592,75 @@ export function getStopDurationSeconds(
   if (marker.type === 'battle' || marker.type === 'gbattle') {
     return marker.battleDurationSeconds ?? 20;
   }
+  if (marker.type === 'skill_cd') {
+    // CDマーカーは stopDuration を持たない（CD秒数で別途管理）
+    return 0;
+  }
   return 0;
+}
+
+/**
+ * スキルCDマーカーの表示用アイコン文字を返す。
+ * プリセット使用時 (=skillPresetId あり): skillLabel の先頭1文字
+ * 未使用時: note の先頭1文字 (リアルタイム編集で即時反映)
+ * どちらも空: 'S'
+ */
+export function getSkillCdIcon(marker: HeistMarker): string {
+  if (marker.skillPresetId) {
+    const fromLabel = (marker.skillLabel || '').trim();
+    if (fromLabel) return fromLabel.charAt(0);
+  }
+  const fromNote = (marker.note || '').trim();
+  if (fromNote) return fromNote.charAt(0);
+  return 'S';
+}
+
+/** スキルCDマーカーの表示色を返す。優先順位: skillColor > note (色名/hex) は解釈しない > meta 既定色 */
+export function getSkillCdColor(marker: HeistMarker): string {
+  if (marker.skillColor && /^#[0-9a-fA-F]{3,8}$/.test(marker.skillColor)) {
+    return marker.skillColor;
+  }
+  return MARKER_META.skill_cd.color;
+}
+
+/** スキルCDマーカーの現在の停止秒数を計算する。 */
+export function getSkillCdSeconds(marker: HeistMarker): number {
+  const mode = marker.skillMode ?? 'fixed';
+  if (mode === 'per_second') {
+    const use = typeof marker.skillCdSeconds === 'number' && marker.skillCdSeconds > 0 ? marker.skillCdSeconds : 0;
+    const rate = typeof marker.skillPerSecondCd === 'number' && marker.skillPerSecondCd > 0 ? marker.skillPerSecondCd : 0;
+    if (use <= 0 || rate <= 0) return 0;
+    return use * rate;
+  }
+  // fixed
+  if (typeof marker.skillCdSeconds === 'number' && marker.skillCdSeconds > 0) {
+    return marker.skillCdSeconds;
+  }
+  return 0;
+}
+
+/** モード別の表示用設定値。fixed: CD秒数 / per_second: 使用秒数。 */
+export function getSkillCdDisplayValue(marker: HeistMarker): number {
+  if (typeof marker.skillCdSeconds === 'number' && marker.skillCdSeconds > 0) {
+    return marker.skillCdSeconds;
+  }
+  return 0;
+}
+
+/** per_secondモード時の係数 (1秒あたりのCD秒数)。 */
+export function getSkillCdPerSecondRate(marker: HeistMarker): number {
+  if (typeof marker.skillPerSecondCd === 'number' && marker.skillPerSecondCd > 0) {
+    return marker.skillPerSecondCd;
+  }
+  return 0;
+}
+
+/** スキルCDマーカーの現在の残りCD秒数。負数は0にクランプ。未消費は cd をそのまま返す。 */
+export function getSkillCdRemaining(marker: HeistMarker, currentElapsed: number, consumedAtElapsed?: number): number {
+  const cd = getSkillCdSeconds(marker);
+  if (cd <= 0) return 0;
+  if (consumedAtElapsed === undefined) return cd;
+  return Math.max(0, cd - (currentElapsed - consumedAtElapsed));
 }
 
 // Preset Maps metadata with local paths
@@ -670,6 +835,16 @@ export class DataManager {
     };
   }
 
+  // スキルCDマーカーは個人用 (indiv) として扱う。
+  // グローバルにしない理由は、P1の「前」など作者の意図する位置に置きたいため。
+  // 必要になった時点で RouteData.markers 経由で plan 毎に保持される。
+  static isIndivMarkerType(t: string): boolean {
+    return [
+      'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
+      'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'
+    ].includes(t);
+  }
+
   // Export route to JSON file
   static exportToJSON(route: RouteData): void {
     const dataStr = JSON.stringify(DataManager.sanitizeRouteForExport(route), null, 2);
@@ -775,6 +950,9 @@ export class DataManager {
         const meta = MARKER_META[m.type];
         const isText = m.type === 'text';
         const isLargePin = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
+        const isSkillCd = m.type === 'skill_cd';
+        const skillColor = isSkillCd ? getSkillCdColor(m) : meta.color;
+        const skillIcon = isSkillCd ? getSkillCdIcon(m) : null;
         if (isText) {
           const tx = m.fixedOriginX ?? m.x;
           const ty = m.fixedOriginY ?? m.y;
@@ -797,10 +975,10 @@ export class DataManager {
         }
         const radius = (isLargePin ? 9 : 8) * scaleMultiplier;
         const fontSize = (isLargePin ? 10 : 9) * scaleMultiplier;
-        ctx.shadowColor = meta.color;
+        ctx.shadowColor = skillColor;
         ctx.shadowBlur = (isLargePin ? 8 : 6) * scaleMultiplier;
         ctx.fillStyle = 'rgba(10, 15, 28, 0.85)';
-        ctx.strokeStyle = meta.color;
+        ctx.strokeStyle = skillColor;
         ctx.lineWidth = 1.5 * scaleMultiplier;
         ctx.beginPath();
         ctx.arc(m.x, m.y, radius, 0, Math.PI * 2);
@@ -829,7 +1007,7 @@ export class DataManager {
         ctx.font = `${fontSize}px Segoe UI Symbol, Arial, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(meta.emoji, m.x, m.y);
+        ctx.fillText(skillIcon ?? meta.emoji, m.x, m.y);
       });
 
       // Create split layout: bottom half (left) + top half (right), fit within 1080px height

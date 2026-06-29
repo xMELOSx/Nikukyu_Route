@@ -1,4 +1,4 @@
-import { isMovementMarker, isStopMarker, isCheckpointMarker, getStopDurationSeconds } from './DataManager';
+import { isMovementMarker, isStopMarker, isCheckpointMarker, getStopDurationSeconds, getSkillCdSeconds } from './DataManager';
 import type { DrawingStroke, HeistMarker, MarkerType, Point } from './DataManager';
 
 export interface RouteSegment {
@@ -43,8 +43,14 @@ const DEFAULT_CONFIG: AutoRouteConfig = {
   // since warp hotspots are often offset from the line. 25px is enough
   // to catch "line contact" but won't extend to neighbouring rooms.
   warpMarkerThreshold: 25,
+  // スキルCDマーカー専用の閾値 (他より狭い: ルートがマーカー位置 ±Npx まで
+  // 接近したときのみ発動する。線分への「かすり判定」はしない)。
+  skillCdThreshold: 10,
   // Max distance (px) to consider two line endpoints "connected"
   lineConnectThreshold: 50,
+  // Default stop (seconds) inserted at the START marker when the route
+  // begins. Lets the player react before movement starts.
+  startStopSeconds: 3,
 };
 
 export interface AutoRouteConfig {
@@ -52,7 +58,9 @@ export interface AutoRouteConfig {
   stopMarkerCaptureRadius: number;
   movementMarkerThreshold: number;
   warpMarkerThreshold: number;
+  skillCdThreshold: number;
   lineConnectThreshold: number;
+  startStopSeconds: number;
 }
 
 function thresholdFor(markerType: MarkerType, cfg: AutoRouteConfig): number {
@@ -60,6 +68,7 @@ function thresholdFor(markerType: MarkerType, cfg: AutoRouteConfig): number {
     return cfg.stopMarkerThreshold + (cfg.stopMarkerCaptureRadius ?? 0);
   }
   if (markerType === 'warp' || markerType === 'iwarp') return cfg.warpMarkerThreshold;
+  if (markerType === 'skill_cd') return cfg.skillCdThreshold;
   return cfg.movementMarkerThreshold;
 }
 
@@ -88,11 +97,14 @@ export function buildAutoRoute(
   const relevantMarkers = markers.filter(m =>
     m.id !== startMarker.id &&
     !hiddenSet.has(m.id) &&
-    (isMovementMarker(m.type) || isStopMarker(m.type) || isCheckpointMarker(m.type))
+    (isMovementMarker(m.type) || isStopMarker(m.type) || isCheckpointMarker(m.type) || m.type === 'skill_cd')
   );
 
   const visitedStrokeIndices = new Set<number>();
   const visitedMarkerIds = new Set<string>([startMarker.id]);
+  // スキルCDマーカーの消費履歴 (id -> 通過時の cumulativeStopTime)。
+  // 同一マーカーが再通過したら CD の回転を再判定する。
+  const skillCdConsumedAt = new Map<string, number>();
   // Warp markers currently "paused" (temporarily removed from consideration).
   // A marker is paused as soon as it is used as warp source OR destination,
   // and is un-paused once `currentPos` is farther than `lineConnectThreshold`
@@ -238,27 +250,25 @@ export function buildAutoRoute(
         .map(m => {
           const perpDist = distanceToSegment(m, a, b);
           const distToCurrent = Math.hypot(m.x - a.x, m.y - a.y);
-          const distToNext = Math.hypot(m.x - b.x, m.y - b.y);
-          const dist = Math.min(perpDist, distToCurrent, distToNext);
+          // For stop markers (picking/boss/etc), we accept proximity to
+          // either the segment start (= current position) or the line
+          // itself. For SKILL_CD markers specifically, we only accept
+          // proximity to the CURRENT position — otherwise a long line
+          // can trigger the CD long before the route physically reaches
+          // the marker (the line is "in range" at a far endpoint).
+          const useCurrentOnly = m.type === 'skill_cd';
+          const dist = useCurrentOnly
+            ? distToCurrent
+            : Math.min(perpDist, distToCurrent);
           const t = projectionParameter(m, a, b);
           const th = thresholdFor(m.type, cfg);
-          return { marker: m, dist, perpDist, distToCurrent, distToNext, t, threshold: th };
+          return { marker: m, dist, perpDist, distToCurrent, t, threshold: th };
         })
         .filter(h => {
           if (h.dist >= h.threshold) return false;
-          // The marker is within the threshold of this segment. The
-          // previous t-range check (h.t in [-0.1, 1.1]) is too strict for
-          // U-turn lines: when a polyline vertex sits right next to a
-          // key, distanceToSegment() clamps t to 0/1 and returns the
-          // same value for perpDist and distToCurrent/distToNext, but
-          // the raw projection t can be 1.5+ past the endpoint. Since
-          // the dist test already guarantees the marker is within
-          // `threshold` px of either the perpendicular foot OR a
-          // segment endpoint, and the endpoint is itself a valid place
-          // to stop (it's a polyline vertex), we accept unconditionally.
           return true;
         })
-        .sort((x, y) => x.perpDist - y.perpDist || x.t - y.t);
+        .sort((x, y) => x.perpDist - y.perpDist || (x.t ?? 0) - (y.t ?? 0));
 
       if (hits.length === 0) {
         const segDist = Math.hypot(b.x - a.x, b.y - a.y);
@@ -286,7 +296,39 @@ export function buildAutoRoute(
       const clampedT = Math.max(0, Math.min(1, hit.t));
       const segDist = Math.hypot(b.x - a.x, b.y - a.y) * clampedT;
       cumulativeDistance += segDist;
-      const stopDur = isStopMarker(m.type) ? getStopDurationSeconds(m, pickyMarkerIds) : 0;
+
+      // スキルCDマーカー: 「スキル使用チェック」
+      // - 1回目の通過: CDタイマーを開始 (=consumedAtに記録)。stopDuration=0 (チェックのみ、通過する)
+      // - 2回目以降の通過: CDが回り終わっていれば CD秒数ぶん停止 (=次回CD開始)
+      //                    CDが回っていれば通過のみ
+      // - CD設定なし (cd=0): 純粋にマーカー通過 (常に0秒)
+      let stopDur = 0;
+      if (m.type === 'skill_cd') {
+        const cd = getSkillCdSeconds(m);
+        const consumedAt = skillCdConsumedAt.get(m.id);
+        if (consumedAt === undefined) {
+          // 1回目: 通過 (CDタイマー開始)
+          stopDur = 0;
+          skillCdConsumedAt.set(m.id, cumulativeStopTime);
+        } else if (cd <= 0) {
+          // CD設定なし: 通過のみ
+          stopDur = 0;
+        } else {
+          // 2回目以降: CDが回っているかチェック
+          const nowAtMarker = cumulativeStopTime;
+          const cdReadyAt = consumedAt + cd;
+          if (nowAtMarker < cdReadyAt) {
+            // CD回ってる → 通過のみ
+            stopDur = 0;
+          } else {
+            // CD回り終わってる → 次のCD開始 (停止)
+            stopDur = cd;
+            skillCdConsumedAt.set(m.id, nowAtMarker + cd);
+          }
+        }
+      } else if (isStopMarker(m.type)) {
+        stopDur = getStopDurationSeconds(m, pickyMarkerIds);
+      }
       cumulativeStopTime += stopDur;
 
       let checkpointOnTime: boolean | undefined;
@@ -303,6 +345,10 @@ export function buildAutoRoute(
       };
       if (isCheckpointMarker(m.type)) {
         (seg as any)._checkpointTarget = m.checkpointTargetTime ?? 0;
+        // _checkpointConflicted は computeRouteTiming で後付けする
+      }
+      if (m.type === 'skill_cd') {
+        (seg as any)._skillCdConsumed = true;
       }
       segments.push(seg);
       currentPos = { x: m.x, y: m.y };
@@ -321,6 +367,23 @@ export function buildAutoRoute(
     }
 
     visitedStrokeIndices.add(idx);
+  }
+
+  // スタートマーカーでの停止 (cfg.startStopSeconds, デフォルト 3秒) を
+  // 先頭に挿入する。位置は startMarker 上、距離 0、cumulativeStopTime に加算。
+  const startStopSeconds = Math.max(0, cfg.startStopSeconds ?? 0);
+  if (startStopSeconds > 0) {
+    cumulativeStopTime += startStopSeconds;
+    segments.unshift({
+      start: { x: startMarker.x, y: startMarker.y },
+      end: { x: startMarker.x, y: startMarker.y },
+      distance: 0,
+      stopDuration: startStopSeconds,
+      markerId: startMarker.id,
+      markerType: startMarker.type,
+      cumulativeDistance,
+      cumulativeStopTime
+    });
   }
 
   return segments;
@@ -382,20 +445,19 @@ function findStrokeThroughPosition(
 // AudioContext on first use (browsers require a user gesture before audio
 // can play, so we don't construct it at module load).
 let _audioCtx: AudioContext | null = null;
+// prewarmAudio() は最初のサウンド再生時に AudioContext を作るだけにし、
+// ユーザージェスチャと無関係な経路 (ページ表示時) では呼ばない。
+// resume() を事前に発動するとページがバックグラウンドでも一瞬だけ
+// サウンドプレイヤーが起動する危険があるため、再生と一体化して行う。
 export function prewarmAudio() {
-  try {
-    if (!_audioCtx) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return;
-      _audioCtx = new Ctx();
-    }
-    if (_audioCtx.state === 'suspended') {
-      _audioCtx.resume();
-    }
-  } catch { /* no-op */ }
+  // no-op (旧実装は start 時に呼ばれていたが、ユーザージェスチャと
+  // 直接紐づかないため副作用が大きい。AudioContext の resume は
+  // 最初の playCheckpointSound() 内で必要になったタイミングで行う)
 }
 function playBeep(freq: number = 880, durationMs: number = 120) {
   try {
+    // バックグラウンドタブでは音声を出さない (= OS のサウンドプレイヤーを起動しない)
+    if (typeof document !== 'undefined' && document.hidden) return;
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
     if (!_audioCtx) {
@@ -429,14 +491,30 @@ export function playCheckpointSound(onTime: boolean) {
   playBeep(onTime ? 1320 : 220, 140);
 }
 
+// 最後に speak したテキスト。同一テキストの連発を抑止する (Chrome の
+// speechSynthesis cancel() 連発バグ対策 + 1ページ表示で1回しか読まれない問題対策)。
+let _lastSpokenText: string | null = null;
+let _lastSpokenAt: number = 0;
+
 /** Speak the checkpoint arrival time (e.g. "30秒地点です"). */
 export function speakCheckpointTime(seconds: number, label?: string) {
   try {
+    if (typeof document !== 'undefined' && document.hidden) return;
     if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
     const text = label
       ? `${seconds}秒地点、${label}です`
       : `${seconds}秒地点です`;
+    const now = performance.now();
+    // 同一テキストが短時間 (3秒以内) に再度要求された場合はスキップ。
+    // 同一チェックポイントを複数回通過判定してしまうケースや、
+    // 連続 cancel()+speak() で Chrome がドロップする問題を抑える。
+    if (text === _lastSpokenText && now - _lastSpokenAt < 3000) return;
+    _lastSpokenText = text;
+    _lastSpokenAt = now;
+    // cancel() は前回 utterance が「まだ再生中」または「ペンディング」の場合のみ実行。
+    // 毎回 cancel() すると Chrome の実装で次の speak() が無視されることがあるため、
+    // 一旦キューをリセットして新しい utterance を確実に積む形にする。
+    try { window.speechSynthesis.cancel(); } catch { /* no-op */ }
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'ja-JP';
     utter.rate = 1.3;
@@ -471,34 +549,48 @@ function projectionParameter(p: Point, a: Point, b: Point): number {
  * is calculated so the route completes in exactly that time:
  *   speed = totalDistance / (targetDuration - totalStopTime)
  *
- * Checkpoints are reference-only — they store a target time for display
- * and sound triggers, but they DO NOT affect the speed or the total time.
- * The user's total-time setting is sacrosanct.
+ * Checkpoints do affect the speed: each checkpoint is reached at its
+ * target time (or earlier/later based on interpolation). The route end
+ * is still reached at targetDuration. The user's total-time setting is
+ * sacrosanct, but checkpoints adjust per-segment speeds so the player
+ * arrives at each checkpoint on time.
  *
- * If targetDuration is not provided or is invalid, falls back to
- * 200 px/s as a safety default (speed source marked as 'default').
+ * If targetDuration is not provided or is invalid, the route-wide speed
+ * falls back to a safety default (speed source marked as 'default').
  *
  * The total time displayed is always the base total — it does NOT change
  * with the speed multiplier. The multiplier only scales the animation
  * playback rate (elapsed advances at mult × wall-clock).
  */
-export function computeRouteTiming(segments: RouteSegment[], targetDuration?: number): {
+export function computeRouteTiming(
+  segments: RouteSegment[],
+  targetDuration?: number,
+  options?: { speedMode?: 'time' | 'speed'; manualSpeed?: number }
+): {
   totalDistance: number;
   totalStopTime: number;
   totalTravelTime: number;
   totalTime: number;
   speed: number; // px / sec
-  speedSource: 'targetDuration' | 'default';
+  speedSource: 'targetDuration' | 'manual' | 'default';
   ignoredCheckpoint?: { reason: string; target: number; stopTime: number };
 } {
   const totalDistance = segments.length > 0 ? segments[segments.length - 1].cumulativeDistance : 0;
   const totalStopTime = segments.length > 0 ? segments[segments.length - 1].cumulativeStopTime : 0;
+  const speedMode = options?.speedMode ?? 'time';
+  const manualSpeed = options?.manualSpeed ?? 0;
 
   let totalTravelTime: number;
   let speed: number;
-  let speedSource: 'targetDuration' | 'default';
+  let speedSource: 'targetDuration' | 'manual' | 'default';
 
-  if (targetDuration !== undefined && targetDuration > totalStopTime && totalDistance > 0) {
+  if (speedMode === 'speed' && manualSpeed > 0 && totalDistance > 0) {
+    // 速度ベース: ユーザー指定の px/s を使用。チェックポイントは速度計算から
+    // 除外 (= totalDuration は使わず totalTravelTime = totalDistance / manualSpeed)
+    speed = manualSpeed;
+    totalTravelTime = totalDistance / speed;
+    speedSource = 'manual';
+  } else if (targetDuration !== undefined && targetDuration > totalStopTime && totalDistance > 0) {
     // User-provided total time is authoritative. Speed is derived from it.
     totalTravelTime = Math.max(0, targetDuration - totalStopTime);
     speed = totalDistance / totalTravelTime;
@@ -514,37 +606,66 @@ export function computeRouteTiming(segments: RouteSegment[], targetDuration?: nu
     speedSource = 'default';
   }
 
-  // Per-segment speed: calculate from the start using ALL checkpoints
+  // Per-segment speed: calculate from the start using VALID checkpoints
   // AND the route end. Each segment gets a speed so that:
-  //   - Each checkpoint is reached at its target time
+  //   - Each valid checkpoint is reached at its target time
   //   - The route end is reached at targetDuration
-  // The last "waypoint" is either the next checkpoint or the route end.
+  // The last "waypoint" is either the next valid checkpoint or the route end.
+  //
+  // 「順序矛盾」(= 前のチェックポイントより小さい目標時間) のチェックポイントは
+  // 速度計算から除外する。例: 40→30→60 では 30 が矛盾として除外され、
+  // 40 と 60 だけで速度が決まる (30 は到達時刻が守られないが、それは「正常」)。
   type Waypoint = { segIdx: number; targetTime: number; cumDistAtWaypoint: number; cumStopsAtWaypoint: number };
   const waypoints: Waypoint[] = [];
   // First waypoint: start of route (time 0, distance 0, stops 0)
   waypoints.push({ segIdx: -1, targetTime: 0, cumDistAtWaypoint: 0, cumStopsAtWaypoint: 0 });
-  // Checkpoint waypoints
+  // Checkpoint waypoints — 矛盾するものは除外 + フラグを保存
+  // 速度ベースモードのとき: 速度計算には影響させないが、CP通過時の経過時間
+  // (= cumDist/speed + cumStops) を _checkpointTarget に書き戻すことで
+  // 読み上げ/サウンド/タイムライン表示は時間ベースと同じロジックで動く。
+  let prevValidCpTarget = -Infinity;
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     if (seg.markerType === 'checkpoint') {
       const cpTarget = (seg as any)._checkpointTarget as number;
+      if (speedMode === 'speed') {
+        // 速度ベース: CP の「目標時間」を通過予定時刻 (= cumDist/speed + cumStops) で上書き
+        // することで、エンジン側 (useAutoRouteEngine) の「経過時間ベース」読み上げが
+        // そのまま機能する。_checkpointConflicted は false (順序判定の対象外)。
+        if (speed > 0) {
+          const passedAt = seg.cumulativeDistance / speed + seg.cumulativeStopTime;
+          (seg as any)._checkpointTarget = Math.round(passedAt);
+        } else {
+          (seg as any)._checkpointTarget = 0;
+        }
+        (seg as any)._checkpointConflicted = false;
+        continue;
+      }
       if (cpTarget > 0) {
-        // The checkpoint is reached when cumulative travel time +
-        // cumulative stop time up to (but not including) the checkpoint stop
-        // equals cpTarget. We treat the target as "time at checkpoint
-        // position" (before any stop AT the checkpoint itself, since
-        // checkpoints have no stop duration).
-        waypoints.push({
-          segIdx: i,
-          targetTime: cpTarget,
-          cumDistAtWaypoint: seg.cumulativeDistance,
-          cumStopsAtWaypoint: seg.cumulativeStopTime
-        });
+        const isConflicted = cpTarget < prevValidCpTarget;
+        // セグメントに「矛盾かどうか」を保存 (エンジン側で読み上げ制御に使う)
+        (seg as any)._checkpointConflicted = isConflicted;
+        if (!isConflicted) {
+          // The checkpoint is reached when cumulative travel time +
+          // cumulative stop time up to (but not including) the checkpoint stop
+          // equals cpTarget. We treat the target as "time at checkpoint
+          // position" (before any stop AT the checkpoint itself, since
+          // checkpoints have no stop duration).
+          waypoints.push({
+            segIdx: i,
+            targetTime: cpTarget,
+            cumDistAtWaypoint: seg.cumulativeDistance,
+            cumStopsAtWaypoint: seg.cumulativeStopTime
+          });
+          prevValidCpTarget = cpTarget;
+        }
+      } else {
+        (seg as any)._checkpointConflicted = false;
       }
     }
   }
-  // Final waypoint: route end at targetDuration
-  if (targetDuration !== undefined && targetDuration > 0) {
+  // Final waypoint: route end at targetDuration (時間ベース時のみ)
+  if (speedMode !== 'speed' && targetDuration !== undefined && targetDuration > 0) {
     waypoints.push({
       segIdx: segments.length,
       targetTime: targetDuration,

@@ -357,6 +357,22 @@ button, select, input {
   text-shadow: 0 0 3px rgba(0, 240, 255, 0.5);
 }
 
+/* Eraser cursor: pointer-events: none を CSS でも明示 */
+.erase-cursor-indicator {
+  pointer-events: none;
+  user-select: none;
+  animation: erase-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes erase-pulse {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* Drawing Options */
 .color-picker {
   display: flex;
@@ -456,6 +472,10 @@ button, select, input {
   cursor: grabbing;
 }
 
+.canvas-wrapper.measure-cursor {
+  cursor: crosshair;
+}
+
 .canvas-container {
   position: relative;
   transform-origin: center center;
@@ -529,7 +549,7 @@ button, select, input {
   align-items: center;
   justify-content: center;
   font-size: 9px;
-  color: #fff;
+  color: var(--theme-color, #fff);
   font-weight: bold;
   transition: transform 0.2s;
 }
@@ -1161,6 +1181,35 @@ select.input-cyber {
   }
 }
 
+/* Checkpoint Marker Pulsing Glow Outline (常時・赤橙) — 発見しやすくする */
+.map-marker.checkpoint-marker::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  border: 1.5px solid #ff4444;
+  box-shadow: 0 0 4px #ff4444, inset 0 0 3px #ff4444;
+  animation: checkpoint-pin-pulse 1.6s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes checkpoint-pin-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.55;
+    box-shadow: 0 0 3px #ff4444, inset 0 0 2px #ff4444;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 1;
+    box-shadow: 0 0 8px #ff4444, 0 0 14px rgba(255, 68, 68, 0.6), inset 0 0 4px #ff4444;
+  }
+}
+
 /* Picking (Picky ON) Marker Pulsing Glow Outline — applied to all 4 picking types */
 .map-marker.picking-picky::before {
   content: '';
@@ -1230,4 +1279,19 @@ select.input-cyber {
 .btn-toggle-route.active:hover {
   background: rgba(0, 240, 255, 0.5);
   border-color: var(--cyan-neon);
+}
+
+/* チェックポイントタイムライン (無視状態: 赤パルス) */
+@keyframes checkpoint-ignored-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 68, 68, 0.9), 0 0 8px rgba(255, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 6px rgba(255, 68, 68, 1), 0 0 14px rgba(255, 68, 68, 0.8);
+  }
+}
+
+@keyframes checkpoint-flag-wave {
+  0%, 100% { transform: translate(-50%, 0) rotate(0deg); }
+  50% { transform: translate(-50%, 0) rotate(6deg); }
 }
