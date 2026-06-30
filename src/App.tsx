@@ -43,6 +43,7 @@ import { useGlobalMarkers } from './hooks/useGlobalMarkers';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
+import { useStorageQuota } from './hooks/useStorageQuota';
 
 import { SaveListRowAuthor } from './hooks/SaveListRowAuthor';
 import { useAutoRoute } from './hooks/useAutoRoute';
@@ -131,73 +132,76 @@ interface QuickPresetButtonProps {
 }
 
 /**
- * localStorage の使用量と上限を表示するバッジ。
- *  - 全体合計を 設定された上限 (デフォルト 10MB) と比較
- *  - セーブデータ / プリセット / その他の内訳も表示
- *  - 0.5 秒ごとに再計算して削除直後の変化も可視化
+ * ブラウザの navigator.storage を使ったストレージ容量バッジ。
+ *  - estimate() の usage / quota を 2 秒ごとに取得
+ *  - 表示上限は固定の 50MB (= 目標値)。色判定もこの 50MB との比較
+ *  - 永続化未承認なら ⚠ マークで警告
+ *  - クリックで容量計測/永続化要求を含む設定タブを開く
  */
 function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   return `${(b / (1024 * 1024)).toFixed(2)} MB`;
 }
-function keyByteSize(k: string, v: string): number {
-  // localStorage は UTF-16 で保存されるため 2 バイト/文字
-  return (k.length + v.length) * 2;
-}
-const StorageUsageBadge: React.FC<{ limitBytes: number; onOpenSettings: () => void }> = ({ limitBytes, onOpenSettings }) => {
-  const [used, setUsed] = useState<number>(0);
-  const [savesBytes, setSavesBytes] = useState<number>(0);
-  const [presetsBytes, setPresetsBytes] = useState<number>(0);
-  const [otherBytes, setOtherBytes] = useState<number>(0);
+const STORAGE_TARGET_LIMIT_BYTES = 50 * 1024 * 1024;
+const StorageUsageBadge: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSettings }) => {
+  const { usage, quota, persisted, supported, requestPersist, refresh } = useStorageQuota(2000);
+  // navigator.storage 非対応時は localStorage を直接測る (旧挙動)
+  const [fallbackUsed, setFallbackUsed] = useState<number>(0);
   useEffect(() => {
+    if (supported) return;
     const compute = () => {
-      let savesTotal = 0;
-      let presetsTotal = 0;
-      let otherTotal = 0;
+      let total = 0;
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k === null) continue;
         const v = localStorage.getItem(k) || '';
-        const sz = keyByteSize(k, v);
-        if (k === 'heist_presets' || k.startsWith('heist_preset_body_')) {
-          presetsTotal += sz;
-        } else if (k.startsWith('heist_route_') || k === 'heist_routes_list' || k === 'heist_last_used_route_id') {
-          savesTotal += sz;
-        } else {
-          otherTotal += sz;
-        }
+        total += (k.length + v.length) * 2;
       }
-      setSavesBytes(savesTotal);
-      setPresetsBytes(presetsTotal);
-      setOtherBytes(otherTotal);
-      setUsed(savesTotal + presetsTotal + otherTotal);
+      setFallbackUsed(total);
     };
     compute();
-    // 削除直後の変化を即座に反映するため短めのポーリング
-    const id = window.setInterval(compute, 500);
+    const id = window.setInterval(compute, 1000);
     return () => window.clearInterval(id);
-  }, []);
-  const pct = Math.min(100, (used / limitBytes) * 100);
-  const color = pct >= 90 ? 'var(--red-neon, #ff0055)' : pct >= 70 ? 'var(--yellow-neon, #ffe600)' : 'var(--cyan-neon)';
+  }, [supported]);
+  const used = supported ? usage : fallbackUsed;
+  const targetPct = Math.min(100, (used / STORAGE_TARGET_LIMIT_BYTES) * 100);
+  const color = targetPct >= 90 ? 'var(--red-neon, #ff0055)' : targetPct >= 70 ? 'var(--yellow-neon, #ffe600)' : 'var(--cyan-neon)';
+  const titleLines: string[] = [];
+  titleLines.push(`使用量: ${formatBytes(used)}`);
+  if (supported) {
+    titleLines.push(`ブラウザ割当: ${formatBytes(quota)}`);
+    titleLines.push(`目標上限: 50 MB (= 警告色判定基準)`);
+    titleLines.push(persisted ? '永続化: 承認済み (ブラウザに自動削除されません)' : '永続化: 未承認 (ストレージ逼迫時に消える可能性)');
+  } else {
+    titleLines.push(`目標上限: 50 MB`);
+    titleLines.push(`navigator.storage 非対応ブラウザ (localStorage のみ)`);
+  }
+  titleLines.push('クリックで設定タブを開く');
   return (
     <div
-      title={`localStorage 使用量 / 上限 ${formatBytes(limitBytes)} (UTF-16 換算)\nセーブ: ${formatBytes(savesBytes)} / プリセット: ${formatBytes(presetsBytes)} / その他: ${formatBytes(otherBytes)}`}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}55`, borderRadius: '4px', fontSize: '10px', color: 'var(--text-muted)' }}
+      title={titleLines.join('\n')}
+      onClick={onOpenSettings}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}55`, borderRadius: '4px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}
     >
       <span>容量</span>
       <span style={{ color, fontWeight: 700, fontFamily: 'monospace' }}>{formatBytes(used)}</span>
-      <span>/ {formatBytes(limitBytes)}</span>
+      <span>/ 50 MB</span>
       <div style={{ width: '60px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 0.2s' }} />
+        <div style={{ width: `${targetPct}%`, height: '100%', background: color, transition: 'width 0.2s' }} />
       </div>
-      <button
-        onClick={onOpenSettings}
-        title="設定タブで上限を変更・容量を計測"
-        style={{ background: 'transparent', border: `1px solid ${color}55`, color, borderRadius: '3px', padding: '1px 6px', fontSize: '9px', cursor: 'pointer', fontWeight: 700 }}
-      >
-        ⚙
-      </button>
+      {supported && !persisted && (
+        <span
+          onClick={async (e) => { e.stopPropagation(); await requestPersist(); }}
+          title="クリックで永続化を要求 (= ブラウザが自動削除しなくなる)"
+          style={{ color: 'var(--yellow-neon, #ffe600)', cursor: 'pointer', fontSize: '10px' }}
+        >⚠</span>
+      )}
+      <span
+        onClick={(e) => { e.stopPropagation(); refresh(); }}
+        title="再計測"
+        style={{ cursor: 'pointer', opacity: 0.6 }}
+      >↻</span>
     </div>
   );
 };
@@ -406,6 +410,33 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
   );
 };
 
+// 距離計測サブメニュー — 選択操作の補助設定 (現時点では共通トグルのみ)。
+interface MeasureSubMenuProps {
+  blockMarkerClicksDuringTools: boolean;
+  setBlockMarkerClicksDuringTools: (v: boolean) => void;
+}
+const MeasureSubMenu: React.FC<MeasureSubMenuProps> = ({
+  blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools
+}) => {
+  return (
+    <div className="panel-section">
+      <div className="panel-title">{t('距離計測設定')}</div>
+      <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '6px' }}>
+        {t('線をクリックで選択 (Alt+クリックで累積追加)。')}
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+        <input
+          type="checkbox"
+          checked={blockMarkerClicksDuringTools}
+          onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)}
+          style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+        />
+        {t('マーカーを遮断')}
+      </label>
+    </div>
+  );
+};
+
 export default function App() {
   const isLocal = window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
@@ -498,9 +529,10 @@ export default function App() {
   const [editStrokeIdxs, setEditStrokeIdxs] = useState<Set<number>>(() => new Set());
   // 平滑化の繰り返し回数
   const [editSmoothIterations, setEditSmoothIterations] = useState<number>(3);
-  // 線分編集中にマーカー (ピン) へのクリックを無効化して、背後の線を当たりやすくする
-  // ルート線描画時の disablePinsDuringDraw と同じ仕組み。デフォルト ON。
-  const [editDisablePinsDuringEdit, setEditDisablePinsDuringEdit] = useState<boolean>(true);
+  // ルート線 / 線分編集 / 距離計測の各ツール使用中、
+  // マーカー (ピン) へのクリックを遮断して背後の線を選択しやすくする共通トグル。
+  // デフォルト ON。
+  const [blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools] = useState<boolean>(true);
   // Alt 押下状態(消しゴムモードのメニューを視覚的にシフトさせる)
   // ref + state の二重管理。
   // キーハンドラは document (capture) に張り、要素側の stopPropagation に
@@ -578,7 +610,6 @@ export default function App() {
   const warpColor = '#ff00ff';
   const stairsColor = '#ffaa00';
   const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('smooth');
-  const [disablePinsDuringDraw, setDisablePinsDuringDraw] = useState<boolean>(true);
   const [textPinPassThrough, setTextPinPassThrough] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_text_pin_pass_through');
     return saved !== null ? saved === 'true' : true;
@@ -1655,6 +1686,15 @@ export default function App() {
             {toolMode === 'edit-stroke' && (
               <div className="panel-section">
                 <div className="panel-title">{t('線分編集')}</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={blockMarkerClicksDuringTools}
+                    onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  {t('マーカーを遮断')}
+                </label>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
                   <span>{t('選択中の線:')}</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editStrokeIdxs.size}{t('本')}</span>
@@ -1667,15 +1707,6 @@ export default function App() {
                 >
                   {t('選択を解除')}
                 </button>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={editDisablePinsDuringEdit}
-                    onChange={(e) => setEditDisablePinsDuringEdit(e.target.checked)}
-                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                  />
-                  {t('マーカーを遮断')}
-                </label>
 
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 6px' }} />
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('色 (クリックで選択線に適用):')}</div>
@@ -1823,6 +1854,13 @@ export default function App() {
               />
             )}
 
+            {toolMode === 'measure' && (
+              <MeasureSubMenu
+                blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
+                setBlockMarkerClicksDuringTools={setBlockMarkerClicksDuringTools}
+              />
+            )}
+
             {toolMode === 'draw' && (
               <div className="panel-section">
                 <div className="panel-title">{t('ルート線設定')}</div>
@@ -1868,8 +1906,8 @@ export default function App() {
                   <input type="range" min="2" max="12" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '8px', userSelect: 'none' }}>
-                  <input type="checkbox" checked={disablePinsDuringDraw} onChange={(e) => setDisablePinsDuringDraw(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                  ライン描画時のピン干渉防止 (遮断)
+                  <input type="checkbox" checked={blockMarkerClicksDuringTools} onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                  {t('マーカーを遮断')}
                 </label>
               </div>
             )}
@@ -2059,14 +2097,13 @@ export default function App() {
             routeLines1px={routeLines1px}
             hideBranchLines={hideBranchLines}
             branchLines1px={branchLines1px}
-            disablePinsDuringDraw={disablePinsDuringDraw}
             textPinPassThrough={textPinPassThrough}
             eraseTarget={eraseTarget}
             eraseDefaultBehavior={eraseDefaultBehavior}
             eraseSize={eraseSize}
             editStrokeIdxs={editStrokeIdxs}
             onEditStrokeIdxsChange={setEditStrokeIdxs}
-            editDisablePinsDuringEdit={editDisablePinsDuringEdit}
+            blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
             onMarkersDragStart={historyApi.startDragSnapshot}
             onMarkersDragEnd={historyApi.commitDragSnapshot}
             stopMarkerThreshold={stopMarkerThreshold}
@@ -2697,7 +2734,6 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('ロード')}</div>
                 <StorageUsageBadge
-                  limitBytes={globalDefaults.storageLimitBytes ?? (10 * 1024 * 1024)}
                   onOpenSettings={() => { setPresetListVisible(false); setShowHelpModal(true); setHelpActiveTab('settings'); }}
                 />
               </div>
@@ -3186,8 +3222,6 @@ export default function App() {
         onAddSkillCdPreset={globalDefaults.addSkillCdPreset}
         onUpdateSkillCdPreset={globalDefaults.updateSkillCdPreset}
         onRemoveSkillCdPreset={globalDefaults.removeSkillCdPreset}
-        storageLimitBytes={globalDefaults.storageLimitBytes}
-        onSetStorageLimit={globalDefaults.setStorageLimit}
       />
 
       <HistoryModal

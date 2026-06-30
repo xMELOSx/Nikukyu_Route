@@ -34,8 +34,9 @@ interface MapCanvasProps {
   editStrokeIdxs?: Set<number>;
   /** 線分編集ツールの選択集合を更新する */
   onEditStrokeIdxsChange?: (next: Set<number>) => void;
-  /** 線分編集中にマーカーへのヒットを無効化 (= ピンに隠れて線がクリックできない問題を防ぐ) */
-  editDisablePinsDuringEdit?: boolean;
+  /** ツール使用中 (draw / edit-stroke / measure) にマーカーへのヒットを無効化
+   *  (= ピンに隠れて線がクリックできない問題を防ぐ共通トグル) */
+  blockMarkerClicksDuringTools?: boolean;
   strokeColor: string;
   strokeWidth: number;
   strokeType: 'solid' | 'dashed';
@@ -59,7 +60,6 @@ interface MapCanvasProps {
   onLongPickingCustomDurationChange?: (markerId: string, duration: number | undefined) => void;
   pickyMarkerIds?: { [markerId: string]: boolean };
   onPickyMarkerChange?: (markerId: string, picky: boolean) => void;
-  disablePinsDuringDraw?: boolean;
   textPinPassThrough?: boolean;
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
@@ -140,7 +140,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   eraseSize = 16,
   editStrokeIdxs,
   onEditStrokeIdxsChange,
-  editDisablePinsDuringEdit = true,
+  blockMarkerClicksDuringTools,
   strokeColor,
   strokeWidth,
   strokeType,
@@ -164,7 +164,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onLongPickingCustomDurationChange,
   pickyMarkerIds = {},
   onPickyMarkerChange,
-  disablePinsDuringDraw = true,
   textPinPassThrough = true,
   onMarkersDragStart,
   onMarkersDragEnd,
@@ -2802,7 +2801,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      width: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : (isSkillCd && skillColor ? skillColor : meta.color),
-                      pointerEvents: ((disablePinsDuringDraw && toolMode === 'draw') || (editDisablePinsDuringEdit && toolMode === 'edit-stroke')) ? 'none' : 'auto',
+                      pointerEvents: (blockMarkerClicksDuringTools && (toolMode === 'draw' || toolMode === 'edit-stroke' || toolMode === 'measure'))
+                        ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : ((inactiveMarkersMode && !isWarp && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
                   } as React.CSSProperties}

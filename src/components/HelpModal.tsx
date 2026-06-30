@@ -4,6 +4,7 @@ import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
 import { t } from '../i18n';
 import { DictionaryEditor } from './DictionaryEditor';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { useStorageQuota } from '../hooks/useStorageQuota';
 
 // Isolated component that only re-renders when the HTML string actually changes.
 // Prevents parent re-renders (e.g. auto-route engine ticks) from re-evaluating
@@ -531,38 +532,35 @@ function formatStorageBytes(b: number): string {
 }
 
 interface StorageLimitSectionProps {
-  limitBytes: number;
-  onSetStorageLimit: (bytes: number) => void;
+  /** 旧 prop (互換性のため残す)。新実装では使用しない */
+  limitBytes?: number;
+  /** 旧 prop (互換性のため残す) */
+  onSetStorageLimit?: (bytes: number) => void;
 }
 
-const StorageLimitSection: React.FC<StorageLimitSectionProps> = ({ limitBytes, onSetStorageLimit }) => {
+/**
+ * ストレージ管理セクション。
+ * ブラウザの navigator.storage API を使って:
+ *  - 現在の使用量 / ブラウザ割当量 (quota) を表示
+ *  - 永続化を要求 (一度承認されるとブラウザが自動削除しなくなる)
+ *  - 「容量を計測」ボタンで実測 (= 書き込みして限界を見る)
+ * 目標上限は 50MB (= バッジの警告色判定基準と同じ)。
+ */
+const TARGET_LIMIT_MB = 50;
+const StorageLimitSection: React.FC<StorageLimitSectionProps> = () => {
+  const { usage, quota, persisted, supported, requestPersist, refresh } = useStorageQuota(2000);
   const [measuring, setMeasuring] = useState(false);
-  const [currentUsage, setCurrentUsage] = useState<number>(0);
   const [measuredMax, setMeasuredMax] = useState<number | null>(null);
   const [progress, setProgress] = useState<number>(0);
-  const [draftLimitMB, setDraftLimitMB] = useState<string>(String(Math.round(limitBytes / 1024 / 1024)));
 
-  const computeCurrent = () => {
-    let total = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k === null) continue;
-      const v = localStorage.getItem(k) || '';
-      total += (k.length + v.length) * 2;
-    }
-    setCurrentUsage(total);
-    return total;
-  };
-
-  // 初回マウント時に現状を測定
-  useState(() => { computeCurrent(); return null; });
+  const computeCurrent = () => usage;
 
   const runMeasure = async () => {
     if (measuring) return;
     setMeasuring(true);
     setMeasuredMax(null);
     setProgress(0);
-    const before = computeCurrent();
+    const before = supported ? usage : computeCurrent();
     const testKey = '___heist_storage_test___';
     const chunk = 'X'.repeat(1024 * 64); // 64 KB ずつ
     let accumulated = '';
@@ -582,23 +580,26 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = ({ limitBytes, o
           await new Promise<void>(r => setTimeout(r, 0));
         }
       }
-    } catch (e) {
-      try { localStorage.removeItem(testKey); } catch {}
+    } catch {
+      try { localStorage.removeItem(testKey); } catch { /* ignore */ }
       const finalWritten = accumulated.length * 2;
       const max = before + finalWritten;
       setMeasuredMax(max);
       setProgress(max);
     } finally {
-      try { localStorage.removeItem(testKey); } catch {}
+      try { localStorage.removeItem(testKey); } catch { /* ignore */ }
       setMeasuring(false);
-      computeCurrent();
+      refresh();
     }
   };
 
-  const applyDraft = () => {
-    const mb = parseFloat(draftLimitMB);
-    if (!isFinite(mb) || mb < 1) return;
-    onSetStorageLimit(Math.floor(mb * 1024 * 1024));
+  const onRequestPersist = async () => {
+    const ok = await requestPersist();
+    if (ok) {
+      // 成功通知は呼び出し元で出す
+    } else {
+      // 失敗
+    }
   };
 
   return (
@@ -615,16 +616,21 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = ({ limitBytes, o
           className="btn-cyber"
           style={{ padding: '5px 12px', fontSize: '11px', clipPath: 'none' }}
           onClick={runMeasure}
-          disabled={measuring}
+          disabled={measuring || !supported}
         >
           {measuring ? '計測中…' : '容量を計測'}
         </button>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          現在の使用量: <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(currentUsage)}</span>
+          現在の使用量: <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(usage)}</span>
         </span>
+        {supported && (
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            ブラウザ割当: <span style={{ color: 'var(--green-neon, #39ff14)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(quota)}</span>
+          </span>
+        )}
         {measuredMax !== null && (
           <span style={{ fontSize: '11px', color: 'var(--green-neon, #39ff14)' }}>
-            推定最大容量: <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(measuredMax)}</span>
+            実測最大: <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(measuredMax)}</span>
           </span>
         )}
       </div>
@@ -636,28 +642,37 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = ({ limitBytes, o
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>上限値 (MB):</span>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={draftLimitMB}
-          onChange={(e) => setDraftLimitMB(e.target.value)}
-          onBlur={applyDraft}
-          onKeyDown={(e) => { if (e.key === 'Enter') { applyDraft(); (e.target as HTMLInputElement).blur(); } }}
-          style={{ width: '80px', padding: '3px 6px', fontSize: '11px', background: 'rgba(5,7,10,0.85)', color: 'var(--cyan-neon)', border: '1px solid var(--cyan-neon)', borderRadius: '3px', fontFamily: 'monospace' }}
-        />
-        <button
-          className="btn-cyber"
-          style={{ padding: '3px 10px', fontSize: '10px', clipPath: 'none' }}
-          onClick={applyDraft}
-        >
-          適用
-        </button>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-          (現在: {formatStorageBytes(limitBytes)})
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          目標上限: <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontFamily: 'monospace' }}>{TARGET_LIMIT_MB} MB</span>
+          (= バッジの警告色判定基準。実容量上限は quota で決まります)
         </span>
       </div>
+
+      {supported && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            className="btn-cyber"
+            style={{ padding: '4px 10px', fontSize: '11px', clipPath: 'none' }}
+            onClick={onRequestPersist}
+            disabled={persisted}
+            title="永続化ストレージを要求。承認されると、ストレージ逼迫時にブラウザが自動削除しなくなります"
+          >
+            {persisted ? '✓ 永続化承認済み' : '永続化を要求'}
+          </button>
+          <button
+            className="btn-cyber"
+            style={{ padding: '4px 10px', fontSize: '11px', clipPath: 'none' }}
+            onClick={refresh}
+          >
+            再計測
+          </button>
+          {!supported && (
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              ※ このブラウザは navigator.storage に対応していません (localStorage のみで動作)
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 };
