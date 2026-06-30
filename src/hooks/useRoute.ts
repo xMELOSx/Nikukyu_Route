@@ -255,7 +255,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   const createNewPlan = useCallback(() => {
     const currentAuthor = route.author;
     const newId = generateId('route');
-    const newCreatedAt = Date.now();
     const newRoute = DEFAULT_ROUTE(newId);
     if (currentAuthor) {
       // author は平文なのでそのまま引き継ぎ
@@ -264,17 +263,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }
     setRouteWithGlobalDefaults(newRoute);
     localStorage.setItem('heist_last_used_route_id', newId);
-    // 必要ならバックグラウンドで author を引き継ぐ (await 不要なので結果は反映されないが
-    // 次回ロード時に平文を反映できる)
-    if (currentAuthor) {
-      aesGcmDecrypt(currentAuthor, getAuthorKey(route.id, route.createdAt)).then((plain) => {
-        if (!plain || plain === AUTHOR_TAMPERED) return;
-        // 復号成功 → 次回保存時に反映されるよう内部で暗号化だけ済ませておく
-        // (ここでは route state は触らない)
-        aesGcmEncrypt(plain, getAuthorKey(newId, newCreatedAt)).catch(() => {});
-        aesGcmEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt)).catch(() => {});
-      }).catch(() => {});
-    }
   }, [route, setRouteWithGlobalDefaults]);
 
   const loadFromLocal = useCallback((id: string) => {
@@ -406,21 +394,19 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }).catch(() => { });
   }, []);
 
-  const saveAsPreset = useCallback(async (input: {
+  const saveAsPreset = useCallback((input: {
     name: string; description: string; author: string; originalAuthor: string;
     visibility?: PresetVisibility;
   }) => {
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
-    const plainAuthor = await aesGcmDecrypt(route.author, getAuthorKey(route.id, route.createdAt));
-    const plainOriginal = await aesGcmDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt));
     const newPreset: PresetData = {
       id: generateId('preset'),
       name: input.name.trim() || route.title,
       description: input.description,
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
-      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
-      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
+      author: route.author || '',
+      originalAuthor: route.originalAuthor || '',
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(input.visibility),
       routeData: toSave
@@ -441,20 +427,18 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
    *   その後に visibility 関連の代入は一切行わないため、元の値がそのまま保持される。
    *   公開レベルを変えたい場合は setPresetVisibility を明示的に呼ぶこと。
    */
-  const overwritePreset = useCallback(async (presetId: string) => {
+  const overwritePreset = useCallback((presetId: string) => {
     const idx = presets.findIndex(p => p.id === presetId);
     if (idx === -1) return;
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
-    const plainAuthor = await aesGcmDecrypt(route.author, getAuthorKey(route.id, route.createdAt));
-    const plainOriginal = await aesGcmDecrypt(route.originalAuthor, getOriginalAuthorKey(route.id, route.createdAt));
     const updatedPreset: PresetData = {
       ...presets[idx],
       name: route.title,
       description: route.description || '',
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
-      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
-      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
+      author: route.author || '',
+      originalAuthor: route.originalAuthor || '',
       updatedAt: Date.now(),
       routeData: toSave
     };

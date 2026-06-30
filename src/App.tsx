@@ -30,12 +30,7 @@ import {
   DataManager,
   normalizeStrokes,
   smoothStrokePoints,
-  aesGcmEncrypt,
-  aesGcmDecrypt,
-  AUTHOR_TAMPERED,
   AUTHOR_DEFAULT_PLAIN,
-  getAuthorKey,
-  getOriginalAuthorKey,
   generateId,
   runSaveDataMigrations
 } from './utils/DataManager';
@@ -46,7 +41,7 @@ import { useGlobalMarkers } from './hooks/useGlobalMarkers';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
-import { useAuthorField } from './hooks/useAuthorField';
+
 import { SaveListRowAuthor } from './hooks/SaveListRowAuthor';
 import { useAutoRoute } from './hooks/useAutoRoute';
 import { PLAY_DATA_KEY, loadFloorNavCollapsed, saveFloorNavCollapsed } from './utils/PlayDataManager';
@@ -1108,16 +1103,14 @@ export default function App() {
     const save = DataManager.loadFromLocalStorage(s.id);
     if (!save) return;
     const toSave: RouteData = { ...save, mapVersion: 2, markerScale };
-    const plainAuthor = await aesGcmDecrypt(save.author || '', getAuthorKey(save.id, save.createdAt));
-    const plainOriginal = await aesGcmDecrypt(save.originalAuthor || '', getOriginalAuthorKey(save.id, save.createdAt));
     const newPreset: PresetData = {
       id: generateId('preset'),
       name: save.title,
       description: save.description || '',
       targetCash: save.targetCash || '',
       targetCoins: save.targetCoins || '',
-      author: plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || ''),
-      originalAuthor: plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || ''),
+      author: save.author || '',
+      originalAuthor: save.originalAuthor || '',
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(visibility),
       routeData: toSave
