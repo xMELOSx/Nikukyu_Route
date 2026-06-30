@@ -843,8 +843,22 @@ export interface PresetData {
    * 後方互換のため undefined を許容し、DataManager.normalizePreset で補完する。
    */
   visibility?: PresetVisibility;
-  routeData: RouteData;
+  /**
+   * プリセットの実体ルートデータ。容量削減のため localStorage には別キー
+   * (`heist_preset_body_<id>`) で保存される。一覧表示では読み込まず、
+   * プリセットを「呼び出す」とき (= loadFromLocal) だけオンデマンドで読む。
+   * メモリ上 (= useRoute state) にも常に保持されない。
+   * 旧形式 (PresetData 内に routeData を持つ) は normalizePresets で検出したら
+   * migrateLegacyPreset により別キーに切り出す。
+   */
+  routeData?: RouteData;
 }
+
+/**
+ * プリセット一覧に表示する「メタ情報のみ」の軽量版。実体 (routeData) は
+ * 含まないため、一覧ロード時のメモリ/ストレージ負荷が大幅に軽い。
+ */
+export type PresetMeta = Omit<PresetData, 'routeData'>;
 
 /** プリセットを公開レベル別に分類する。unknown は public に正規化。 */
 export function normalizePresetVisibility(v: unknown): PresetVisibility {
@@ -864,7 +878,8 @@ export function getPresetVisibility(preset: Pick<PresetData, 'visibility'>): Pre
 export function normalizePresets(raw: unknown): PresetData[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((p: any) => p && typeof p === 'object' && typeof p.id === 'string' && typeof p.name === 'string' && p.routeData && typeof p.routeData === 'object')
+    // routeData がない (= 新形式 / 実体は別キー) も許可する。
+    .filter((p: any) => p && typeof p === 'object' && typeof p.id === 'string' && typeof p.name === 'string')
     .map((p: any) => ({
       id: String(p.id),
       name: String(p.name),
@@ -877,8 +892,73 @@ export function normalizePresets(raw: unknown): PresetData[] {
       visibility: normalizePresetVisibility(p.visibility),
       routeData: p.routeData && typeof p.routeData === 'object'
         ? migrateOriginalAuthorToRenderCache(p.routeData as any)
-        : p.routeData
+        : undefined
     }));
+}
+
+/**
+ * プリセット実体 (= RouteData) を保管する localStorage キーの接頭辞。
+ * 旧形式はプリセット配列 (`heist_presets`) 内に routeData が埋め込まれていたが、
+ * 容量削減のため独立キーへ分離した。接頭辞 + ID で一意になる。
+ */
+export const PRESET_BODY_KEY_PREFIX = 'heist_preset_body_';
+
+export function presetBodyKey(presetId: string): string {
+  return `${PRESET_BODY_KEY_PREFIX}${presetId}`;
+}
+
+/**
+ * プリセットの実体 (RouteData) を localStorage に保存する。
+ * 失敗時 (容量オーバー等) は例外をそのまま投げる。
+ */
+export function savePresetBody(presetId: string, routeData: RouteData): void {
+  localStorage.setItem(presetBodyKey(presetId), JSON.stringify(routeData));
+}
+
+export function loadPresetBody(presetId: string): RouteData | null {
+  try {
+    const raw = localStorage.getItem(presetBodyKey(presetId));
+    if (!raw) return null;
+    return JSON.parse(raw) as RouteData;
+  } catch {
+    return null;
+  }
+}
+
+export function removePresetBody(presetId: string): void {
+  try { localStorage.removeItem(presetBodyKey(presetId)); } catch { /* ignore */ }
+}
+
+/**
+ * 旧形式 (プリセット内に routeData が埋まっている) を新形式にマイグレートする。
+ *  - 実体を `heist_preset_body_<id>` に切り出し
+ *  - プリセット配列からは routeData を除去
+ *  - localStorage を更新
+ * 戻り値: マイグレーションされた (新形式) PresetData 配列
+ *
+ * 注意: この関数は export 関数として独立して動く必要があるため、
+ *       DataManager.savePresetsToLocalStorage (クラス static メソッド) は
+ *       使わず、 localStorage.setItem を直接呼ぶ。
+ */
+export function migrateLegacyPresetBodies(presets: PresetData[]): PresetData[] {
+  const migrated: PresetData[] = [];
+  let anyMigrated = false;
+  for (const p of presets) {
+    if (p.routeData) {
+      // 旧形式: 実体を別キーに保存し、配列からは routeData を取り除く
+      try { savePresetBody(p.id, p.routeData); } catch { /* quota 等: 無視 */ }
+      const { routeData: _drop, ...meta } = p;
+      migrated.push(meta as PresetData);
+      anyMigrated = true;
+    } else {
+      migrated.push(p);
+    }
+  }
+  if (anyMigrated) {
+    // メタのみを書き戻す (routeData を含めない)
+    try { localStorage.setItem('heist_presets', JSON.stringify(migrated)); } catch { /* ignore */ }
+  }
+  return migrated;
 }
 
 /**
@@ -1154,7 +1234,10 @@ export class DataManager {
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed as PresetData[] : [];
+      const normalized = normalizePresets(parsed);
+      // 旧形式 (routeData が埋まっている) は新形式にマイグレートして
+      // 配列から実体を取り除く (= localStorage の容量を削減)
+      return migrateLegacyPresetBodies(normalized);
     } catch {
       return [];
     }
@@ -1162,7 +1245,11 @@ export class DataManager {
 
   static savePresetsToLocalStorage(presets: PresetData[]): void {
     try {
-      localStorage.setItem('heist_presets', JSON.stringify(presets));
+      // 容量削減のため、プリセット実体 (routeData) は別キーに切り出した
+      // メタ情報のみを書き込む。各プリセットの routeData は事前に
+      // savePresetBody で保存しておくこと。
+      const metaOnly = presets.map(({ routeData: _r, ...rest }) => rest);
+      localStorage.setItem('heist_presets', JSON.stringify(metaOnly));
     } catch {
       // Ignore quota / serialization errors — the server copy is the source
       // of truth and the list will be refreshed on the next successful sync.

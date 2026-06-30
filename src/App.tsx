@@ -33,7 +33,8 @@ import {
   smoothStrokePointsKeepEnds,
   AUTHOR_DEFAULT_PLAIN,
   generateId,
-  runSaveDataMigrations
+  runSaveDataMigrations,
+  savePresetBody
 } from './utils/DataManager';
 import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
@@ -131,11 +132,10 @@ interface QuickPresetButtonProps {
 
 /**
  * localStorage の使用量と上限を表示するバッジ。
- *  - 全体合計を 8MB 目安と比較 (主要ブラウザの実態に近い値)
+ *  - 全体合計を 設定された上限 (デフォルト 10MB) と比較
  *  - セーブデータ / プリセット / その他の内訳も表示
  *  - 0.5 秒ごとに再計算して削除直後の変化も可視化
  */
-const STORAGE_BUDGET_BYTES = 8 * 1024 * 1024; // 8 MB (主要ブラウザの localStorage 容量に近い)
 function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
@@ -145,7 +145,7 @@ function keyByteSize(k: string, v: string): number {
   // localStorage は UTF-16 で保存されるため 2 バイト/文字
   return (k.length + v.length) * 2;
 }
-const StorageUsageBadge: React.FC = () => {
+const StorageUsageBadge: React.FC<{ limitBytes: number; onOpenSettings: () => void }> = ({ limitBytes, onOpenSettings }) => {
   const [used, setUsed] = useState<number>(0);
   const [savesBytes, setSavesBytes] = useState<number>(0);
   const [presetsBytes, setPresetsBytes] = useState<number>(0);
@@ -160,7 +160,7 @@ const StorageUsageBadge: React.FC = () => {
         if (k === null) continue;
         const v = localStorage.getItem(k) || '';
         const sz = keyByteSize(k, v);
-        if (k === 'heist_presets' || k.startsWith('__preset__')) {
+        if (k === 'heist_presets' || k.startsWith('heist_preset_body_')) {
           presetsTotal += sz;
         } else if (k.startsWith('heist_route_') || k === 'heist_routes_list' || k === 'heist_last_used_route_id') {
           savesTotal += sz;
@@ -178,20 +178,26 @@ const StorageUsageBadge: React.FC = () => {
     const id = window.setInterval(compute, 500);
     return () => window.clearInterval(id);
   }, []);
-  const pct = Math.min(100, (used / STORAGE_BUDGET_BYTES) * 100);
+  const pct = Math.min(100, (used / limitBytes) * 100);
   const color = pct >= 90 ? 'var(--red-neon, #ff0055)' : pct >= 70 ? 'var(--yellow-neon, #ffe600)' : 'var(--cyan-neon)';
   return (
     <div
-      title={`localStorage 使用量 / 8MB 目安 (UTF-16 換算)\nセーブ: ${formatBytes(savesBytes)} / プリセット: ${formatBytes(presetsBytes)} / その他: ${formatBytes(otherBytes)}`}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '3px 10px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}55`, borderRadius: '4px', fontSize: '10px', color: 'var(--text-muted)' }}
+      title={`localStorage 使用量 / 上限 ${formatBytes(limitBytes)} (UTF-16 換算)\nセーブ: ${formatBytes(savesBytes)} / プリセット: ${formatBytes(presetsBytes)} / その他: ${formatBytes(otherBytes)}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}55`, borderRadius: '4px', fontSize: '10px', color: 'var(--text-muted)' }}
     >
       <span>容量</span>
       <span style={{ color, fontWeight: 700, fontFamily: 'monospace' }}>{formatBytes(used)}</span>
-      <span>/ 8 MB</span>
+      <span>/ {formatBytes(limitBytes)}</span>
       <div style={{ width: '60px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 0.2s' }} />
       </div>
-      <span style={{ borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: '8px' }}>セーブ {formatBytes(savesBytes)} / プリセット {formatBytes(presetsBytes)}</span>
+      <button
+        onClick={onOpenSettings}
+        title="設定タブで上限を変更・容量を計測"
+        style={{ background: 'transparent', border: `1px solid ${color}55`, color, borderRadius: '3px', padding: '1px 6px', fontSize: '9px', cursor: 'pointer', fontWeight: 700 }}
+      >
+        ⚙
+      </button>
     </div>
   );
 };
@@ -701,6 +707,17 @@ export default function App() {
     autoSaveEnabled
   });
 
+  // ロードモーダルを開いた時にプリセットをメモリにロード、
+  // 閉じた時にメモリから破棄する (= プリセットの routeData が巨大なので
+  // 必要な時だけ展開することでメモリを節約する)
+  useEffect(() => {
+    if (presetListVisible) {
+      routeApi.ensurePresetsLoaded();
+    } else if (routeApi.presetsLoaded) {
+      routeApi.releasePresets();
+    }
+  }, [presetListVisible, routeApi]);
+
   // 編集中は input 制御用のローカル state を持つ。初期値はプレーンテキストの作者名。
   // route.id / route.author が変わったら再同期する。
   const [authorEdit, setAuthorEdit] = useState<string>(AUTHOR_DEFAULT_PLAIN);
@@ -957,12 +974,34 @@ export default function App() {
     }
 
     // Fetch presets: try dev server API first, then static file, then legacy fallback
+    // サーバから取得したプリセットの実体は重複を避けるため localStorage に
+    // 保存しない (= setPresets(_, { fromServer: true }) でメタのみ保持)。
+    // さらに、サーバ取得が成功した時点で「サーバ由来 (=重複)」の body キーを
+    // 削除する。サーバにない (=ユーザがローカルで作成) の body は残す。
+    const purgeServerPresetBodies = (serverPresets: PresetData[]) => {
+      const serverIds = new Set(serverPresets.map(p => p.id));
+      let removed = 0;
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('heist_preset_body_')) {
+          const id = k.replace('heist_preset_body_', '');
+          if (serverIds.has(id)) {
+            try { localStorage.removeItem(k); removed++; } catch { /* ignore */ }
+          }
+        }
+      }
+      return removed;
+    };
     fetch(`${import.meta.env.BASE_URL}api/presets`)
       .then(res => res.ok ? res.json() : [])
       .then((data: PresetData[]) => {
         const normalized = normalizePresets(data);
         if (normalized.length > 0) {
-          routeApi.setPresets(normalized);
+          routeApi.setPresets(normalized, { fromServer: true });
+          const removed = purgeServerPresetBodies(normalized);
+          if (removed > 0) {
+            notification.show(`プリセット本体の重複データを ${removed} 件削除しました`);
+          }
           return;
         }
         // Fallback: try loading from static presets.json (shipped with dist build)
@@ -971,7 +1010,11 @@ export default function App() {
           .then((staticPresets: PresetData[]) => {
             const normalizedStatic = normalizePresets(staticPresets);
             if (normalizedStatic.length > 0) {
-              routeApi.setPresets(normalizedStatic);
+              routeApi.setPresets(normalizedStatic, { fromServer: true });
+              const removed = purgeServerPresetBodies(normalizedStatic);
+              if (removed > 0) {
+                notification.show(`プリセット本体の重複データを ${removed} 件削除しました`);
+              }
               return;
             }
             // Legacy fallback: try old default_preset.json (single route)
@@ -1244,9 +1287,15 @@ export default function App() {
       author: save.author || '',
       renderCache: save.renderCache || '',
       updatedAt: Date.now(),
-      visibility: normalizePresetVisibility(visibility),
-      routeData: toSave
+      visibility: normalizePresetVisibility(visibility)
+      // 実体 (routeData) は別キーに保存するためここには含めない
     };
+    // 実体を別キーに保存 (容量削減)
+    try { savePresetBody(newPreset.id, toSave); } catch (e) {
+      console.error('savePresetBody (quick) failed', e);
+      notification.show('プリセット本体の保存に失敗しました');
+      return;
+    }
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2647,7 +2696,10 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('ロード')}</div>
-                <StorageUsageBadge />
+                <StorageUsageBadge
+                  limitBytes={globalDefaults.storageLimitBytes ?? (10 * 1024 * 1024)}
+                  onOpenSettings={() => { setPresetListVisible(false); setShowHelpModal(true); setHelpActiveTab('settings'); }}
+                />
               </div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <input
@@ -2663,7 +2715,7 @@ export default function App() {
                     ✕
                   </button>
                 )}
-                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); setSaveLoadFilter('all'); }}>{t('✕ 閉じる')}</button>
+                <button className="btn-cyber" style={{ padding: '4px 10px', fontSize: '14px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); setSaveLoadFilter('all'); }}>✕</button>
               </div>
             </div>
             {/* フィルタツールバー */}
@@ -2703,7 +2755,12 @@ export default function App() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
               {(() => {
-                const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: true, showPrivate: true });
+                // ロードモーダルの一覧:
+                //  - 限定公開 (unlisted) は本番モードでは出さない (URL (?preset=ID)
+                //    経由で開く前提)。ローカルモード (npm run dev) では一覧に出して良い
+                //    (= 開発者/作者本人が動作確認できるようにする)。
+                //  - 非公開 (private) はローカルモードのときだけ出す。
+                const visiblePresets = routeApi.filterVisiblePresets({ showUnlisted: isLocal, showPrivate: true });
                 if (visiblePresets.length === 0 && routeApi.saves.length === 0) {
                   return <div style={{ fontSize: '14px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>{t('セーブデータはまだありません')}</div>;
                 }
@@ -3129,6 +3186,8 @@ export default function App() {
         onAddSkillCdPreset={globalDefaults.addSkillCdPreset}
         onUpdateSkillCdPreset={globalDefaults.updateSkillCdPreset}
         onRemoveSkillCdPreset={globalDefaults.removeSkillCdPreset}
+        storageLimitBytes={globalDefaults.storageLimitBytes}
+        onSetStorageLimit={globalDefaults.setStorageLimit}
       />
 
       <HistoryModal

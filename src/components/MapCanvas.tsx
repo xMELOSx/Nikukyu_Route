@@ -18,7 +18,7 @@ import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
 import { t, tNote, useLangState } from '../i18n';
-import { subscribe as subscribeUserDict } from '../i18n/userDict';
+import { getUserDictFor, subscribe as subscribeUserDict } from '../i18n/userDict';
 
 interface MapCanvasProps {
   floor: FloorType;
@@ -2776,7 +2776,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
                     onClick={passThrough ? undefined : (e) => handleMarkerClick(e, m)}
                   >
-                    {tNote(m.note) || t('Text')}
+                    {(() => {
+                      const note = (m.note || '').trim();
+                      if (!note) return t('Text');
+                      const en = getUserDictFor('en');
+                      if (en[note]) return en[note];
+                      const ja = getUserDictFor('ja');
+                      if (ja[note]) return ja[note];
+                      return tNote(m.note) || note;
+                    })()}
                   </div>
                 );
               }
@@ -3569,7 +3577,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 onMouseDown={passThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
                 onClick={passThrough ? undefined : (e) => handleMarkerClick(e, m)}
               >
-                <div style={{ fontSize: `${displaySize}px` }}>{m.note || 'Text'}</div>
+                <div style={{ fontSize: `${displaySize}px` }}>{tNote(m.note) || m.note || 'Text'}</div>
               </div>
             );
           }),

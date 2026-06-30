@@ -62,6 +62,8 @@ interface HelpModalProps {
   onAddSkillCdPreset?: (input: { label: string; color: string; mode: 'fixed' | 'per_second'; seconds: number; perSecondCd: number }) => void;
   onUpdateSkillCdPreset?: (id: string, patch: Partial<Omit<SkillCdPreset, 'id'>>) => void;
   onRemoveSkillCdPreset?: (id: string) => void;
+  storageLimitBytes?: number;
+  onSetStorageLimit?: (bytes: number) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -92,7 +94,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   skillCdPresets = [],
   onAddSkillCdPreset,
   onUpdateSkillCdPreset,
-  onRemoveSkillCdPreset
+  onRemoveSkillCdPreset,
+  storageLimitBytes,
+  onSetStorageLimit
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -409,6 +413,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </div>
               )}
 
+              {/* ストレージ容量計測 */}
+              {onSetStorageLimit && (
+                <StorageLimitSection
+                  limitBytes={storageLimitBytes ?? 10 * 1024 * 1024}
+                  onSetStorageLimit={onSetStorageLimit}
+                />
+              )}
+
               {/* スキルCDプリセット管理 */}
               <div style={{ padding: '10px 14px', background: 'rgba(57, 255, 20, 0.04)', border: '1px solid rgba(57, 255, 20, 0.25)', borderRadius: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
@@ -505,10 +517,146 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               👁 プレビュー表示 (HTML表示)
             </label>
           ) : <div />}
-          <button className="btn-cyber success" onClick={() => { onClose(); setIsHelpPreviewMode(false); }} style={{ padding: '6px 16px', fontSize: '12px', clipPath: 'none' }}>
-            {isEditMode ? '保存して閉じる' : '閉じる'}
-          </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ---- ストレージ容量設定セクション ----
+function formatStorageBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface StorageLimitSectionProps {
+  limitBytes: number;
+  onSetStorageLimit: (bytes: number) => void;
+}
+
+const StorageLimitSection: React.FC<StorageLimitSectionProps> = ({ limitBytes, onSetStorageLimit }) => {
+  const [measuring, setMeasuring] = useState(false);
+  const [currentUsage, setCurrentUsage] = useState<number>(0);
+  const [measuredMax, setMeasuredMax] = useState<number | null>(null);
+  const [progress, setProgress] = useState<number>(0);
+  const [draftLimitMB, setDraftLimitMB] = useState<string>(String(Math.round(limitBytes / 1024 / 1024)));
+
+  const computeCurrent = () => {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k === null) continue;
+      const v = localStorage.getItem(k) || '';
+      total += (k.length + v.length) * 2;
+    }
+    setCurrentUsage(total);
+    return total;
+  };
+
+  // 初回マウント時に現状を測定
+  useState(() => { computeCurrent(); return null; });
+
+  const runMeasure = async () => {
+    if (measuring) return;
+    setMeasuring(true);
+    setMeasuredMax(null);
+    setProgress(0);
+    const before = computeCurrent();
+    const testKey = '___heist_storage_test___';
+    const chunk = 'X'.repeat(1024 * 64); // 64 KB ずつ
+    let accumulated = '';
+    // 進捗更新用のしきい値 (1MB 単位)
+    let lastTick = 0;
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        accumulated += chunk;
+        localStorage.setItem(testKey, accumulated);
+        const written = accumulated.length * 2;
+        const sinceTick = written - lastTick;
+        if (sinceTick >= 1024 * 1024) { // 1MB ごとに更新
+          setProgress(before + written);
+          lastTick = written;
+          // UI 更新のためにマイクロタスクを譲る
+          await new Promise<void>(r => setTimeout(r, 0));
+        }
+      }
+    } catch (e) {
+      try { localStorage.removeItem(testKey); } catch {}
+      const finalWritten = accumulated.length * 2;
+      const max = before + finalWritten;
+      setMeasuredMax(max);
+      setProgress(max);
+    } finally {
+      try { localStorage.removeItem(testKey); } catch {}
+      setMeasuring(false);
+      computeCurrent();
+    }
+  };
+
+  const applyDraft = () => {
+    const mb = parseFloat(draftLimitMB);
+    if (!isFinite(mb) || mb < 1) return;
+    onSetStorageLimit(Math.floor(mb * 1024 * 1024));
+  };
+
+  return (
+    <div style={{ padding: '10px 14px', background: 'rgba(255, 230, 0, 0.04)', border: '1px solid rgba(255, 230, 0, 0.25)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--yellow-neon, #ffe600)' }}>💾 ローカルストレージ容量</span>
+      </div>
+      <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        localStorage の使用量と上限を管理します。「計測」を押すと現在の使用量から上限まで書き込みを試して、このブラウザでの最大容量を推定します (数秒〜数十秒かかる場合があります)。
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <button
+          className="btn-cyber"
+          style={{ padding: '5px 12px', fontSize: '11px', clipPath: 'none' }}
+          onClick={runMeasure}
+          disabled={measuring}
+        >
+          {measuring ? '計測中…' : '容量を計測'}
+        </button>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          現在の使用量: <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(currentUsage)}</span>
+        </span>
+        {measuredMax !== null && (
+          <span style={{ fontSize: '11px', color: 'var(--green-neon, #39ff14)' }}>
+            推定最大容量: <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(measuredMax)}</span>
+          </span>
+        )}
+      </div>
+
+      {measuring && (
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+          書込中: <span style={{ color: 'var(--yellow-neon)', fontFamily: 'monospace' }}>{formatStorageBytes(progress)}</span> …
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>上限値 (MB):</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={draftLimitMB}
+          onChange={(e) => setDraftLimitMB(e.target.value)}
+          onBlur={applyDraft}
+          onKeyDown={(e) => { if (e.key === 'Enter') { applyDraft(); (e.target as HTMLInputElement).blur(); } }}
+          style={{ width: '80px', padding: '3px 6px', fontSize: '11px', background: 'rgba(5,7,10,0.85)', color: 'var(--cyan-neon)', border: '1px solid var(--cyan-neon)', borderRadius: '3px', fontFamily: 'monospace' }}
+        />
+        <button
+          className="btn-cyber"
+          style={{ padding: '3px 10px', fontSize: '10px', clipPath: 'none' }}
+          onClick={applyDraft}
+        >
+          適用
+        </button>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+          (現在: {formatStorageBytes(limitBytes)})
+        </span>
       </div>
     </div>
   );

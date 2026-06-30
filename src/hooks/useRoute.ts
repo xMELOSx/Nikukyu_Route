@@ -18,6 +18,10 @@ import {
   aesGcmDecrypt,
   getRenderCacheKey,
   migrateOriginalAuthorToRenderCache,
+  savePresetBody,
+  loadPresetBody,
+  removePresetBody,
+  migrateLegacyPresetBodies,
   generateId
 } from '../utils/DataManager';
 import type { GlobalDefaults } from './useGlobalDefaults';
@@ -70,8 +74,19 @@ export interface UseRouteApi {
   setRouteWithGlobalDefaults: (action: RouteData | ((prev: RouteData) => RouteData)) => void;
   saves: SaveInfo[];
   presets: PresetData[];
+  /**
+   * プリセットがメモリに展開されているかどうか。プリセットは routeData が
+   * 大きいため、ロードモーダルを開いた瞬間にだけメモリに展開し、
+   * 閉じたら破棄する (App.tsx が ensurePresetsLoaded / releasePresets を
+   * useEffect で制御する)。
+   */
+  presetsLoaded: boolean;
   /** Replace the preset list (used after fetching from server or import). */
-  setPresets: (next: PresetData[]) => void;
+  setPresets: (next: PresetData[], opts?: { fromServer?: boolean }) => void;
+  /** プリセット一覧をメモリにロードする (idempotent)。 */
+  ensurePresetsLoaded: () => PresetData[];
+  /** プリセット一覧をメモリから破棄する (localStorage 側は変更しない)。 */
+  releasePresets: () => void;
   refreshSavesList: () => void;
   saveToLocal: () => void;
   saveAsCopy: () => void;
@@ -127,7 +142,14 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const [route, setRouteRaw] = useState<RouteData>(DEFAULT_ROUTE());
   const [saves, setSaves] = useState<SaveInfo[]>([]);
-  const [presets, setPresetsState] = useState<PresetData[]>(() => normalizePresets(DataManager.loadPresetsFromLocalStorage()));
+  // プリセットはメモリ圧迫が大きいため、ロードモーダルを開いた瞬間にだけ
+  // ローカルストレージから展開する (= 必要な時だけメモリに乗る)。
+  // 閉じたら releasePresets() でメモリから破棄する。
+  const [presets, setPresetsState] = useState<PresetData[] | null>(null);
+  // presets state への参照を ref でも保持し、コールバック内で常に最新を参照する
+  // (state は useCallback 依存配列に追加すると再生成されるため、ref を併用する)
+  const presetsRef = useRef<PresetData[] | null>(null);
+  presetsRef.current = presets;
 
   const isLocalRef = useRef(isLocal);
   isLocalRef.current = isLocal;
@@ -441,17 +463,66 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     localStorage.setItem('heist_last_used_route_id', newId);
   }, [route, setRouteWithGlobalDefaults]);
 
-  const loadFromLocal = useCallback((id: string) => {
+  // サーバ (= static presets.json) のプリセット実体キャッシュ。
+  // プリセット呼び出し時に fetch で取りに行き、メモリに保持する (= 再呼び出しを高速化)。
+  // localStorage には絶対に保存しない (= 容量問題の主因)。
+  const serverPresetBodiesRef = useRef<Map<string, RouteData> | null>(null);
+  const ensureServerPresetBodies = useCallback(async (): Promise<Map<string, RouteData>> => {
+    if (serverPresetBodiesRef.current !== null) return serverPresetBodiesRef.current;
+    const map = new Map<string, RouteData>();
+    try {
+      // dev server API を試して、ダメなら static presets.json
+      const tryFetch = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return await res.json() as PresetData[];
+      };
+      let data = await tryFetch(`${import.meta.env.BASE_URL}api/presets`);
+      if (!data) data = await tryFetch(`${import.meta.env.BASE_URL}presets.json`);
+      if (Array.isArray(data)) {
+        for (const p of data) {
+          if (p && typeof p === 'object' && typeof p.id === 'string' && p.routeData && typeof p.routeData === 'object') {
+            map.set(p.id, migrateOriginalAuthorToRenderCache(p.routeData as any) as RouteData);
+          }
+        }
+      }
+    } catch { /* ネットワークエラー等は無視 (= そのプリセットは呼出せない) */ }
+    serverPresetBodiesRef.current = map;
+    return map;
+  }, []);
+
+  const loadFromLocal = useCallback(async (id: string) => {
     try {
       let data: RouteData | null = null;
       if (id.startsWith('__preset__')) {
         const presetId = id.replace('__preset__', '');
-        const preset = presets.find(p => p.id === presetId);
+        // プリセットが未ロード (=null) ならこの時点でロードする。
+        // プリセット使用時にメタ一覧をメモリに展開しないとプリセットを引けない。
+        let current = presetsRef.current;
+        if (current === null) {
+          current = normalizePresets(DataManager.loadPresetsFromLocalStorage());
+          setPresetsState(current);
+          presetsRef.current = current;
+        }
+        const preset = current.find(p => p.id === presetId);
         if (!preset) return;
+        // 実体は次の優先順で取得:
+        //   1. プリセットメタに routeData が埋まっている (= 旧形式/サーバデータ)
+        //   2. ローカルの heist_preset_body_<id> (= ユーザ作成プリセットの実体)
+        //   3. サーバ presets.json からオンデマンド取得
+        let body: RouteData | null | undefined = preset.routeData ?? loadPresetBody(presetId);
+        if (!body) {
+          const serverMap = await ensureServerPresetBodies();
+          body = serverMap.get(presetId) || null;
+        }
+        if (!body) {
+          showNotificationRef.current('プリセットの実体が見つかりません (サーバから取得失敗?)');
+          return;
+        }
         data = {
-          ...preset.routeData,
+          ...body,
           id: generateId('route'),
-          title: preset.routeData.title
+          title: body.title
         };
       } else {
         data = DataManager.loadFromLocalStorage(id);
@@ -560,7 +631,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       console.error('loadFromLocal failed:', e);
       showNotificationRef.current('データの読み込みに失敗しました', 3000);
     }
-  }, [presets, setRouteWithGlobalDefaults, onMarkerScaleChange]);
+  }, [setRouteWithGlobalDefaults, onMarkerScaleChange, ensureServerPresetBodies]);
 
   const deleteFromLocal = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -581,12 +652,19 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const savePresetsToServer = useCallback((next: PresetData[]) => {
     const normalized = normalizePresets(next);
-    setPresetsState(normalized);
-    DataManager.savePresetsToLocalStorage(normalized);
+    // 旧形式のプリセット (routeData 内蔵) は実体を別キーに切り出す
+    migrateLegacyPresetBodies(normalized);
+    const metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
+    // メモリに展開されていれば (モーダル開時) state にも反映
+    if (presetsRef.current !== null) {
+      setPresetsState(metaOnly);
+      presetsRef.current = metaOnly;
+    }
+    DataManager.savePresetsToLocalStorage(metaOnly);
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(normalized)
+      body: JSON.stringify(metaOnly)
     }).catch(() => { });
   }, []);
 
@@ -604,17 +682,27 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       author: route.author || '',
       renderCache: route.renderCache || '',
       updatedAt: Date.now(),
-      visibility: normalizePresetVisibility(input.visibility),
-      routeData: toSave
+      visibility: normalizePresetVisibility(input.visibility)
+      // routeData は別キーに保存するためここには含めない
     };
-    savePresetsToServer([...presets, newPreset]);
+    // 実体を別キーに保存 (容量削減のため配列には入れない)
+    try { savePresetBody(newPreset.id, toSave); } catch (e) {
+      console.error('savePresetBody failed', e);
+      showNotificationRef.current('プリセット本体の保存に失敗しました');
+      return;
+    }
+    const current = presetsRef.current ?? normalizePresets(DataManager.loadPresetsFromLocalStorage());
+    savePresetsToServer([...current, newPreset]);
     showNotificationRef.current(`プリセット追加: ${newPreset.name}`);
-  }, [route, initialMarkerScale, presets, savePresetsToServer]);
+  }, [route, initialMarkerScale, savePresetsToServer]);
 
   const deletePreset = useCallback((presetId: string) => {
-    savePresetsToServer(presets.filter(p => p.id !== presetId));
+    const current = presetsRef.current ?? normalizePresets(DataManager.loadPresetsFromLocalStorage());
+    // 実体キーも削除 (旧形式 (routeData 内蔵) の場合も含めて確実に消す)
+    removePresetBody(presetId);
+    savePresetsToServer(current.filter(p => p.id !== presetId));
     showNotificationRef.current('プリセットを削除しました');
-  }, [presets, savePresetsToServer]);
+  }, [savePresetsToServer]);
 
   /**
    * プリセットの内容 (ルートデータ + メタ情報) を現在の編集データで上書きする。
@@ -624,41 +712,50 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
    *   公開レベルを変えたい場合は setPresetVisibility を明示的に呼ぶこと。
    */
   const overwritePreset = useCallback((presetId: string) => {
-    const idx = presets.findIndex(p => p.id === presetId);
+    const current = presetsRef.current ?? normalizePresets(DataManager.loadPresetsFromLocalStorage());
+    const idx = current.findIndex(p => p.id === presetId);
     if (idx === -1) return;
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
+    // 実体を別キーに保存 (旧実体キーは上書き)
+    try { savePresetBody(presetId, toSave); } catch (e) {
+      console.error('savePresetBody (overwrite) failed', e);
+      showNotificationRef.current('プリセット本体の保存に失敗しました');
+      return;
+    }
     const updatedPreset: PresetData = {
-      ...presets[idx],
+      ...current[idx],
       name: route.title,
       description: route.description || '',
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
       author: route.author || '',
       renderCache: route.renderCache || '',
-      updatedAt: Date.now(),
-      routeData: toSave
+      updatedAt: Date.now()
+      // routeData は別キーに保存するためここには含めない
     };
-    const nextPresets = [...presets];
+    const nextPresets = [...current];
     nextPresets[idx] = updatedPreset;
     savePresetsToServer(nextPresets);
     showNotificationRef.current(`プリセットを上書きしました: ${updatedPreset.name}`);
-  }, [presets, route, initialMarkerScale, savePresetsToServer]);
+  }, [route, initialMarkerScale, savePresetsToServer]);
 
   /**
    * 指定プリセットの公開レベルを変更する。サーバ + localStorage 両方を更新する。
    */
   const setPresetVisibility = useCallback((presetId: string, visibility: PresetVisibility) => {
-    const idx = presets.findIndex(p => p.id === presetId);
+    const current = presetsRef.current ?? normalizePresets(DataManager.loadPresetsFromLocalStorage());
+    const idx = current.findIndex(p => p.id === presetId);
     if (idx === -1) return;
-    const next = [...presets];
+    const next = [...current];
     next[idx] = { ...next[idx], visibility: normalizePresetVisibility(visibility) };
     savePresetsToServer(next);
-  }, [presets, savePresetsToServer]);
+  }, [savePresetsToServer]);
 
   /**
    * 現在のモード (isLocal) と表示フィルタに応じて、表示してよいプリセットを返す。
-   *  - public:  常に表示
-   *  - unlisted: URL (?preset=ID) 経由で開く想定。一覧ではフィルタ out (showUnlisted=true で表示)
+   *  - public:   常に表示
+   *  - unlisted: 本番モードでは一覧に出さない (URL (?preset=ID) 経由で開く前提)。
+   *              showUnlisted=true を渡すとローカルモード以外でも出す (デバッグ用)。
    *  - private:  ローカルモードでのみ表示。showPrivate は基本 true 固定 (private の存在を
    *              知らせないとアップロード済みの private を見つけられないため)。本番モードでは
    *              一切出さない。
@@ -667,14 +764,15 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     showUnlisted: boolean;
     showPrivate: boolean;
   }): PresetData[] => {
-    return presets.filter(p => {
+    const current = presetsRef.current ?? [];
+    return current.filter(p => {
       const v = normalizePresetVisibility(p.visibility);
       if (v === 'public') return true;
       if (v === 'unlisted') return !!opts.showUnlisted;
       if (v === 'private')  return isLocalRef.current && !!opts.showPrivate;
       return true;
     });
-  }, [presets]);
+  }, []);
 
   /**
    * URL パラメータ経由 (?preset=ID) で開く際のゲート。
@@ -686,14 +784,18 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
    *    がたどり着ける前提なので、本番モードでも拒否しない)
    */
   const checkPresetUrlAccess = useCallback((presetId: string): { allowed: boolean; reason?: 'not_found' | 'private_prod' } => {
-    const preset = presets.find(p => p.id === presetId);
+    const current = presetsRef.current;
+    // 未ロード時はプリセットアクセスを許可 (URL 経由で開こうとした瞬間に
+    // loadFromLocal がプリセットをロードして進める)
+    if (current === null) return { allowed: true };
+    const preset = current.find(p => p.id === presetId);
     if (!preset) return { allowed: false, reason: 'not_found' };
     const v = normalizePresetVisibility(preset.visibility);
     if (v === 'private' && !isLocalRef.current) {
       return { allowed: false, reason: 'private_prod' };
     }
     return { allowed: true };
-  }, [presets]);
+  }, []);
 
   const setBossCustomDuration = useCallback((id: string, duration: number | undefined) => {
     setRouteRaw(prev => {
@@ -757,15 +859,59 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   // transient server failures (avoids "temporarily empty" preset list).
   // visibility は常に normalizePresets で正規化してから保存する (レガシーデータ
   // や壊れた JSON でも公開レベルが 'public' 補完される)。
-  const setPresets = useCallback((next: PresetData[]) => {
+  const setPresets = useCallback((next: PresetData[], opts?: { fromServer?: boolean }) => {
     const normalized = normalizePresets(next);
-    setPresetsState(normalized);
-    DataManager.savePresetsToLocalStorage(normalized);
+    let metaOnly: PresetData[];
+    if (opts?.fromServer) {
+      // サーバから取得したプリセットは「メタのみ」を保持する。
+      // routeData が埋まっていた場合は切り落とし、実体 (body キー) も作らない。
+      // こうすることでサーバの presets.json (= 1MB超) を再取得しても
+      // localStorage に重複コピーを作らない (= 容量問題の主因を除去)。
+      metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
+    } else {
+      // 旧形式のプリセット (routeData 内蔵) は実体を別キーに切り出す
+      migrateLegacyPresetBodies(normalized);
+      // 新しい (メタのみ) 形式に統一: routeData を取り除く
+      metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
+    }
+    // メモリに展開されていない (=null) ときは state を触らず localStorage のみ更新
+    if (presetsRef.current !== null) {
+      setPresetsState(metaOnly);
+      presetsRef.current = metaOnly;
+    }
+    DataManager.savePresetsToLocalStorage(metaOnly);
+  }, []);
+
+  /**
+   * プリセット一覧をメモリにロードする (ロードモーダルを開く時に呼ぶ)。
+   * 既にロード済み (=null でない) なら何もしない。
+   */
+  const ensurePresetsLoaded = useCallback(() => {
+    if (presetsRef.current !== null) return presetsRef.current;
+    const loaded = normalizePresets(DataManager.loadPresetsFromLocalStorage());
+    setPresetsState(loaded);
+    presetsRef.current = loaded;
+    return loaded;
+  }, []);
+
+  /**
+   * プリセット一覧をメモリから破棄する (ロードモーダルを閉じた時に呼ぶ)。
+   * ローカルストレージ側のデータはそのまま残る (= 次回ロード時に復元できる)。
+   */
+  const releasePresets = useCallback(() => {
+    setPresetsState(null);
+    presetsRef.current = null;
   }, []);
 
   return {
     route, setRoute, setRouteWithGlobalDefaults,
-    saves, presets, setPresets, refreshSavesList,
+    saves,
+    // プリセットは遅延ロード。null = 未ロード (= モーダル閉じている)。
+    // ホスト (App.tsx) はモーダルを開く直前に ensurePresetsLoaded() を呼ぶこと。
+    presets: presets ?? [],
+    presetsLoaded: presets !== null,
+    setPresets, refreshSavesList,
+    ensurePresetsLoaded, releasePresets,
     saveToLocal, saveAsCopy, createNewPlan,
     loadFromLocal, deleteFromLocal,
     saveAsPreset, overwritePreset, savePresetsToServer, deletePreset,

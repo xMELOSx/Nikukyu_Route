@@ -40,6 +40,10 @@ let currentMode: Mode = (() => {
 
 let currentLang: LangCode = currentMode === AUTO ? detectBrowserLang() : (currentMode as LangCode);
 
+if (typeof window !== 'undefined') {
+  (window as any).__currentLang__ = currentLang;
+}
+
 const listeners = new Set<() => void>();
 function emit() {
   for (const l of listeners) l();
@@ -48,6 +52,9 @@ function emit() {
 function applyMode(next: Mode) {
   currentMode = next;
   currentLang = next === AUTO ? detectBrowserLang() : (next as LangCode);
+  if (typeof window !== 'undefined') {
+    (window as any).__currentLang__ = currentLang;
+  }
   saveMode(next);
   emit();
 }
@@ -108,12 +115,18 @@ export function tNote(note: string | undefined | null): string {
   if (note.startsWith('__i18n:')) return t(note.slice('__i18n:'.length));
   const trimmed = note.trim();
   if (trimmed) {
-    const inverseLang = getInverseDictLang();
-    const inverse = getUserDictFor(inverseLang);
-    if (inverse[trimmed]) return inverse[trimmed];
-    if (currentLang === 'en') {
+    // 原文に日本語 (ひらがな・カタカナ・漢字) が含まれているかどうか
+    const hasJa = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(trimmed);
+    // 原文と UI 言語の整合性:
+    //  - UI=en, 原文=日本語 → en 辞書を引く
+    //  - UI=ja, 原文=英語   → ja 辞書を引く
+    // それ以外 (= 原文と UI 言語が同じ、または辞書に該当なし) は原文のまま
+    if (currentLang === 'en' && hasJa) {
       const en = getUserDictFor('en');
       if (en[trimmed]) return en[trimmed];
+    } else if (currentLang === 'ja' && !hasJa) {
+      const ja = getUserDictFor('ja');
+      if (ja[trimmed]) return ja[trimmed];
     }
   }
   return note;

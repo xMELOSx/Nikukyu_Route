@@ -1,6 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { generateId, type SkillCdMode, type SkillCdPreset } from '../utils/DataManager';
 
+export const STORAGE_LIMIT_DEFAULT_BYTES = 10 * 1024 * 1024; // 10 MB
+export const STORAGE_LIMIT_KEY = 'heist_storage_limit_bytes_v1';
+
+export function loadStorageLimitFromCache(): number {
+  if (typeof window === 'undefined') return STORAGE_LIMIT_DEFAULT_BYTES;
+  try {
+    const raw = localStorage.getItem(STORAGE_LIMIT_KEY);
+    if (!raw) return STORAGE_LIMIT_DEFAULT_BYTES;
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1024 * 1024) return n;
+  } catch {}
+  return STORAGE_LIMIT_DEFAULT_BYTES;
+}
+
+export function saveStorageLimitToCache(bytes: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_LIMIT_KEY, String(bytes));
+  } catch { /* quota / unavailable: ignore */ }
+}
+
 export interface GlobalDefaults {
   hiddenMarkers: string[];
   hiddenMarkerTypes: string[];
@@ -10,6 +31,8 @@ export interface GlobalDefaults {
   warpMarkerThreshold?: number;
   skillCdThreshold?: number;
   skillCdPresets?: SkillCdPreset[];
+  /** localStorage の容量上限 (バイト)。ストレージ使用量バッジの判定に使用。 */
+  storageLimitBytes?: number;
 }
 
 export interface UseGlobalDefaultsOptions {
@@ -107,7 +130,8 @@ export function useGlobalDefaults(
           movementMarkerThreshold: gd?.movementMarkerThreshold,
           warpMarkerThreshold: gd?.warpMarkerThreshold,
           skillCdThreshold: gd?.skillCdThreshold,
-          skillCdPresets: presets
+          skillCdPresets: presets,
+          storageLimitBytes: loadStorageLimitFromCache()
         };
         ref.current = normalized;
         setSkillCdPresetsState(presets);
@@ -122,7 +146,8 @@ export function useGlobalDefaults(
           ref.current = {
             hiddenMarkers: [],
             hiddenMarkerTypes: [],
-            skillCdPresets: cached
+            skillCdPresets: cached,
+            storageLimitBytes: loadStorageLimitFromCache()
           };
           setSkillCdPresetsState(cached);
           setLoaded(true);
@@ -137,6 +162,12 @@ export function useGlobalDefaults(
 
   const setHidden = (hiddenMarkers: string[], hiddenMarkerTypes: string[]) => {
     ref.current = { ...ref.current, hiddenMarkers, hiddenMarkerTypes };
+  };
+
+  const setStorageLimit = (bytes: number) => {
+    const clamped = Math.max(1024 * 1024, Math.floor(bytes));
+    ref.current = { ...ref.current, storageLimitBytes: clamped };
+    saveStorageLimitToCache(clamped);
   };
 
   /**
@@ -195,6 +226,8 @@ export function useGlobalDefaults(
   return {
     setStartupFocusMarkerId,
     setHidden,
+    setStorageLimit,
+    storageLimitBytes: ref.current.storageLimitBytes ?? loadStorageLimitFromCache(),
     loaded,
     isLocal: isLocalRef.current,
     skillCdPresets,
