@@ -30,6 +30,7 @@ import {
   DataManager,
   normalizeStrokes,
   smoothStrokePoints,
+  smoothStrokePointsKeepEnds,
   AUTHOR_DEFAULT_PLAIN,
   generateId,
   runSaveDataMigrations
@@ -64,7 +65,9 @@ import {
   Pause,
   Square,
   EyeOff,
-  Ruler
+  Ruler,
+  Star,
+  Wand2
 } from 'lucide-react';
 
 const migrateRouteCoordinates = (data: RouteData): RouteData => {
@@ -125,6 +128,74 @@ interface QuickPresetButtonProps {
   isLocal: boolean;
   onAdd: (visibility: PresetVisibility) => void;
 }
+
+/**
+ * localStorage の使用量と上限を表示するバッジ。
+ *  - 全体合計を 8MB 目安と比較 (主要ブラウザの実態に近い値)
+ *  - セーブデータ / プリセット / その他の内訳も表示
+ *  - 0.5 秒ごとに再計算して削除直後の変化も可視化
+ */
+const STORAGE_BUDGET_BYTES = 8 * 1024 * 1024; // 8 MB (主要ブラウザの localStorage 容量に近い)
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+function keyByteSize(k: string, v: string): number {
+  // localStorage は UTF-16 で保存されるため 2 バイト/文字
+  return (k.length + v.length) * 2;
+}
+const StorageUsageBadge: React.FC = () => {
+  const [used, setUsed] = useState<number>(0);
+  const [savesBytes, setSavesBytes] = useState<number>(0);
+  const [presetsBytes, setPresetsBytes] = useState<number>(0);
+  const [otherBytes, setOtherBytes] = useState<number>(0);
+  useEffect(() => {
+    const compute = () => {
+      let savesTotal = 0;
+      let presetsTotal = 0;
+      let otherTotal = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k === null) continue;
+        const v = localStorage.getItem(k) || '';
+        const sz = keyByteSize(k, v);
+        if (k === 'heist_presets' || k.startsWith('__preset__')) {
+          presetsTotal += sz;
+        } else if (k.startsWith('heist_route_') || k === 'heist_routes_list' || k === 'heist_last_used_route_id') {
+          savesTotal += sz;
+        } else {
+          otherTotal += sz;
+        }
+      }
+      setSavesBytes(savesTotal);
+      setPresetsBytes(presetsTotal);
+      setOtherBytes(otherTotal);
+      setUsed(savesTotal + presetsTotal + otherTotal);
+    };
+    compute();
+    // 削除直後の変化を即座に反映するため短めのポーリング
+    const id = window.setInterval(compute, 500);
+    return () => window.clearInterval(id);
+  }, []);
+  const pct = Math.min(100, (used / STORAGE_BUDGET_BYTES) * 100);
+  const color = pct >= 90 ? 'var(--red-neon, #ff0055)' : pct >= 70 ? 'var(--yellow-neon, #ffe600)' : 'var(--cyan-neon)';
+  return (
+    <div
+      title={`localStorage 使用量 / 8MB 目安 (UTF-16 換算)\nセーブ: ${formatBytes(savesBytes)} / プリセット: ${formatBytes(presetsBytes)} / その他: ${formatBytes(otherBytes)}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '3px 10px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}55`, borderRadius: '4px', fontSize: '10px', color: 'var(--text-muted)' }}
+    >
+      <span>容量</span>
+      <span style={{ color, fontWeight: 700, fontFamily: 'monospace' }}>{formatBytes(used)}</span>
+      <span>/ 8 MB</span>
+      <div style={{ width: '60px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 0.2s' }} />
+      </div>
+      <span style={{ borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: '8px' }}>セーブ {formatBytes(savesBytes)} / プリセット {formatBytes(presetsBytes)}</span>
+    </div>
+  );
+};
+
 const QuickPresetButton: React.FC<QuickPresetButtonProps> = ({ isLocal, onAdd }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -345,6 +416,15 @@ export default function App() {
     localStorage.setItem('heist_auto_load_last', String(autoLoadLastRoute));
   }, [autoLoadLastRoute]);
 
+  // オートセーブの ON/OFF (デフォルト ON, localStorage に永続化)
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('heist_auto_save');
+    return stored === null ? true : stored === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_auto_save', String(autoSaveEnabled));
+  }, [autoSaveEnabled]);
+
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
@@ -402,10 +482,19 @@ export default function App() {
     saveFloorNavCollapsed(floorNavCollapsed);
   }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'pan' | 'measure' | 'add-marker' | 'toggle-vis'>('pan');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke'>('move');
   const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
   const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
   const [eraseSize, setEraseSize] = useState<number>(16);
+  // 線分編集ツール (色変更 / 平滑化 / 線種 / 太さ): 選択中ストロークのインデックス
+  // 単一選択 (mode に応じて「最後に選択された 1 本」を覚える) と
+  // 複数選択 (Alt+クリックで累積) の両方をサポート。
+  const [editStrokeIdxs, setEditStrokeIdxs] = useState<Set<number>>(() => new Set());
+  // 平滑化の繰り返し回数
+  const [editSmoothIterations, setEditSmoothIterations] = useState<number>(3);
+  // 線分編集中にマーカー (ピン) へのクリックを無効化して、背後の線を当たりやすくする
+  // ルート線描画時の disablePinsDuringDraw と同じ仕組み。デフォルト ON。
+  const [editDisablePinsDuringEdit, setEditDisablePinsDuringEdit] = useState<boolean>(true);
   // Alt 押下状態(消しゴムモードのメニューを視覚的にシフトさせる)
   // ref + state の二重管理。
   // キーハンドラは document (capture) に張り、要素側の stopPropagation に
@@ -500,6 +589,38 @@ export default function App() {
   });
   const [presetListVisible, setPresetListVisible] = useState(false);
   const [saveLoadSearchQuery, setSaveLoadSearchQuery] = useState('');
+  // お気に入り (セーブ/プリセット両方): ID リストを localStorage に保存
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('heist_save_load_favorites_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      }
+    } catch {}
+    return [];
+  });
+  // プリセットを隠すフィルタ: 非表示プリセット ID リストを localStorage に保存
+  const [hiddenPresetIds, setHiddenPresetIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('heist_save_load_hidden_presets_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      }
+    } catch {}
+    return [];
+  });
+  // 表示フィルタ: 'all' | 'favorites' | 'presets' | 'saves'
+  const [saveLoadFilter, setSaveLoadFilter] = useState<'all' | 'favorites' | 'presets' | 'saves'>('all');
+
+  useEffect(() => {
+    try { localStorage.setItem('heist_save_load_favorites_v1', JSON.stringify(favoriteIds)); } catch {}
+  }, [favoriteIds]);
+
+  useEffect(() => {
+    try { localStorage.setItem('heist_save_load_hidden_presets_v1', JSON.stringify(hiddenPresetIds)); } catch {}
+  }, [hiddenPresetIds]);
   const [urlLoadConfirm, setUrlLoadConfirm] = useState<{ type: 'preset' | 'save'; id: string; name: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
@@ -576,7 +697,8 @@ export default function App() {
     onMarkerScaleChange: (s) => {
       setMarkerScale(s);
       localStorage.setItem('heist_marker_scale', String(s));
-    }
+    },
+    autoSaveEnabled
   });
 
   // 編集中は input 制御用のローカル state を持つ。初期値はプレーンテキストの作者名。
@@ -659,7 +781,7 @@ export default function App() {
     onRedo: historyApi.redo,
     onToggleEditMode: () => setIsEditMode(prev => {
       const next = !prev;
-      if (next === false) setToolMode('pan');
+      if (next === false) setToolMode('move');
       return next;
     }),
     onToggleLeftSidebar: () => setLeftSidebarCollapsed(prev => !prev),
@@ -1014,8 +1136,10 @@ export default function App() {
   //  in the new UI; left as comments for future reference if needed.)
 
   // Wire handleExportPNG with the current refs/state
+  // Default: 画像とデータのみ (PNG tEXt メタデータのみ。データバー非描画)
+  // Alt+クリック: データーバー入り (上記に加えて画像下部にピクセル符号化データバーを描画)
   const handleExportPNG = (e?: React.MouseEvent) => {
-    fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString, skipDataBar: !!e?.altKey });
+    fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString, skipDataBar: !e?.altKey });
   };
 
   const handleExportJSON = () => {
@@ -1084,6 +1208,14 @@ export default function App() {
       setDeleteConfirmId(id);
       setTimeout(() => setDeleteConfirmId(null), 3000);
     }
+  };
+
+  const toggleFavorite = (id: string) => {
+    setFavoriteIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleHiddenPreset = (id: string) => {
+    setHiddenPresetIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const createNewPlan = () => {
@@ -1181,7 +1313,7 @@ export default function App() {
                 <button
                   className={`btn-cyber ${!isEditMode ? 'active success' : ''}`}
                   style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
-                  onClick={() => { setIsEditMode(false); setToolMode('pan'); }}
+                  onClick={() => { setIsEditMode(false); setToolMode('move'); }}
                 >
                   👁 表示モード
                 </button>
@@ -1424,17 +1556,20 @@ export default function App() {
               <div className="panel-section">
                 <div className="panel-title">{t('モード選択')}</div>
                 <div className="tool-grid">
-                  <button className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`} onClick={() => setToolMode('draw')} id="tool-draw-btn">
-                    <Paintbrush size={18} /><span>{t('ルート線')}</span>
-                  </button>
-                  <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
-                    <Eraser size={18} /><span>{t('消しゴム')}</span>
-                  </button>
-                  <button className={`tool-btn ${toolMode === 'pan' ? 'active' : ''}`} onClick={() => setToolMode('pan')} id="tool-pan-btn">
+                  <button className={`tool-btn ${toolMode === 'move' ? 'active' : ''}`} onClick={() => setToolMode('move')} id="tool-move-btn">
                     <Move size={18} /><span>{t('移動')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'measure' ? 'active' : ''}`} onClick={() => setToolMode('measure')} id="tool-measure-btn">
                     <Ruler size={18} /><span>{t('距離計測')}</span>
+                  </button>
+                  <button className={`tool-btn ${toolMode === 'draw' ? 'active' : ''}`} onClick={() => setToolMode('draw')} id="tool-draw-btn">
+                    <Paintbrush size={18} /><span>{t('ルート線')}</span>
+                  </button>
+                  <button className={`tool-btn ${toolMode === 'edit-stroke' ? 'active' : ''}`} onClick={() => setToolMode('edit-stroke')} id="tool-edit-stroke-btn">
+                    <Wand2 size={18} /><span>{t('線分編集')}</span>
+                  </button>
+                  <button className={`tool-btn ${toolMode === 'erase' ? 'active' : ''}`} onClick={() => setToolMode('erase')} id="tool-erase-btn">
+                    <Eraser size={18} /><span>{t('消しゴム')}</span>
                   </button>
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
@@ -1465,6 +1600,165 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {toolMode === 'edit-stroke' && (
+              <div className="panel-section">
+                <div className="panel-title">{t('線分編集')}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
+                  <span>{t('選択中の線:')}</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editStrokeIdxs.size}{t('本')}</span>
+                </div>
+                <button
+                  className="btn-cyber"
+                  style={{ width: '100%', fontSize: '10px', padding: '4px', marginBottom: '6px' }}
+                  disabled={editStrokeIdxs.size === 0}
+                  onClick={() => setEditStrokeIdxs(new Set())}
+                >
+                  {t('選択を解除')}
+                </button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={editDisablePinsDuringEdit}
+                    onChange={(e) => setEditDisablePinsDuringEdit(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  {t('マーカーを遮断')}
+                </label>
+
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 6px' }} />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('色 (クリックで選択線に適用):')}</div>
+                <div className="color-picker">
+                  {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
+                    <div
+                      key={c}
+                      className={`color-dot ${strokeColor === c ? 'active' : ''}`}
+                      style={{ backgroundColor: c, color: c }}
+                      onClick={() => {
+                        setStrokeColor(c);
+                        if (editStrokeIdxs.size === 0) return;
+                        const cur = routeApi.route.strokes[currentFloor];
+                        if (!cur) return;
+                        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                        const next = cur.map((s, i) => editStrokeIdxs.has(i) ? { ...s, color: c } : s);
+                        updateStrokes(next);
+                      }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 6px' }} />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('線種:')}</div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {(['solid', 'dashed'] as const).map(t2 => (
+                    <button
+                      key={t2}
+                      className={`btn-cyber ${strokeType === t2 ? 'active' : ''}`}
+                      style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }}
+                      onClick={() => {
+                        setStrokeType(t2);
+                        if (editStrokeIdxs.size === 0) return;
+                        const cur = routeApi.route.strokes[currentFloor];
+                        if (!cur) return;
+                        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                        const next = cur.map((s, i) => editStrokeIdxs.has(i) ? { ...s, type: t2 } : s);
+                        updateStrokes(next);
+                      }}
+                    >
+                      {t2 === 'solid' ? t('進行ルート') : t('分岐ルート')}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 6px' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
+                  <span>{t('線の太さ:')}</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{strokeWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="2"
+                  max="12"
+                  value={strokeWidth}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    setStrokeWidth(v);
+                    if (editStrokeIdxs.size === 0) return;
+                    const cur = routeApi.route.strokes[currentFloor];
+                    if (!cur) return;
+                    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                    const next = cur.map((s, i) => editStrokeIdxs.has(i) ? { ...s, width: v } : s);
+                    updateStrokes(next);
+                  }}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                />
+
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 6px' }} />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('✨ 平滑化')}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
+                  <span>{t('繰り返し回数:')}</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editSmoothIterations}</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="6"
+                  value={editSmoothIterations}
+                  onChange={(e) => setEditSmoothIterations(parseInt(e.target.value))}
+                  style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                />
+                <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.3 }}>
+                  {t('先頭と末尾は必ず保持。線が途切れて再接続不能にならない安全版で平滑化します。')}
+                </div>
+                <button
+                  className="btn-cyber"
+                  style={{ width: '100%', fontSize: '10px', padding: '5px', marginTop: '6px' }}
+                  disabled={editStrokeIdxs.size === 0}
+                  onClick={() => {
+                    const cur = routeApi.route.strokes[currentFloor];
+                    if (!cur) return;
+                    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                    const next = cur.map((s, i) => {
+                      if (!editStrokeIdxs.has(i)) return s;
+                      if (!s.points || s.points.length < 3) return s;
+                      const newPoints = smoothStrokePointsKeepEnds(s.points, editSmoothIterations, 0.5);
+                      const baseForOriginal = s.originalPoints && s.originalPoints.length >= 2
+                        ? s.originalPoints
+                        : s.points;
+                      const newOriginal = smoothStrokePointsKeepEnds(baseForOriginal, editSmoothIterations, 0.5);
+                      return { ...s, points: newPoints, originalPoints: newOriginal };
+                    });
+                    updateStrokes(next);
+                    notification.show(t('{0}本の線を平滑化しました', String(editStrokeIdxs.size)));
+                  }}
+                >
+                  ✨ {t('選択線を平滑化')}
+                </button>
+                <button
+                  className="btn-cyber"
+                  style={{ width: '100%', fontSize: '10px', padding: '5px', marginTop: '6px' }}
+                  onClick={() => {
+                    const cur = routeApi.route.strokes[currentFloor];
+                    if (!cur || cur.length === 0) return;
+                    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                    const next = cur.map((s) => {
+                      if (!s.points || s.points.length < 3) return s;
+                      const newPoints = smoothStrokePointsKeepEnds(s.points, editSmoothIterations, 0.5);
+                      const baseForOriginal = s.originalPoints && s.originalPoints.length >= 2
+                        ? s.originalPoints
+                        : s.points;
+                      const newOriginal = smoothStrokePointsKeepEnds(baseForOriginal, editSmoothIterations, 0.5);
+                      return { ...s, points: newPoints, originalPoints: newOriginal };
+                    });
+                    updateStrokes(next);
+                    notification.show(t('全 {0} 本の線を平滑化しました', String(next.length)));
+                  }}
+                >
+                  ✨ {t('すべての線を平滑化')}
+                </button>
               </div>
             )}
 
@@ -1721,6 +2015,9 @@ export default function App() {
             eraseTarget={eraseTarget}
             eraseDefaultBehavior={eraseDefaultBehavior}
             eraseSize={eraseSize}
+            editStrokeIdxs={editStrokeIdxs}
+            onEditStrokeIdxsChange={setEditStrokeIdxs}
+            editDisablePinsDuringEdit={editDisablePinsDuringEdit}
             onMarkersDragStart={historyApi.startDragSnapshot}
             onMarkersDragEnd={historyApi.commitDragSnapshot}
             stopMarkerThreshold={stopMarkerThreshold}
@@ -1839,7 +2136,7 @@ export default function App() {
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
                     <Download size={12} /> {t('JSON保存')}
                   </button>
-                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title={t('ALT+クリックでデータバー無し')}>
+                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title={t('ALT+クリックでデーターバー入り')}>
                     <ImageIcon size={12} /> {t('画像保存')}
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>
@@ -2348,7 +2645,10 @@ export default function App() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPresetListVisible(false)}>
           <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
-              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('セーブデータ読み込み')}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('ロード')}</div>
+                <StorageUsageBadge />
+              </div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <input
                   type="text"
@@ -2363,8 +2663,43 @@ export default function App() {
                     ✕
                   </button>
                 )}
-                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); }}>{t('✕ 閉じる')}</button>
+                <button className="btn-cyber" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={() => { setPresetListVisible(false); setSaveLoadSearchQuery(''); setSaveLoadFilter('all'); }}>{t('✕ 閉じる')}</button>
               </div>
+            </div>
+            {/* フィルタツールバー */}
+            <div style={{ display: 'flex', gap: '4px', padding: '6px 10px', borderBottom: '1px solid rgba(79,195,247,0.15)', background: 'rgba(0,0,0,0.2)', alignItems: 'center', flexWrap: 'wrap' }}>
+              {([
+                { key: 'all', label: t('すべて') },
+                { key: 'favorites', label: `★ ${t('お気に入り')}` },
+                { key: 'presets', label: t('プリセット') },
+                { key: 'saves', label: t('セーブ') }
+              ] as { key: typeof saveLoadFilter; label: string }[]).map(opt => {
+                const active = saveLoadFilter === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSaveLoadFilter(opt.key)}
+                    style={{
+                      fontSize: '10px',
+                      padding: '3px 10px',
+                      clipPath: 'none',
+                      background: active ? 'var(--cyan-neon)' : 'transparent',
+                      color: active ? '#000' : 'var(--text-muted)',
+                      border: `1px solid ${active ? 'var(--cyan-neon)' : 'rgba(255,255,255,0.15)'}`,
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: active ? 700 : 400
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+              {hiddenPresetIds.length > 0 && (
+                <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)' }}>
+                  {t('プリセット非表示: クリックで切替')}: {hiddenPresetIds.length}
+                </span>
+              )}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
               {(() => {
@@ -2395,150 +2730,199 @@ export default function App() {
                           || (q.toLowerCase().includes('no name') && isV2(s.renderCache || ''))
                           || (q.toLowerCase().includes('anomaly') && !s.renderCache);
                       };
-                      const filteredPresets = visiblePresets.filter(matchPreset);
-                      const filteredSaves = routeApi.saves.filter(matchSave);
-                      if (q && filteredPresets.length === 0 && filteredSaves.length === 0) {
+                      // 非表示プリセットを除外 (favorites フィルタ時は表示する)
+                      const allVisiblePresets = visiblePresets.filter(p => !hiddenPresetIds.includes(p.id));
+                      const hiddenPresetsList = visiblePresets.filter(p => hiddenPresetIds.includes(p.id));
+                      const favPresets = allVisiblePresets.filter(p => favoriteIds.includes(p.id) && matchPreset(p));
+                      const favSaves = routeApi.saves.filter(s => favoriteIds.includes(s.id) && matchSave(s));
+
+                      let listPresets: PresetData[];
+                      let listSaves: SaveInfo[];
+                      if (saveLoadFilter === 'favorites') {
+                        listPresets = favPresets;
+                        listSaves = favSaves;
+                      } else if (saveLoadFilter === 'presets') {
+                        listPresets = allVisiblePresets.filter(matchPreset);
+                        listSaves = [];
+                      } else if (saveLoadFilter === 'saves') {
+                        listPresets = [];
+                        listSaves = routeApi.saves.filter(matchSave);
+                      } else {
+                        listPresets = allVisiblePresets.filter(matchPreset);
+                        listSaves = routeApi.saves.filter(matchSave);
+                      }
+
+                      const noResults = q && listPresets.length === 0 && listSaves.length === 0
+                        && (saveLoadFilter !== 'all' || (favPresets.length === 0 && favSaves.length === 0));
+                      if (noResults) {
                         return <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
                           「{saveLoadSearchQuery}」に一致するデータが見つかりません
                         </div>;
                       }
-                      return (<>
-                        {filteredPresets.map(p => {
-                          const v = getPresetVisibility(p);
-                          const vMeta = PRESET_VISIBILITY_META[v];
-                          return (
-                            <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
-                              onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
-                                  <span style={{ color: '#ffd700', fontSize: '14px' }}>★</span>
-                                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                                  <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>{t('プリセット')}</span>
-                                  {v !== 'public' && (
-                                    <span
-                                      title={vMeta.description}
-                                      style={{ fontSize: '9px', padding: '1px 6px', background: `${vMeta.color}22`, color: vMeta.color, border: `1px solid ${vMeta.color}55`, borderRadius: '4px', flexShrink: 0, fontWeight: 700 }}
-                                    >
-                                      {vMeta.emoji} {vMeta.label}
-                                    </span>
-                                  )}
-                                </div>
-                                {isLocal && isEditMode && (
-                                  <button
-                                    style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
-                                    onClick={(e) => { e.stopPropagation(); setDefaultPresetId(defaultPresetId === p.id ? null : p.id); }}
+
+                      // プリセット行 (お気に入り上部分離 & 行ボタン対応)
+                      const renderPresetRow = (p: PresetData) => {
+                        const v = getPresetVisibility(p);
+                        const vMeta = PRESET_VISIBILITY_META[v];
+                        const isFav = favoriteIds.includes(p.id);
+                        return (
+                          <div key={p.id} style={{ padding: '10px 12px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '8px', cursor: 'pointer' }}
+                            onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(`__preset__${p.id}`); setPresetListVisible(false); }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleFavorite(p.id); }}
+                                  title={isFav ? t('お気に入り解除') : t('お気に入り登録')}
+                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: isFav ? '#ffd700' : 'var(--text-muted)', flexShrink: 0 }}
+                                >
+                                  <Star size={14} fill={isFav ? '#ffd700' : 'none'} />
+                                </button>
+                                <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffd700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                                <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(255,215,0,0.2)', color: '#ffd700', borderRadius: '4px', flexShrink: 0 }}>{t('プリセット')}</span>
+                                {v !== 'public' && (
+                                  <span
+                                    title={vMeta.description}
+                                    style={{ fontSize: '9px', padding: '1px 6px', background: `${vMeta.color}22`, color: vMeta.color, border: `1px solid ${vMeta.color}55`, borderRadius: '4px', flexShrink: 0, fontWeight: 700 }}
                                   >
-                                    {defaultPresetId === p.id ? '★ 基本' : '☆ 基本に設定'}
-                                  </button>
+                                    {vMeta.emoji} {vMeta.label}
+                                  </span>
                                 )}
                               </div>
-                              <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                <span>{t('獲得値: ')}<span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
-                                {p.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
-                                {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
-                                {p.author && <span>{t('作者: ')}{p.author}</span>}
-                                {p.renderCache && p.renderCache !== p.author && <span>{t('原作者: ')}{p.renderCache}</span>}
-                                {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>{t('最終更新: ')}{new Date(p.updatedAt).toLocaleString()}</span>}
-                              </div>
-                              <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
-                                 {isLocal && (
-                                  <button
-                                    className="btn-cyber"
-                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
-                                    onClick={() => {
-                                      const url = `https://xmelosx.github.io/Nikukyu_Route/?preset=${p.id}`;
-                                      navigator.clipboard.writeText(url);
-                                      notification.show('本URLをコピーしました (GitHub Pages)');
-                                    }}
-                                    title="GitHub Pagesベースの本URLをコピーします (限定公開URL確認用)"
-                                  >
-                                    本URLコピー
-                                  </button>
-                                )}
+                              {isLocal && isEditMode && (
+                                <button
+                                  style={{ fontSize: '9px', padding: '2px 6px', background: defaultPresetId === p.id ? 'var(--cyan-neon)' : 'transparent', color: defaultPresetId === p.id ? '#000' : 'var(--text-muted)', border: '1px solid var(--cyan-neon)', borderRadius: '4px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
+                                  onClick={(e) => { e.stopPropagation(); setDefaultPresetId(defaultPresetId === p.id ? null : p.id); }}
+                                >
+                                  {defaultPresetId === p.id ? '★ 基本' : '☆ 基本に設定'}
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#b0b0b0', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span>{t('獲得値: ')}<span style={{ color: '#ffd700' }}>${p.targetCash ? parseInt(String(p.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{p.targetCoins ? parseInt(String(p.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
+                              {p.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
+                              {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
+                              {p.author && <span>{t('作者: ')}{p.author}</span>}
+                              {p.renderCache && <span style={{ color: 'var(--text-muted)' }}>{t('原作者: 設定済')}</span>}
+                              {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>{t('最終更新: ')}{new Date(p.updatedAt).toLocaleString()}</span>}
+                            </div>
+                            <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="btn-cyber"
+                                style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: hiddenPresetIds.includes(p.id) ? 'var(--cyan-neon)' : 'var(--text-muted)', color: hiddenPresetIds.includes(p.id) ? 'var(--cyan-neon)' : 'var(--text-muted)' }}
+                                onClick={() => { toggleHiddenPreset(p.id); notification.show(hiddenPresetIds.includes(p.id) ? `${p.name}: 表示に戻しました` : `${p.name}: 非表示にしました`); }}
+                                title={t('このプリセットを隠す')}
+                              >
+                                {hiddenPresetIds.includes(p.id) ? '👁 非表示中' : '非表示'}
+                              </button>
+                               {isLocal && (
+                                <button
+                                  className="btn-cyber"
+                                  style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
+                                  onClick={() => {
+                                    const url = `https://xmelosx.github.io/Nikukyu_Route/?preset=${p.id}`;
+                                    navigator.clipboard.writeText(url);
+                                    notification.show('本URLをコピーしました (GitHub Pages)');
+                                  }}
+                                  title="GitHub Pagesベースの本URLをコピーします (限定公開URL確認用)"
+                                >
+                                  本URLコピー
+                                </button>
+                              )}
+                              <button
+                                className="btn-cyber"
+                                style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
+                                onClick={() => { navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
+                                title="プリセットIDをクリップボードにコピー"
+                              >
+                                IDコピー
+                              </button>
+                              {v !== 'private' || isLocal ? (
                                 <button
                                   className="btn-cyber"
                                   style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                                  onClick={() => { navigator.clipboard.writeText(p.id); notification.show('プリセットIDをコピーしました'); }}
-                                  title="プリセットIDをクリップボードにコピー"
+                                  onClick={() => { const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
+                                  title={v === 'unlisted' ? '限定公開のURL (?preset=ID) を知っている人だけが開けます' : v === 'private' ? 'ローカルモードでのみ有効なURL' : 'このプリセットを開くURLをコピー'}
                                 >
-                                  IDコピー
+                                  URLコピー
                                 </button>
-                                {v !== 'private' || isLocal ? (
-                                  <button
-                                    className="btn-cyber"
-                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }}
-                                    onClick={() => { const url = `${window.location.origin}${window.location.pathname}?preset=${p.id}`; navigator.clipboard.writeText(url); notification.show('共有URLをコピーしました'); }}
-                                    title={v === 'unlisted' ? '限定公開のURL (?preset=ID) を知っている人だけが開けます' : v === 'private' ? 'ローカルモードでのみ有効なURL' : 'このプリセットを開くURLをコピー'}
-                                  >
-                                    URLコピー
-                                  </button>
-                                ) : null}
-                                {isLocal && isEditMode && (
-                                  <div style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('公開:')}</span>
-                                    {(['public', 'unlisted', 'private'] as PresetVisibility[]).map(opt => {
-                                      const optMeta = PRESET_VISIBILITY_META[opt];
-                                      const isActive = v === opt;
-                                      const disabled = opt === 'private' && !isLocal;
-                                      return (
-                                        <button
-                                          key={opt}
-                                          disabled={disabled}
-                                          title={disabled ? 'ローカルモードでのみ選択可' : optMeta.description}
-                                          onClick={() => {
-                                            if (disabled) return;
-                                            routeApi.setPresetVisibility(p.id, opt);
-                                            notification.show(`公開レベル変更: ${p.name} → ${optMeta.label}`);
-                                          }}
-                                          style={{
-                                            fontSize: '9px', padding: '2px 6px', clipPath: 'none',
-                                            background: isActive ? optMeta.color : 'transparent',
-                                            color: isActive ? '#000' : (disabled ? '#555' : optMeta.color),
-                                            border: `1px solid ${disabled ? '#555' : optMeta.color}`,
-                                            borderRadius: '4px',
-                                            cursor: disabled ? 'not-allowed' : 'pointer',
-                                            fontWeight: 700,
-                                            opacity: disabled ? 0.4 : 1
-                                          }}
-                                        >
-                                          {optMeta.emoji} {optMeta.label}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                                {isLocal && isEditMode && (
-                                  <button
-                                    className="btn-cyber"
-                                    style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
-                                    onClick={() => { routeApi.overwritePreset(p.id); }}
-                                    title="現在の編集データでこのプリセットを上書き"
-                                  >
-                                    上書き
-                                  </button>
-                                )}
-                                {isLocal && (
-                                  presetDeleteConfirmId === p.id ? (
-                                    <>
-                                      <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>{t('削除する')}</button>
-                                      <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>{t('キャンセル')}</button>
-                                    </>
-                                  ) : (
-                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>{t('削除')}</button>
-                                  )
-                                )}
-                              </div>
+                              ) : null}
+                              {isLocal && isEditMode && (
+                                <div style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                  <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('公開:')}</span>
+                                  {(['public', 'unlisted', 'private'] as PresetVisibility[]).map(opt => {
+                                    const optMeta = PRESET_VISIBILITY_META[opt];
+                                    const isActive = v === opt;
+                                    const disabled = opt === 'private' && !isLocal;
+                                    return (
+                                      <button
+                                        key={opt}
+                                        disabled={disabled}
+                                        title={disabled ? 'ローカルモードでのみ選択可' : optMeta.description}
+                                        onClick={() => {
+                                          if (disabled) return;
+                                          routeApi.setPresetVisibility(p.id, opt);
+                                          notification.show(`公開レベル変更: ${p.name} → ${optMeta.label}`);
+                                        }}
+                                        style={{
+                                          fontSize: '9px', padding: '2px 6px', clipPath: 'none',
+                                          background: isActive ? optMeta.color : 'transparent',
+                                          color: isActive ? '#000' : (disabled ? '#555' : optMeta.color),
+                                          border: `1px solid ${disabled ? '#555' : optMeta.color}`,
+                                          borderRadius: '4px',
+                                          cursor: disabled ? 'not-allowed' : 'pointer',
+                                          fontWeight: 700,
+                                          opacity: disabled ? 0.4 : 1
+                                        }}
+                                      >
+                                        {optMeta.emoji} {optMeta.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {isLocal && isEditMode && (
+                                <button
+                                  className="btn-cyber"
+                                  style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#39ff14', color: '#39ff14' }}
+                                  onClick={() => { routeApi.overwritePreset(p.id); }}
+                                  title="現在の編集データでこのプリセットを上書き"
+                                >
+                                  上書き
+                                </button>
+                              )}
+                              {isLocal && (
+                                presetDeleteConfirmId === p.id ? (
+                                  <>
+                                    <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => handleDeletePreset(p.id)}>{t('削除する')}</button>
+                                    <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none' }} onClick={() => setPresetDeleteConfirmId(null)}>{t('キャンセル')}</button>
+                                  </>
+                                ) : (
+                                  <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 8px' }} onClick={() => handleDeletePreset(p.id)}>{t('削除')}</button>
+                                )
+                              )}
                             </div>
-                          );
-                        })}
+                          </div>
+                        );
+                      };
 
-                        {filteredSaves.map(s => (
+                      const renderSaveRow = (s: SaveInfo) => {
+                        const isFav = favoriteIds.includes(s.id);
+                        return (
                           <div key={s.id} style={{ padding: '10px 12px', background: routeApi.route.id === s.id ? 'rgba(79,195,247,0.15)' : 'rgba(79,195,247,0.05)', border: routeApi.route.id === s.id ? '1px solid var(--cyan-neon)' : '1px solid rgba(79,195,247,0.2)', borderRadius: '8px', cursor: 'pointer' }}
                             onClick={() => { stopAutoRouteIfActive(); routeApi.loadFromLocal(s.id); setPresetListVisible(false); }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleFavorite(s.id); }}
+                                  title={isFav ? t('お気に入り解除') : t('お気に入り登録')}
+                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: isFav ? '#ffd700' : 'var(--text-muted)', flexShrink: 0 }}
+                                >
+                                  <Star size={14} fill={isFav ? '#ffd700' : 'none'} />
+                                </button>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: routeApi.route.id === s.id ? 'var(--cyan-neon)' : '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>{s.title}</div>
+                              </div>
                               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                                 {deleteConfirmId === s.id ? (
                                   <>
@@ -2571,7 +2955,63 @@ export default function App() {
                               <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
                             </div>
                           </div>
-                        ))}
+                        );
+                      };
+
+                      return (<>
+                        {/* === お気に入りセクション (上部固定) === */}
+                        {(favPresets.length > 0 || favSaves.length > 0) && (
+                          <div style={{ background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.4)', borderRadius: '8px', padding: '8px', marginBottom: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', padding: '0 4px' }}>
+                              <Star size={12} fill="#ffd700" color="#ffd700" />
+                              <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffd700' }}>{t('お気に入り')}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({favPresets.length + favSaves.length})</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {favPresets.map(p => renderPresetRow(p))}
+                              {favSaves.map(s => renderSaveRow(s))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* === 通常のリスト (お気に入り以外) === */}
+                        {saveLoadFilter !== 'favorites' && (<>
+                          {listPresets.filter(p => !favoriteIds.includes(p.id)).map(p => renderPresetRow(p))}
+                          {listSaves.filter(s => !favoriteIds.includes(s.id)).map(s => renderSaveRow(s))}
+                        </>)}
+
+                        {/* === 非表示プリセット (フッター) === */}
+                        {saveLoadFilter !== 'favorites' && saveLoadFilter !== 'saves' && hiddenPresetsList.length > 0 && (
+                          <details style={{ marginTop: '6px' }}>
+                            <summary style={{ fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px 6px', userSelect: 'none' }}>
+                              {t('隠したプリセット (クリックで復帰)')} ({hiddenPresetsList.length})
+                            </summary>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', padding: '4px' }}>
+                              {hiddenPresetsList.map(p => {
+                                const isFav = favoriteIds.includes(p.id);
+                                return (
+                                  <div key={p.id} style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <button
+                                      onClick={() => { toggleHiddenPreset(p.id); notification.show(`${p.name}: 表示に戻しました`); }}
+                                      style={{ background: 'transparent', border: '1px solid var(--cyan-neon)', color: 'var(--cyan-neon)', borderRadius: '4px', padding: '2px 8px', fontSize: '10px', cursor: 'pointer', fontWeight: 700 }}
+                                      title={t('隠したプリセットを表示')}
+                                    >
+                                      {t('隠したプリセットを表示')}
+                                    </button>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                                    <button
+                                      onClick={() => toggleFavorite(p.id)}
+                                      title={isFav ? t('お気に入り解除') : t('お気に入り登録')}
+                                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: isFav ? '#ffd700' : 'var(--text-muted)' }}
+                                    >
+                                      <Star size={12} fill={isFav ? '#ffd700' : 'none'} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        )}
                       </>);
                     })()}
                   </div>
@@ -2682,6 +3122,8 @@ export default function App() {
         setSkillCdThreshold={setSkillCdThreshold}
         autoLoadLastRoute={autoLoadLastRoute}
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
+        autoSaveEnabled={autoSaveEnabled}
+        onSetAutoSaveEnabled={setAutoSaveEnabled}
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
         skillCdPresets={globalDefaults.skillCdPresets}
         onAddSkillCdPreset={globalDefaults.addSkillCdPreset}

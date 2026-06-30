@@ -39,7 +39,7 @@ export function DictionaryEditor() {
   const handleAdd = () => {
     const k = newKey.trim();
     const v = newVal.trim();
-    if (!k) return;
+    if (!k || !v) return;
     setEntry(targetLang, k, v);
     setNewKey('');
     setNewVal('');

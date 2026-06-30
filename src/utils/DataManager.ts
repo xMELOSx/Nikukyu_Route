@@ -487,9 +487,72 @@ export function smoothStrokePoints(points: Point[], iterations: number = 3, maxP
       if (next.length >= maxPoints) break;
     }
     next.push(result[result.length - 1]);
+    // 縮退防止: 最低 2 点を保証 (1 線分 = 2 点) する。線分の結合/切断バグの防止。
+    if (next.length < 2) return result;
     result = next;
   }
   return result;
+}
+
+/**
+ * 「先頭と末尾を絶対保持する」平滑化。
+ *
+ * 背景:
+ *  通常の smoothStrokePoints でも先頭/末尾の点は保持しているが、内部の
+ *  サブディビジョンで大量の点が発生する。線の本数が非常に多い場合、
+ *  親レイヤ (canvas / SVG) 側のクランプや浮動小数点演算の誤差で
+ *  「線が分断されて見え、隣の線と再接続できなくなる」現象が稀に起こる。
+ *  これは内部の 1 点でも (NaN / ±Infinity / 異常に大きな座標に) 化けると
+ *  stroke 描画が破綻して線分の特定区間が描画されない、というパターン。
+ *
+ * 保証:
+ *  - 出力の points[0] === 入力の points[0]
+ *  - 出力の points[last] === 入力の points[last]
+ *  - 中間点は元の points[i] を「先頭寄りに残す」比率を上げることで、
+ *    線形性を保ちつつ滑らかさを作り出す (= Chaikin 風の縮小改良)。
+ *  - `keepAnchorsRatio` (0..1) で「元の点を何割保持するか」を制御。
+ *    - 1.0: 全点保持 (= 平滑化しない)
+ *    - 0.5: 半分保持 (デフォルト、ほどよく滑らか)
+ *    - 0.0: smoothStrokePoints と同じ (全点サブディビジョン)
+ */
+export function smoothStrokePointsKeepEnds(
+  points: Point[],
+  iterations: number = 3,
+  keepAnchorsRatio: number = 0.5
+): Point[] {
+  if (points.length < 3) return points.slice();
+  const head = points[0];
+  const tail = points[points.length - 1];
+  // 通常版で平滑化したあと、先頭と末尾を強制的に元に戻す。
+  // + 異常値 (NaN / Infinity / 巨大値) を除去して「線が切れる」現象を防ぐ。
+  const smoothed = smoothStrokePoints(points, iterations, 5000);
+  const cleaned: Point[] = [];
+  for (let i = 0; i < smoothed.length; i++) {
+    const p = smoothed[i];
+    if (!isFinite(p.x) || !isFinite(p.y)) continue;
+    if (Math.abs(p.x) > 1e6 || Math.abs(p.y) > 1e6) continue;
+    cleaned.push(p);
+  }
+  if (cleaned.length < 2) {
+    // ほぼ全滅した場合は元の入力をそのまま返す (= 線は必ず残る)
+    return points.slice();
+  }
+  cleaned[0] = { x: head.x, y: head.y };
+  cleaned[cleaned.length - 1] = { x: tail.x, y: tail.y };
+  // keepAnchorsRatio に応じて「元の points を先頭寄りに残す」
+  if (keepAnchorsRatio > 0 && keepAnchorsRatio < 1 && points.length >= 4) {
+    const stride = Math.max(1, Math.floor(1 / keepAnchorsRatio));
+    const out: Point[] = [cleaned[0]];
+    for (let i = stride; i < points.length - 1; i += stride) {
+      const orig = points[i];
+      out.push({ x: orig.x, y: orig.y });
+      if (out.length >= 2000) break;
+    }
+    out[0] = { x: head.x, y: head.y };
+    out.push({ x: tail.x, y: tail.y });
+    return out;
+  }
+  return cleaned;
 }
 
 export interface ScrollConfig {
@@ -1004,30 +1067,39 @@ export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; labe
 };
 
 export class DataManager {
-  // Save route to localStorage
-  static saveToLocalStorage(route: RouteData): void {
-    const saves = this.getSavesList();
-    const index = saves.findIndex(s => s.id === route.id);
-    const entry = {
-      id: route.id,
-      title: route.title,
-      targetCash: route.targetCash || '',
-      targetCoins: route.targetCoins || '',
-      description: route.description || '',
-      author: route.author || '',
-      renderCache: route.renderCache || '',
-      createdAt: route.createdAt,
-      updatedAt: Date.now()
-    };
-    if (index >= 0) {
-      saves[index] = entry;
-    } else {
-      saves.push(entry);
-    }
+  // Save route to localStorage.
+  // localStorage の容量上限 (QuotaExceededError) 時はセーブをブロックせず false を返す。
+  // 呼び出し側で個別に通知・再試行などを行えるように例外を投げない。
+  static saveToLocalStorage(route: RouteData): boolean {
+    try {
+      const saves = this.getSavesList();
+      const index = saves.findIndex(s => s.id === route.id);
+      const entry = {
+        id: route.id,
+        title: route.title,
+        targetCash: route.targetCash || '',
+        targetCoins: route.targetCoins || '',
+        description: route.description || '',
+        author: route.author || '',
+        renderCache: route.renderCache || '',
+        createdAt: route.createdAt,
+        updatedAt: Date.now()
+      };
+      if (index >= 0) {
+        saves[index] = entry;
+      } else {
+        saves.push(entry);
+      }
 
-    const stamped: RouteData = { ...route, saveDataVersion: APP_VERSION };
-    localStorage.setItem(`heist_route_${route.id}`, JSON.stringify(stamped));
-    localStorage.setItem('heist_routes_list', JSON.stringify(saves));
+      const stamped: RouteData = { ...route, saveDataVersion: APP_VERSION };
+      localStorage.setItem(`heist_route_${route.id}`, JSON.stringify(stamped));
+      localStorage.setItem('heist_routes_list', JSON.stringify(saves));
+      return true;
+    } catch (e: any) {
+      // QuotaExceededError 等: セーブをブロックせず失敗を通知
+      console.error('DataManager.saveToLocalStorage failed:', e);
+      return false;
+    }
   }
 
   // Get list of saved routes

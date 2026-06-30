@@ -59,6 +59,8 @@ export interface UseRouteOptions {
    *  per-plan override; the live editor value is owned by the component. */
   initialMarkerScale: number;
   onMarkerScaleChange: (scale: number) => void;
+  /** オートセーブの有効/無効 (デフォルト true)。設定タブから切り替え可能。 */
+  autoSaveEnabled?: boolean;
 }
 
 export interface UseRouteApi {
@@ -119,7 +121,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   const {
     isLocal, globalDefaultsRef, globalMarkersStore,
     showNotification,
-    initialMarkerScale, onMarkerScaleChange
+    initialMarkerScale, onMarkerScaleChange,
+    autoSaveEnabled = true
   } = options;
 
   const [route, setRouteRaw] = useState<RouteData>(DEFAULT_ROUTE());
@@ -178,6 +181,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const autoSaveTimerRef = useRef<number | null>(null);
   const lastSavedSnapshotRef = useRef<string>('');
+  const autoSaveEnabledRef = useRef<boolean>(autoSaveEnabled);
+  autoSaveEnabledRef.current = autoSaveEnabled;
 
   // 初回自動コピー: renderCache が空 + author が 'No name' 以外のとき、 author を
   // renderCache にコピー (= メモリ平文の代入のみ。 暗号化は保存時)。
@@ -229,6 +234,14 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   useEffect(() => {
     if (!route || !route.id) return;
+    // オートセーブが無効なら何もしない (手動保存のみ有効)
+    if (autoSaveEnabledRef.current !== true) {
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      return;
+    }
     const safeRoute: RouteData = {
       ...route,
       markers: stripGlobalMarkersFromRoute(route.markers)
@@ -273,9 +286,15 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
         const dataToSave = {
           ...safeRoute,
-          renderCache: encoded
+          renderCache: encoded,
+          // customBg (base64 画像) は localStorage 容量を圧迫するため、
+          // localStorage には保存しない (= メモリには残るが、再ロード時に BG は消える)
+          customBg: { main: null }
         };
-        DataManager.saveToLocalStorage(dataToSave);
+        const saved = DataManager.saveToLocalStorage(dataToSave);
+        if (!saved) {
+          console.warn('[useRoute.autoSave] save failed (quota?) — keeping in-memory only');
+        }
 
         // ---- デバッグ: 保存直後に localStorage を読み直して検証 ----
         // 暗号文が実際に正しく保存されているか確認
@@ -349,10 +368,16 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     const toSave: RouteData = {
       ...route,
       renderCache: encoded,
+      // customBg (base64 画像) は localStorage 容量を圧迫するため、
+      // localStorage には保存しない (= メモリには残るが、再ロード時に BG は消える)
+      customBg: { main: null },
       mapVersion: 2,
       markerScale: initialMarkerScale
     };
-    DataManager.saveToLocalStorage(toSave);
+    const saved = DataManager.saveToLocalStorage(toSave);
+    if (!saved) {
+      showNotificationRef.current('⚠️ localStorage の容量上限を超えました。古いセーブデータを削除してください', 5000);
+    }
 
     // オートセーブのスナップショットと同期して、無駄な保存タイマーの再起動を防ぐ
     const expectedRouteState = {
@@ -391,8 +416,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       renderCache: plainCache
     };
     // localStorage には暗号文を保存するため、保存直前にもう一度コピーして暗号文を差し込む
-    const toPersist: RouteData = { ...copy, renderCache: encoded };
-    DataManager.saveToLocalStorage(toPersist);
+    // customBg は localStorage 容量圧迫のため null に
+    const toPersist: RouteData = { ...copy, renderCache: encoded, customBg: { main: null } };
+    const saved = DataManager.saveToLocalStorage(toPersist);
+    if (!saved) {
+      showNotificationRef.current('⚠️ localStorage の容量上限を超えました', 5000);
+    }
     setRouteRaw(copy);
     refreshSavesList();
     showNotificationRef.current(`コピー保存: ${copy.title}`);

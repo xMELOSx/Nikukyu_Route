@@ -17,18 +17,25 @@ import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
-import { t, tNote } from '../i18n';
+import { t, tNote, useLangState } from '../i18n';
+import { subscribe as subscribeUserDict } from '../i18n/userDict';
 
 interface MapCanvasProps {
   floor: FloorType;
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'pan' | 'measure' | 'add-marker' | 'toggle-vis';
+  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke';
   activeMarkerType: MarkerType | null;
   eraseTarget?: 'all' | 'marker' | 'route' | 'branch';
   eraseDefaultBehavior?: 'normal' | 'split';
   eraseSize?: number;
+  /** 線分編集ツールで選択中のストロークインデックス集合 */
+  editStrokeIdxs?: Set<number>;
+  /** 線分編集ツールの選択集合を更新する */
+  onEditStrokeIdxsChange?: (next: Set<number>) => void;
+  /** 線分編集中にマーカーへのヒットを無効化 (= ピンに隠れて線がクリックできない問題を防ぐ) */
+  editDisablePinsDuringEdit?: boolean;
   strokeColor: string;
   strokeWidth: number;
   strokeType: 'solid' | 'dashed';
@@ -131,6 +138,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   eraseTarget = 'all',
   eraseDefaultBehavior = 'normal',
   eraseSize = 16,
+  editStrokeIdxs,
+  onEditStrokeIdxsChange,
+  editDisablePinsDuringEdit = true,
   strokeColor,
   strokeWidth,
   strokeType,
@@ -272,6 +282,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
+  // Re-render when user dictionary changes (so tNote() picks up new entries)
+  useLangState();
+  const [, setUserDictTick] = useState(0);
+  useEffect(() => {
+    return subscribeUserDict(() => setUserDictTick(t => t + 1));
+  }, []);
+
   const getClampedPan = (p: Point, z: number): Point => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return p;
@@ -310,6 +327,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Eraser cursor tracking (薄い青円表示用)
   const [eraseCursor, setEraseCursor] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
+
+  // 線分編集モードのラバーバンド矩形: ドラッグ範囲選択
+  // - pressedAlt: MouseDown 時の Alt 状態を覚える (MouseUp 時の最終判定用)
+  const [editRect, setEditRect] = useState<{ start: Point; end: Point; pressedAlt: boolean } | null>(null);
 
   // Drag-and-drop Marker State
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
@@ -753,7 +774,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, toolMode]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -802,6 +823,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     // 計測モード解除時はクリアしない (セッションをまたいで保持)
   }, [toolMode, strokes.length]);
+
+  // 線分編集モード:
+  // - ストローク数変化 (削除・分割) に追随して範囲外インデックスを掃除
+  // - モード切替時 (edit-stroke → 他): 選択を保持 (次回モード入りで再利用)
+  useEffect(() => {
+    if (!onEditStrokeIdxsChange || !editStrokeIdxs) return;
+    const cleaned = new Set<number>();
+    let needsUpdate = false;
+    for (const idx of editStrokeIdxs) {
+      if (idx < strokes.length) cleaned.add(idx);
+      else needsUpdate = true;
+    }
+    if (needsUpdate) onEditStrokeIdxsChange(cleaned);
+  }, [strokes.length, onEditStrokeIdxsChange, editStrokeIdxs]);
 
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
@@ -984,13 +1019,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       });
     }
 
-    // 距離計測: ハイライト中の線を光らせる (セット内の全線分) — 計測モード時のみ
-    if (toolMode === 'measure' && highlightedStrokeIdxs.size > 0) {
+    // ハイライト描画 (measure と edit-stroke 共通)
+    // - measure: 計測用に選択した線を光らせる
+    // - edit-stroke: 編集中に選択した線を光らせる
+    const activeHighlight = (toolMode === 'measure' ? highlightedStrokeIdxs : (editStrokeIdxs ?? new Set<number>()));
+    if ((toolMode === 'measure' || toolMode === 'edit-stroke') && activeHighlight.size > 0) {
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.setLineDash([]);
-      for (const idx of highlightedStrokeIdxs) {
+      for (const idx of activeHighlight) {
         if (idx < 0 || idx >= strokes.length) continue;
         const hs = strokes[idx];
         if (!hs || !hs.points || hs.points.length < 2) continue;
@@ -1190,7 +1228,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const isPanTool = toolMode === 'pan' || e.shiftKey;
+    const isPanTool = toolMode === 'move' || e.shiftKey;
     const isLockedPresentation = !isEditMode && !isPanTool && (
       toolMode !== 'draw' && toolMode !== 'erase' && (
         toolMode !== 'add-marker' || !activeMarkerType || !isIndiv(activeMarkerType)
@@ -1238,6 +1276,46 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setHighlightedStrokeIdxs(new Set());
       }
       // Alt 押下時の空所クリック → 何もせず前のセットを保持
+      return;
+    }
+
+    // 線分編集モード: クリックで線を選択 (Alt で複数追加、通常クリックで置き換え)
+    // - クリック位置に近い線が HIT_THRESHOLD 以内ならその線をトグル/置換
+    // - 空所クリックでドラッグ開始 (矩形ラバーバンド選択)。
+    //   MouseMove で矩形を更新、MouseUp で矩形内の全線を Alt の有無に応じて追加/置換
+    if (toolMode === 'edit-stroke' && isEditMode) {
+      const HIT_THRESHOLD = 16;
+      let bestIdx = -1;
+      let bestDist = HIT_THRESHOLD;
+      for (let i = 0; i < strokes.length; i++) {
+        const s = strokes[i];
+        if (!s || !s.points || s.points.length < 2) continue;
+        const d = getDistanceToStroke(coords, s);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        // ヒットした: クリック選択 (矩形ドラッグは開始しない)
+        // Alt: 常に「追加」 (トグルではなく累積)
+        if (e.altKey) {
+          const base = editStrokeIdxs ?? new Set<number>();
+          const next = new Set(base);
+          next.add(bestIdx);
+          onEditStrokeIdxsChange?.(next);
+        } else {
+          onEditStrokeIdxsChange?.(new Set([bestIdx]));
+        }
+      } else {
+        // 空所クリック: 矩形ラバーバンドの起点に。
+        // Alt 押下時は既存選択に追加、空所ドラッグで累積選択。
+        // 通常時は既存選択をリセットして新規矩形選択に備える。
+        if (!e.altKey) {
+          onEditStrokeIdxsChange?.(new Set());
+        }
+        setEditRect({ start: coords, end: coords, pressedAlt: !!e.altKey });
+      }
       return;
     }
 
@@ -1381,6 +1459,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       };
       targetPanRef.current = nextPan;
       setPan(nextPan);
+      return;
+    }
+
+    // 線分編集モード: ラバーバンド矩形を更新中
+    if (toolMode === 'edit-stroke' && isEditMode && editRect) {
+      setEditRect(prev => prev ? { ...prev, end: coords } : prev);
       return;
     }
 
@@ -1554,6 +1638,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    // 線分編集: ラバーバンド矩形による選択確定
+    if (toolMode === 'edit-stroke' && isEditMode && editRect) {
+      const r = editRect;
+      const xMin = Math.min(r.start.x, r.end.x);
+      const xMax = Math.max(r.start.x, r.end.x);
+      const yMin = Math.min(r.start.y, r.end.y);
+      const yMax = Math.max(r.start.y, r.end.y);
+      // 矩形内に「線分が一部でも入っていれば」採用 (BBox ヒットテスト)
+      const inRect: number[] = [];
+      for (let i = 0; i < strokes.length; i++) {
+        const s = strokes[i];
+        if (!s || !s.points || s.points.length < 2) continue;
+        let hits = false;
+        for (const p of s.points) {
+          if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) { hits = true; break; }
+        }
+        if (hits) inRect.push(i);
+      }
+      const base = editStrokeIdxs ?? new Set<number>();
+      const next = r.pressedAlt ? new Set(base) : new Set<number>();
+      // Alt 押下時はトグルせず常に追加。通常時は矩形内だけで置換。
+      for (const idx of inRect) {
+        next.add(idx);
+      }
+      onEditStrokeIdxsChange?.(next);
+      setEditRect(null);
+    }
     if (draggingWaypoint) {
       if (onMarkersDragEnd) onMarkersDragEnd();
       setDraggingWaypoint(null);
@@ -2306,10 +2417,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [highlightedStrokeIdxs, strokes]);
 
   let cursorClass = '';
-  if (toolMode === 'pan' || !isEditMode) {
+  if (toolMode === 'move' || !isEditMode) {
     cursorClass = isPanning ? 'grabbing' : 'grab';
   } else if (toolMode === 'measure') {
     cursorClass = 'measure-cursor';
+  } else if (toolMode === 'edit-stroke') {
+    cursorClass = 'edit-stroke-cursor';
   }
 
   return (
@@ -2681,7 +2794,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                      width: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      height: `${(isLargePin ? 18 : 16) * scaleMultiplier}px`,
                      '--theme-color': m.phoneActive ? '#39ff14' : (isSkillCd && skillColor ? skillColor : meta.color),
-                     pointerEvents: (disablePinsDuringDraw && toolMode === 'draw') ? 'none' : 'auto',
+                      pointerEvents: ((disablePinsDuringDraw && toolMode === 'draw') || (editDisablePinsDuringEdit && toolMode === 'edit-stroke')) ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : ((inactiveMarkersMode && !isWarp && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none')
                   } as React.CSSProperties}
@@ -3354,6 +3467,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </React.Fragment>
               );
             })}
+
+          {/* 線分編集モード: ラバーバンド矩形 (選択プレビュー) */}
+          {toolMode === 'edit-stroke' && editRect && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${Math.min(editRect.start.x, editRect.end.x)}px`,
+                top: `${Math.min(editRect.start.y, editRect.end.y)}px`,
+                width: `${Math.abs(editRect.end.x - editRect.start.x)}px`,
+                height: `${Math.abs(editRect.end.y - editRect.start.y)}px`,
+                border: '1px dashed var(--cyan-neon, #00f0ff)',
+                background: 'rgba(0, 240, 255, 0.08)',
+                pointerEvents: 'none',
+                boxShadow: '0 0 8px rgba(0, 240, 255, 0.4)',
+                zIndex: 5000
+              }}
+            />
+          )}
 
           {/* 距離計測モード: ハイライト中の各線の左下に距離ラベルを表示 */}
           {toolMode === 'measure' && measureInfos.map((info, infoIdx) => (
@@ -4786,7 +4917,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </button>
         {isEditMode && (
           <button
-            className={`zoom-btn ${toolMode === 'pan' ? 'active' : ''}`}
+            className={`zoom-btn ${toolMode === 'move' ? 'active' : ''}`}
             onClick={() => {}}
             title="Press Shift to Pan, or use Pan tool"
           >

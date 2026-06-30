@@ -108,8 +108,13 @@ export function tNote(note: string | undefined | null): string {
   if (note.startsWith('__i18n:')) return t(note.slice('__i18n:'.length));
   const trimmed = note.trim();
   if (trimmed) {
-    const user = getUserDictFor(getInverseDictLang());
-    if (user[trimmed]) return user[trimmed];
+    const inverseLang = getInverseDictLang();
+    const inverse = getUserDictFor(inverseLang);
+    if (inverse[trimmed]) return inverse[trimmed];
+    if (currentLang === 'en') {
+      const en = getUserDictFor('en');
+      if (en[trimmed]) return en[trimmed];
+    }
   }
   return note;
 }

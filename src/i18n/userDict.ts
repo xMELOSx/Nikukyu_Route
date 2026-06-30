@@ -34,7 +34,10 @@ function emit() {
 }
 
 export function getUserDict(): UserDict {
-  return current;
+  return {
+    ja: { ...(current.ja || {}) },
+    en: { ...(current.en || {}) },
+  };
 }
 
 export function getUserDictFor(lang: LangCode): Record<string, string> {

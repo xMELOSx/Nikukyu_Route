@@ -25,7 +25,7 @@ export interface UseHistoryOptions {
   persistGlobalMarkers: (next: HeistMarker[]) => void;
   /** Called after undo/redo with the restored marker set so the host can
    *  clean up active-marker state (e.g. clear active note marker, reset
-   *  tool mode to 'pan'). */
+   *  tool mode to 'move'). */
   onRestore?: (restoredIndiv: HeistMarker[], restoredGlobal: HeistMarker[]) => void;
 }
 

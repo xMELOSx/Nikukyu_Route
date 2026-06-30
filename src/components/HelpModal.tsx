@@ -44,6 +44,8 @@ interface HelpModalProps {
   onClearOriginalAuthor?: () => void;
   autoLoadLastRoute?: boolean;
   onSetAutoLoadLastRoute?: (enabled: boolean) => void;
+  autoSaveEnabled?: boolean;
+  onSetAutoSaveEnabled?: (enabled: boolean) => void;
   showDetectionRanges?: boolean;
   onSetShowDetectionRanges?: (enabled: boolean) => void;
   stopMarkerThreshold?: number;
@@ -74,6 +76,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   onClearOriginalAuthor,
   autoLoadLastRoute,
   onSetAutoLoadLastRoute,
+  autoSaveEnabled,
+  onSetAutoSaveEnabled,
   showDetectionRanges,
   onSetShowDetectionRanges,
   stopMarkerThreshold,
@@ -386,6 +390,25 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </div>
               )}
 
+              {onSetAutoSaveEnabled && (
+                <div style={{ padding: '10px 14px', background: 'rgba(0, 240, 255, 0.04)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoSaveEnabled ?? true}
+                      onChange={(e) => onSetAutoSaveEnabled(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    💾 {t('編集内容を自動で保存する (1.5秒のデバウンス)')}
+                  </label>
+                  {autoSaveEnabled === false && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', paddingLeft: '24px' }}>
+                      {t('オートセーブは無効です。手動で保存してください。')}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* スキルCDプリセット管理 */}
               <div style={{ padding: '10px 14px', background: 'rgba(57, 255, 20, 0.04)', border: '1px solid rgba(57, 255, 20, 0.25)', borderRadius: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
@@ -499,9 +522,9 @@ interface SkillCdPresetAddFormProps {
 const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) => {
   const [label, setLabel] = useState('');
   const [color, setColor] = useState('#39ff14');
-  const [mode, setMode] = useState<'fixed' | 'per_second'>('per_second');
-  const [seconds, setSeconds] = useState(2);     // per_second: 使用秒数
-  const [perSecondCd, setPerSecondCd] = useState(2); // per_second: 係数
+  const [mode, setMode] = useState<'fixed' | 'per_second'>('fixed');
+  const [seconds, setSeconds] = useState(50);    // fixed: CD秒数 / per_second: 使用秒数
+  const [perSecondCd, setPerSecondCd] = useState(2); // per_second: 1秒あたりCD秒数 (基本値=2)
 
   const submit = () => {
     const trimmed = label.trim();
@@ -509,8 +532,8 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
     onAdd({ label: trimmed, color, mode, seconds, perSecondCd });
     setLabel('');
     setColor('#39ff14');
-    setMode('per_second');
-    setSeconds(2);
+    setMode('fixed');
+    setSeconds(50);
     setPerSecondCd(2);
   };
 

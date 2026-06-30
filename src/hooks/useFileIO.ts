@@ -281,7 +281,16 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         author: plainAuthor,
         renderCache: encodedCache
       };
-      DataManager.saveToLocalStorage(importedRoute);
+      // カスタムBG (= base64 画像) は localStorage 容量を圧迫するため、
+      // メモリには載せるが localStorage には保存しない。 これで QuotaExceededError を回避。
+      const toSaveToStorage: RouteData = {
+        ...importedRoute,
+        customBg: { main: null }
+      };
+      const saved = DataManager.saveToLocalStorage(toSaveToStorage);
+      if (!saved) {
+        showNotification('⚠️ PNG は読み込まれましたが、 localStorage の容量上限を超えたためセーブリストには反映されません', 5000);
+      }
       routeApi.setRouteWithGlobalDefaults(importedRoute);
       localStorage.setItem('heist_last_used_route_id', importedRoute.id);
       routeApi.refreshSavesList();

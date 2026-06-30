@@ -476,6 +476,10 @@ button, select, input {
   cursor: crosshair;
 }
 
+.canvas-wrapper.edit-stroke-cursor {
+  cursor: crosshair;
+}
+
 .canvas-container {
   position: relative;
   transform-origin: center center;
