@@ -1435,13 +1435,13 @@ export class DataManager {
       }
 
       // Author info
-      const author = await aesGcmDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
+      const author = route.author || '';
       const originalAuthor = await aesGcmDecrypt(route.originalAuthor || '', getOriginalAuthorKey(route.id, route.createdAt));
-      const showOriginal = originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED && author !== AUTHOR_TAMPERED;
+      const showOriginal = originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED;
       fctx.font = 'bold 18px Rajdhani, Orbitron, Arial';
       fctx.fillStyle = '#ffffff';
       let ax = 20;
-      if (author && author !== AUTHOR_TAMPERED) {
+      if (author) {
         fctx.fillText(`作者: ${author}`, ax, 115);
         ax += fctx.measureText(`作者: ${author}`).width + 16;
       }
@@ -1514,12 +1514,12 @@ export class DataManager {
       }
 
       // Embed route metadata as PNG tEXt chunks (always, regardless of data bar)
-      const decAuthor = await aesGcmDecrypt(route.author || '', getAuthorKey(route.id, route.createdAt));
+      const decAuthor = route.author || '';
       const routeJson = JSON.stringify(DataManager.sanitizeRouteForExport(route));
       dataUrl = insertPngMetadata(dataUrl, {
         Title: route.title || '',
         Description: route.description || '',
-        Author: decAuthor === AUTHOR_TAMPERED ? '' : decAuthor,
+        Author: decAuthor,
         TargetCash: route.targetCash || '',
         TargetCoins: route.targetCoins || '',
         TargetDuration: route.targetDuration || '',

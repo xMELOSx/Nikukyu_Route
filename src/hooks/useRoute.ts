@@ -11,12 +11,8 @@ import {
   DEFAULT_ROUTE,
   DataManager,
   normalizeStrokes,
-  aesGcmEncrypt,
-  aesGcmDecrypt,
-  AUTHOR_TAMPERED,
+  AUTHOR_DEFAULT_PLAIN,
   AUTHOR_UNKNOWN_MARKER,
-  getAuthorKey,
-  getOriginalAuthorKey,
   generateId
 } from '../utils/DataManager';
 import type { GlobalDefaults } from './useGlobalDefaults';
@@ -165,15 +161,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     []
   );
 
-  // Debounced auto-save: any change to `route` triggers a 1.5s-delayed
-  // localStorage write so the user never loses work between explicit saves.
-  //
-  // SAFETY: the route carries only DISPLAY STATE (indiv markers + hidden
-  // lists + meta). Global marker data is owned by globalMarkersStore and
-  // must NEVER be persisted via the route — otherwise an auto-save of a
-  // merged snapshot would re-write the global state from a possibly
-  // stale prop, and on the next reload the "original" creation position
-  // would clobber the user's move. Strip globals defensively before save.
   const autoSaveTimerRef = useRef<number | null>(null);
   const lastSavedSnapshotRef = useRef<string>('');
   useEffect(() => {
@@ -184,13 +171,34 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     };
     const snapshot = JSON.stringify(safeRoute);
     if (snapshot === lastSavedSnapshotRef.current) return;
+
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
     }
     autoSaveTimerRef.current = window.setTimeout(() => {
       try {
-        DataManager.saveToLocalStorage(safeRoute);
-        lastSavedSnapshotRef.current = snapshot;
+        let plainOriginal = route.originalAuthor || '';
+        // 仕様: 原作者が未設定（空文字）のとき、現在の作者名（平文・No name以外）から自動コピー
+        if (!plainOriginal && route.author && route.author !== AUTHOR_DEFAULT_PLAIN) {
+          plainOriginal = route.author;
+          setRouteRaw(prev => (prev.id === route.id && !prev.originalAuthor ? { ...prev, originalAuthor: plainOriginal } : prev));
+        }
+
+        const dataToSave = {
+          ...safeRoute,
+          originalAuthor: plainOriginal
+        };
+        DataManager.saveToLocalStorage(dataToSave);
+
+        // 状態更新後の予想されるスナップショットを設定して、次のレンダリングループを防ぐ
+        const expectedNextRoute = {
+          ...safeRoute,
+          originalAuthor: plainOriginal
+        };
+        lastSavedSnapshotRef.current = JSON.stringify(expectedNextRoute);
+        
+        // オートセーブ完了後にセーブ一覧を更新する
+        refreshSavesList();
       } catch (e) {
         console.error('Auto-save failed:', e);
       }
@@ -198,36 +206,46 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     return () => {
       if (autoSaveTimerRef.current !== null) {
         window.clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
       }
     };
   }, [route]);
 
   const saveToLocal = useCallback(() => {
+    let plainOriginal = route.originalAuthor || '';
+    if (!plainOriginal && route.author && route.author !== AUTHOR_DEFAULT_PLAIN) {
+      plainOriginal = route.author;
+      setRouteRaw(prev => ({ ...prev, originalAuthor: plainOriginal }));
+    }
+
     const toSave: RouteData = {
-      ...route, mapVersion: 2, markerScale: initialMarkerScale
+      ...route,
+      originalAuthor: plainOriginal,
+      mapVersion: 2,
+      markerScale: initialMarkerScale
     };
     DataManager.saveToLocalStorage(toSave);
+    
+    // オートセーブのスナップショットと同期して、無駄な保存タイマーの再起動を防ぐ
+    const expectedRouteState = {
+      ...route,
+      originalAuthor: plainOriginal
+    };
+    lastSavedSnapshotRef.current = JSON.stringify({
+      ...expectedRouteState,
+      markers: stripGlobalMarkersFromRoute(expectedRouteState.markers)
+    });
+
     refreshSavesList();
     localStorage.setItem('heist_last_used_route_id', toSave.id);
     showNotificationRef.current(`保存完了: ${route.title}`);
   }, [route, initialMarkerScale, refreshSavesList]);
 
-  const saveAsCopy = useCallback(async () => {
+  const saveAsCopy = useCallback(() => {
     const newId = generateId('route');
     const newCreatedAt = Date.now();
     const copy: RouteData = {
       ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt
     };
-    if (copy.author) {
-      const plain = await aesGcmDecrypt(copy.author, getAuthorKey(route.id, route.createdAt));
-      if (plain && plain !== AUTHOR_TAMPERED) {
-        copy.author = await aesGcmEncrypt(plain, getAuthorKey(newId, newCreatedAt));
-        if (!copy.originalAuthor) {
-          copy.originalAuthor = await aesGcmEncrypt(plain, getOriginalAuthorKey(newId, newCreatedAt));
-        }
-      }
-    }
     DataManager.saveToLocalStorage(copy);
     setRouteRaw(copy);
     refreshSavesList();
@@ -240,11 +258,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     const newCreatedAt = Date.now();
     const newRoute = DEFAULT_ROUTE(newId);
     if (currentAuthor) {
-      // 同期で復号できない v2: 形式でも newRoute は AUTHOR_DEFAULT_PLAIN ('No name')
-      // を暗号化した値で初期化する。これにより「current の author を引き継ぐ」のは
-      // 旧 XOR 形式のみとなるが、 author 引き継ぎは補助機能なので No name に
-      // フォールバックしても実用上問題ない。
-      newRoute.author = '';
+      // author は平文なのでそのまま引き継ぎ
+      newRoute.author = currentAuthor;
       newRoute.originalAuthor = '';
     }
     setRouteWithGlobalDefaults(newRoute);
@@ -340,7 +355,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       // 「ロード時に何事もなかったかのように No name に補完」 すると改ざんに
       // 気づけなくなる (= 保護として機能しない) ため、ここでは補完しない。
       if (!data.author) {
-        data.author = AUTHOR_UNKNOWN_MARKER;
+        data.author = '';
       }
       if (!data.originalAuthor) {
         data.originalAuthor = AUTHOR_UNKNOWN_MARKER;

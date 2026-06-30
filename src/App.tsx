@@ -30,7 +30,6 @@ import {
   DataManager,
   normalizeStrokes,
   smoothStrokePoints,
-  xorDecrypt,
   aesGcmEncrypt,
   aesGcmDecrypt,
   AUTHOR_TAMPERED,
@@ -585,26 +584,13 @@ export default function App() {
     }
   });
 
-  // 作者名 / 原作者名の表示用 hook (AES-GCM 復号、改ざん検知)
-  const authorField = useAuthorField(
-    routeApi.route.author || '',
-    getAuthorKey(routeApi.route.id, routeApi.route.createdAt),
-    { editable: true }
-  );
-  const originalAuthorField = useAuthorField(
-    routeApi.route.originalAuthor || '',
-    getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt),
-    { editable: false }
-  );
-
-  // 編集中は useAuthorField.plain は復号完了まで undefined or 前の値のままなので、
-  // input 制御用のローカル state を持つ。初期値は復号結果 (or AUTHOR_DEFAULT_PLAIN)。
+  // 編集中は input 制御用のローカル state を持つ。初期値はプレーンテキストの作者名。
   // route.id / route.author が変わったら再同期する。
   const [authorEdit, setAuthorEdit] = useState<string>(AUTHOR_DEFAULT_PLAIN);
   useEffect(() => {
-    if (authorField.tampered) return;
-    setAuthorEdit(authorField.isDefault || !authorField.plain ? AUTHOR_DEFAULT_PLAIN : authorField.plain);
-  }, [authorField.plain, authorField.isDefault, authorField.tampered, routeApi.route.id, routeApi.route.author]);
+    const authorPlain = routeApi.route.author || '';
+    setAuthorEdit(!authorPlain || authorPlain === AUTHOR_DEFAULT_PLAIN ? AUTHOR_DEFAULT_PLAIN : authorPlain);
+  }, [routeApi.route.id, routeApi.route.author]);
 
   const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
     routeApi.setRouteWithGlobalDefaults(prev => ({
@@ -1993,42 +1979,29 @@ export default function App() {
                       <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('作者名')}</label>
                       {isEditMode ? (
                         <input type="text" className="input-cyber" style={{ width: '100%', boxSizing: 'border-box' }}
-                          value={authorField.tampered ? '' : authorEdit}
-                          onChange={async (e) => {
+                          value={authorEdit}
+                          onChange={(e) => {
                             const v = e.target.value;
                             setAuthorEdit(v);
-                            const cipher = await aesGcmEncrypt(v, getAuthorKey(routeApi.route.id, routeApi.route.createdAt));
-                            routeApi.setRoute({ ...routeApi.route, author: cipher });
+                            routeApi.setRoute({ ...routeApi.route, author: v });
                           }}
                           placeholder={AUTHOR_DEFAULT_PLAIN}
                         />
                       ) : (
-                        <div className="display-field" style={authorField.tampered ? { color: 'var(--red-neon, #f44)' } : (authorField.isDefault ? { color: 'var(--text-muted)' } : undefined)}>
-                          {authorField.tampered
-                            ? <span style={{ color: 'var(--red-neon, #f44)' }}>Anomaly</span>
-                            : (authorField.loading
-                              ? <span className="empty">…</span>
-                              : (authorField.isDefault || !authorField.plain
-                                ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
-                                : authorField.plain))}
+                        <div className="display-field" style={!routeApi.route.author || routeApi.route.author === AUTHOR_DEFAULT_PLAIN ? { color: 'var(--text-muted)' } : undefined}>
+                          {!routeApi.route.author || routeApi.route.author === AUTHOR_DEFAULT_PLAIN
+                            ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
+                            : routeApi.route.author}
                         </div>
                       )}
                     </div>
                     {isLocal && (
                       <div>
                         <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('原作者名')}</label>
-                        {/*
-                          originalAuthor は編集 UI を出さない。変更手段は「クリアボタン (No name リセット)」のみ。
-                          設定後は表示専用 (Anomaly / No name / 平文 の3パターン表示)。
-                        */}
-                        <div className="display-field" style={originalAuthorField.tampered ? { color: 'var(--red-neon, #f44)' } : (originalAuthorField.isDefault ? { color: 'var(--text-muted)' } : undefined)}>
-                          {originalAuthorField.tampered
-                            ? <span style={{ color: 'var(--red-neon, #f44)' }}>Anomaly</span>
-                            : (originalAuthorField.loading
-                              ? <span className="empty">…</span>
-                              : (originalAuthorField.isDefault || !originalAuthorField.plain
-                                ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
-                                : originalAuthorField.plain))}
+                        <div className="display-field" style={!routeApi.route.originalAuthor || routeApi.route.originalAuthor === AUTHOR_DEFAULT_PLAIN ? { color: 'var(--text-muted)' } : undefined}>
+                          {!routeApi.route.originalAuthor || routeApi.route.originalAuthor === AUTHOR_DEFAULT_PLAIN
+                            ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
+                            : routeApi.route.originalAuthor}
                         </div>
                       </div>
                     )}
@@ -2411,19 +2384,14 @@ export default function App() {
                       };
                       const matchSave = (s: SaveInfo) => {
                         if (!q) return true;
-                        // 同期では AES-GCM 復号できないので、暗号文プレフィックスで簡易判定。
-                        // v2 形式は復号しないと中身が分からないため、q が 'no name' /
-                        // 'anomaly' 系のキーワードなら一致とみなす。
                         const isV2 = (enc: string) =>
                           enc.startsWith('v2:') || enc.startsWith('legacy:');
-                        const sa = isV2(s.author || '') ? '' : xorDecrypt(s.author || '', getAuthorKey(s.id, s.createdAt));
-                        const so = isV2(s.originalAuthor || '') ? '' : xorDecrypt(s.originalAuthor || '', getOriginalAuthorKey(s.id, s.createdAt));
+                        const plainAuthor = s.author || '';
                         return s.title.toLowerCase().includes(q)
                           || (s.description || '').toLowerCase().includes(q)
-                          || sa.toLowerCase().includes(q)
-                          || so.toLowerCase().includes(q)
-                          || (q.toLowerCase().includes('no name') && (isV2(s.author || '') || isV2(s.originalAuthor || '')))
-                          || (q.toLowerCase().includes('anomaly') && (!s.author || !s.originalAuthor));
+                          || plainAuthor.toLowerCase().includes(q)
+                          || (q.toLowerCase().includes('no name') && isV2(s.originalAuthor || ''))
+                          || (q.toLowerCase().includes('anomaly') && !s.originalAuthor);
                       };
                       const filteredPresets = visiblePresets.filter(matchPreset);
                       const filteredSaves = routeApi.saves.filter(matchSave);
@@ -2696,15 +2664,9 @@ export default function App() {
         onShowGlobalMarker={handleShowGlobalMarker}
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
         onSetStartupFocus={(markerId) => globalDefaults.setStartupFocusMarkerId(markerId || null)}
-        onClearOriginalAuthor={async () => {
-          // 両方とも AUTHOR_DEFAULT_PLAIN ('No name') を暗号化した状態に戻す。
-          // これにより表示は「No name」になり、ロード時も異常扱いされない。
-          const [a, o] = await Promise.all([
-            aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, getAuthorKey(routeApi.route.id, routeApi.route.createdAt)),
-            aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt))
-          ]);
-          routeApi.setRoute(prev => ({ ...prev, author: a, originalAuthor: o }));
-          notification.show('作者名・原作者名を No name にリセットしました');
+        onClearOriginalAuthor={() => {
+          routeApi.setRoute(prev => ({ ...prev, originalAuthor: '' }));
+          notification.show('原作者名を No name にリセットしました');
         }}
         showDetectionRanges={showDetectionRanges}
         onSetShowDetectionRanges={setShowDetectionRanges}

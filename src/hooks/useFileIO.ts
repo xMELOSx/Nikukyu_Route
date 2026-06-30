@@ -8,7 +8,6 @@ import {
   aesGcmDecrypt,
   AUTHOR_TAMPERED,
   AUTHOR_UNKNOWN_MARKER,
-  getAuthorKey,
   getOriginalAuthorKey,
   runSaveDataMigrations
 } from '../utils/DataManager';
@@ -166,12 +165,11 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       if (data.originalAuthor === undefined) data.originalAuthor = '';
 
       // author / originalAuthor のロード時フォールバック:
-      //   空 -> AUTHOR_UNKNOWN_MARKER のまま残す (改ざんの疑いとして Anomaly 表示)。
-      //         ユーザはクリアボタン or input 編集で意図的に No name にリセットできる。
-      // 「ロード時に No name 補完」 は改ざんに気づけなくなる (= 保護として機能しない)
-      // ため、ここでは補完しない。
+      //   author: 平文フィールド。 空文字 = 「No name」 (デフォルト値) として扱う。
+      //   originalAuthor: AES-GCM 暗号化。 空 / AUTHOR_UNKNOWN_MARKER は改ざんの疑い
+      //                  として Anomaly 表示 (= v2:0: のまま残す)。
       if (!data.author) {
-        data.author = AUTHOR_UNKNOWN_MARKER;
+        data.author = '';
       }
       if (!data.originalAuthor) {
         data.originalAuthor = AUTHOR_UNKNOWN_MARKER;
@@ -228,7 +226,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       const migrated = mig.data;
       const newId = `route_${Date.now()}`;
       const newCreatedAt = Date.now();
-      const plainAuthor = await aesGcmDecrypt(migrated.author || '', getAuthorKey(migrated.id, migrated.createdAt));
+      // author は平文フィールド (旧 v2: 暗号文でもロード後に平文化されている前提)。
+      // originalAuthor は AES-GCM 暗号化なので新鍵で再暗号化する。
+      const plainAuthor = (migrated.author && !migrated.author.startsWith('v2:') && !migrated.author.startsWith('legacy:'))
+        ? migrated.author : '';
       const plainOriginal = await aesGcmDecrypt(migrated.originalAuthor || '', getOriginalAuthorKey(migrated.id, migrated.createdAt));
       const allMarkers = migrated.markers || [];
       const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
@@ -239,7 +240,6 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       for (const m of allMarkers) {
         if (m && m.pickingPicky) importedPickyMarkerIds[m.id] = true;
       }
-      const safeAuthor = plainAuthor === AUTHOR_TAMPERED ? '' : (plainAuthor || '');
       const safeOriginal = plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || '');
       const importedRoute: RouteData = {
         ...migrated,
@@ -247,8 +247,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         createdAt: newCreatedAt,
         markers: individualMarkers,
         pickyMarkerIds: { ...(migrated.pickyMarkerIds || {}), ...importedPickyMarkerIds },
-        author: await aesGcmEncrypt(safeAuthor, getAuthorKey(newId, newCreatedAt)),
-        originalAuthor: await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt))
+        author: plainAuthor,
+        originalAuthor: safeOriginal
+          ? await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt))
+          : AUTHOR_UNKNOWN_MARKER
       };
       DataManager.saveToLocalStorage(importedRoute);
       routeApi.setRouteWithGlobalDefaults(importedRoute);
