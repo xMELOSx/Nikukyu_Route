@@ -13,6 +13,11 @@ import {
   normalizeStrokes,
   AUTHOR_DEFAULT_PLAIN,
   AUTHOR_UNKNOWN_MARKER,
+  AUTHOR_TAMPERED,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+  getRenderCacheKey,
+  migrateOriginalAuthorToRenderCache,
   generateId
 } from '../utils/DataManager';
 import type { GlobalDefaults } from './useGlobalDefaults';
@@ -37,7 +42,7 @@ export interface SaveInfo {
   targetCoins: string;
   description: string;
   author: string;
-  originalAuthor: string;
+  renderCache: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -75,7 +80,7 @@ export interface UseRouteApi {
     name: string;
     description: string;
     author: string;
-    originalAuthor: string;
+    renderCache: string;
     visibility?: PresetVisibility;
   }) => void;
   /**
@@ -135,7 +140,17 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     // ここでは正規化せず生で state に乗せる。表示側の SaveListRowAuthor が
     // 同期判定で「異常」表示にする。auto-save のたびに重い AES-GCM を
     // 走らせないため、 補完は初回マウント時の 1 回だけ useEffect で行う。
-    setSaves(DataManager.getSavesList().sort((a, b) => b.updatedAt - a.updatedAt));
+    const list = DataManager.getSavesList().sort((a, b) => b.updatedAt - a.updatedAt);
+    setSaves(list);
+    // ---- デバッグ: 一覧取得結果をコンソールに出す ----
+    console.log('[refreshSavesList] saves:', list.map(s => ({
+      id: s.id,
+      title: s.title,
+      author: s.author,
+      renderCache_preview: (s.renderCache || '').slice(0, 40),
+      renderCache_len: (s.renderCache || '').length,
+      isUnknownMarker: s.renderCache === AUTHOR_UNKNOWN_MARKER
+    })));
   }, []);
 
   const setRoute = useCallback<React.Dispatch<React.SetStateAction<RouteData>>>((action) => {
@@ -163,6 +178,55 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const autoSaveTimerRef = useRef<number | null>(null);
   const lastSavedSnapshotRef = useRef<string>('');
+
+  // 初回自動コピー: renderCache が空 + author が 'No name' 以外のとき、 author を
+  // renderCache にコピー (= メモリ平文の代入のみ。 暗号化は保存時)。
+  // 1 回だけ (= renderCache が一度セットされたら再発火しない)。
+  useEffect(() => {
+    if (!route || !route.id) return;
+    if (!route.author || route.author === AUTHOR_DEFAULT_PLAIN) return;
+    if (route.renderCache) return; // 既にセット済み (= 1回だけ)
+    setRouteRaw(prev => {
+      if (prev.id !== route.id) return prev;
+      if (prev.renderCache) return prev;
+      return { ...prev, renderCache: prev.author };
+    });
+  }, [route.id, route.author, route.renderCache]);
+
+  // メモリの renderCache が暗号文 (= v2: / legacy:) になっていたら復号して平文に戻す。
+  // (= メモリは常に平文という仕様への強制遵守。
+  //  何かの race condition / 旧経路で暗号文が混入した場合のリカバリ用。)
+  //  AUTHOR_UNKNOWN_MARKER ('v2:0:') は「No name として保存」されたセーブのセンチネル
+  //  なので復号せず、メモリも AUTHOR_UNKNOWN_MARKER (= 空として表示) のままにする。
+  useEffect(() => {
+    if (!route || !route.id) return;
+    const cache = route.renderCache;
+    if (typeof cache !== 'string') return;
+    if (!cache) return;
+    if (cache === AUTHOR_UNKNOWN_MARKER) {
+      // 'v2:0:' → メモリ上は空文字 (No name 表示) に正規化
+      setRouteRaw(prev => prev.id === route.id && prev.renderCache === AUTHOR_UNKNOWN_MARKER
+        ? { ...prev, renderCache: '' }
+        : prev);
+      return;
+    }
+    if (cache.startsWith('v2:') || cache.startsWith('legacy:')) {
+      // 暗号文 → 復号して平文に戻す
+      aesGcmDecrypt(cache, getRenderCacheKey(route.id)).then((plain) => {
+        if (plain === AUTHOR_TAMPERED) {
+          // 改ざん → メモリ上は空 (Anomaly として SaveListRowAuthor 側で表示)
+          setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
+            ? { ...prev, renderCache: '' }
+            : prev);
+          return;
+        }
+        setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
+          ? { ...prev, renderCache: plain }
+          : prev);
+      }).catch(() => { /* ignore */ });
+    }
+  }, [route.id, route.renderCache]);
+
   useEffect(() => {
     if (!route || !route.id) return;
     const safeRoute: RouteData = {
@@ -175,28 +239,73 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
     }
-    autoSaveTimerRef.current = window.setTimeout(() => {
+    autoSaveTimerRef.current = window.setTimeout(async () => {
       try {
-        let plainOriginal = route.originalAuthor || '';
-        // 仕様: 原作者が未設定（空文字）のとき、現在の作者名（平文・No name以外）から自動コピー
-        if (!plainOriginal && route.author && route.author !== AUTHOR_DEFAULT_PLAIN) {
-          plainOriginal = route.author;
-          setRouteRaw(prev => (prev.id === route.id && !prev.originalAuthor ? { ...prev, originalAuthor: plainOriginal } : prev));
+        // 自動コピー: renderCache が空 + author が No name 以外のとき、初回のみ
+        // メモリに author (= 平文) を代入。 これは別 useEffect (= 初回コピー用) で
+        // 行い、 ここでは読取のみ。 autoSave は「現在メモリの renderCache を
+        // route.id 派生キーで暗号化して保存する」だけのシンプルな処理にする。
+        const plainCache = route.renderCache || '';
+
+        const safeAuthorKey = getRenderCacheKey(route.id);
+        let encoded: string;
+        try {
+          encoded = plainCache
+            ? await aesGcmEncrypt(plainCache, safeAuthorKey)
+            : AUTHOR_UNKNOWN_MARKER;
+        } catch (e) {
+          // 暗号化失敗 -> 平文のまま保存 (セーブをブロックしない)
+          console.error('renderCache encryption failed, saving as plain:', e);
+          encoded = plainCache || '';
         }
+
+        // ---- デバッグ: 暗号化内容と key をコンソールに出力 ----
+        // Anomaly 調査の切り分け用。一時的に残す。
+        console.log('[useRoute.autoSave]', {
+          routeId: route.id,
+          createdAt: route.createdAt,
+          key: safeAuthorKey,
+          plainCache,
+          encoded_preview: encoded.slice(0, 40),
+          encoded_len: encoded.length,
+          isUnknownMarker: encoded === AUTHOR_UNKNOWN_MARKER
+        });
 
         const dataToSave = {
           ...safeRoute,
-          originalAuthor: plainOriginal
+          renderCache: encoded
         };
         DataManager.saveToLocalStorage(dataToSave);
 
+        // ---- デバッグ: 保存直後に localStorage を読み直して検証 ----
+        // 暗号文が実際に正しく保存されているか確認
+        try {
+          const written = localStorage.getItem(`heist_route_${route.id}`);
+          if (written) {
+            const parsed = JSON.parse(written);
+            console.log('[useRoute.autoSave] localStorage written:', {
+              key: `heist_route_${route.id}`,
+              routeIdInData: parsed.id,
+              storedRenderCache_preview: (parsed.renderCache || '').slice(0, 40),
+              storedRenderCache_len: (parsed.renderCache || '').length,
+              storedRenderCache_id_matches: parsed.id === route.id,
+              storedRenderCache_idValue: parsed.id
+            });
+          } else {
+            console.log('[useRoute.autoSave] localStorage NOT WRITTEN for', `heist_route_${route.id}`);
+          }
+        } catch (e: any) {
+          console.error('[useRoute.autoSave] localStorage readback failed', e);
+        }
+
         // 状態更新後の予想されるスナップショットを設定して、次のレンダリングループを防ぐ
+        // (メモリの renderCache は平文のまま)
         const expectedNextRoute = {
           ...safeRoute,
-          originalAuthor: plainOriginal
+          renderCache: plainCache
         };
         lastSavedSnapshotRef.current = JSON.stringify(expectedNextRoute);
-        
+
         // オートセーブ完了後にセーブ一覧を更新する
         refreshSavesList();
       } catch (e) {
@@ -210,25 +319,45 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     };
   }, [route]);
 
-  const saveToLocal = useCallback(() => {
-    let plainOriginal = route.originalAuthor || '';
-    if (!plainOriginal && route.author && route.author !== AUTHOR_DEFAULT_PLAIN) {
-      plainOriginal = route.author;
-      setRouteRaw(prev => ({ ...prev, originalAuthor: plainOriginal }));
+  const saveToLocal = useCallback(async () => {
+    // メモリ上の renderCache (平文) を取得
+    const plainCache = route.renderCache || '';
+    // 保存用キーは author (= 保存対象の平文) を使う。
+    // メモリ上の renderCache を route.id 派生キーで暗号化して localStorage に書く。
+    const safeAuthorKey = getRenderCacheKey(route.id);
+    let encoded: string;
+    try {
+      encoded = plainCache
+        ? await aesGcmEncrypt(plainCache, safeAuthorKey)
+        : AUTHOR_UNKNOWN_MARKER;
+    } catch (e) {
+      console.error('renderCache encryption failed, saving as plain:', e);
+      encoded = plainCache || '';
     }
+
+    // ---- デバッグ ----
+    console.log('[useRoute.saveToLocal]', {
+      routeId: route.id,
+      createdAt: route.createdAt,
+      key: safeAuthorKey,
+      plainCache,
+      encoded_preview: encoded.slice(0, 40),
+      encoded_len: encoded.length,
+      isUnknownMarker: encoded === AUTHOR_UNKNOWN_MARKER
+    });
 
     const toSave: RouteData = {
       ...route,
-      originalAuthor: plainOriginal,
+      renderCache: encoded,
       mapVersion: 2,
       markerScale: initialMarkerScale
     };
     DataManager.saveToLocalStorage(toSave);
-    
+
     // オートセーブのスナップショットと同期して、無駄な保存タイマーの再起動を防ぐ
     const expectedRouteState = {
       ...route,
-      originalAuthor: plainOriginal
+      renderCache: plainCache
     };
     lastSavedSnapshotRef.current = JSON.stringify({
       ...expectedRouteState,
@@ -240,13 +369,30 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     showNotificationRef.current(`保存完了: ${route.title}`);
   }, [route, initialMarkerScale, refreshSavesList]);
 
-  const saveAsCopy = useCallback(() => {
+  const saveAsCopy = useCallback(async () => {
     const newId = generateId('route');
     const newCreatedAt = Date.now();
+    // メモリ上の renderCache (平文) を新 ID のキーで暗号化して localStorage に保存
+    const plainCache = route.renderCache || '';
+    let encoded: string;
+    if (plainCache) {
+      try {
+        encoded = await aesGcmEncrypt(plainCache, getRenderCacheKey(newId));
+      } catch {
+        encoded = plainCache;
+      }
+    } else {
+      encoded = AUTHOR_UNKNOWN_MARKER;
+    }
+    // メモリには平文を書き戻す (暗号文は localStorage のみ)。
+    // メモリ上は常に平文という仕様。
     const copy: RouteData = {
-      ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt
+      ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt,
+      renderCache: plainCache
     };
-    DataManager.saveToLocalStorage(copy);
+    // localStorage には暗号文を保存するため、保存直前にもう一度コピーして暗号文を差し込む
+    const toPersist: RouteData = { ...copy, renderCache: encoded };
+    DataManager.saveToLocalStorage(toPersist);
     setRouteRaw(copy);
     refreshSavesList();
     showNotificationRef.current(`コピー保存: ${copy.title}`);
@@ -259,7 +405,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     if (currentAuthor) {
       // author は平文なのでそのまま引き継ぎ
       newRoute.author = currentAuthor;
-      newRoute.originalAuthor = '';
+      // 新規プランは renderCache 空 (= No name) から開始
+      newRoute.renderCache = '';
     }
     setRouteWithGlobalDefaults(newRoute);
     localStorage.setItem('heist_last_used_route_id', newId);
@@ -281,6 +428,9 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         data = DataManager.loadFromLocalStorage(id);
       }
       if (!data) return;
+
+      // 旧 originalAuthor フィールドを renderCache へマイグレート
+      data = migrateOriginalAuthorToRenderCache(data as any) as RouteData;
 
       // Strip legacy fields, backfill defaults, ensure floor/main, split global/individual
       data.markers = (data.markers || []).filter(
@@ -316,11 +466,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       data.pickingCustomDurations = data.pickingCustomDurations || {};
       data.longPickingCustomDurations = data.longPickingCustomDurations || {};
       data.pickyMarkerIds = data.pickyMarkerIds || {};
-      // Migrate legacy marker-level `pickingPicky` (was incorrectly stored
-      // on the marker; the plan owns the picky state instead). Cover BOTH
-      // the individual markers (which live in the route) and the global
-      // markers (which are about to be merged into the global store), so
-      // gpicking/glong_picking pickies are preserved per plan.
       const legacyPickySources: HeistMarker[] = [
         ...(Array.isArray(planIndiv) ? planIndiv : []),
         ...(Array.isArray(planGlobal) ? planGlobal : [])
@@ -333,21 +478,43 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       data.hiddenMarkers = data.hiddenMarkers || [];
       data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
       if (data.author === undefined) data.author = '';
-      if (data.originalAuthor === undefined) data.originalAuthor = '';
 
-      // author / originalAuthor のロード時フォールバック:
-      //   空 (または AUTHOR_UNKNOWN_MARKER)  -> AUTHOR_UNKNOWN_MARKER のまま残す。
-      //                                          改ざんの疑いとして Anomaly 表示にする。
-      //                                          ユーザはクリアボタン or input 編集で
-      //                                          意図的に No name にリセットできる。
-      // 「ロード時に何事もなかったかのように No name に補完」 すると改ざんに
-      // 気づけなくなる (= 保護として機能しない) ため、ここでは補完しない。
-      if (!data.author) {
-        data.author = '';
-      }
-      if (!data.originalAuthor) {
-        data.originalAuthor = AUTHOR_UNKNOWN_MARKER;
-      }
+      // renderCache ロード時フォールバック:
+      //   1. 旧 originalAuthor キーが残っていれば migrate 済み
+      //   2. 既に暗号文 (v2: / legacy:) なら復号を試みて平文にする
+      //   3. 空 / AUTHOR_UNKNOWN_MARKER / 改ざん → メモリ上は空文字 (No name 表示)
+      //   4. author と一致するならそのまま (= 元の作者が原作者を兼ねている)
+      // 「ロード時に何事もなかったかのように No name に補完」すると改ざんに気づけなくなる
+      // ため、復号失敗 = 改ざんの疑い として author には触らず renderCache は空に。
+      const applyRenderCacheSync = () => {
+        const stored = data!.renderCache;
+        if (typeof stored !== 'string' || !stored) {
+          data!.renderCache = '';
+          return;
+        }
+        if (stored === AUTHOR_UNKNOWN_MARKER) {
+          // 暗号文は AUTHOR_UNKNOWN_MARKER (v2:0:) → 空として扱う
+          data!.renderCache = '';
+          return;
+        }
+        if (stored.startsWith('v2:') || stored.startsWith('legacy:')) {
+          // 同期では復号できないので、async で復号してから setRoute する
+          // ここではまず空にし、後で非同期に復号結果を反映する
+          data!.renderCache = '';
+          aesGcmDecrypt(stored, getRenderCacheKey(data!.id)).then((plain) => {
+            if (plain === AUTHOR_TAMPERED) {
+              // 改ざん: 空のまま (= Anomaly として UI 側でハンドリング)
+              return;
+            }
+            // 復号成功: 平文をメモリに反映
+            setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: plain } : prev);
+          }).catch(() => { /* ignore */ });
+          return;
+        }
+        // プレフィックスなし: 旧平文 (旧マイグレート途中のデータ等) → そのまま
+        data!.renderCache = stored;
+      };
+      applyRenderCacheSync();
 
       if (data.id !== 'default') {
         const gd = globalDefaultsRefRef.current.current;
@@ -395,7 +562,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }, []);
 
   const saveAsPreset = useCallback((input: {
-    name: string; description: string; author: string; originalAuthor: string;
+    name: string; description: string; author: string; renderCache: string;
     visibility?: PresetVisibility;
   }) => {
     const toSave: RouteData = { ...route, mapVersion: 2, markerScale: initialMarkerScale };
@@ -406,7 +573,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
       author: route.author || '',
-      originalAuthor: route.originalAuthor || '',
+      renderCache: route.renderCache || '',
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(input.visibility),
       routeData: toSave
@@ -438,7 +605,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       targetCash: route.targetCash,
       targetCoins: route.targetCoins,
       author: route.author || '',
-      originalAuthor: route.originalAuthor || '',
+      renderCache: route.renderCache || '',
       updatedAt: Date.now(),
       routeData: toSave
     };

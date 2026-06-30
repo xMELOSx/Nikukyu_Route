@@ -42,23 +42,29 @@ const AES_GCM_PREFIX = 'v2:';
 const AES_GCM_LEGACY_PREFIX = 'legacy:';
 /**
  * "不明" マーカー。
- * 暗号文 (originalAuthor) がこの値なら「ユーザがクリアした or 改ざんで消えた」を
+ * 暗号文 (renderCache) がこの値なら「ユーザがクリアした or 改ざんで消えた」を
  * 表し、aesGcmDecrypt は AUTHOR_TAMPERED を返す。空文字 '' は「元々未設定」
- * と区別される (例: プリセットに originalAuthor がない新規ルート)。
+ * と区別される (例: プリセットに renderCache がない新規ルート)。
  */
 export const AUTHOR_UNKNOWN_MARKER = 'v2:0:';
 const IV_BYTES = 12;
 
-/** パスフレーズ文字列を AES-GCM 用 256bit 鍵に伸長。 */
+/** パスフレーズ文字列を AES-GCM 用 256bit 鍵に伸長。
+ *  仕様: パスフレーズは可変長。Web Crypto の importKey('raw', ...) は 128/192/256bit (= 16/24/32 byte)
+ *  の厳格な長さしか受け付けないため、 SHA-256 で 32 byte (256bit) に正規化して鍵にする。
+ *  salt は不要 (= 同じ passphrase からは常に同じ鍵が導出される = 決定論的)。
+ *  これにより新旧どちらの呼び出しでも同じ鍵が得られ、暗号/復号が一致する。 */
 async function deriveAesKey(passphrase: string): Promise<CryptoKey> {
   const enc = new TextEncoder();
   const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
   if (!subtle || !subtle.importKey) {
     throw new Error('Web Crypto API が利用できない環境です');
   }
+  const passphraseBytes = enc.encode(passphrase);
+  const hashBuf = await subtle.digest('SHA-256', passphraseBytes);
   return subtle.importKey(
     'raw',
-    enc.encode(passphrase),
+    hashBuf,
     { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt']
@@ -82,7 +88,7 @@ function base64ToBytes(b64: string): Uint8Array {
  * AES-GCM で暗号化する。戻り値は "v2:" + base64(IV ‖ ciphertext ‖ authTag)。
  * 失敗時は例外を投げる (呼び出し側で AUTHOR_TAMPERED にフォールバック)。
  *
- * author / originalAuthor のフィールドは「空」を許容しないため、空文字が渡された
+ * renderCache のフィールドは「空」を許容しないため、空文字が渡された
  * 場合は AUTHOR_DEFAULT_PLAIN ('No name') を暗号化する。復号側で平文が 'No name'
  * なら「未設定」相当として表示する。
  */
@@ -116,7 +122,7 @@ export async function aesGcmEncrypt(plain: string, passphrase: string): Promise<
 export async function aesGcmDecrypt(encoded: string, passphrase: string): Promise<string> {
   if (!encoded) return '';
   // "不明" マーカー (v2:0:) は復号せず AUTHOR_TAMPERED を返す。
-  // 設定されるケース: ロード時に originalAuthor が空かつ author と異なる場合 (= 改ざんの疑い)
+  // 設定されるケース: ロード時に renderCache が空かつ author と異なる場合 (= 改ざんの疑い)
   if (encoded === AUTHOR_UNKNOWN_MARKER) return AUTHOR_TAMPERED;
   // AES-GCM 新形式
   if (encoded.startsWith(AES_GCM_PREFIX)) {
@@ -194,7 +200,12 @@ export function xorEncrypt(plain: string, key: string): string {
 }
 
 export const AUTHOR_KEY = 'Fans';
-export const ORIGINAL_AUTHOR_KEY = 'Colins';
+/**
+ * renderCache (=旧 originalAuthor) の派生鍵ベース。
+ * キーは route.id のみ (= createdAt に依存しない) で、
+ * 旧 (routeId | createdAt) と区別する。
+ */
+export const RENDER_CACHE_KEY = 'Colins';
 
 function deriveKey(baseKey: string, routeId: string, createdAt: number): string {
   return baseKey + '|' + routeId + '|' + String(createdAt);
@@ -205,7 +216,37 @@ export function getAuthorKey(routeId: string, createdAt: number): string {
 }
 
 export function getOriginalAuthorKey(routeId: string, createdAt: number): string {
-  return deriveKey(ORIGINAL_AUTHOR_KEY, routeId, createdAt);
+  return deriveKey(RENDER_CACHE_KEY, routeId, createdAt);
+}
+
+/**
+ * renderCache 暗号化/復号用の派生鍵 (route.id のみ)。
+ * 旧 getOriginalAuthorKey(routeId, createdAt) は createdAt を含めていたが、
+ * renderCache 移行後は ID 固定の安定キーに変更。
+ */
+export function getRenderCacheKey(routeId: string): string {
+  return RENDER_CACHE_KEY + '|' + routeId;
+}
+
+/**
+ * 旧 originalAuthor フィールドを renderCache へマイグレートする。
+ *  - 旧フィールドが無ければそのまま返す
+ *  - 旧フィールドが空なら renderCache を空文字で初期化
+ *  - 旧フィールドが 'v2:0:' (AUTHOR_UNKNOWN_MARKER) なら AUTHOR_UNKNOWN_MARKER のまま
+ *  - その他: 値をそのまま renderCache にコピー (呼び出し側で再暗号化)
+ */
+export function migrateOriginalAuthorToRenderCache<T extends { originalAuthor?: unknown; renderCache?: unknown }>(data: T): T {
+  if (!data || typeof data !== 'object') return data;
+  if (data.renderCache !== undefined) return data;
+  const prev = data.originalAuthor;
+  const next: any = { ...data };
+  if (typeof prev === 'string') {
+    next.renderCache = prev;
+  } else {
+    next.renderCache = '';
+  }
+  delete next.originalAuthor;
+  return next as T;
 }
 
 export interface Point {
@@ -541,13 +582,16 @@ export interface RouteData {
    */
   author: string;
   /**
-   * 原作者名 (AES-GCM 暗号化済み)。
-   * 形式: "v2:" + base64(IV 12byte ‖ ciphertext ‖ authTag 16byte)
-   * 派生鍵 = ORIGINAL_AUTHOR_KEY ('Colins') | routeId | createdAt
-   * 旧 "legacy:" プレフィックスは旧 XOR 暗号文 (互換読み取り用)
-   * 改ざん / 鍵違いで復号失敗時は表示側で AUTHOR_TAMPERED センチネル
+   * renderCache (旧 originalAuthor)。
+   * メモリ上は平文。localStorage / JSON には author をキーに AES-GCM 暗号化して保存する。
+   * 形式 (保存時): "v2:" + base64(IV 12byte ‖ ciphertext ‖ authTag 16byte)
+   * 派生鍵 = RENDER_CACHE_KEY ('Colins') | routeId
+   * 空 / AUTHOR_UNKNOWN_MARKER ('v2:0:') = 改ざんの疑い (Anomaly 表示)
+   * メモリ表現:
+   *   ''         = 未設定 (No name)
+   *   文字列      = 平文 (元の作者名 / 原作者名)
    */
-  originalAuthor: string;
+  renderCache: string;
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
   customBg: { [key in FloorType]: string | null }; // base64 images
@@ -687,7 +731,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   targetCoins: '500',
   targetDuration: '720',
   author: '',
-  originalAuthor: '',
+  renderCache: '',
   strokes: {
     main: []
   },
@@ -729,7 +773,7 @@ export interface PresetData {
   targetCash: string;
   targetCoins: string;
   author: string;
-  originalAuthor: string;
+  renderCache: string;
   updatedAt: number;
   /**
    * 公開レベル (省略時 / 不正値 は 'public' 扱い)。
@@ -765,10 +809,12 @@ export function normalizePresets(raw: unknown): PresetData[] {
       targetCash: typeof p.targetCash === 'string' ? p.targetCash : '',
       targetCoins: typeof p.targetCoins === 'string' ? p.targetCoins : '',
       author: typeof p.author === 'string' ? p.author : '',
-      originalAuthor: typeof p.originalAuthor === 'string' ? p.originalAuthor : '',
+      renderCache: typeof p.renderCache === 'string' ? p.renderCache : (typeof (p as any).originalAuthor === 'string' ? (p as any).originalAuthor : ''),
       updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : Date.now(),
       visibility: normalizePresetVisibility(p.visibility),
-      routeData: p.routeData
+      routeData: p.routeData && typeof p.routeData === 'object'
+        ? migrateOriginalAuthorToRenderCache(p.routeData as any)
+        : p.routeData
     }));
 }
 
@@ -969,7 +1015,7 @@ export class DataManager {
       targetCoins: route.targetCoins || '',
       description: route.description || '',
       author: route.author || '',
-      originalAuthor: route.originalAuthor || '',
+      renderCache: route.renderCache || '',
       createdAt: route.createdAt,
       updatedAt: Date.now()
     };
@@ -985,12 +1031,19 @@ export class DataManager {
   }
 
   // Get list of saved routes
-  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; originalAuthor: string; createdAt: number; updatedAt: number }[] {
+  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; renderCache: string; createdAt: number; updatedAt: number }[] {
     try {
       const listStr = localStorage.getItem('heist_routes_list');
       if (!listStr) return [];
       const parsed = JSON.parse(listStr);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      // 旧 originalAuthor フィールドを renderCache へマイグレート
+      return parsed.map((e: any) => {
+        if (e && typeof e === 'object' && e.renderCache === undefined) {
+          return { ...e, renderCache: typeof e.originalAuthor === 'string' ? e.originalAuthor : '' };
+        }
+        return e;
+      });
     } catch (e) {
       console.error('getSavesList: corrupted data, clearing', e);
       try { localStorage.removeItem('heist_routes_list'); } catch {}
@@ -1086,8 +1139,10 @@ export class DataManager {
       targetDuration:
         typeof route?.targetDuration === 'string' ? route.targetDuration : def.targetDuration,
       author: typeof route?.author === 'string' ? route.author : def.author,
-      originalAuthor:
-        typeof route?.originalAuthor === 'string' ? route.originalAuthor : def.originalAuthor,
+      renderCache:
+        typeof route?.renderCache === 'string'
+          ? route.renderCache
+          : (typeof route?.originalAuthor === 'string' ? route.originalAuthor : def.renderCache),
       strokes: route?.strokes && typeof route.strokes === 'object'
         ? route.strokes
         : def.strokes,
@@ -1436,8 +1491,13 @@ export class DataManager {
 
       // Author info
       const author = route.author || '';
-      const originalAuthor = await aesGcmDecrypt(route.originalAuthor || '', getOriginalAuthorKey(route.id, route.createdAt));
-      const showOriginal = originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED;
+      // renderCache は本番ビルドでは非表示 (isLocal = DEV/localhost)
+      let originalAuthor = '';
+      let showOriginal = false;
+      if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '::1')) {
+        originalAuthor = await aesGcmDecrypt(route.renderCache || '', getRenderCacheKey(route.id));
+        showOriginal = !!originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED;
+      }
       fctx.font = 'bold 18px Rajdhani, Orbitron, Arial';
       fctx.fillStyle = '#ffffff';
       let ax = 20;

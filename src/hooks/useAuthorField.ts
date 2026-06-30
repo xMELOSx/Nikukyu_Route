@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { aesGcmDecrypt, AUTHOR_TAMPERED, AUTHOR_DEFAULT_PLAIN } from '../utils/DataManager';
+import { aesGcmDecrypt, AUTHOR_TAMPERED, AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER } from '../utils/DataManager';
 
 export interface UseAuthorFieldOptions {
   /** 編集可能かどうか。 破損時に動作を変える。
@@ -32,6 +32,10 @@ export interface UseAuthorFieldResult {
  *     - editable=true:  plain = AUTHOR_DEFAULT_PLAIN (No name) にフォールバックし、編集可
  *     - editable=false: plain = AUTHOR_TAMPERED のまま、編集不可
  *  - 編集は呼び出し側で aesGcmEncrypt を直接 await して route state に書き戻す
+ *
+ * AUTHOR_UNKNOWN_MARKER ('v2:0:') は「意図的に No name として保存された」セーブ
+ * データ。改ざんの疑いではない (= Anomaly ではない) ので、 editable に依らず
+ * 「No name」 として扱う。
  */
 export function useAuthorField(encoded: string, passphrase: string, options: UseAuthorFieldOptions): UseAuthorFieldResult {
   const { editable } = options;
@@ -50,6 +54,12 @@ export function useAuthorField(encoded: string, passphrase: string, options: Use
     };
     if (!encoded) {
       // 暗号文が空 -> 「未設定」状態 (No name) とみなす。 editable に依らず同じ扱い。
+      Promise.resolve().then(() => apply({ plain: AUTHOR_DEFAULT_PLAIN, loading: false, tampered: false, isDefault: true }));
+      return;
+    }
+    // AUTHOR_UNKNOWN_MARKER ('v2:0:') は「意図的に No name として保存された」データ。
+    // 改ざんの疑いではなくユーザの意図なので、 editable に依らず No name 扱い。
+    if (encoded === AUTHOR_UNKNOWN_MARKER) {
       Promise.resolve().then(() => apply({ plain: AUTHOR_DEFAULT_PLAIN, loading: false, tampered: false, isDefault: true }));
       return;
     }

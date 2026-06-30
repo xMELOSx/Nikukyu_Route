@@ -861,7 +861,7 @@ export default function App() {
                     name: oldPreset.title || 'Default Preset',
                     description: '',
                     author: '',
-                    originalAuthor: '',
+                    renderCache: '',
                     visibility: 'public'
                   });
                 }
@@ -1110,7 +1110,7 @@ export default function App() {
       targetCash: save.targetCash || '',
       targetCoins: save.targetCoins || '',
       author: save.author || '',
-      originalAuthor: save.originalAuthor || '',
+      renderCache: save.renderCache || '',
       updatedAt: Date.now(),
       visibility: normalizePresetVisibility(visibility),
       routeData: toSave
@@ -1991,11 +1991,20 @@ export default function App() {
                     {isLocal && (
                       <div>
                         <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('原作者名')}</label>
-                        <div className="display-field" style={!routeApi.route.originalAuthor || routeApi.route.originalAuthor === AUTHOR_DEFAULT_PLAIN ? { color: 'var(--text-muted)' } : undefined}>
-                          {!routeApi.route.originalAuthor || routeApi.route.originalAuthor === AUTHOR_DEFAULT_PLAIN
-                            ? <span style={{ color: 'var(--text-muted)' }}>No name</span>
-                            : routeApi.route.originalAuthor}
-                        </div>
+                        {(() => {
+                          // renderCache はメモリ上は平文。空文字 → No name、空でなく
+                          // AUTHOR_DEFAULT_PLAIN と一致 → No name、それ以外 → 平文表示。
+                          // 改ざんの疑い (復号失敗) はメモリに反映されない (loadFromLocal で
+                          // AUTHOR_TAMPERED は空文字扱い) ので、ここでは Anomaly 表示は
+                          // 出さない。 必要なら将来 getSavesList 側で生暗号文のままだと
+                          // 検出できるが、本仕様ではメモリに復号済みを置く前提。
+                          const cache = routeApi.route.renderCache || '';
+                          const isEmpty = !cache || cache === AUTHOR_DEFAULT_PLAIN;
+                          if (isEmpty) {
+                            return <div className="display-field" style={{ color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-muted)' }}>No name</span></div>;
+                          }
+                          return <div className="display-field">{cache}</div>;
+                        })()}
                       </div>
                     )}
                   </div>
@@ -2373,7 +2382,7 @@ export default function App() {
                           || p.name.toLowerCase().includes(q)
                           || (p.description || '').toLowerCase().includes(q)
                           || (p.author || '').toLowerCase().includes(q)
-                          || (p.originalAuthor || '').toLowerCase().includes(q);
+                          || (p.renderCache || '').toLowerCase().includes(q);
                       };
                       const matchSave = (s: SaveInfo) => {
                         if (!q) return true;
@@ -2383,8 +2392,8 @@ export default function App() {
                         return s.title.toLowerCase().includes(q)
                           || (s.description || '').toLowerCase().includes(q)
                           || plainAuthor.toLowerCase().includes(q)
-                          || (q.toLowerCase().includes('no name') && isV2(s.originalAuthor || ''))
-                          || (q.toLowerCase().includes('anomaly') && !s.originalAuthor);
+                          || (q.toLowerCase().includes('no name') && isV2(s.renderCache || ''))
+                          || (q.toLowerCase().includes('anomaly') && !s.renderCache);
                       };
                       const filteredPresets = visiblePresets.filter(matchPreset);
                       const filteredSaves = routeApi.saves.filter(matchSave);
@@ -2429,7 +2438,7 @@ export default function App() {
                                 {p.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
                                 {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
                                 {p.author && <span>{t('作者: ')}{p.author}</span>}
-                                {p.originalAuthor && p.originalAuthor !== p.author && <span>{t('原作者: ')}{p.originalAuthor}</span>}
+                                {p.renderCache && p.renderCache !== p.author && <span>{t('原作者: ')}{p.renderCache}</span>}
                                 {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>{t('最終更新: ')}{new Date(p.updatedAt).toLocaleString()}</span>}
                               </div>
                               <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
@@ -2555,7 +2564,7 @@ export default function App() {
                               {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
                               <SaveListRowAuthor
                                 authorEnc={s.author || ''}
-                                originalAuthorEnc={s.originalAuthor || ''}
+                                renderCacheEnc={s.renderCache || ''}
                                 routeId={s.id}
                                 createdAt={s.createdAt}
                               />
@@ -2658,7 +2667,7 @@ export default function App() {
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
         onSetStartupFocus={(markerId) => globalDefaults.setStartupFocusMarkerId(markerId || null)}
         onClearOriginalAuthor={() => {
-          routeApi.setRoute(prev => ({ ...prev, originalAuthor: '' }));
+          routeApi.setRoute(prev => ({ ...prev, renderCache: '' }));
           notification.show('原作者名を No name にリセットしました');
         }}
         showDetectionRanges={showDetectionRanges}

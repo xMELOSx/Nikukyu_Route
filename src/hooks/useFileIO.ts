@@ -8,7 +8,8 @@ import {
   aesGcmDecrypt,
   AUTHOR_TAMPERED,
   AUTHOR_UNKNOWN_MARKER,
-  getOriginalAuthorKey,
+  getRenderCacheKey,
+  migrateOriginalAuthorToRenderCache,
   runSaveDataMigrations
 } from '../utils/DataManager';
 import type { UseRouteApi } from './useRoute';
@@ -86,9 +87,24 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
 
-  const exportJSON = useCallback(() => {
+  const exportJSON = useCallback(async () => {
+    // メモリ上の renderCache (平文) を暗号化してエクスポートする。
+    // JSON ファイルを開かれても原作者名が読めない (= 保護目的) 。
+    let encodedCache: string;
+    const plain = routeApi.route.renderCache || '';
+    if (plain) {
+      try {
+        encodedCache = await aesGcmEncrypt(plain, getRenderCacheKey(routeApi.route.id));
+      } catch {
+        // 暗号化失敗 -> 平文のままエクスポート (ブロックしない)
+        encodedCache = plain;
+      }
+    } else {
+      encodedCache = AUTHOR_UNKNOWN_MARKER;
+    }
     const toExport: RouteData = {
-      ...routeApi.route, mapVersion: 2, markerScale
+      ...routeApi.route, mapVersion: 2, markerScale,
+      renderCache: encodedCache
     };
     DataManager.exportToJSON(toExport);
   }, [routeApi.route, markerScale]);
@@ -162,17 +178,20 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       data.hiddenMarkers = data.hiddenMarkers || [];
       data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
       if (data.author === undefined) data.author = '';
-      if (data.originalAuthor === undefined) data.originalAuthor = '';
 
-      // author / originalAuthor のロード時フォールバック:
+      // 旧 originalAuthor フィールドを renderCache へマイグレート
+      // (data は const なので、renderCache フィールドだけ上書き)
+      const migratedAny: any = migrateOriginalAuthorToRenderCache(data as any);
+      data.renderCache = typeof migratedAny.renderCache === 'string' ? migratedAny.renderCache : '';
+      // @ts-ignore - originalAuthor は削除済み
+      delete (data as any).originalAuthor;
+
+      // renderCache のロード時フォールバック:
       //   author: 平文フィールド。 空文字 = 「No name」 (デフォルト値) として扱う。
-      //   originalAuthor: AES-GCM 暗号化。 空 / AUTHOR_UNKNOWN_MARKER は改ざんの疑い
-      //                  として Anomaly 表示 (= v2:0: のまま残す)。
-      if (!data.author) {
-        data.author = '';
-      }
-      if (!data.originalAuthor) {
-        data.originalAuthor = AUTHOR_UNKNOWN_MARKER;
+      //   renderCache: 暗号文 (v2: / legacy:) / AUTHOR_UNKNOWN_MARKER / 空 (= 改ざんの疑い)
+      //   JSON 取り込み時は平文として扱う (暗号化は保存時 / メモリ→ストレージへの書き出しで実施)
+      if (!data.renderCache) {
+        data.renderCache = '';
       }
 
       // バージョンアップ済みならマイグレーションを適用
@@ -221,16 +240,18 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         return;
       }
       const clean = DataManager.sanitizeRouteForExport(data);
+      // 旧 originalAuthor キーを renderCache へマイグレート
+      const cleanMigrated = migrateOriginalAuthorToRenderCache(clean as any) as RouteData;
       // バージョンアップ済みならマイグレーションを適用
-      const mig = runSaveDataMigrations(clean);
+      const mig = runSaveDataMigrations(cleanMigrated);
       const migrated = mig.data;
       const newId = `route_${Date.now()}`;
       const newCreatedAt = Date.now();
       // author は平文フィールド (旧 v2: 暗号文でもロード後に平文化されている前提)。
-      // originalAuthor は AES-GCM 暗号化なので新鍵で再暗号化する。
+      // renderCache は AES-GCM 暗号化 (旧キーで復号 → 新キーで再暗号化)
       const plainAuthor = (migrated.author && !migrated.author.startsWith('v2:') && !migrated.author.startsWith('legacy:'))
         ? migrated.author : '';
-      const plainOriginal = await aesGcmDecrypt(migrated.originalAuthor || '', getOriginalAuthorKey(migrated.id, migrated.createdAt));
+      const plainOriginal = await aesGcmDecrypt(migrated.renderCache || '', getRenderCacheKey(migrated.id));
       const allMarkers = migrated.markers || [];
       const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
       const importedGlobals = allMarkers.filter(m => isGlobalType(m.type));
@@ -241,6 +262,16 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         if (m && m.pickingPicky) importedPickyMarkerIds[m.id] = true;
       }
       const safeOriginal = plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || '');
+      let encodedCache: string;
+      if (safeOriginal) {
+        try {
+          encodedCache = await aesGcmEncrypt(safeOriginal, getRenderCacheKey(newId));
+        } catch {
+          encodedCache = safeOriginal;
+        }
+      } else {
+        encodedCache = AUTHOR_UNKNOWN_MARKER;
+      }
       const importedRoute: RouteData = {
         ...migrated,
         id: newId,
@@ -248,9 +279,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         markers: individualMarkers,
         pickyMarkerIds: { ...(migrated.pickyMarkerIds || {}), ...importedPickyMarkerIds },
         author: plainAuthor,
-        originalAuthor: safeOriginal
-          ? await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt))
-          : AUTHOR_UNKNOWN_MARKER
+        renderCache: encodedCache
       };
       DataManager.saveToLocalStorage(importedRoute);
       routeApi.setRouteWithGlobalDefaults(importedRoute);
