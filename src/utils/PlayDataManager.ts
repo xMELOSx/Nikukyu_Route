@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 export interface PlayDataRecord {
   id: string;
   timestamp: number;
@@ -267,7 +269,7 @@ export function getAverage(records: PlayDataRecord[]): { fans: number; coins: nu
  * so the user can re-include them later. The full data is always exported.
  */
 export function buildCSV(records: PlayDataRecord[]): string {
-  const header = ['日時', '記録地', 'ファンス', 'コイン', 'にくきゅうポイント', 'レクイエム15%', 'レクイエム20%', '除外'];
+  const header = [t('日時'), t('記録地'), t('ファンス'), t('コイン'), t('にくきゅうポイント'), t('レクイエム15%'), t('レクイエム20%'), t('除外')];
   const rows = records.map(r => {
     const date = new Date(r.timestamp).toLocaleString('ja-JP');
     const location = r.location || '';

@@ -146,10 +146,11 @@ function formatBytes(b: number): string {
 const STORAGE_TARGET_LIMIT_BYTES = 50 * 1024 * 1024;
 const StorageUsageBadge: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSettings }) => {
   const { usage, quota, persisted, supported, requestPersist, refresh } = useStorageQuota(2000);
-  // navigator.storage 非対応時は localStorage を直接測る (旧挙動)
+  // navigator.storage 非対応時、または estimate().usage が 0/undefined のとき
+  // (= 報告値が信頼できないとき) は localStorage を直接測ってフォールバック。
   const [fallbackUsed, setFallbackUsed] = useState<number>(0);
   useEffect(() => {
-    if (supported) return;
+    if (supported && usage > 0) return;
     const compute = () => {
       let total = 0;
       for (let i = 0; i < localStorage.length; i++) {
@@ -163,8 +164,8 @@ const StorageUsageBadge: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
     compute();
     const id = window.setInterval(compute, 1000);
     return () => window.clearInterval(id);
-  }, [supported]);
-  const used = supported ? usage : fallbackUsed;
+  }, [supported, usage]);
+  const used = (supported && usage > 0) ? usage : fallbackUsed;
   const targetPct = Math.min(100, (used / STORAGE_TARGET_LIMIT_BYTES) * 100);
   const color = targetPct >= 90 ? 'var(--red-neon, #ff0055)' : targetPct >= 70 ? 'var(--yellow-neon, #ffe600)' : 'var(--cyan-neon)';
   const titleLines: string[] = [];

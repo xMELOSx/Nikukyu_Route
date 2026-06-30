@@ -136,7 +136,7 @@ function NumberInput({
     <span
       onClick={start}
       onWheel={handleWheel}
-      title="クリックで編集 / ホイールで増減 (Shift=×10, Ctrl=×100)"
+      title={t('クリックで編集 / ホイールで増減 (Shift=×10, Ctrl=×100)')}
       style={{
         color: accent,
         fontWeight: 700,
@@ -2054,7 +2054,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               fileInputRef2.current?.click();
                             }}
                           >
-                            ファイル選択
+                            {t('ファイル選択')}
                           </button>
                         </>
                       )}
@@ -2100,7 +2100,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     disabled={(!ocrImg1 && !ocrImg2) || !!modalOcrStatus.includes('解析中') || !!modalOcrStatus.includes('初期化')}
                     style={{ width: '100%', fontSize: '11px', padding: '6px', fontWeight: 'bold', clipPath: 'none' }}
                   >
-                    ⚡ {ocrImg1 && ocrImg2 ? '2枚のSSから6項目を自動OCR抽出' : ocrImg1 ? 'SS1枚目から4項目を自動OCR抽出' : ocrImg2 ? 'SS2枚目から4項目を自動OCR抽出' : '画像を貼り付けて自動OCR抽出'}
+                    ⚡ {ocrImg1 && ocrImg2 ? t('2枚のSSから6項目を自動OCR抽出') : ocrImg1 ? t('SS1枚目から4項目を自動OCR抽出') : ocrImg2 ? t('SS2枚目から4項目を自動OCR抽出') : t('画像を貼り付けて自動OCR抽出')}
                   </button>
                 </div>
                 <button
@@ -2108,14 +2108,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   style={{ width: '100%', marginTop: '6px', padding: '6px', fontSize: '11px' }}
                   onClick={handleParseTextGoals}
                 >
-                  解析
+                  {t('解析')}
                 </button>
               </div>
 
               {textGoalParsed.length > 0 && (
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--magenta-neon, #ff00ff)', fontWeight: 700, marginBottom: '4px' }}>
-                    検出された目標 ({textGoalParsed.length}件 — 編集可)
+                    {t('検出された目標 ({0}件 — 編集可)', textGoalParsed.length)}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '240px', overflowY: 'auto' }}>
                     {textGoalParsed.map((g, idx) => (
@@ -2133,7 +2133,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           style={{ width: 70, fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
                           value={g.target}
                           onChange={(e) => setTextGoalParsed(prev => prev.map((x, i) => i === idx ? { ...x, target: e.target.value } : x))}
-                          placeholder="目標"
+                          placeholder={t('目標')}
                         />
                         <input
                           type="text"
@@ -2141,13 +2141,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           style={{ width: 60, fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
                           value={g.reward}
                           onChange={(e) => setTextGoalParsed(prev => prev.map((x, i) => i === idx ? { ...x, reward: e.target.value } : x))}
-                          placeholder="報酬"
+                          placeholder={t('報酬')}
                         />
                         <button
                           className="btn-cyber danger"
                           style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
                           onClick={() => setTextGoalParsed(prev => prev.filter((_, i) => i !== idx))}
-                          title="削除"
+                          title={t('削除')}
                         >
                           <Trash2 size={9} />
                         </button>
@@ -2165,10 +2165,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 onClick={handleAddParsedTextGoals}
                 disabled={textGoalParsed.length === 0}
               >
-                <Check size={12} /> {textGoalParsed.length}件を追加
+                <Check size={12} /> {t('{0}件を追加', textGoalParsed.length)}
               </button>
               <button className="btn-cyber" style={{ flex: 1, padding: '7px', fontSize: '11px' }} onClick={handleCloseTextGoalModal}>
-                キャンセル
+                {t('キャンセル')}
               </button>
             </div>
           </div>
@@ -2190,10 +2190,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cyan-neon)' }}>
-                脱出記録 一覧 ({state.records.length}件)
+                {t('脱出記録 一覧 ({0}件)', state.records.length)}
               </div>
               <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '10px' }} onClick={() => setShowAllRecords(false)}>
-                ✕ 閉じる
+                {t('✕ 閉じる')}
               </button>
             </div>
 
@@ -2220,15 +2220,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 style={{ flex: 1, padding: '6px', fontSize: '11px' }}
                 onClick={handleExportCSV}
               >
-                <Download size={11} /> CSVエクスポート
+                <Download size={11} /> {t('CSVエクスポート')}
               </button>
               <button
                 className="btn-cyber danger"
                 style={{ flex: 1, padding: '6px', fontSize: '11px' }}
                 onClick={handleManualResetPeriod}
-                title="累計値・現在値・記録履歴を全てリセット"
+                title={t('累計値・現在値・記録履歴を全てリセット')}
               >
-                <AlertTriangle size={11} /> 全リセット
+                <AlertTriangle size={11} /> {t('全リセット')}
               </button>
             </div>
           </div>
@@ -2271,7 +2271,7 @@ function RecordRow({
           type="checkbox"
           checked={!rec.excluded}
           onChange={() => onToggleExcluded(rec.id)}
-          title="一時的に平均計算から除外"
+          title={t('一時的に平均計算から除外')}
           style={{ cursor: 'pointer', accentColor: 'var(--cyan-neon)' }}
         />
         <span style={{ flex: 1, color: 'var(--text-muted)' }}>
@@ -2286,7 +2286,7 @@ function RecordRow({
           className="btn-cyber danger"
           style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
           onClick={() => onDelete(rec.id)}
-          title="この記録を削除"
+          title={t('この記録を削除')}
         >
           <Trash2 size={9} />
         </button>
@@ -2321,9 +2321,9 @@ function RecordRow({
           <span
             style={{ color: rec.location ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: rec.location ? 'normal' : 'italic', cursor: 'pointer', flex: 1 }}
             onClick={() => onStartEdit(rec)}
-            title="クリックで記録名を編集"
+            title={t('クリックで記録名を編集')}
           >
-            {rec.location || '(記録名なし - クリックで追加)'}
+            {rec.location || t('(記録名なし - クリックで追加)')}
           </span>
         )}
         <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, marginLeft: '4px' }}>

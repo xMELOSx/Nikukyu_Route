@@ -435,5 +435,87 @@ export const en: Locale = {
     'Chinese': '中文',
     'Korean': '한국어',
     '言語を切り替え (自動: ': 'Switch language (auto: ',
+
+    // ----- PlayDataPanel: numeric input -----
+    'クリックで編集 / ホイールで増減 (Shift=×10, Ctrl=×100)': 'Click to edit / scroll to adjust (Shift=×10, Ctrl=×100)',
+
+    // ----- PlayDataPanel: countdown / requiem (Lacrimosa) -----
+    'あと {0}日 {1}時間': 'in {0}d {1}h',
+    '+15% レクイエム': '+15% Lacrimosa',
+    '+20% レクイエム': '+20% Lacrimosa',
+    'レクイエム15%': 'Lacrimosa 15%',
+    'レクイエム20%': 'Lacrimosa 20%',
+
+    // ----- PlayDataPanel: recorded location / escape -----
+    '現在の値を記録値に加算してリストに追加 (現在値は自動リセット)': 'Add current values to records and reset (current values auto-reset)',
+    '入力中の現在値のみリセット (加算しない)': 'Reset current values only (no add)',
+    '🚪 脱出 (加算)': '🚪 Escape (Add)',
+    '現在値リセット': 'Reset Current',
+    '📍 記録名 (空なら「{0}」を使用)': '📍 Record name (use "{0}" if empty)',
+    '📍 記録名 (例: 本日 1回目)': '📍 Record name (e.g. Today 1st run)',
+
+    // ----- PlayDataPanel: weekly goals -----
+    '今週の目標 ({0}件)': 'Weekly Goals ({0})',
+    'クリックで削除実行': 'Click to confirm delete',
+    '✓ 削除する': '✓ Delete',
+    '取消': 'Cancel',
+    '全削除 (確認あり)': 'Delete All (with confirm)',
+    '全削除': 'Delete All',
+    '目標を追加': 'Add Goal',
+    'テキストから複数行を一括追加': 'Add multiple lines from text',
+    'テキストから': 'From Text',
+    '目標名 (例: 金塊を240個集める)': 'Goal name (e.g. Collect 240 gold bars)',
+    '目標数': 'Target',
+    '報酬 (任意)': 'Reward (optional)',
+    'まだ目標がありません': 'No goals yet',
+    '完了': 'Done',
+    'クリックで名前を編集': 'Click to edit name',
+    'この目標を削除': 'Delete this goal',
+
+    // ----- PlayDataPanel: escape records -----
+    '脱出記録 ({0}件)': 'Escape Records ({0})',
+    'まだ脱出記録がありません': 'No escape records yet',
+    'CSVエクスポート': 'Export CSV',
+    '一覧表示 (全{0}件)': 'Show all ({0})',
+    '脱出記録 一覧 ({0}件)': 'Escape Records List ({0})',
+    '累計値・現在値・記録履歴を全てリセット': 'Reset all totals, current values, and record history',
+    '全リセット': 'Reset All',
+    '一時的に平均計算から除外': 'Temporarily exclude from average calculation',
+    'この記録を削除': 'Delete this record',
+    'クリックで記録名を編集': 'Click to edit record name',
+    '(記録名なし - クリックで追加)': '(no record name — click to add)',
+
+    // ----- PlayDataPanel: sound player -----
+    'サウンドプレイヤー ({0}曲)': 'Sound Player ({0} tracks)',
+    '曲を追加してください': 'Please add a track',
+    'シャッフルON': 'Shuffle ON',
+    'シャッフルOFF': 'Shuffle OFF',
+    '前の曲': 'Previous track',
+    '次の曲': 'Next track',
+    'URLを追加': 'Add URL',
+    'YouTube URL (例: https://youtu.be/...)': 'YouTube URL (e.g. https://youtu.be/...)',
+    '曲名 (任意)': 'Track name (optional)',
+
+    // ----- PlayDataPanel: text goal modal / OCR -----
+    '1行に1目標ずつ。「を」の前を目標名、「を」の後の数字を目標数として抽出します。': 'One goal per line. Text before "を" is the goal name, the number after is the target.',
+    '【Ctrl+Vで貼り付け可能】': '[Ctrl+V to paste]',
+    'クリックして選択し Ctrl+Vで貼付': 'Click to focus, then Ctrl+V to paste',
+    'ファイル選択': 'Choose File',
+    '2枚のSSから6項目を自動OCR抽出': 'Auto-extract 6 items from 2 screenshots',
+    'SS1枚目から4項目を自動OCR抽出': 'Auto-extract 4 items from screenshot 1',
+    'SS2枚目から4項目を自動OCR抽出': 'Auto-extract 4 items from screenshot 2',
+    '画像を貼り付けて自動OCR抽出': 'Paste an image to auto-extract',
+    '解析': 'Parse',
+    '検出された目標 ({0}件 — 編集可)': 'Detected goals ({0} — editable)',
+    '目標': 'Target',
+    '報酬': 'Reward',
+    '{0}件を追加': 'Add {0}',
+
+    // ----- CSV export header -----
+    '日時': 'Date',
+    '記録地': 'Location',
+    'ファンス': 'Fines',
+    'コイン': 'Coins',
+    '除外': 'Excluded',
   },
 };
