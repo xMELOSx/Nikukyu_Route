@@ -158,6 +158,7 @@ export const en: Locale = {
     '目標ファインス': 'Target fines',
     '目標所要時間': 'Target duration',
     '(未設定)': '(not set)',
+    '終始直結': 'Direct connect',
     '制作者名': 'Author',
     '原案者名': 'Original author',
     'カスタムBG: 設定済': 'Custom BG: set',

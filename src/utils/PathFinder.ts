@@ -49,7 +49,8 @@ export function findBypassingPath(
   walls: { [key: string]: [Point, Point][] },
   markers: any[],
   hiddenIds?: Set<string>,
-  hiddenTypes?: Set<string>
+  hiddenTypes?: Set<string>,
+  guidePoints?: Point[]
 ): PathfindingResult {
   const distPointSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
     const ex = bx - ax, ey = by - ay;
@@ -58,6 +59,16 @@ export function findBypassingPath(
     let t = ((px - ax) * ex + (py - ay) * ey) / l2;
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(px - (ax + t * ex), py - (ay + t * ey));
+  };
+
+  const getDistanceToGuide = (p: Point): number => {
+    if (!guidePoints || guidePoints.length < 2) return 0;
+    let minDist = Infinity;
+    for (let i = 0; i < guidePoints.length - 1; i++) {
+      const d = distPointSeg(p.x, p.y, guidePoints[i].x, guidePoints[i].y, guidePoints[i + 1].x, guidePoints[i + 1].y);
+      if (d < minDist) minDist = d;
+    }
+    return minDist;
   };
 
   const nodes: PathNode[] = [start, end];
@@ -442,7 +453,19 @@ export function findBypassingPath(
 
       const nextWasTeleport = edge.isTeleport ? 1 : 0;
       const nextState = (edge.to << 1) + nextWasTeleport;
-      const nd = dist[stateIdx] + edge.cost;
+      
+      // Calculate basic distance cost
+      let stepCost = edge.cost;
+      
+      // If guidePoints are provided, add a penalty based on distance to the hand-drawn guide line.
+      // We skip the penalty on active teleports, as teleporting crosses rooms.
+      if (guidePoints && guidePoints.length >= 2 && !edge.isTeleport) {
+        const targetNode = uniqueNodes[edge.to];
+        const distToGuide = getDistanceToGuide(targetNode);
+        stepCost += distToGuide * 12.0; // Strong penalty factor to tightly bind path to the user's line
+      }
+
+      const nd = dist[stateIdx] + stepCost;
 
       if (nd < dist[nextState]) {
         dist[nextState] = nd;

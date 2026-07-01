@@ -548,6 +548,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_bypass_walls_enabled', String(bypassWallsEnabled));
   }, [bypassWallsEnabled]);
+  const [bypassShortestOnly, setBypassShortestOnly] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_bypass_shortest_only');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_bypass_shortest_only', String(bypassShortestOnly));
+  }, [bypassShortestOnly]);
   const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
   const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
   const [eraseSize, setEraseSize] = useState<number>(16);
@@ -1034,34 +1041,63 @@ export default function App() {
         setTimeout(async () => {
           const { findBypassingPath } = await import('./utils/PathFinder');
           const pathfindStartTime = performance.now();
-          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes);
+
+          let finalPath: { x: number; y: number; floor: string; isPortal?: boolean; portalName?: string; markerId?: string }[] = [];
+          let finalTeleportIndices: number[] = [];
+          let pathfindSuccess = true;
+          let statsToReturn: any = { details: [] };
+
+          if (bypassShortestOnly) {
+            // 1. Shortest Search mode (original behavior)
+            const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes);
+            statsToReturn = portalStats;
+            if (path && path.length >= 2) {
+              finalPath = path;
+              finalTeleportIndices = teleportIndices;
+            } else {
+              pathfindSuccess = false;
+            }
+          } else {
+            // 2. Maintain Path mode (Guide-following Global Search):
+            // Instead of isolating segments, we perform a single global Dijkstra detour search from start to end,
+            // passing the entire user stroke (pts) as guidePoints. The pathfinder will tightly cling to this line
+            // wherever possible but detour through warps or doors when blocked, solving all room-crossing issues cleanly.
+            const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes, pts);
+            statsToReturn = portalStats;
+            if (path && path.length >= 2) {
+              finalPath = path;
+              finalTeleportIndices = teleportIndices;
+            } else {
+              pathfindSuccess = false;
+            }
+          }
+
           const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
           
-          if (path && path.length >= 2) {
-            // Use teleportIndices from PathFinder to split path into segments.
-            // teleportIndices[k] = i means path[i]→path[i+1] is a teleport (no line).
-            const teleportSet = new Set(teleportIndices);
+          if (pathfindSuccess && finalPath.length >= 2) {
+            // Use teleportIndices to split path into segments.
+            const teleportSet = new Set(finalTeleportIndices);
             const segments: { floor: string; points: { x: number; y: number }[] }[] = [];
             let seg: { x: number; y: number }[] = [];
-            let segFloor = path[0].floor;
+            let segFloor = finalPath[0].floor;
 
-            for (let i = 0; i < path.length; i++) {
-              seg.push({ x: path[i].x, y: path[i].y });
+            for (let i = 0; i < finalPath.length; i++) {
+              seg.push({ x: finalPath[i].x, y: finalPath[i].y });
 
               if (teleportSet.has(i)) {
-                // path[i] → path[i+1] is teleport. End segment here.
+                // teleport. End segment here.
                 if (seg.length >= 2) {
                   segments.push({ floor: segFloor, points: seg });
                 }
                 seg = []; // next iteration will start fresh segment
-                if (i + 1 < path.length) segFloor = path[i + 1].floor;
+                if (i + 1 < finalPath.length) segFloor = finalPath[i + 1].floor;
               }
             }
             if (seg.length >= 2) {
               segments.push({ floor: segFloor, points: seg });
             }
 
-            console.log('[Bypass] segments:', segments.length, 'teleports:', teleportIndices.length);
+            console.log('[Bypass] segments:', segments.length, 'teleports:', finalTeleportIndices.length);
 
             historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
             
@@ -1088,7 +1124,7 @@ export default function App() {
             
             notification.show(t('壁を迂回するルートを自動生成しました ({0}ms / 最大 500ms)', String(pathfindElapsed)));
           } else {
-            const isolated = portalStats.details.filter(p => p.edges === 0).map(p => p.name);
+            const isolated = statsToReturn.details.filter((p: any) => p.edges === 0).map((p: any) => p.name);
             let errorMsg = t('壁を越えて迂回する経路が見つかりません ({0}ms)。操作をキャンセルしました。', String(pathfindElapsed));
             if (isolated.length > 0) {
               errorMsg += t(' 🚫接続口がブロックされています: ') + isolated.slice(0, 3).join(', ');
@@ -2245,15 +2281,26 @@ export default function App() {
             {toolMode === 'draw' && (
               <div className="panel-section">
                 <div className="panel-title">{t('ルート線設定')}</div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={bypassWallsEnabled}
-                    onChange={(e) => setBypassWallsEnabled(e.target.checked)}
-                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                  />
-                  {t('壁を自動で迂回する')}
-                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={bypassWallsEnabled}
+                      onChange={(e) => setBypassWallsEnabled(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('壁を自動で迂回する')}
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={bypassShortestOnly}
+                      onChange={(e) => setBypassShortestOnly(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('終始直結')}
+                  </label>
+                </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
                   <input
                     type="checkbox"
