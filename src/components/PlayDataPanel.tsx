@@ -474,7 +474,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
   const handleEscape = () => {
     if (state.currentFans <= 0 && state.currentCoins <= 0) {
-      notify('現在値が空です。ファンスかコインを入力してください');
+      notify(t('現在値が空です。ファンスかコインを入力してください'));
       return;
     }
     const now = Date.now();
@@ -502,17 +502,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       recordedNikukyuu: post.recordedNikukyuu + addedNikukyuu,
       records: [...post.records, newRecord]
     });
-    const capNote = addedFans < state.currentFans || addedCoins < state.currentCoins ? ' (上限に達したため一部のみ加算)' : '';
-    notify(`脱出記録を追加しました${capNote}`);
+    const capNote = addedFans < state.currentFans || addedCoins < state.currentCoins ? t(' (上限に達したため一部のみ加算)') : '';
+    notify(t('脱出記録を追加しました{0}', capNote));
   };
 
   const handleResetCurrent = () => {
     setState(prev => ({ ...prev, currentFans: 0, currentCoins: 0 }));
-    notify('現在値をリセットしました');
+    notify(t('現在値をリセットしました'));
   };
 
   const handleManualResetPeriod = () => {
-    if (!window.confirm('記録値（累計）と現在値を全てリセットします。よろしいですか？')) return;
+    if (!window.confirm(t('記録値（累計）と現在値を全てリセットします。よろしいですか？'))) return;
     setState(prev => ({
       ...prev,
       recordedFans: 0,
@@ -523,7 +523,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       periodStart: checkAutoReset({ ...prev, periodStart: 0 }).periodStart,
       records: []
     }));
-    notify('記録値と現在値をリセットしました');
+    notify(t('記録値と現在値をリセットしました'));
   };
 
   // --- Goal handlers ---
@@ -532,7 +532,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     const target = parseInt(newGoal.target) || 0;
     const reward = parseInt(newGoal.reward) || 0;
     if (!name || target <= 0) {
-      notify('目標名と目標数を入力してください');
+      notify(t('目標名と目標数を入力してください'));
       return;
     }
     const goal: WeeklyGoal = {
@@ -546,13 +546,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     setState(prev => ({ ...prev, goals: [...prev.goals, goal] }));
     setNewGoal({ name: '', target: '', reward: '' });
     setShowAddGoal(false);
-    notify(`目標を追加しました: ${name}`);
+    notify(t('目標を追加しました: {0}', name));
   };
 
   const handleDeleteGoal = (id: string) => {
-    if (!window.confirm('この目標を削除しますか？')) return;
+    if (!window.confirm(t('この目標を削除しますか？'))) return;
     setState(prev => ({ ...prev, goals: prev.goals.filter(g => g.id !== id) }));
-    notify('目標を削除しました');
+    notify(t('目標を削除しました'));
   };
 
   const handleToggleGoalCompleted = (id: string) => {
@@ -598,14 +598,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     }
     setState(prev => ({ ...prev, goals: [] }));
     setConfirmClearGoals(false);
-    notify('今週の目標を全て削除しました');
+    notify(t('今週の目標を全て削除しました'));
   };
 
   // --- Text-input goal parser ---
   const handleParseTextGoals = () => {
     const parsed = parseGoalsFromInput(textGoalInput);
     if (parsed.length === 0) {
-      notify('「を」を含む行が見つかりません');
+      notify(t('「を」を含む行が見つかりません'));
       return;
     }
     setTextGoalParsed(parsed.map(g => ({
@@ -613,13 +613,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       target: String(g.target),
       reward: g.reward > 0 ? String(g.reward) : ''
     })));
-    notify(`${parsed.length}件検出`);
+    notify(t('{0}件検出', parsed.length));
   };
 
   const handleAddParsedTextGoals = () => {
     const valid = textGoalParsed.filter(g => g.name.trim() && parseInt(g.target.replace(/,/g, '')) > 0);
     if (valid.length === 0) {
-      notify('追加できる目標がありません');
+      notify(t('追加できる目標がありません'));
       return;
     }
     const existing = new Set(state.goals.map(g => g.name.replace(/\s+/g, '').toLowerCase()));
@@ -638,7 +638,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       };
     });
     setState(prev => ({ ...prev, goals: [...prev.goals, ...newGoals] }));
-    notify(`${newGoals.length}件追加${skipped > 0 ? ` (重複${skipped}件スキップ)` : ''}`);
+    notify(t('{0}件追加{1}', newGoals.length, skipped > 0 ? t(' (重複{0}件スキップ)', skipped) : ''));
     setShowTextGoalModal(false);
     setTextGoalInput('');
     setTextGoalParsed([]);
@@ -679,7 +679,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
   const runDirectOcr = async () => {
     if (!ocrImg1 && !ocrImg2) {
-      notify('画像を貼り付けてください');
+      notify(t('画像を貼り付けてください'));
       return;
     }
 
@@ -919,12 +919,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         setModalOcrStatus('');
         setModalOcrProgress(0);
       }, 2000);
-      notify('OCR解析が完了しました');
+      notify(t('OCR解析が完了しました'));
     } catch (err) {
       console.error(err);
       setModalOcrStatus('エラーが発生しました');
       setModalOcrProgress(0);
-      notify('OCR認識エラー');
+      notify(t('OCR認識エラー'));
     }
   };
 
@@ -936,15 +936,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   // --- Sound Player handlers ---
   const handleAddUrl = () => {
     const url = newUrlInput.trim();
-    if (!url) { notify('URLを入力してください'); return; }
+    if (!url) { notify(t('URLを入力してください')); return; }
     const videoId = extractVideoId(url);
-    if (!videoId) { notify('有効なYouTube URLではありません'); return; }
+    if (!videoId) { notify(t('有効なYouTube URLではありません')); return; }
     const title = newTitleInput.trim() || `曲 ${playlist.length + 1}`;
     setPlaylist(prev => [...prev, { id: Date.now().toString(), url: `https://www.youtube.com/watch?v=${videoId}`, title }]);
     setNewUrlInput('');
     setNewTitleInput('');
     setShowAddUrl(false);
-    notify(`プレイリストに追加しました: ${title}`);
+    notify(t('プレイリストに追加しました: {0}', title));
   };
 
   const handleRemoveTrack = (id: string) => {
@@ -982,9 +982,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   };
 
   const handleDeleteRecord = (id: string) => {
-    if (!window.confirm('この記録を削除しますか？')) return;
+    if (!window.confirm(t('この記録を削除しますか？'))) return;
     setState(prev => ({ ...prev, records: prev.records.filter(r => r.id !== id) }));
-    notify('記録を削除しました');
+    notify(t('記録を削除しました'));
   };
 
   const handleStartEditLocation = (rec: PlayDataRecord) => {
@@ -1008,12 +1008,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
   const handleExportCSV = () => {
     if (state.records.length === 0) {
-      notify('エクスポートする記録がありません');
+      notify(t('エクスポートする記録がありません'));
       return;
     }
     const date = new Date().toISOString().slice(0, 10);
     downloadCSV(state.records, `heist_escape_records_${date}.csv`);
-    notify(`${state.records.length}件の記録をCSVエクスポートしました`);
+    notify(t('{0}件の記録をCSVエクスポートしました', state.records.length));
   };
 
   // --- Styling helpers ---
@@ -1075,7 +1075,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               textShadow: '0 0 4px rgba(255,230,0,0.4)'
             }}
           >
-            あと {timeUntilReset.days}日 {timeUntilReset.hours}時間
+            {t('あと {0}日 {1}時間', timeUntilReset.days, timeUntilReset.hours)}
           </div>
         )}
         <div
@@ -1199,7 +1199,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               onChange={(e) => setRequiem15(e.target.checked)}
               style={{ accentColor: '#a855f7', cursor: 'pointer' }}
             />
-            +15% レクイエム
+            {t('+15% レクイエム')}
           </label>
           <label
             style={{
@@ -1225,7 +1225,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               onChange={(e) => setRequiem20(e.target.checked)}
               style={{ accentColor: 'var(--yellow-neon, #ffe600)', cursor: 'pointer' }}
             />
-            +20% レクイエム
+            {t('+20% レクイエム')}
           </label>
         </div>
 
@@ -1263,8 +1263,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             value={state.recordedLocation}
             onChange={(e) => setRecordedLocation(e.target.value)}
             placeholder={routeTitle
-              ? `📍 記録名 (空なら「${routeTitle}」を使用)`
-              : '📍 記録名 (例: 本日 1回目)'}
+              ? t('📍 記録名 (空なら「{0}」を使用)', routeTitle)
+              : t('📍 記録名 (例: 本日 1回目)')}
           />
         </div>
 
@@ -1273,17 +1273,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             className="btn-cyber success"
             style={{ flex: 2, padding: '7px', fontSize: '13px', fontWeight: 700 }}
             onClick={handleEscape}
-            title="現在の値を記録値に加算してリストに追加 (現在値は自動リセット)"
+            title={t('現在の値を記録値に加算してリストに追加 (現在値は自動リセット)')}
           >
-            🚪 脱出 (加算)
+            {t('🚪 脱出 (加算)')}
           </button>
           <button
             className="btn-cyber"
             style={{ flex: 1, padding: '7px', fontSize: '10px' }}
             onClick={handleResetCurrent}
-            title="入力中の現在値のみリセット (加算しない)"
+            title={t('入力中の現在値のみリセット (加算しない)')}
           >
-            現在値リセット
+            {t('現在値リセット')}
           </button>
         </div>
       </div>
@@ -1380,7 +1380,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
           <Target size={12} color="var(--magenta-neon, #ff00ff)" />
-          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>今週の目標 ({state.goals.length}件)</span>
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('今週の目標 ({0}件)', state.goals.length)}</span>
           {state.goals.length > 0 && (
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '3px' }}>
               {confirmClearGoals ? (
@@ -1389,17 +1389,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     className="btn-cyber danger"
                     style={{ padding: '1px 6px', fontSize: '9px', lineHeight: 1.4 }}
                     onClick={handleClearAllGoals}
-                    title="クリックで削除実行"
+                    title={t('クリックで削除実行')}
                   >
-                    ✓ 削除する
+                    {t('✓ 削除する')}
                   </button>
                   <button
                     className="btn-cyber"
                     style={{ padding: '1px 6px', fontSize: '9px', lineHeight: 1.4 }}
                     onClick={() => setConfirmClearGoals(false)}
-                    title="キャンセル"
+                    title={t('キャンセル')}
                   >
-                    取消
+                    {t('取消')}
                   </button>
                 </>
               ) : (
@@ -1407,9 +1407,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   className="btn-cyber"
                   style={{ padding: '1px 6px', fontSize: '9px', opacity: 0.55, lineHeight: 1.4 }}
                   onClick={handleClearAllGoals}
-                  title="全削除 (確認あり)"
+                  title={t('全削除 (確認あり)')}
                 >
-                  <Trash2 size={9} /> 全削除
+                  <Trash2 size={9} /> {t('全削除')}
                 </button>
               )}
             </div>
@@ -1422,15 +1422,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             style={{ flex: 1, padding: '4px', fontSize: '10px' }}
             onClick={() => setShowAddGoal(true)}
           >
-            <Plus size={10} /> 目標を追加
+            <Plus size={10} /> {t('目標を追加')}
           </button>
           <button
             className="btn-cyber"
             style={{ flex: 1, padding: '4px', fontSize: '10px' }}
             onClick={() => setShowTextGoalModal(true)}
-            title="テキストから複数行を一括追加"
+            title={t('テキストから複数行を一括追加')}
           >
-            <Type size={10} /> テキストから
+            <Type size={10} /> {t('テキストから')}
           </button>
         </div>
 
@@ -1453,7 +1453,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
               value={newGoal.name}
               onChange={(e) => setNewGoal(g => ({ ...g, name: e.target.value }))}
-              placeholder="目標名 (例: 金塊を240個集める)"
+              placeholder={t('目標名 (例: 金塊を240個集める)')}
               autoFocus
             />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
@@ -1472,7 +1472,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     setNewGoal(g => ({ ...g, target: isNaN(n) ? '' : String(Math.max(1, n)) }));
                   }
                 }}
-                placeholder="目標数"
+                placeholder={t('目標数')}
               />
               <input
                 type="number"
@@ -1489,19 +1489,19 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     setNewGoal(g => ({ ...g, reward: isNaN(n) ? '' : String(Math.max(0, n)) }));
                   }
                 }}
-                placeholder="報酬 (任意)"
+                placeholder={t('報酬 (任意)')}
               />
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>
               <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleAddGoal}>
-                <Check size={10} /> 追加
+                <Check size={10} /> {t('追加')}
               </button>
               <button
                 className="btn-cyber"
                 style={{ flex: 1, padding: '4px', fontSize: '10px' }}
                 onClick={() => { setShowAddGoal(false); setNewGoal({ name: '', target: '', reward: '' }); }}
               >
-                <X size={10} /> キャンセル
+                <X size={10} /> {t('キャンセル')}
               </button>
             </div>
           </div>
@@ -1509,7 +1509,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
         {state.goals.length === 0 ? (
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '6px' }}>
-            まだ目標がありません
+            {t('まだ目標がありません')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1532,7 +1532,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       type="checkbox"
                       checked={goal.completed}
                       onChange={() => handleToggleGoalCompleted(goal.id)}
-                      title="完了"
+                      title={t('完了')}
                       style={{ cursor: 'pointer', accentColor: 'var(--green-neon)' }}
                     />
                     <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1570,7 +1570,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             cursor: 'pointer',
                             flex: 1
                           }}
-                          title="クリックで名前を編集"
+                          title={t('クリックで名前を編集')}
                         >
                           {goal.name}
                         </span>
@@ -1583,7 +1583,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       className="btn-cyber danger"
                       style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
                       onClick={() => handleDeleteGoal(goal.id)}
-                      title="この目標を削除"
+                      title={t('この目標を削除')}
                     >
                       <Trash2 size={9} />
                     </button>
@@ -1630,12 +1630,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
           <TrendingUp size={12} color="var(--cyan-neon)" />
-          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>脱出記録 ({state.records.length}件)</span>
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('脱出記録 ({0}件)', state.records.length)}</span>
         </div>
 
         {state.records.length === 0 ? (
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '8px' }}>
-            まだ脱出記録がありません
+            {t('まだ脱出記録がありません')}
           </div>
         ) : (
           <>
@@ -1662,7 +1662,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               style={{ width: '100%', padding: '4px', fontSize: '10px', marginBottom: '6px' }}
               onClick={handleExportCSV}
             >
-              <Download size={10} /> CSVエクスポート
+              <Download size={10} /> {t('CSVエクスポート')}
             </button>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1687,7 +1687,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               style={{ width: '100%', padding: '5px', fontSize: '11px', marginTop: '6px' }}
               onClick={() => setShowAllRecords(true)}
             >
-              <List size={11} /> 一覧表示 (全{state.records.length}件)
+              <List size={11} /> {t('一覧表示 (全{0}件)', state.records.length)}
             </button>
           </>
         )}
@@ -1699,7 +1699,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
           <Music size={12} color="var(--magenta-neon, #ff00ff)" />
-          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>サウンドプレイヤー ({playlist.length}曲)</span>
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('サウンドプレイヤー ({0}曲)', playlist.length)}</span>
         </div>
 
         {/* Now Playing */}
@@ -1719,7 +1719,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '11px' }}>
-              曲を追加してください
+              {t('曲を追加してください')}
             </div>
           )}
 
@@ -1729,7 +1729,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               className={`btn-cyber ${shuffleMode ? 'active' : ''}`}
               style={{ padding: '4px 8px', fontSize: '10px' }}
               onClick={() => setShuffleMode(s => !s)}
-              title={shuffleMode ? 'シャッフルON' : 'シャッフルOFF'}
+              title={shuffleMode ? t('シャッフルON') : t('シャッフルOFF')}
             >
               <Shuffle size={12} />
             </button>
@@ -1737,7 +1737,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               className="btn-cyber"
               style={{ padding: '4px 8px', fontSize: '10px' }}
               onClick={handlePrevTrack}
-              title="前の曲"
+              title={t('前の曲')}
             >
               <SkipBack size={14} />
             </button>
@@ -1745,7 +1745,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               className="btn-cyber success"
               style={{ padding: '6px 12px', fontSize: '12px' }}
               onClick={() => setIsPlaying(p => !p)}
-              title={isPlaying ? '一時停止' : '再生'}
+              title={isPlaying ? t('一時停止') : t('再生')}
             >
               {isPlaying ? <Pause size={16} /> : <Play size={16} />}
             </button>
@@ -1753,7 +1753,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               className="btn-cyber"
               style={{ padding: '4px 8px', fontSize: '10px' }}
               onClick={handleNextTrack}
-              title="次の曲"
+              title={t('次の曲')}
             >
               <SkipForward size={14} />
             </button>
@@ -1761,7 +1761,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               className={`btn-cyber ${repeatMode ? 'active' : ''}`}
               style={{ padding: '4px 8px', fontSize: '10px' }}
               onClick={() => setRepeatMode(r => !r)}
-              title={repeatMode ? 'リピートON' : 'リピートOFF'}
+              title={repeatMode ? t('リピートON') : t('リピートOFF')}
             >
               <Repeat size={12} />
             </button>
@@ -1778,7 +1778,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             style={{ flex: 1, padding: '4px', fontSize: '10px' }}
             onClick={() => setShowAddUrl(s => !s)}
           >
-            <Plus size={10} /> URLを追加
+            <Plus size={10} /> {t('URLを追加')}
           </button>
         </div>
 
@@ -1799,7 +1799,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
               value={newUrlInput}
               onChange={(e) => setNewUrlInput(e.target.value)}
-              placeholder="YouTube URL (例: https://youtu.be/...)"
+              placeholder={t('YouTube URL (例: https://youtu.be/...)')}
               autoFocus
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrl(); }}
             />
@@ -1809,19 +1809,19 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               style={{ ...inputStyle, fontSize: '11px', padding: '3px 6px' }}
               value={newTitleInput}
               onChange={(e) => setNewTitleInput(e.target.value)}
-              placeholder="曲名 (任意)"
+              placeholder={t('曲名 (任意)')}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrl(); }}
             />
             <div style={{ display: 'flex', gap: '4px' }}>
               <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleAddUrl}>
-                <Check size={10} /> 追加
+                <Check size={10} /> {t('追加')}
               </button>
               <button
                 className="btn-cyber"
                 style={{ flex: 1, padding: '4px', fontSize: '10px' }}
                 onClick={() => { setShowAddUrl(false); setNewUrlInput(''); setNewTitleInput(''); }}
               >
-                <X size={10} /> キャンセル
+                <X size={10} /> {t('キャンセル')}
               </button>
             </div>
           </div>
@@ -1855,7 +1855,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 className="btn-cyber danger"
                 style={{ padding: '0 4px', fontSize: '9px', clipPath: 'none', lineHeight: 1.2 }}
                 onClick={(e) => { e.stopPropagation(); handleRemoveTrack(track.id); }}
-                title="削除"
+                title={t('削除')}
               >
                 <Trash2 size={9} />
               </button>
@@ -1889,7 +1889,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  1行に1目標ずつ。「を」の前を目標名、「を」の後の数字を目標数として抽出します。
+                  {t('1行に1目標ずつ。「を」の前を目標名、「を」の後の数字を目標数として抽出します。')}
                 </div>
                 <textarea
                   className="input-cyber"
