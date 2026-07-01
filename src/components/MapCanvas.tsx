@@ -1738,7 +1738,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         erasedMarkerIdsRef.current.clear();
       }
       if (toolMode === 'draw-wall' && currentPoints.length === 2) {
-        onWallsChange?.([...walls, [currentPoints[0], currentPoints[1]]]);
+        let p1 = currentPoints[0];
+        let p2 = currentPoints[1];
+        const SNAP_WALL_THRESHOLD = 15;
+
+        const snapWallPoint = (pt: Point): Point => {
+          let best = pt;
+          let bestDist = SNAP_WALL_THRESHOLD;
+          for (const w of walls) {
+            const candidates = [w[0], w[1]];
+            for (const c of candidates) {
+              const d = Math.hypot(c.x - pt.x, c.y - pt.y);
+              if (d < bestDist) {
+                bestDist = d;
+                best = c;
+              }
+            }
+          }
+          return best;
+        };
+
+        p1 = snapWallPoint(p1);
+        p2 = snapWallPoint(p2);
+
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
+          const merged = mergeWalls([...walls, [p1, p2]]);
+          onWallsChange?.(merged);
+        }
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
@@ -1862,13 +1888,65 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
+  const mergeWalls = (rawWalls: [Point, Point][]): [Point, Point][] => {
+    if (rawWalls.length < 2) return rawWalls;
+    const list = rawWalls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const w1 = list[i];
+          const w2 = list[j];
+          const matchThreshold = 4; // allow tiny snaps
+          let pStart = w1[0];
+          let pMid1 = w1[1];
+          let pMid2 = w2[0];
+          let pEnd = w2[1];
+          let connected = false;
+
+          if (Math.hypot(w1[1].x - w2[0].x, w1[1].y - w2[0].y) < matchThreshold) {
+            pStart = w1[0]; pMid1 = w1[1]; pMid2 = w2[0]; pEnd = w2[1];
+            connected = true;
+          } else if (Math.hypot(w1[1].x - w2[1].x, w1[1].y - w2[1].y) < matchThreshold) {
+            pStart = w1[0]; pMid1 = w1[1]; pMid2 = w2[1]; pEnd = w2[0];
+            connected = true;
+          } else if (Math.hypot(w1[0].x - w2[0].x, w1[0].y - w2[0].y) < matchThreshold) {
+            pStart = w1[1]; pMid1 = w1[0]; pMid2 = w2[0]; pEnd = w2[1];
+            connected = true;
+          } else if (Math.hypot(w1[0].x - w2[1].x, w1[0].y - w2[1].y) < matchThreshold) {
+            pStart = w1[1]; pMid1 = w1[0]; pMid2 = w2[1]; pEnd = w2[0];
+            connected = true;
+          }
+
+          if (connected) {
+            const cross = (pMid1.x - pStart.x) * (pEnd.y - pMid2.y) - (pMid1.y - pStart.y) * (pEnd.x - pMid2.x);
+            const len1 = Math.hypot(pMid1.x - pStart.x, pMid1.y - pStart.y);
+            const len2 = Math.hypot(pEnd.x - pMid2.x, pEnd.y - pMid2.y);
+            const isParallel = Math.abs(cross) / Math.max(1, len1 * len2) < 0.05;
+            const dot = (pMid1.x - pStart.x) * (pEnd.x - pMid2.x) + (pMid1.y - pStart.y) * (pEnd.y - pMid2.y);
+
+            if (isParallel && dot > 0) {
+              list[i] = [pStart, pEnd];
+              list.splice(j, 1);
+              merged = true;
+              break;
+            }
+          }
+        }
+        if (merged) break;
+      }
+    }
+    return list;
+  };
+
   const eraseWallsAtPoint = (pt: Point) => {
     const r = eraseSize;
     const remaining = walls.filter(w => {
       return getDistanceToSegment(pt, w[0], w[1]) > r;
     });
     if (remaining.length !== walls.length) {
-      onWallsChange?.(remaining);
+      onWallsChange?.(mergeWalls(remaining));
     }
   };
 
