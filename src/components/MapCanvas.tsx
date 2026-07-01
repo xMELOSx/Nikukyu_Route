@@ -236,7 +236,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     let partner = m.linkedWarpId ? allMarkers.find(mk => mk.id === m.linkedWarpId) : null;
     let isIncoming = false;
     if (!partner) {
-      partner = allMarkers.find(mk => mk.linkedWarpId === m.id && mk.floor === m.floor && (mk.type === 'warp' || mk.type === 'iwarp' || mk.type === 'stairs'));
+      partner = allMarkers.find(mk => mk.linkedWarpId === m.id && (mk.type === 'warp' || mk.type === 'iwarp' || mk.type === 'stairs'));
       if (partner) {
         isIncoming = true;
       }
@@ -1740,7 +1740,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'draw-wall' && currentPoints.length === 2) {
         let p1 = currentPoints[0];
         let p2 = currentPoints[1];
-        const SNAP_WALL_THRESHOLD = 15;
+        const SNAP_WALL_THRESHOLD = 8;
 
         const getClosestPointOnSegment = (p: Point, a: Point, b: Point) => {
           const abx = b.x - a.x;
@@ -1753,29 +1753,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           return { point: h, dist: Math.hypot(p.x - h.x, p.y - h.y), t };
         };
 
-        let activeWalls = [...walls];
+        let activeWalls = walls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
 
-        const trySnap = (pt: Point): { snappedPt: Point; splitIdx: number; splitPt: Point } => {
+        const snapAndAlignOldPoints = (pt: Point): Point => {
           let bestPt = pt;
           let bestDist = SNAP_WALL_THRESHOLD;
-          let splitIdx = -1;
-          let splitPt = pt;
+          let snapType = 'none';
+          let targetWallIdx = -1;
+          let targetPtIdx = -1;
 
-          // 1. Try endpoint snap first
+          // 1. Scan endpoint snap first
           for (let i = 0; i < activeWalls.length; i++) {
             const w = activeWalls[i];
-            for (const c of [w[0], w[1]]) {
+            for (let j = 0; j < 2; j++) {
+              const c = w[j];
               const d = Math.hypot(c.x - pt.x, c.y - pt.y);
               if (d < bestDist) {
                 bestDist = d;
                 bestPt = c;
-                splitIdx = -1;
+                snapType = 'endpoint';
+                targetWallIdx = i;
+                targetPtIdx = j;
               }
             }
           }
 
-          // 2. Try T-junction intersection snap (closest point on segment) if no endpoint snap matches
-          if (bestPt === pt) {
+          // 2. Scan T-junction intersection if no endpoint snap
+          if (snapType === 'none') {
             for (let i = 0; i < activeWalls.length; i++) {
               const w = activeWalls[i];
               const { point, dist, t } = getClosestPointOnSegment(pt, w[0], w[1]);
@@ -1783,28 +1787,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 bestDist = dist;
                 bestPt = point;
                 if (t > 0.01 && t < 0.99) {
-                  splitIdx = i;
-                  splitPt = point;
+                  snapType = 'midpoint';
+                  targetWallIdx = i;
+
                 }
               }
             }
           }
-          return { snappedPt: bestPt, splitIdx, splitPt };
+
+          // Align coordinates to the newest point
+          if (snapType === 'endpoint' && targetWallIdx >= 0 && targetPtIdx >= 0) {
+            activeWalls[targetWallIdx][targetPtIdx] = { ...pt };
+            return pt;
+          } else if (snapType === 'midpoint' && targetWallIdx >= 0) {
+            const w = activeWalls[targetWallIdx];
+            activeWalls.splice(targetWallIdx, 1, [w[0], { ...pt }], [{ ...pt }, w[1]]);
+            return pt;
+          }
+          return bestPt;
         };
 
-        const snap1 = trySnap(p1);
-        p1 = snap1.snappedPt;
-        if (snap1.splitIdx >= 0) {
-          const w = activeWalls[snap1.splitIdx];
-          activeWalls.splice(snap1.splitIdx, 1, [w[0], snap1.splitPt], [snap1.splitPt, w[1]]);
-        }
-
-        const snap2 = trySnap(p2);
-        p2 = snap2.snappedPt;
-        if (snap2.splitIdx >= 0) {
-          const w = activeWalls[snap2.splitIdx];
-          activeWalls.splice(snap2.splitIdx, 1, [w[0], snap2.splitPt], [snap2.splitPt, w[1]]);
-        }
+        p1 = snapAndAlignOldPoints(p1);
+        p2 = snapAndAlignOldPoints(p2);
 
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
           const merged = mergeWalls([...activeWalls, [p1, p2]], [p1, p2]);
@@ -1944,7 +1948,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         for (let j = i + 1; j < list.length; j++) {
           const w1 = list[i];
           const w2 = list[j];
-          const matchThreshold = 4; // allow tiny snaps
+          const matchThreshold = 1.5; // allow tiny snaps
           let pStart = w1[0];
           let pMid1 = w1[1];
           let pMid2 = w2[0];
@@ -1975,7 +1979,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (isParallel && dot > 0) {
               const snapToPriority = (pt: Point): Point => {
                 for (const p of priorityPoints) {
-                  if (Math.hypot(p.x - pt.x, p.y - pt.y) < matchThreshold + 2) {
+                  if (Math.hypot(p.x - pt.x, p.y - pt.y) < matchThreshold + 1) {
                     return p;
                   }
                 }
@@ -2687,10 +2691,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           height={4550}
         />
 
-        {/* Walls visualization layer */}
-        {((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
+        {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
+        {(toolMode === 'draw-wall' || toolMode === 'erase-wall') && ((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
           <svg
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 12 }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
           >
             {walls.map((w, idx) => (
@@ -2700,7 +2704,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={w[0].y}
                 x2={w[1].x}
                 y2={w[1].y}
-                stroke="rgba(255, 0, 85, 0.7)"
+                stroke="rgba(255, 85, 0, 0.85)"
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
@@ -2711,7 +2715,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={currentPoints[0].y}
                 x2={currentPoints[1].x}
                 y2={currentPoints[1].y}
-                stroke="#ff0055"
+                stroke="#ff5500"
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />

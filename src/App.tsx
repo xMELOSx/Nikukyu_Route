@@ -786,6 +786,43 @@ export default function App() {
     autoSaveEnabled
   });
 
+  const routeRef = useRef(routeApi.route);
+  routeRef.current = routeApi.route;
+
+  // Global Walls State (Shared across all plans, stored in localStorage)
+  const [globalWalls, setGlobalWalls] = useState<Record<string, any>>(() => {
+    const saved = localStorage.getItem('heist_global_walls');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { main: [] };
+  });
+  const globalWallsRef = useRef(globalWalls);
+  globalWallsRef.current = globalWalls;
+
+  const updateGlobalWalls = (next: Record<string, any>) => {
+    setGlobalWalls(next);
+    localStorage.setItem('heist_global_walls', JSON.stringify(next));
+  };
+
+  // Migration: if globalWalls is empty but route has walls, migrate them
+  useEffect(() => {
+    const gw = globalWallsRef.current;
+    const hasGlobalWalls = Object.values(gw).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+    if (!hasGlobalWalls) {
+      const routeWalls = routeApi.route.walls;
+      if (routeWalls) {
+        const hasRouteWalls = Object.values(routeWalls).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+        if (hasRouteWalls) {
+          console.log('[Walls Migration] Migrating walls from route to global:', routeWalls);
+          updateGlobalWalls(routeWalls as any);
+        }
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ロードモーダルを開いた時にプリセットをメモリにロード、
   // 閉じた時にメモリから破棄する (= プリセットの routeData が巨大なので
   // 必要な時だけ展開することでメモリを節約する)
@@ -834,8 +871,10 @@ export default function App() {
   const historyApi = useHistory({
     getRoute: () => routeApi.route,
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
+    getWalls: () => globalWallsRef.current as any,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
+    replaceWalls: updateGlobalWalls as any,
     persistGlobalMarkers: (markers) => {
       localStorage.setItem('heist_global_markers', JSON.stringify(markers));
       if (isLocal) {
@@ -901,15 +940,15 @@ export default function App() {
   // --- Cross-cutting handlers (coordinate multiple stores) ---
 
   const updateStrokes = async (newStrokes: DrawingStroke[]) => {
-    const strokesData = routeApi.route.strokes as any;
+    const strokesData = routeRef.current.strokes as any;
     const prevStrokes = strokesData[currentFloor] || [];
     
     if (newStrokes.length > prevStrokes.length && bypassWallsEnabled) {
       const addedStroke = newStrokes[newStrokes.length - 1];
       const pts = addedStroke.points;
       
-      const { isIntersecting, findBypassingPath } = await import('./utils/PathFinder');
-      const allWalls = (routeApi.route.walls || {}) as any;
+      const { isIntersecting } = await import('./utils/PathFinder');
+      const allWalls = globalWallsRef.current as any;
       let hitsWall = false;
       
       const flWalls = allWalls[currentFloor] || [];
@@ -928,60 +967,102 @@ export default function App() {
       if (hitsWall) {
         const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
         const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
-        const allMarkers = [...globalMarkersStore.globalMarkers, ...routeApi.route.markers];
+        const allMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
         
+        // Show loading notification first
         notification.show(t('壁を迂回するルートを計算中...'));
-        const path = findBypassingPath(startNode, endNode, allWalls, allMarkers);
         
-        if (path && path.length >= 2) {
-          const groupedStrokes: Record<string, { x: number; y: number }[]> = {};
-          let currentGroup: { x: number; y: number }[] = [];
-          let currentGroupFloor = path[0].floor;
+        // Yield thread using setTimeout to ensure the loading notification is rendered on screen
+        setTimeout(async () => {
+          const { findBypassingPath } = await import('./utils/PathFinder');
+          const pathfindStartTime = performance.now();
+          const { path, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers);
+          const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
           
-          path.forEach((node) => {
-            if (node.floor !== currentGroupFloor) {
-              if (currentGroup.length >= 2) {
-                if (!groupedStrokes[currentGroupFloor]) groupedStrokes[currentGroupFloor] = [];
-                groupedStrokes[currentGroupFloor].push(...currentGroup);
-              }
-              currentGroup = [];
-              currentGroupFloor = node.floor;
-            }
-            currentGroup.push({ x: node.x, y: node.y });
-          });
-          if (currentGroup.length >= 2) {
-            if (!groupedStrokes[currentGroupFloor]) groupedStrokes[currentGroupFloor] = [];
-            groupedStrokes[currentGroupFloor].push(...currentGroup);
-          }
+          if (path && path.length >= 2) {
+            // Split path into segments at portal (warp/stairs) teleport boundaries.
+            // When two consecutive nodes are a linked portal pair, we cut the stroke
+            // there and do NOT draw a line between them.
+            const segments: { floor: string; points: { x: number; y: number }[] }[] = [];
+            let currentSegment: { x: number; y: number }[] = [];
+            let currentSegFloor = path[0].floor;
 
-          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
-          
-          routeApi.setRoute(prev => {
-            const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
-            
-            Object.keys(groupedStrokes).forEach(fl => {
-              const pointsForFloor = groupedStrokes[fl];
-              const baseList = fl === currentFloor ? newStrokes.slice(0, -1) : (nextStrokes[fl] || []);
-              
-              nextStrokes[fl] = [
-                ...baseList,
-                {
-                  ...addedStroke,
-                  points: pointsForFloor,
-                  originalPoints: pointsForFloor
+            for (let pi = 0; pi < path.length; pi++) {
+              const node = path[pi];
+              const prevNode = pi > 0 ? path[pi - 1] : null;
+
+              // Detect portal teleport: prev is portal, current is portal, and they are linked
+              const isTeleport = prevNode && prevNode.isPortal && node.isPortal &&
+                prevNode.markerId && node.markerId &&
+                (prevNode.linkedMarkerId === node.markerId || node.linkedMarkerId === prevNode.markerId);
+
+              if (isTeleport) {
+                // End previous segment at the portal entrance (prevNode) center
+                if (currentSegment.length >= 1) {
+                  // prevNode was already added, so this segment is complete
+                  if (currentSegment.length >= 2) {
+                    segments.push({ floor: currentSegFloor, points: [...currentSegment] });
+                  }
                 }
-              ];
+                // Start new segment from portal exit (current node) center
+                currentSegment = [{ x: node.x, y: node.y }];
+                currentSegFloor = node.floor;
+              } else {
+                // Floor change without portal (shouldn't happen but handle it)
+                if (prevNode && node.floor !== prevNode.floor) {
+                  if (currentSegment.length >= 2) {
+                    segments.push({ floor: currentSegFloor, points: [...currentSegment] });
+                  }
+                  currentSegment = [{ x: node.x, y: node.y }];
+                  currentSegFloor = node.floor;
+                } else {
+                  currentSegment.push({ x: node.x, y: node.y });
+                }
+              }
+            }
+            // Flush last segment
+            if (currentSegment.length >= 2) {
+              segments.push({ floor: currentSegFloor, points: currentSegment });
+            }
+
+            historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
+            
+            routeApi.setRoute(prev => {
+              const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
+              
+              segments.forEach((seg, segIdx) => {
+                const fl = seg.floor;
+                const baseList = segIdx === 0 && fl === currentFloor
+                  ? newStrokes.slice(0, -1)
+                  : (nextStrokes[fl] || []);
+
+                nextStrokes[fl] = [
+                  ...(segIdx === 0 ? baseList : (nextStrokes[fl] || [])),
+                  {
+                    ...addedStroke,
+                    points: seg.points,
+                    originalPoints: seg.points
+                  }
+                ];
+              });
+              return { ...prev, strokes: nextStrokes as any };
             });
-            return { ...prev, strokes: nextStrokes as any };
-          });
-          
-          notification.show(t('壁を迂回するルートを自動生成しました'));
-          return;
-        } else {
-          notification.show(t('壁を越えて迂回する経路が見つかりません。操作をキャンセルしました。'));
-          return;
-        }
-      }
+            
+            notification.show(t('壁を迂回するルートを自動生成しました ({0}ms / 最大 500ms)', String(pathfindElapsed)));
+          } else {
+            const isolated = portalStats.details.filter(p => p.edges === 0).map(p => p.name);
+            let errorMsg = t('壁を越えて迂回する経路が見つかりません ({0}ms)。操作をキャンセルしました。', String(pathfindElapsed));
+            if (isolated.length > 0) {
+              errorMsg += t(' 🚫接続口がブロックされています: ') + isolated.slice(0, 3).join(', ');
+            }
+            notification.show(errorMsg);
+            
+            // Force redraw of canvas by triggering state shallow copy update
+            routeApi.setRoute(prev => ({ ...prev }));
+          }
+        }, 50);
+      return;
+    }
     }
 
     historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
@@ -2071,19 +2152,16 @@ export default function App() {
                     const detected = await detectWallsFromImage(path as string);
                     if (detected.length > 0) {
                       const nextWalls = {
-                        ...(routeApi.route.walls || {}),
+                        ...globalWalls,
                         [currentFloor]: detected
                       };
                       historyApi.pushHistory(
-                        routeApi.route.strokes,
-                        routeApi.route.markers,
+                        routeRef.current.strokes,
+                        routeRef.current.markers,
                         globalMarkersStore.globalMarkers,
                         nextWalls
                       );
-                      routeApi.setRoute(prev => ({
-                        ...prev,
-                        walls: nextWalls
-                      }));
+                      updateGlobalWalls(nextWalls);
                       notification.show(t('{0} 本の壁を自動検出しました', String(detected.length)));
                     } else {
                       notification.show(t('壁が検出されませんでした（または読み込み失敗）'));
@@ -2097,19 +2175,16 @@ export default function App() {
                   style={{ width: '100%', padding: '6px' }}
                   onClick={() => {
                     const nextWalls = {
-                      ...(routeApi.route.walls || {}),
+                      ...globalWalls,
                       [currentFloor]: []
                     };
                     historyApi.pushHistory(
-                      routeApi.route.strokes,
-                      routeApi.route.markers,
+                      routeRef.current.strokes,
+                      routeRef.current.markers,
                       globalMarkersStore.globalMarkers,
                       nextWalls
                     );
-                    routeApi.setRoute(prev => ({
-                      ...prev,
-                      walls: nextWalls
-                    }));
+                    updateGlobalWalls(nextWalls);
                     notification.show(t('壁データをクリアしました'));
                   }}
                 >
@@ -2366,22 +2441,19 @@ export default function App() {
             onMarkersChange={updateMarkers}
             hideStrokesDuringWalls={hideStrokesDuringWalls}
             hideMarkersDuringWalls={hideMarkersDuringWalls}
-            walls={routeApi.route.walls ? routeApi.route.walls[currentFloor] : []}
+            walls={globalWalls[currentFloor] || []}
             onWallsChange={(newWalls) => {
               const nextWalls = {
-                ...(routeApi.route.walls || {}),
+                ...globalWalls,
                 [currentFloor]: newWalls
               };
               historyApi.pushHistory(
-                routeApi.route.strokes,
-                routeApi.route.markers,
+                routeRef.current.strokes,
+                routeRef.current.markers,
                 globalMarkersStore.globalMarkers,
                 nextWalls
               );
-              routeApi.setRoute(prev => ({
-                ...prev,
-                walls: nextWalls
-              }));
+              updateGlobalWalls(nextWalls);
             }}
             onSvgStringReady={setSvgString}
             canvasRef={canvasRef}
