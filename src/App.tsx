@@ -976,72 +976,52 @@ export default function App() {
         setTimeout(async () => {
           const { findBypassingPath } = await import('./utils/PathFinder');
           const pathfindStartTime = performance.now();
-          const { path, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers);
+          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers);
           const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
           
           if (path && path.length >= 2) {
-            // Split path into segments at portal (warp/stairs) teleport boundaries.
-            // When two consecutive nodes are a linked portal pair, we cut the stroke
-            // there and do NOT draw a line between them.
+            // Use teleportIndices from PathFinder to split path into segments.
+            // teleportIndices[k] = i means path[i]→path[i+1] is a teleport (no line).
+            const teleportSet = new Set(teleportIndices);
             const segments: { floor: string; points: { x: number; y: number }[] }[] = [];
-            let currentSegment: { x: number; y: number }[] = [];
-            let currentSegFloor = path[0].floor;
+            let seg: { x: number; y: number }[] = [];
+            let segFloor = path[0].floor;
 
-            for (let pi = 0; pi < path.length; pi++) {
-              const node = path[pi];
-              const prevNode = pi > 0 ? path[pi - 1] : null;
+            for (let i = 0; i < path.length; i++) {
+              seg.push({ x: path[i].x, y: path[i].y });
 
-              // Detect portal teleport: prev is portal, current is portal, and they are linked
-              const isTeleport = prevNode && prevNode.isPortal && node.isPortal &&
-                prevNode.markerId && node.markerId &&
-                (prevNode.linkedMarkerId === node.markerId || node.linkedMarkerId === prevNode.markerId);
-
-              if (isTeleport) {
-                // End previous segment at the portal entrance (prevNode) center
-                if (currentSegment.length >= 1) {
-                  // prevNode was already added, so this segment is complete
-                  if (currentSegment.length >= 2) {
-                    segments.push({ floor: currentSegFloor, points: [...currentSegment] });
-                  }
+              if (teleportSet.has(i)) {
+                // path[i] → path[i+1] is teleport. End segment here.
+                if (seg.length >= 2) {
+                  segments.push({ floor: segFloor, points: seg });
                 }
-                // Start new segment from portal exit (current node) center
-                currentSegment = [{ x: node.x, y: node.y }];
-                currentSegFloor = node.floor;
-              } else {
-                // Floor change without portal (shouldn't happen but handle it)
-                if (prevNode && node.floor !== prevNode.floor) {
-                  if (currentSegment.length >= 2) {
-                    segments.push({ floor: currentSegFloor, points: [...currentSegment] });
-                  }
-                  currentSegment = [{ x: node.x, y: node.y }];
-                  currentSegFloor = node.floor;
-                } else {
-                  currentSegment.push({ x: node.x, y: node.y });
-                }
+                seg = []; // next iteration will start fresh segment
+                if (i + 1 < path.length) segFloor = path[i + 1].floor;
               }
             }
-            // Flush last segment
-            if (currentSegment.length >= 2) {
-              segments.push({ floor: currentSegFloor, points: currentSegment });
+            if (seg.length >= 2) {
+              segments.push({ floor: segFloor, points: seg });
             }
+
+            console.log('[Bypass] segments:', segments.length, 'teleports:', teleportIndices.length);
 
             historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
             
             routeApi.setRoute(prev => {
               const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
               
-              segments.forEach((seg, segIdx) => {
-                const fl = seg.floor;
-                const baseList = segIdx === 0 && fl === currentFloor
+              segments.forEach((s, si) => {
+                const fl = s.floor;
+                const base = si === 0 && fl === currentFloor
                   ? newStrokes.slice(0, -1)
                   : (nextStrokes[fl] || []);
 
                 nextStrokes[fl] = [
-                  ...(segIdx === 0 ? baseList : (nextStrokes[fl] || [])),
+                  ...(si === 0 ? base : (nextStrokes[fl] || [])),
                   {
                     ...addedStroke,
-                    points: seg.points,
-                    originalPoints: seg.points
+                    points: s.points,
+                    originalPoints: s.points
                   }
                 ];
               });

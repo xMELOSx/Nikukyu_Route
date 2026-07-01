@@ -526,6 +526,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return ids;
   }, [autoRouteSegments]);
 
+  // 現在地から一番近く、起動中 (=phoneActive=true) の ReroRero電話ボックスを
+  // 常時起動 (=phoneLocked=true) を除外して求める。コンパス表示用。
+  const nearestActivePhone = useMemo(() => {
+    if (!autoRouteActive || !currentPosition) return null;
+    let best: HeistMarker | null = null;
+    let bestDist = Infinity;
+    for (const m of markers) {
+      if (m.type !== 'phone') continue;
+      if (!m.phoneActive) continue;
+      if (m.phoneLocked) continue;
+      const dx = m.x - currentPosition.x;
+      const dy = m.y - currentPosition.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = m;
+      }
+    }
+    return best;
+  }, [autoRouteActive, currentPosition, markers]);
+
   // Clean up animation frame on unmount
   useEffect(() => {
     return () => {
@@ -2916,6 +2937,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               <div className="current-position-pulse" />
             </div>
           )}
+
+          {/* Nearest active ReroRero電話ボックス の方向コンパス (常時起動は除外) */}
+          {autoRouteActive && currentPosition && nearestActivePhone && (() => {
+            const dx = nearestActivePhone.x - currentPosition.x;
+            const dy = nearestActivePhone.y - currentPosition.y;
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+            const dist = Math.hypot(dx, dy);
+            return (
+              <div
+                className="phone-compass-indicator"
+                style={{
+                  left: `${currentPosition.x}px`,
+                  top: `${currentPosition.y}px`,
+                  transform: `translate(-50%, -50%) scale(${Math.min(3, 1 / Math.sqrt(zoom))}) rotate(${angle}deg)`,
+                  transformOrigin: 'center center'
+                }}
+                title={`📞 ${Math.round(dist)}px`}
+              >
+                <div className="phone-compass-arrow">▶</div>
+                <div className="phone-compass-label">📞</div>
+              </div>
+            );
+          })()}
 
           {/* Auto-placed start marker (dummy) */}
           {autoStartMarker && autoStartMarker.floor === floor && (
