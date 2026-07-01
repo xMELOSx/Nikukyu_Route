@@ -530,8 +530,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 現在地から一番近く、起動中 (=phoneActive=true) の ReroRero電話ボックスを
   // 常時起動 (=phoneLocked=true) を除外して求める。コンパス表示用。
+  // autoRouteActive には依存しない (手動で現在地を設定しているだけでも表示する)
   const nearestActivePhone = useMemo(() => {
-    if (!autoRouteActive || !showPhoneCompass || !currentPosition) return null;
+    if (!showPhoneCompass || !currentPosition) return null;
     let best: HeistMarker | null = null;
     let bestDist = Infinity;
     for (const m of markers) {
@@ -547,7 +548,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
     return best;
-  }, [autoRouteActive, showPhoneCompass, currentPosition, markers]);
+  }, [showPhoneCompass, currentPosition, markers]);
 
   // Clean up animation frame on unmount
   useEffect(() => {
@@ -2946,18 +2947,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const dy = nearestActivePhone.y - currentPosition.y;
             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
             const dist = Math.hypot(dx, dy);
+            // scale は親 .canvas-container の zoom に合わせた補正のみ。
+            // rotate は矢印要素側で行い、ラッパー (📞 の中心) は回転させない。
+            const compScale = Math.min(3, 1 / Math.sqrt(zoom));
             return (
               <div
                 className="phone-compass-indicator"
                 style={{
                   left: `${currentPosition.x}px`,
                   top: `${currentPosition.y}px`,
-                  transform: `translate(-50%, -50%) scale(${Math.min(3, 1 / Math.sqrt(zoom))}) rotate(${angle}deg)`,
+                  transform: `translate(-50%, -50%) scale(${compScale})`,
                   transformOrigin: 'center center'
                 }}
                 title={`📞 ${Math.round(dist)}px`}
               >
-                <div className="phone-compass-arrow">▶</div>
+                <div
+                  className="phone-compass-arrow"
+                  style={{ transform: `translateY(-50%) rotate(${angle}deg)` }}
+                >▶</div>
                 <div className="phone-compass-label">📞</div>
               </div>
             );

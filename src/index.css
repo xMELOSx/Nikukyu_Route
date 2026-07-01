@@ -1136,12 +1136,14 @@ select.input-cyber {
   position: absolute;
   right: 4px;
   top: 50%;
-  transform: translateY(-50%);
+  /* transform は JSX から rotate(angle) として渡される (translateY は
+     arrow 自身の縦中央合わせなので別途 translateY(-50%) を JSX で追加) */
   font-size: 22px;
   line-height: 1;
   color: #ff00ff;
   text-shadow: 0 0 4px #ffffff, 0 0 8px #ff00ff, 0 0 14px rgba(255, 0, 255, 0.9);
   animation: phone-compass-pulse 1.4s infinite ease-in-out;
+  transform-origin: center center;
 }
 
 .phone-compass-label {
@@ -1152,19 +1154,19 @@ select.input-cyber {
   font-size: 18px;
   line-height: 1;
   filter: drop-shadow(0 0 3px #ffffff) drop-shadow(0 0 6px #ff00ff);
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 0, 255, 0.6);
   border-radius: 50%;
-  padding: 2px 4px;
+  padding: 2px 5px;
+  z-index: 1;
 }
 
 @keyframes phone-compass-pulse {
   0%, 100% {
     opacity: 0.7;
-    transform: translateY(-50%) translateX(0);
   }
   50% {
     opacity: 1;
-    transform: translateY(-50%) translateX(3px);
   }
 }
 
