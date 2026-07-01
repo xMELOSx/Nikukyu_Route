@@ -406,7 +406,7 @@ export function useAutoRouteEngine({
     if (!onAutoRouteStatusChange) return;
     const sendStatus = () => {
       setAutoRouteElapsed(autoRouteElapsedRef.current);
-      if (latestPositionRef.current) {
+      if (autoRouteRunning && latestPositionRef.current) {
         setCurrentPosition(latestPositionRef.current);
       }
       const elapsed = autoRouteElapsedRef.current;
