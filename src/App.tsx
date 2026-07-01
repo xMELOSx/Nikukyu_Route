@@ -541,7 +541,7 @@ export default function App() {
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>('move');
   const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
   const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
-  const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(true);
+  const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(false);
   const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
   const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
   const [eraseSize, setEraseSize] = useState<number>(16);
@@ -1043,8 +1043,9 @@ export default function App() {
             }
             notification.show(errorMsg);
             
-            // Force redraw of canvas by triggering state shallow copy update
-            routeApi.setRoute(prev => ({ ...prev }));
+            // Force redraw of canvas by changing strokes reference so MapCanvas's
+            // strokes useEffect (which clears and redraws the canvas) fires.
+            routeApi.setRoute(prev => ({ ...prev, strokes: { ...prev.strokes } }));
           }
         }, 50);
       return;
@@ -2147,6 +2148,7 @@ export default function App() {
                     const { detectWallsFromImage } = await import('./utils/WallDetector');
                     const detected = await detectWallsFromImage(path as string);
                     if (detected.length > 0) {
+                      const prevWalls = JSON.parse(JSON.stringify(globalWalls));
                       const nextWalls = {
                         ...globalWalls,
                         [currentFloor]: detected
@@ -2155,7 +2157,7 @@ export default function App() {
                         routeRef.current.strokes,
                         routeRef.current.markers,
                         globalMarkersStore.globalMarkers,
-                        nextWalls
+                        prevWalls
                       );
                       updateGlobalWalls(nextWalls);
                       notification.show(t('{0} 本の壁を自動検出しました', String(detected.length)));
@@ -2170,6 +2172,7 @@ export default function App() {
                   className="btn-cyber danger"
                   style={{ width: '100%', padding: '6px' }}
                   onClick={() => {
+                    const prevWalls = JSON.parse(JSON.stringify(globalWalls));
                     const nextWalls = {
                       ...globalWalls,
                       [currentFloor]: []
@@ -2178,7 +2181,7 @@ export default function App() {
                       routeRef.current.strokes,
                       routeRef.current.markers,
                       globalMarkersStore.globalMarkers,
-                      nextWalls
+                      prevWalls
                     );
                     updateGlobalWalls(nextWalls);
                     notification.show(t('壁データをクリアしました'));
@@ -2439,6 +2442,7 @@ export default function App() {
             hideMarkersDuringWalls={hideMarkersDuringWalls}
             walls={globalWalls[currentFloor] || []}
             onWallsChange={(newWalls) => {
+              const prevWalls = JSON.parse(JSON.stringify(globalWalls));
               const nextWalls = {
                 ...globalWalls,
                 [currentFloor]: newWalls
@@ -2447,7 +2451,7 @@ export default function App() {
                 routeRef.current.strokes,
                 routeRef.current.markers,
                 globalMarkersStore.globalMarkers,
-                nextWalls
+                prevWalls
               );
               updateGlobalWalls(nextWalls);
             }}
