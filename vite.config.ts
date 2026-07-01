@@ -236,6 +236,17 @@ export default defineConfig({
           console.log('Copied global_markers.json to dist/ during build');
         }
 
+        const wallsSrcPath = path.resolve(__dirname, 'global_walls.json');
+        const wallsDestPath = path.resolve(__dirname, 'dist/global_walls.json');
+        if (fs.existsSync(wallsSrcPath)) {
+          const distDir = path.dirname(wallsDestPath);
+          if (!fs.existsSync(distDir)) {
+            fs.mkdirSync(distDir, { recursive: true });
+          }
+          fs.copyFileSync(wallsSrcPath, wallsDestPath);
+          console.log('Copied global_walls.json to dist/ during build');
+        }
+
         const presetSrcPath = path.resolve(__dirname, 'default_preset.json');
         const presetDestPath = path.resolve(__dirname, 'dist/default_preset.json');
         if (fs.existsSync(presetSrcPath)) {
@@ -307,6 +318,8 @@ export default defineConfig({
       ignored: [
         path.resolve(__dirname, 'global_markers.json'),
         '**/global_markers.json',
+        path.resolve(__dirname, 'global_walls.json'),
+        '**/global_walls.json',
         path.resolve(__dirname, 'default_preset.json'),
         '**/default_preset.json',
         path.resolve(__dirname, 'presets.json'),

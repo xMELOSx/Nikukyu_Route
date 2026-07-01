@@ -42,6 +42,7 @@ import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
 import { useGlobalDefaults, type GlobalDefaults } from './hooks/useGlobalDefaults';
 import { useGlobalMarkers } from './hooks/useGlobalMarkers';
+import { useGlobalWalls } from './hooks/useGlobalWalls';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
@@ -665,6 +666,15 @@ export default function App() {
     localStorage.setItem('heist_text_pin_pass_through', String(textPinPassThrough));
   }, [textPinPassThrough]);
 
+  // 最寄り起動中 ReroRero電話ボックス の方向コンパス (default: オフ)
+  const [showPhoneCompass, setShowPhoneCompass] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_phone_compass');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_phone_compass', String(showPhoneCompass));
+  }, [showPhoneCompass]);
+
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
   const [markerScale, setMarkerScale] = useState<number>(() => {
@@ -773,6 +783,14 @@ export default function App() {
 
   const globalMarkersStore = useGlobalMarkers({ isLocal });
 
+  // Global walls are shared across all plans. The source of truth comes from
+  // `global_walls.json` (committed to the repo) for the shared default, with
+  // localStorage overriding on a per-device basis.
+  const globalWallsStore = useGlobalWalls({ isLocal });
+  const globalWalls = globalWallsStore.walls;
+  const globalWallsRef = globalWallsStore.wallsRef;
+  const updateGlobalWalls = globalWallsStore.replaceWalls;
+
   const routeApi = useRoute({
     isLocal,
     globalDefaultsRef,
@@ -788,40 +806,6 @@ export default function App() {
 
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
-
-  // Global Walls State (Shared across all plans, stored in localStorage)
-  const [globalWalls, setGlobalWalls] = useState<Record<string, any>>(() => {
-    const saved = localStorage.getItem('heist_global_walls');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return { main: [] };
-  });
-  const globalWallsRef = useRef(globalWalls);
-  globalWallsRef.current = globalWalls;
-
-  const updateGlobalWalls = (next: Record<string, any>) => {
-    setGlobalWalls(next);
-    localStorage.setItem('heist_global_walls', JSON.stringify(next));
-  };
-
-  // Migration: if globalWalls is empty but route has walls, migrate them
-  useEffect(() => {
-    const gw = globalWallsRef.current;
-    const hasGlobalWalls = Object.values(gw).some((arr: any) => Array.isArray(arr) && arr.length > 0);
-    if (!hasGlobalWalls) {
-      const routeWalls = routeApi.route.walls;
-      if (routeWalls) {
-        const hasRouteWalls = Object.values(routeWalls).some((arr: any) => Array.isArray(arr) && arr.length > 0);
-        if (hasRouteWalls) {
-          console.log('[Walls Migration] Migrating walls from route to global:', routeWalls);
-          updateGlobalWalls(routeWalls as any);
-        }
-      }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ロードモーダルを開いた時にプリセットをメモリにロード、
   // 閉じた時にメモリから破棄する (= プリセットの routeData が巨大なので
@@ -1695,6 +1679,16 @@ export default function App() {
                     🖱️ 表示モードでテキストピンのクリックを透過
                   </label>
 
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={showPhoneCompass}
+                      onChange={(e) => setShowPhoneCompass(e.target.checked)}
+                      style={{ accentColor: '#ff00ff', cursor: 'pointer' }}
+                    />
+                    🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)
+                  </label>
+
                   <div style={{ marginTop: '8px' }}>
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0' }} />
                     <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
@@ -2170,6 +2164,33 @@ export default function App() {
                 >
                   🗑️ {t('壁データをクリア')}
                 </button>
+                <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                  <button
+                    className="btn-cyber"
+                    style={{ flex: 1, padding: '5px', fontSize: '10px' }}
+                    title={t('現在の壁データを global_walls.json 形式で書き出します。共有したい場合はこのファイルをリポジトリにコミットしてください。')}
+                    onClick={() => {
+                      globalWallsStore.downloadJson('global_walls.json');
+                      notification.show(t('壁データをJSONとして書き出しました'));
+                    }}
+                  >
+                    💾 {t('JSONに保存')}
+                  </button>
+                  <button
+                    className="btn-cyber"
+                    style={{ flex: 1, padding: '5px', fontSize: '10px' }}
+                    title={t('ローカル保存と全フロア壁データを破棄し、リポジトリの global_walls.json を再読込します。')}
+                    onClick={() => {
+                      globalWallsStore.clearFloorWalls();
+                      try { localStorage.removeItem('heist_global_walls_v2'); } catch {}
+                      notification.show(t('壁データをデフォルトに戻しました'));
+                      // ページ再読込で global_walls.json から再シード
+                      setTimeout(() => window.location.reload(), 400);
+                    }}
+                  >
+                    ↩️ {t('デフォルトに戻す')}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
@@ -2460,6 +2481,7 @@ export default function App() {
             hideBranchLines={hideBranchLines}
             branchLines1px={branchLines1px}
             textPinPassThrough={textPinPassThrough}
+            showPhoneCompass={showPhoneCompass}
             eraseTarget={eraseTarget}
             eraseDefaultBehavior={eraseDefaultBehavior}
             eraseSize={eraseSize}

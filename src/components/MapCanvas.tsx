@@ -236,7 +236,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     let partner = m.linkedWarpId ? allMarkers.find(mk => mk.id === m.linkedWarpId) : null;
     let isIncoming = false;
     if (!partner) {
-      partner = allMarkers.find(mk => mk.linkedWarpId === m.id && mk.floor === m.floor && (mk.type === 'warp' || mk.type === 'iwarp' || mk.type === 'stairs'));
+      partner = allMarkers.find(mk => mk.linkedWarpId === m.id && (mk.type === 'warp' || mk.type === 'iwarp' || mk.type === 'stairs'));
       if (partner) {
         isIncoming = true;
       }
@@ -791,7 +791,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -808,9 +808,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const cleaned = new Set<number>();
       for (const idx of prev) {
         if (idx < strokes.length) cleaned.add(idx);
-      }
-      if (cleaned.size !== prev.size) {
-        onMeasureSelectedStrokeIdxsChange?.(cleaned);
       }
       return cleaned;
     });
@@ -829,18 +826,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     prevStrokesLengthRef.current = strokes.length;
   }, [strokes.length]);
 
-  // 親の measureSelectedStrokeIdxs が変更されたら、ローカルの highlightedStrokeIdxs に同期する
-  useEffect(() => {
-    if (measureSelectedStrokeIdxs) {
-      setHighlightedStrokeIdxs(prev => {
-        const prevArr = Array.from(prev).sort().join(',');
-        const nextArr = Array.from(measureSelectedStrokeIdxs).sort().join(',');
-        if (prevArr === nextArr) return prev;
-        return new Set(measureSelectedStrokeIdxs);
-      });
-    }
-  }, [measureSelectedStrokeIdxs]);
-
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
   //                     セットに何かある → 「最後に表示していたセット」をそのまま復元
@@ -852,7 +837,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (strokes.length === 0) return prev; // 線がまだ無い → 何もしない
         const next = new Set(prev);
         next.add(strokes.length - 1);
-        onMeasureSelectedStrokeIdxsChange?.(next);
         return next;
       });
     }
@@ -1754,7 +1738,82 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         erasedMarkerIdsRef.current.clear();
       }
       if (toolMode === 'draw-wall' && currentPoints.length === 2) {
-        onWallsChange?.([...walls, [currentPoints[0], currentPoints[1]]]);
+        let p1 = currentPoints[0];
+        let p2 = currentPoints[1];
+        const SNAP_WALL_THRESHOLD = 8;
+
+        const getClosestPointOnSegment = (p: Point, a: Point, b: Point) => {
+          const abx = b.x - a.x;
+          const aby = b.y - a.y;
+          const l2 = abx * abx + aby * aby;
+          if (l2 === 0) return { point: a, dist: Math.hypot(p.x - a.x, p.y - a.y), t: 0 };
+          let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / l2;
+          t = Math.max(0, Math.min(1, t));
+          const h = { x: a.x + t * abx, y: a.y + t * aby };
+          return { point: h, dist: Math.hypot(p.x - h.x, p.y - h.y), t };
+        };
+
+        let activeWalls = walls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
+
+        const snapAndAlignOldPoints = (pt: Point): Point => {
+          let bestPt = pt;
+          let bestDist = SNAP_WALL_THRESHOLD;
+          let snapType = 'none';
+          let targetWallIdx = -1;
+          let targetPtIdx = -1;
+
+          // 1. Scan endpoint snap first
+          for (let i = 0; i < activeWalls.length; i++) {
+            const w = activeWalls[i];
+            for (let j = 0; j < 2; j++) {
+              const c = w[j];
+              const d = Math.hypot(c.x - pt.x, c.y - pt.y);
+              if (d < bestDist) {
+                bestDist = d;
+                bestPt = c;
+                snapType = 'endpoint';
+                targetWallIdx = i;
+                targetPtIdx = j;
+              }
+            }
+          }
+
+          // 2. Scan T-junction intersection if no endpoint snap
+          if (snapType === 'none') {
+            for (let i = 0; i < activeWalls.length; i++) {
+              const w = activeWalls[i];
+              const { point, dist, t } = getClosestPointOnSegment(pt, w[0], w[1]);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestPt = point;
+                if (t > 0.01 && t < 0.99) {
+                  snapType = 'midpoint';
+                  targetWallIdx = i;
+
+                }
+              }
+            }
+          }
+
+          // Align coordinates to the newest point
+          if (snapType === 'endpoint' && targetWallIdx >= 0 && targetPtIdx >= 0) {
+            activeWalls[targetWallIdx][targetPtIdx] = { ...pt };
+            return pt;
+          } else if (snapType === 'midpoint' && targetWallIdx >= 0) {
+            const w = activeWalls[targetWallIdx];
+            activeWalls.splice(targetWallIdx, 1, [w[0], { ...pt }], [{ ...pt }, w[1]]);
+            return pt;
+          }
+          return bestPt;
+        };
+
+        p1 = snapAndAlignOldPoints(p1);
+        p2 = snapAndAlignOldPoints(p2);
+
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
+          const merged = mergeWalls([...activeWalls, [p1, p2]], [p1, p2]);
+          onWallsChange?.(merged);
+        }
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
@@ -1878,13 +1937,76 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
+  const mergeWalls = (rawWalls: [Point, Point][], newestWall?: [Point, Point]): [Point, Point][] => {
+    if (rawWalls.length < 2) return rawWalls;
+    const list = rawWalls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
+    const priorityPoints: Point[] = newestWall ? [newestWall[0], newestWall[1]] : [];
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const w1 = list[i];
+          const w2 = list[j];
+          const matchThreshold = 1.5; // allow tiny snaps
+          let pStart = w1[0];
+          let pMid1 = w1[1];
+          let pMid2 = w2[0];
+          let pEnd = w2[1];
+          let connected = false;
+
+          if (Math.hypot(w1[1].x - w2[0].x, w1[1].y - w2[0].y) < matchThreshold) {
+            pStart = w1[0]; pMid1 = w1[1]; pMid2 = w2[0]; pEnd = w2[1];
+            connected = true;
+          } else if (Math.hypot(w1[1].x - w2[1].x, w1[1].y - w2[1].y) < matchThreshold) {
+            pStart = w1[0]; pMid1 = w1[1]; pMid2 = w2[1]; pEnd = w2[0];
+            connected = true;
+          } else if (Math.hypot(w1[0].x - w2[0].x, w1[0].y - w2[0].y) < matchThreshold) {
+            pStart = w1[1]; pMid1 = w1[0]; pMid2 = w2[0]; pEnd = w2[1];
+            connected = true;
+          } else if (Math.hypot(w1[0].x - w2[1].x, w1[0].y - w2[1].y) < matchThreshold) {
+            pStart = w1[1]; pMid1 = w1[0]; pMid2 = w2[1]; pEnd = w2[0];
+            connected = true;
+          }
+
+          if (connected) {
+            const cross = (pMid1.x - pStart.x) * (pEnd.y - pMid2.y) - (pMid1.y - pStart.y) * (pEnd.x - pMid2.x);
+            const len1 = Math.hypot(pMid1.x - pStart.x, pMid1.y - pStart.y);
+            const len2 = Math.hypot(pEnd.x - pMid2.x, pEnd.y - pMid2.y);
+            const isParallel = Math.abs(cross) / Math.max(1, len1 * len2) < 0.05;
+            const dot = (pMid1.x - pStart.x) * (pEnd.x - pMid2.x) + (pMid1.y - pStart.y) * (pEnd.y - pMid2.y);
+
+            if (isParallel && dot > 0) {
+              const snapToPriority = (pt: Point): Point => {
+                for (const p of priorityPoints) {
+                  if (Math.hypot(p.x - pt.x, p.y - pt.y) < matchThreshold + 1) {
+                    return p;
+                  }
+                }
+                return pt;
+              };
+              const finalStart = snapToPriority(pStart);
+              const finalEnd = snapToPriority(pEnd);
+              list[i] = [finalStart, finalEnd];
+              list.splice(j, 1);
+              merged = true;
+              break;
+            }
+          }
+        }
+        if (merged) break;
+      }
+    }
+    return list;
+  };
+
   const eraseWallsAtPoint = (pt: Point) => {
     const r = eraseSize;
     const remaining = walls.filter(w => {
       return getDistanceToSegment(pt, w[0], w[1]) > r;
     });
     if (remaining.length !== walls.length) {
-      onWallsChange?.(remaining);
+      onWallsChange?.(mergeWalls(remaining));
     }
   };
 
@@ -2569,10 +2691,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           height={4550}
         />
 
-        {/* Walls visualization layer */}
-        {((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
+        {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
+        {(toolMode === 'draw-wall' || toolMode === 'erase-wall') && ((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
           <svg
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 12 }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
           >
             {walls.map((w, idx) => (
@@ -2582,7 +2704,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={w[0].y}
                 x2={w[1].x}
                 y2={w[1].y}
-                stroke="rgba(255, 0, 85, 0.7)"
+                stroke="rgba(255, 85, 0, 0.85)"
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
@@ -2593,7 +2715,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={currentPoints[0].y}
                 x2={currentPoints[1].x}
                 y2={currentPoints[1].y}
-                stroke="#ff0055"
+                stroke="#ff5500"
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
