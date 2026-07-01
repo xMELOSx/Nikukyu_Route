@@ -161,6 +161,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       }
       data.markers = indiv;
       if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
+      // インポートJSON に customBg が埋まっていれば IndexedDB に保存
+      if (data.customBg.main) {
+        DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => { /* noop */ });
+      }
       data.bossCustomDurations = data.bossCustomDurations || {};
       data.battleCustomDurations = data.battleCustomDurations || {};
       data.pickingCustomDurations = data.pickingCustomDurations || {};
@@ -288,6 +292,8 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       };
       // カスタムBG (= base64 画像) は localStorage 容量を圧迫するため、
       // メモリには載せるが localStorage には保存しない。 これで QuotaExceededError を回避。
+      // PNGエクスポートでは BG は画像として焼き込まれるため、 PNGインポート時に
+      // customBg データを取り出すことはできない (= インポート後に BG は無し)。
       const toSaveToStorage: RouteData = {
         ...importedRoute,
         customBg: { main: null }
@@ -340,10 +346,17 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
+      // メモリに反映
       routeApi.setRoute(prev => ({ ...prev, customBg: { main: dataUrl } }));
+      // IndexedDB にも保存 (プランロード時に自動復元するため)
+      DataManager.saveCustomBg(routeApi.route.id, dataUrl).then((ok) => {
+        if (!ok) {
+          showNotification('⚠️ カスタムBGの保存に失敗しました (次回ロード時に復元できません)', 3000);
+        }
+      });
     };
     reader.readAsDataURL(f);
-  }, [routeApi]);
+  }, [routeApi, routeApi.route.id, showNotification]);
 
   return {
     jsonFileInputRef, bgFileInputRef,

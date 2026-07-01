@@ -42,20 +42,14 @@ export function isIntersecting(a: Point, b: Point, c: Point, d: Point, thickness
   return getSegmentsMinDistance(a, b, c, d) < thickness;
 }
 
-function hitsAnyWall(a: Point, b: Point, floor: string, walls: { [key: string]: [Point, Point][] }, thickness: number = 4.0): boolean {
-  const floorWalls = walls[floor] || [];
-  for (const w of floorWalls) {
-    if (isIntersecting(a, b, w[0], w[1], thickness)) return true;
-  }
-  return false;
-}
 
-const TELEPORT_COST = 5;
 
 export function findBypassingPath(
   start: PathNode, end: PathNode,
   walls: { [key: string]: [Point, Point][] },
-  markers: any[]
+  markers: any[],
+  hiddenIds?: Set<string>,
+  hiddenTypes?: Set<string>
 ): PathfindingResult {
   const distPointSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
     const ex = bx - ax, ey = by - ay;
@@ -70,6 +64,93 @@ export function findBypassingPath(
   const activeFloors = new Set<string>([start.floor, end.floor]);
   Object.keys(walls).forEach(fl => activeFloors.add(fl));
   markers.forEach(m => { if (m.floor) activeFloors.add(m.floor); });
+
+  // -------------------------------------------------------------
+  // Fast Spatial Hash for Wall collision checks
+  // Divide map into 100x100 cells. For any bounding box of a segment or point,
+  // query only the walls overlapping that cell bucket.
+  // -------------------------------------------------------------
+  const CELL_SIZE = 100;
+  const spatialGrid = new Map<string, [Point, Point][]>();
+
+  const getCellKeysForSegment = (p1: Point, p2: Point) => {
+    const keys = new Set<string>();
+    const minX = Math.floor(Math.min(p1.x, p2.x) / CELL_SIZE);
+    const maxX = Math.floor(Math.max(p1.x, p2.x) / CELL_SIZE);
+    const minY = Math.floor(Math.min(p1.y, p2.y) / CELL_SIZE);
+    const maxY = Math.floor(Math.max(p1.y, p2.y) / CELL_SIZE);
+
+    for (let cx = minX; cx <= maxX; cx++) {
+      for (let cy = minY; cy <= maxY; cy++) {
+        keys.add(`${cx},${cy}`);
+      }
+    }
+    return Array.from(keys);
+  };
+
+
+  // Build spatial grid for walls on all floors
+  Object.keys(walls).forEach(fl => {
+    const flWalls = walls[fl] || [];
+    flWalls.forEach(w => {
+      const keys = getCellKeysForSegment(w[0], w[1]);
+      keys.forEach(key => {
+        const fullKey = `${fl}:${key}`;
+        if (!spatialGrid.has(fullKey)) spatialGrid.set(fullKey, []);
+        spatialGrid.get(fullKey)!.push(w);
+      });
+    });
+  });
+
+  const getNearbyWallsForPoint = (fl: string, x: number, y: number, radius: number = 20): [Point, Point][] => {
+    const list: [Point, Point][] = [];
+    const minCx = Math.floor((x - radius) / CELL_SIZE);
+    const maxCx = Math.floor((x + radius) / CELL_SIZE);
+    const minCy = Math.floor((y - radius) / CELL_SIZE);
+    const maxCy = Math.floor((y + radius) / CELL_SIZE);
+
+    const seen = new Set<[Point, Point]>();
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const bucket = spatialGrid.get(`${fl}:${cx},${cy}`);
+        if (bucket) {
+          bucket.forEach(w => {
+            if (!seen.has(w)) {
+              seen.add(w);
+              list.push(w);
+            }
+          });
+        }
+      }
+    }
+    return list;
+  };
+
+  const getNearbyWallsForSegment = (fl: string, p1: Point, p2: Point): [Point, Point][] => {
+    const keys = getCellKeysForSegment(p1, p2);
+    const list: [Point, Point][] = [];
+    const seen = new Set<[Point, Point]>();
+    keys.forEach(key => {
+      const bucket = spatialGrid.get(`${fl}:${key}`);
+      if (bucket) {
+        bucket.forEach(w => {
+          if (!seen.has(w)) {
+            seen.add(w);
+            list.push(w);
+          }
+        });
+      }
+    });
+    return list;
+  };
+
+  const hitsAnyWallOptimized = (a: Point, b: Point, floor: string, thickness: number = 4.0): boolean => {
+    const nearby = getNearbyWallsForSegment(floor, a, b);
+    for (const w of nearby) {
+      if (isIntersecting(a, b, w[0], w[1], thickness)) return true;
+    }
+    return false;
+  };
 
   // Generate grid nodes on the floors to guarantee topological connectivity
   activeFloors.forEach(fl => {
@@ -90,10 +171,11 @@ export function findBypassingPath(
     const step = 18;
     for (let x = Math.floor(minX / step) * step; x <= maxX; x += step) {
       for (let y = Math.floor(minY / step) * step; y <= maxY; y += step) {
-        // Only keep if it does not touch any wall within 1px thickness
+        // Query nearby walls in spatial hash grid (radius 20 to comfortably cover segment check range)
         const pt = { x, y };
+        const nearby = getNearbyWallsForPoint(fl, pt.x, pt.y, 2);
         let touches = false;
-        for (const w of flWalls) {
+        for (const w of nearby) {
           if (distPointSeg(pt.x, pt.y, w[0].x, w[0].y, w[1].x, w[1].y) < 1.0) {
             touches = true;
             break;
@@ -176,7 +258,7 @@ export function findBypassingPath(
       const j = coordMap.get(key);
       if (j !== undefined && j > i) {
         const nj = uniqueNodes[j];
-        if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
+        if (!hitsAnyWallOptimized(ni, nj, ni.floor, 0.1)) {
           const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
           adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
           adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
@@ -184,7 +266,7 @@ export function findBypassingPath(
       }
     });
 
-    // 2. Portal connections (Only connect portals to grid if they have a valid partner linked)
+    // 2. Portal connections (Connect portals to grid. If the portal is hidden, do NOT allow physical entry from grid)
     if (ni.isPortal) {
       // Check if this portal has any valid pairing in markers
       const hasPartner = markers.some((x: any) =>
@@ -194,6 +276,12 @@ export function findBypassingPath(
         )
       );
 
+      // Check if the portal itself is hidden in the current user settings
+      const isPortalHidden = ni.markerId ? (
+        (hiddenIds && hiddenIds.has(ni.markerId)) || 
+        (hiddenTypes && ni.markerId && markers.some((m: any) => m.id === ni.markerId && hiddenTypes.has(m.type)))
+      ) : false;
+
       if (hasPartner) {
         for (let j = 0; j < uniqueNodes.length; j++) {
           if (i === j) continue;
@@ -201,25 +289,55 @@ export function findBypassingPath(
           if (ni.floor !== nj.floor) continue;
           const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
           if (d < 40) {
-            if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
-              adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
-              adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+            if (!hitsAnyWallOptimized(ni, nj, ni.floor, 0.1)) {
+              // If the portal is hidden, we only allow leaving it (ni -> nj), NOT entering it (nj -> ni)
+              if (isPortalHidden) {
+                adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+              } else {
+                // Normal bidirectional physical connection for visible portals
+                adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+                adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+              }
             }
           }
         }
       }
     }
-    // 3. Start/End Node connections (Allow start/end to connect to any node within 40px radius to snap to grid)
+    // 3. Start/End Node connections (Allow start/end to connect to regular grid nodes or portal nodes within 40px radius to snap to grid)
     if (i === 0 || i === 1) {
       for (let j = 0; j < uniqueNodes.length; j++) {
         if (i === j) continue;
         const nj = uniqueNodes[j];
+        
+        // Portal snapping constraints
+        if (nj.isPortal) {
+          const isTargetPortalHidden = nj.markerId ? (
+            (hiddenIds && hiddenIds.has(nj.markerId)) || 
+            (hiddenTypes && nj.markerId && markers.some((m: any) => m.id === nj.markerId && hiddenTypes.has(m.type)))
+          ) : false;
+          
+          if (isTargetPortalHidden) {
+            // For hidden portals:
+            // - Start node (i === 0) cannot snap TO it (cannot enter/start from a hidden portal)
+            // - End node (i === 1) CAN receive a connection FROM it (hidden portal -> end node is allowed as it exits the warp to reach target)
+            if (i === 0) {
+              continue;
+            }
+          }
+        }
+
         if (ni.floor !== nj.floor) continue;
         const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
         if (d < 40) {
-          if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
-            adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
-            adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+          if (!hitsAnyWallOptimized(ni, nj, ni.floor, 0.1)) {
+            if (nj.isPortal && i === 1) {
+              // One-way edge: only allow hidden portal -> end node (nj -> ni)
+              adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+            } else {
+              // Bidirectional connection for standard snapping
+              adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+              adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+            }
           }
         }
       }
@@ -238,7 +356,8 @@ export function findBypassingPath(
     const idxB = uniqueNodes.findIndex(n => n.markerId === partner.id);
     if (idxA >= 0 && idxB >= 0) {
       // Connect strictly A -> B (directed edge)
-      adj.get(idxA)!.push({ to: idxB, cost: TELEPORT_COST, isTeleport: true });
+      // Teleport cost is set to a minimal value (1) so that portals are heavily preferred shortcuts
+      adj.get(idxA)!.push({ to: idxB, cost: 1, isTeleport: true });
     }
   });
 
@@ -251,7 +370,7 @@ export function findBypassingPath(
     return { name: node.portalName || 'Portal', floor: node.floor, edges: physicalEdges };
   });
 
-  // A* search with state expansion (idx, wasTeleport) to block consecutive teleports!
+  // Dijkstra search with state expansion (idx, wasTeleport) to block consecutive teleports!
   // State representation: nodeIdx * 2 + (wasTeleport ? 1 : 0)
   const numStates = uniqueNodes.length * 2;
   const dist = new Array(numStates).fill(Infinity);
@@ -259,7 +378,7 @@ export function findBypassingPath(
   dist[0] = 0; // Start node (index 0, wasTeleport=0)
 
   // Simple binary heap/sorted queue implementation for high performance
-  const queue: { stateIdx: number; f: number }[] = [{ stateIdx: 0, f: Math.hypot(start.x - end.x, start.y - end.y) }];
+  const queue: { stateIdx: number; f: number }[] = [{ stateIdx: 0, f: 0 }];
 
   const insertQueue = (item: { stateIdx: number; f: number }) => {
     let low = 0, high = queue.length;
@@ -328,9 +447,8 @@ export function findBypassingPath(
       if (nd < dist[nextState]) {
         dist[nextState] = nd;
         parentState[nextState] = stateIdx;
-        const tn = uniqueNodes[edge.to];
-        const h = tn.floor === end.floor ? Math.hypot(tn.x - end.x, tn.y - end.y) : 0;
-        const f = nd + h;
+        // Use h = 0 to execute Dijkstra search, guaranteeing mathematically shortest paths
+        const f = nd;
 
         // Fast queue update
         const qi = queue.findIndex(q => q.stateIdx === nextState);

@@ -525,7 +525,9 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         data = {
           ...body,
           id: generateId('route'),
-          title: body.title
+          title: body.title,
+          // プリセット由来の BG を IndexedDB から引くためのキー
+          presetSourceId: presetId
         };
       } else {
         data = DataManager.loadFromLocalStorage(id);
@@ -623,6 +625,23 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         const gd = globalDefaultsRefRef.current.current;
         data.hiddenMarkers = [...new Set([...data.hiddenMarkers, ...(gd.hiddenMarkers || [])])];
         data.hiddenMarkerTypes = [...new Set([...data.hiddenMarkerTypes, ...(gd.hiddenMarkerTypes || [])])];
+      }
+      // カスタムBG は IndexedDB から自動復元 (ローカルセーブには保存していないため)
+      //   - localStorage 由来 (data.id に紐付く BG) があれば復元
+      //   - プリセット由来 (data.id は新規採番) は元の presetId を探して復元
+      const bgKeyForLookup = (data as any).presetSourceId || data.id;
+      const bgFromDb = await DataManager.loadCustomBg(bgKeyForLookup);
+      if (!data.customBg) data.customBg = { main: null };
+      if (bgFromDb) {
+        data.customBg = { ...data.customBg, main: bgFromDb };
+        // 復元した BG は新 ID (= プラン本体) に紐付けて保存しなおす
+        if (bgKeyForLookup !== data.id) {
+          DataManager.saveCustomBg(data.id, bgFromDb).catch(() => { /* noop */ });
+        }
+      } else if (data.customBg.main) {
+        // プラン本体に BG が埋まっている (= 他経路で持ち込まれたケース) なら
+        // IndexedDB にもミラーして、次回ロードに備える
+        DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => { /* noop */ });
       }
       setRouteWithGlobalDefaults(data);
       localStorage.setItem('heist_last_used_route_id', data.id);

@@ -981,19 +981,21 @@ export default function App() {
         const hiddenIds = new Set(routeRef.current.hiddenMarkers || []);
         const hiddenTypes = new Set(routeRef.current.hiddenMarkerTypes || []);
         
+
+
         const rawMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
-        // Collect all portal IDs that are part of a valid link pair (source or destination)
-        const linkedPortalIds = new Set<string>();
+        // Collect IDs of destinations of portals that are NOT hidden
+        const activeDestinations = new Set<string>();
         rawMarkers.forEach(m => {
-          if ((m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
-            linkedPortalIds.add(m.id);
-            linkedPortalIds.add(m.linkedWarpId);
+          const isHidden = hiddenIds.has(m.id) || hiddenTypes.has(m.type);
+          if (!isHidden && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
+            activeDestinations.add(m.linkedWarpId);
           }
         });
 
         const allMarkers = rawMarkers.filter(m => {
           if (m.type === 'goal') return true; // Always allow exit (goal) markers
-          if (linkedPortalIds.has(m.id)) return true; // Keep portal if it is part of a warp link (precedes hidden check)
+          if (activeDestinations.has(m.id)) return true; // Keep destination portal even if hidden
           if (hiddenIds.has(m.id)) return false;
           if (hiddenTypes.has(m.type)) return false;
           return true;
@@ -1006,7 +1008,7 @@ export default function App() {
         setTimeout(async () => {
           const { findBypassingPath } = await import('./utils/PathFinder');
           const pathfindStartTime = performance.now();
-          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers);
+          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes);
           const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
           
           if (path && path.length >= 2) {
@@ -1213,30 +1215,9 @@ export default function App() {
       const lastId = localStorage.getItem('heist_last_used_route_id');
       if (lastId) {
         try {
-          const data = DataManager.loadFromLocalStorage(lastId);
-          if (data) {
-            const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(data);
-            if (legacyMigrated || result.applied.length > 0) {
-              DataManager.saveToLocalStorage(migrated);
-            }
-            if (result.unknown) {
-              notification.show(
-                t('⚠️ 未登録バージョンのセーブデータです (v{0})。破損の可能性があります。', result.unknownVersion ?? ''),
-                5000
-              );
-            } else if (result.applied.length > 0) {
-              notification.show(
-                t('セーブデータを {0} 件マイグレーションしました (→ v{1})', String(result.applied.length), result.finalVersion ?? ''),
-                3000
-              );
-            }
-            routeApi.setRouteWithGlobalDefaults(migrated);
-            if (migrated.markerScale !== undefined) {
-              setMarkerScale(migrated.markerScale);
-              localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
-            }
-            notification.show(`${t('前回データを読み込みました: ')}${migrated.title}`);
-          }
+          // loadFromLocal 経由でロード (カスタムBG の IndexedDB 自動復元も行う)
+          // 注意: loadFromLocal は内部で通知を出すため、 ここでは追加通知しない
+          routeApi.loadFromLocal(lastId);
         } catch (e) {
           console.error('Auto-load failed: corrupted route data, clearing last-used ID', e);
           try { localStorage.removeItem('heist_last_used_route_id'); } catch { }
@@ -2816,7 +2797,11 @@ export default function App() {
                       </div>
                     )}
                     {routeApi.route.customBg[currentFloor] && isEditMode && (
-                      <button className="btn-cyber danger" style={{ padding: '4px', fontSize: '10px', marginTop: '4px' }} onClick={() => routeApi.setRoute(prev => ({ ...prev, customBg: { main: null } }))}>
+                      <button className="btn-cyber danger" style={{ padding: '4px', fontSize: '10px', marginTop: '4px' }} onClick={() => {
+                        const id = routeApi.route.id;
+                        routeApi.setRoute(prev => ({ ...prev, customBg: { main: null } }));
+                        DataManager.deleteCustomBg(id);
+                      }}>
                         Reset to Default Background
                       </button>
                     )}

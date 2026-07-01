@@ -670,6 +670,7 @@ export interface RouteData {
   hiddenMarkers?: string[]; // Global markers hidden in this specific plan
   hiddenMarkerTypes?: string[]; // Marker types hidden in this plan (e.g. ['eh', 'boss'])
   saveDataVersion?: string; // APP_VERSION at the time this save was last written
+  presetSourceId?: string; // ID of the preset this plan was created from
 }
 
 /**
@@ -1184,6 +1185,126 @@ export class DataManager {
       console.error('DataManager.saveToLocalStorage failed:', e);
       return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // カスタムBG (= base64 画像) の IndexedDB 経由 保存/ロード
+  // ---------------------------------------------------------------------------
+  //
+  // カスタムBG は base64 化された PNG/JPG データで、 1枚で数百KB 〜 数MB にもなる。
+  // localStorage は 5〜10MB の容量制限があり、 プランセーブ本体 (heist_route_<id>) を
+  // 圧迫するため、 容量の大きなカスタムBG は IndexedDB に分離して保存する。
+  //
+  // 設計:
+  //   - DB 名: `heist_custom_bg_db` / ObjectStore: `customBgs`
+  //   - キー: プラン ID (= route.id)。 1プラン = 1エントリ
+  //   - 値: { routeId, dataUrl, updatedAt }
+  //   - IndexedDB が利用できない環境 (プライベートブラウジング等) では
+  //     no-op (メモリ上だけで動作。 再ロードで消える)
+  // ---------------------------------------------------------------------------
+  private static customBgDbName = 'heist_custom_bg_db';
+  private static customBgStoreName = 'customBgs';
+  private static customBgDbVersion = 1;
+  private static customBgDbPromise: Promise<IDBDatabase | null> | null = null;
+
+  private static openCustomBgDb(): Promise<IDBDatabase | null> {
+    if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+    if (DataManager.customBgDbPromise) return DataManager.customBgDbPromise;
+    DataManager.customBgDbPromise = new Promise<IDBDatabase | null>((resolve) => {
+      try {
+        const req = indexedDB.open(DataManager.customBgDbName, DataManager.customBgDbVersion);
+        req.onupgradeneeded = () => {
+          try {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(DataManager.customBgStoreName)) {
+              db.createObjectStore(DataManager.customBgStoreName, { keyPath: 'routeId' });
+            }
+          } catch (e) {
+            console.error('customBg IDB upgrade failed:', e);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => {
+          console.error('customBg IDB open failed:', req.error);
+          resolve(null);
+        };
+        req.onblocked = () => resolve(null);
+      } catch (e) {
+        console.error('customBg IDB init failed:', e);
+        resolve(null);
+      }
+    });
+    return DataManager.customBgDbPromise;
+  }
+
+  /** カスタムBG 画像を IndexedDB に保存。 失敗しても例外を投げず false を返す。 */
+  static async saveCustomBg(routeId: string, dataUrl: string | null): Promise<boolean> {
+    if (!routeId) return false;
+    if (dataUrl == null) {
+      return DataManager.deleteCustomBg(routeId);
+    }
+    const db = await DataManager.openCustomBgDb();
+    if (!db) return false;
+    return new Promise<boolean>((resolve) => {
+      try {
+        const tx = db.transaction(DataManager.customBgStoreName, 'readwrite');
+        const store = tx.objectStore(DataManager.customBgStoreName);
+        const req = store.put({ routeId, dataUrl, updatedAt: Date.now() });
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => {
+          console.error('customBg IDB put failed:', req.error);
+          resolve(false);
+        };
+      } catch (e) {
+        console.error('customBg IDB save failed:', e);
+        resolve(false);
+      }
+    });
+  }
+
+  /** IndexedDB から BG を読み込む。 無ければ null。 */
+  static async loadCustomBg(routeId: string): Promise<string | null> {
+    if (!routeId) return null;
+    const db = await DataManager.openCustomBgDb();
+    if (!db) return null;
+    return new Promise<string | null>((resolve) => {
+      try {
+        const tx = db.transaction(DataManager.customBgStoreName, 'readonly');
+        const store = tx.objectStore(DataManager.customBgStoreName);
+        const req = store.get(routeId);
+        req.onsuccess = () => {
+          const rec = req.result;
+          if (rec && typeof rec.dataUrl === 'string') resolve(rec.dataUrl);
+          else resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      } catch (e) {
+        console.error('customBg IDB load failed:', e);
+        resolve(null);
+      }
+    });
+  }
+
+  /** IndexedDB から BG を削除。 失敗しても例外を投げない。 */
+  static async deleteCustomBg(routeId: string): Promise<boolean> {
+    if (!routeId) return false;
+    const db = await DataManager.openCustomBgDb();
+    if (!db) return false;
+    return new Promise<boolean>((resolve) => {
+      try {
+        const tx = db.transaction(DataManager.customBgStoreName, 'readwrite');
+        const store = tx.objectStore(DataManager.customBgStoreName);
+        const req = store.delete(routeId);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => {
+          console.error('customBg IDB delete failed:', req.error);
+          resolve(false);
+        };
+      } catch (e) {
+        console.error('customBg IDB delete failed:', e);
+        resolve(false);
+      }
+    });
   }
 
   // Get list of saved routes
