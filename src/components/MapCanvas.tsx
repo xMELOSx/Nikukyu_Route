@@ -791,7 +791,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1742,27 +1742,72 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         let p2 = currentPoints[1];
         const SNAP_WALL_THRESHOLD = 15;
 
-        const snapWallPoint = (pt: Point): Point => {
-          let best = pt;
+        const getClosestPointOnSegment = (p: Point, a: Point, b: Point) => {
+          const abx = b.x - a.x;
+          const aby = b.y - a.y;
+          const l2 = abx * abx + aby * aby;
+          if (l2 === 0) return { point: a, dist: Math.hypot(p.x - a.x, p.y - a.y), t: 0 };
+          let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / l2;
+          t = Math.max(0, Math.min(1, t));
+          const h = { x: a.x + t * abx, y: a.y + t * aby };
+          return { point: h, dist: Math.hypot(p.x - h.x, p.y - h.y), t };
+        };
+
+        let activeWalls = [...walls];
+
+        const trySnap = (pt: Point): { snappedPt: Point; splitIdx: number; splitPt: Point } => {
+          let bestPt = pt;
           let bestDist = SNAP_WALL_THRESHOLD;
-          for (const w of walls) {
-            const candidates = [w[0], w[1]];
-            for (const c of candidates) {
+          let splitIdx = -1;
+          let splitPt = pt;
+
+          // 1. Try endpoint snap first
+          for (let i = 0; i < activeWalls.length; i++) {
+            const w = activeWalls[i];
+            for (const c of [w[0], w[1]]) {
               const d = Math.hypot(c.x - pt.x, c.y - pt.y);
               if (d < bestDist) {
                 bestDist = d;
-                best = c;
+                bestPt = c;
+                splitIdx = -1;
               }
             }
           }
-          return best;
+
+          // 2. Try T-junction intersection snap (closest point on segment) if no endpoint snap matches
+          if (bestPt === pt) {
+            for (let i = 0; i < activeWalls.length; i++) {
+              const w = activeWalls[i];
+              const { point, dist, t } = getClosestPointOnSegment(pt, w[0], w[1]);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestPt = point;
+                if (t > 0.01 && t < 0.99) {
+                  splitIdx = i;
+                  splitPt = point;
+                }
+              }
+            }
+          }
+          return { snappedPt: bestPt, splitIdx, splitPt };
         };
 
-        p1 = snapWallPoint(p1);
-        p2 = snapWallPoint(p2);
+        const snap1 = trySnap(p1);
+        p1 = snap1.snappedPt;
+        if (snap1.splitIdx >= 0) {
+          const w = activeWalls[snap1.splitIdx];
+          activeWalls.splice(snap1.splitIdx, 1, [w[0], snap1.splitPt], [snap1.splitPt, w[1]]);
+        }
+
+        const snap2 = trySnap(p2);
+        p2 = snap2.snappedPt;
+        if (snap2.splitIdx >= 0) {
+          const w = activeWalls[snap2.splitIdx];
+          activeWalls.splice(snap2.splitIdx, 1, [w[0], snap2.splitPt], [snap2.splitPt, w[1]]);
+        }
 
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
-          const merged = mergeWalls([...walls, [p1, p2]]);
+          const merged = mergeWalls([...activeWalls, [p1, p2]], [p1, p2]);
           onWallsChange?.(merged);
         }
       }
@@ -1888,9 +1933,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
-  const mergeWalls = (rawWalls: [Point, Point][]): [Point, Point][] => {
+  const mergeWalls = (rawWalls: [Point, Point][], newestWall?: [Point, Point]): [Point, Point][] => {
     if (rawWalls.length < 2) return rawWalls;
     const list = rawWalls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
+    const priorityPoints: Point[] = newestWall ? [newestWall[0], newestWall[1]] : [];
     let merged = true;
     while (merged) {
       merged = false;
@@ -1927,7 +1973,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const dot = (pMid1.x - pStart.x) * (pEnd.x - pMid2.x) + (pMid1.y - pStart.y) * (pEnd.y - pMid2.y);
 
             if (isParallel && dot > 0) {
-              list[i] = [pStart, pEnd];
+              const snapToPriority = (pt: Point): Point => {
+                for (const p of priorityPoints) {
+                  if (Math.hypot(p.x - pt.x, p.y - pt.y) < matchThreshold + 2) {
+                    return p;
+                  }
+                }
+                return pt;
+              };
+              const finalStart = snapToPriority(pStart);
+              const finalEnd = snapToPriority(pEnd);
+              list[i] = [finalStart, finalEnd];
               list.splice(j, 1);
               merged = true;
               break;

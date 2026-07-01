@@ -576,6 +576,30 @@ export default function App() {
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) applyPressed(true);
+
+      // Undo shortcut (Ctrl+Z)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+          return;
+        }
+        if (historyApi.canUndo) {
+          e.preventDefault();
+          historyApi.undo();
+        }
+      }
+
+      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z)
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+          return;
+        }
+        if (historyApi.canRedo) {
+          e.preventDefault();
+          historyApi.redo();
+        }
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (!e.altKey) applyPressed(false);
@@ -1756,7 +1780,11 @@ export default function App() {
 
             {isEditMode && (
               <div className="panel-section">
-                <div className="panel-title">{t('モード選択')}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <div className="panel-title" style={{ flex: 1, marginBottom: 0 }}>{t('モード選択')}</div>
+                  <button className="btn-cyber" onClick={historyApi.undo} disabled={!historyApi.canUndo} title="Undo (Ctrl+Z)" style={{ padding: '2px 6px', fontSize: '10px', opacity: historyApi.canUndo ? 1 : 0.4, cursor: historyApi.canUndo ? 'pointer' : 'not-allowed', clipPath: 'none' }}><Undo size={12} /></button>
+                  <button className="btn-cyber" onClick={historyApi.redo} disabled={!historyApi.canRedo} title="Redo (Ctrl+Y)" style={{ padding: '2px 6px', fontSize: '10px', opacity: historyApi.canRedo ? 1 : 0.4, cursor: historyApi.canRedo ? 'pointer' : 'not-allowed', clipPath: 'none' }}><Redo size={12} /></button>
+                </div>
                 <div className="tool-grid">
                   <button className={`tool-btn ${toolMode === 'move' ? 'active' : ''}`} onClick={() => setToolMode('move')} id="tool-move-btn">
                     <Move size={18} /><span>{t('移動')}</span>
