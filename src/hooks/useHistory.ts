@@ -10,6 +10,7 @@ export interface HistorySnapshot {
   strokes: { [key in FloorType]: DrawingStroke[] };
   individualMarkers: HeistMarker[];
   globalMarkers: HeistMarker[];
+  walls?: RouteData['walls'];
 }
 
 export interface UseHistoryOptions {
@@ -34,7 +35,7 @@ export interface UseHistoryApi {
   futureHistory: HistorySnapshot[];
   canUndo: boolean;
   canRedo: boolean;
-  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[]) => void;
+  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls']) => void;
   undo: () => void;
   redo: () => void;
   /** Capture a snapshot at the start of a marker drag (no history yet). */
@@ -65,16 +66,18 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
   const pushHistory = useCallback((
     strokes: RouteData['strokes'],
     indiv: HeistMarker[],
-    global: HeistMarker[]
+    global: HeistMarker[],
+    walls?: RouteData['walls']
   ) => {
     const snapshot: HistorySnapshot = {
       strokes: clone(strokes),
       individualMarkers: clone(indiv),
-      globalMarkers: clone(global)
+      globalMarkers: clone(global),
+      walls: walls ? clone(walls) : clone(getRoute().walls)
     };
     setPastHistory(prev => [...prev.slice(-(HISTORY_LIMIT - 1)), snapshot]);
     setFutureHistory([]);
-  }, []);
+  }, [getRoute]);
 
   const undo = useCallback(() => {
     if (pastHistory.length === 0) return;
@@ -85,12 +88,13 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     const current: HistorySnapshot = {
       strokes: clone(getRoute().strokes),
       individualMarkers: clone(getRoute().markers),
-      globalMarkers: clone(getGlobalMarkers())
+      globalMarkers: clone(getGlobalMarkers()),
+      walls: clone(getRoute().walls)
     };
     setPastHistory(nextPast);
     setFutureHistory(prev => [...prev, current]);
 
-    replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers });
+    replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers, walls: previous.walls });
     replaceGlobalMarkers(previous.globalMarkers);
     persistGlobalMarkers(previous.globalMarkers);
     if (onRestore) onRestore(previous.individualMarkers, previous.globalMarkers);
@@ -104,12 +108,13 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     const current: HistorySnapshot = {
       strokes: clone(getRoute().strokes),
       individualMarkers: clone(getRoute().markers),
-      globalMarkers: clone(getGlobalMarkers())
+      globalMarkers: clone(getGlobalMarkers()),
+      walls: clone(getRoute().walls)
     };
     setFutureHistory(nextFuture);
     setPastHistory(prev => [...prev, current]);
 
-    replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers });
+    replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers, walls: next.walls });
     replaceGlobalMarkers(next.globalMarkers);
     persistGlobalMarkers(next.globalMarkers);
     if (onRestore) onRestore(next.individualMarkers, next.globalMarkers);
@@ -119,7 +124,8 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     dragSnapshotRef.current = {
       strokes: clone(getRoute().strokes),
       individualMarkers: clone(getRoute().markers),
-      globalMarkers: clone(getGlobalMarkers())
+      globalMarkers: clone(getGlobalMarkers()),
+      walls: clone(getRoute().walls)
     };
   }, [getRoute, getGlobalMarkers]);
 

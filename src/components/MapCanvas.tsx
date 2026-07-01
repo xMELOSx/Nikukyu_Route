@@ -25,7 +25,11 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke';
+  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall';
+  walls?: [Point, Point][];
+  onWallsChange?: (walls: [Point, Point][]) => void;
+  hideStrokesDuringWalls?: boolean;
+  hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
   eraseTarget?: 'all' | 'marker' | 'route' | 'branch';
   eraseDefaultBehavior?: 'normal' | 'split';
@@ -139,6 +143,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   customBg,
   toolMode,
   activeMarkerType,
+  walls = [],
+  onWallsChange,
+  hideStrokesDuringWalls = false,
+  hideMarkersDuringWalls = false,
   eraseTarget = 'all',
   eraseDefaultBehavior = 'normal',
   eraseSize = 16,
@@ -360,6 +368,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const viewBottom = ((wrapperRect.bottom - containerRect.top) / containerRect.height) * 4550 + PIN_MARGIN;
     return markers.filter(m => {
       if (m.floor !== floor) return false;
+      const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
+      if (isWallMode && hideMarkersDuringWalls) return false;
       if (erasedMarkerIdsRef.current.has(m.id)) return false;
       if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
       return m.x >= viewLeft && m.x <= viewRight && m.y >= viewTop && m.y <= viewBottom;
@@ -928,6 +938,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     ctx.clearRect(0, 0, 1600, 4550);
 
+    const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
+    if (isWallMode && hideStrokesDuringWalls) {
+      return;
+    }
+
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
@@ -1449,6 +1464,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (toolMode === 'draw-wall') {
+      setIsDrawing(true);
+      setCurrentPoints([coords]);
+      return;
+    }
+
+    if (toolMode === 'erase-wall') {
+      setIsDrawing(true);
+      eraseWallsAtPoint(coords);
+      return;
+    }
+
     if (toolMode === 'toggle-vis') {
       toggledIdsRef.current = new Set();
       toggleVisibilityAtPoint(coords);
@@ -1460,7 +1487,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const coords = getCanvasCoords(e);
 
-    if (toolMode === 'erase' && isEditMode) {
+    if ((toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode) {
       setEraseCursor({ x: coords.x, y: coords.y, visible: true });
     } else if (eraseCursor.visible) {
       setEraseCursor(prev => ({ ...prev, visible: false }));
@@ -1644,6 +1671,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (isDrawing && toolMode === 'draw-wall') {
+      setCurrentPoints([currentPoints[0], coords]);
+      return;
+    }
+
+    if (isDrawing && toolMode === 'erase-wall') {
+      eraseWallsAtPoint(coords);
+      return;
+    }
+
     if (isDrawing && toolMode === 'toggle-vis') {
       toggleVisibilityAtPoint(coords);
       return;
@@ -1699,6 +1736,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (toolMode === 'erase') {
         erasedMarkerIdsRef.current.clear();
+      }
+      if (toolMode === 'draw-wall' && currentPoints.length === 2) {
+        onWallsChange?.([...walls, [currentPoints[0], currentPoints[1]]]);
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
@@ -1819,6 +1859,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // 消しゴムカーソル円の半径はユーザー設定(eraseSize)に従う
   const getEraseIndicatorRadius = (): number => eraseSize;
+
+
+
+  const eraseWallsAtPoint = (pt: Point) => {
+    const r = eraseSize;
+    const remaining = walls.filter(w => {
+      return getDistanceToSegment(pt, w[0], w[1]) > r;
+    });
+    if (remaining.length !== walls.length) {
+      onWallsChange?.(remaining);
+    }
+  };
 
   // 指定点でマーカーを削除 (グローバル or 個人ピン)
   const eraseMarkersAtPoint = (pt: Point, threshold?: number) => {
@@ -2467,7 +2519,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }}
       >
         {/* 消しゴムカーソル: 対象範囲を示す薄い青円 */}
-        {toolMode === 'erase' && isEditMode && eraseCursor.visible && (
+        {(toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode && eraseCursor.visible && (
           <div
             className="erase-cursor-indicator"
             style={{
@@ -2500,6 +2552,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           width={1600}
           height={4550}
         />
+
+        {/* Walls visualization layer */}
+        {((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
+          <svg
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 12 }}
+            viewBox="0 0 1600 4550"
+          >
+            {walls.map((w, idx) => (
+              <line
+                key={`wall-${idx}`}
+                x1={w[0].x}
+                y1={w[0].y}
+                x2={w[1].x}
+                y2={w[1].y}
+                stroke="rgba(255, 0, 85, 0.7)"
+                strokeWidth={5}
+                strokeDasharray="6,4"
+              />
+            ))}
+            {toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2 && (
+              <line
+                x1={currentPoints[0].x}
+                y1={currentPoints[0].y}
+                x2={currentPoints[1].x}
+                y2={currentPoints[1].y}
+                stroke="#ff0055"
+                strokeWidth={5}
+                strokeDasharray="6,4"
+              />
+            )}
+          </svg>
+        )}
 
         {/* Warp & Stairs pair connector lines */}
         <svg

@@ -282,6 +282,25 @@ export const en: Locale = {
     'デフォルトプリセットをマイグレーションしました (→ v{0})': 'Migrated default preset (→ v{0})',
     'ルート線設定': 'Route line settings',
 
+    // ----- Wall editor sub menu -----
+    '壁（直線）': 'Walls (Straight)',
+    '壁（消しゴム）': 'Walls (Eraser)',
+    '壁エディタ設定': 'Wall Editor Settings',
+    'マップの背景画像をもとに、黒い線を壁として自動検出できます。': 'Automatically detect black contours in the background map as walls.',
+    '壁の自動検出を実行': 'Run Auto Wall Detection',
+    '壁データをクリア': 'Clear Wall Data',
+    '壁の自動検出を実行中...': 'Detecting walls from map image...',
+    '背景画像が見つかりません': 'Background map image not found.',
+    '{0} 本の壁を自動検出しました': 'Detected {0} wall line(s).',
+    '壁が検出されませんでした（または読み込み失敗）': 'No walls detected (or failed to load).',
+    '壁データをクリアしました': 'Cleared wall data.',
+    '壁を避けて迂回する': 'Bypass walls automatically',
+    'ルート線を非表示': 'Hide route lines',
+    'マーカーを非表示': 'Hide markers',
+    '壁を迂回するルートを計算中...': 'Calculating route bypassing walls...',
+    '壁を迂回するルートを自動生成しました': 'Route bypass successfully generated.',
+    '壁を越えて迂回する経路が見つかりません。操作をキャンセルしました。': 'No detour path found. Cancelled line drawing.',
+
     // ----- Edit stroke sub menu -----
     '線をクリックで選択 (Alt+クリックで複数選択)。': 'Click a line to select it (Alt+click to add multiple).',
     '選択した線の色・太さ・線種・平滑化を一括で編集できます。': 'Edit color, width, type, or smooth the selected lines at once.',

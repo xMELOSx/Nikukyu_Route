@@ -24,6 +24,7 @@ import {
   type PresetData,
   type PresetVisibility,
   PRESET_VISIBILITY_META,
+  PRESET_MAPS_META,
   normalizePresetVisibility,
   normalizePresets,
   getPresetVisibility,
@@ -70,7 +71,8 @@ import {
   EyeOff,
   Ruler,
   Star,
-  Wand2
+  Wand2,
+  Fence
 } from 'lucide-react';
 
 const migrateRouteCoordinates = (data: RouteData): RouteData => {
@@ -535,7 +537,10 @@ export default function App() {
     saveFloorNavCollapsed(floorNavCollapsed);
   }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke'>('move');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>('move');
+  const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
+  const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
+  const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(true);
   const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
   const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
   const [eraseSize, setEraseSize] = useState<number>(16);
@@ -871,7 +876,90 @@ export default function App() {
 
   // --- Cross-cutting handlers (coordinate multiple stores) ---
 
-  const updateStrokes = (newStrokes: DrawingStroke[]) => {
+  const updateStrokes = async (newStrokes: DrawingStroke[]) => {
+    const strokesData = routeApi.route.strokes as any;
+    const prevStrokes = strokesData[currentFloor] || [];
+    
+    if (newStrokes.length > prevStrokes.length && bypassWallsEnabled) {
+      const addedStroke = newStrokes[newStrokes.length - 1];
+      const pts = addedStroke.points;
+      
+      const { isIntersecting, findBypassingPath } = await import('./utils/PathFinder');
+      const allWalls = (routeApi.route.walls || {}) as any;
+      let hitsWall = false;
+      
+      const flWalls = allWalls[currentFloor] || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        for (const w of flWalls) {
+          if (isIntersecting(p1, p2, w[0], w[1])) {
+            hitsWall = true;
+            break;
+          }
+        }
+        if (hitsWall) break;
+      }
+      
+      if (hitsWall) {
+        const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
+        const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
+        const allMarkers = [...globalMarkersStore.globalMarkers, ...routeApi.route.markers];
+        
+        notification.show(t('壁を迂回するルートを計算中...'));
+        const path = findBypassingPath(startNode, endNode, allWalls, allMarkers);
+        
+        if (path && path.length >= 2) {
+          const groupedStrokes: Record<string, { x: number; y: number }[]> = {};
+          let currentGroup: { x: number; y: number }[] = [];
+          let currentGroupFloor = path[0].floor;
+          
+          path.forEach((node) => {
+            if (node.floor !== currentGroupFloor) {
+              if (currentGroup.length >= 2) {
+                if (!groupedStrokes[currentGroupFloor]) groupedStrokes[currentGroupFloor] = [];
+                groupedStrokes[currentGroupFloor].push(...currentGroup);
+              }
+              currentGroup = [];
+              currentGroupFloor = node.floor;
+            }
+            currentGroup.push({ x: node.x, y: node.y });
+          });
+          if (currentGroup.length >= 2) {
+            if (!groupedStrokes[currentGroupFloor]) groupedStrokes[currentGroupFloor] = [];
+            groupedStrokes[currentGroupFloor].push(...currentGroup);
+          }
+
+          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+          
+          routeApi.setRoute(prev => {
+            const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
+            
+            Object.keys(groupedStrokes).forEach(fl => {
+              const pointsForFloor = groupedStrokes[fl];
+              const baseList = fl === currentFloor ? newStrokes.slice(0, -1) : (nextStrokes[fl] || []);
+              
+              nextStrokes[fl] = [
+                ...baseList,
+                {
+                  ...addedStroke,
+                  points: pointsForFloor,
+                  originalPoints: pointsForFloor
+                }
+              ];
+            });
+            return { ...prev, strokes: nextStrokes as any };
+          });
+          
+          notification.show(t('壁を迂回するルートを自動生成しました'));
+          return;
+        } else {
+          notification.show(t('壁を越えて迂回する経路が見つかりません。操作をキャンセルしました。'));
+          return;
+        }
+      }
+    }
+
     historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
     routeApi.setRoute(prev => ({
       ...prev,
@@ -1688,6 +1776,16 @@ export default function App() {
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
+                  {isLocal && (
+                    <>
+                      <button className={`tool-btn ${toolMode === 'draw-wall' ? 'active' : ''}`} onClick={() => setToolMode('draw-wall')} id="tool-draw-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
+                        <Fence size={18} style={{ color: '#ff0055' }} /><span>{t('壁（直線）')}</span>
+                      </button>
+                      <button className={`tool-btn ${toolMode === 'erase-wall' ? 'active' : ''}`} onClick={() => setToolMode('erase-wall')} id="tool-erase-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
+                        <Eraser size={18} style={{ color: '#ff0055' }} /><span>{t('壁（消しゴム）')}</span>
+                      </button>
+                    </>
+                  )}
                   {!resetTarget ? (
                     <button className="tool-btn" onClick={() => setResetTarget('both')} id="tool-reset-btn">
                       <RotateCcw size={18} /><span>{t('リセット')}</span>
@@ -1925,9 +2023,105 @@ export default function App() {
               />
             )}
 
+            {(toolMode === 'draw-wall' || toolMode === 'erase-wall') && (
+              <div className="panel-section">
+                <div className="panel-title">{t('壁エディタ設定')}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '8px' }}>
+                  {t('マップの背景画像をもとに、黒い線を壁として自動検出できます。')}
+                </div>
+                <button
+                  className="btn-cyber success"
+                  style={{ width: '100%', marginBottom: '8px', padding: '6px' }}
+                  onClick={async () => {
+                    const path = routeApi.route.customBg[currentFloor] ?? PRESET_MAPS_META[currentFloor]?.path;
+                    if (!path) {
+                      notification.show(t('背景画像が見つかりません'));
+                      return;
+                    }
+                    notification.show(t('壁の自動検出を実行中...'));
+                    const { detectWallsFromImage } = await import('./utils/WallDetector');
+                    const detected = await detectWallsFromImage(path as string);
+                    if (detected.length > 0) {
+                      const nextWalls = {
+                        ...(routeApi.route.walls || {}),
+                        [currentFloor]: detected
+                      };
+                      historyApi.pushHistory(
+                        routeApi.route.strokes,
+                        routeApi.route.markers,
+                        globalMarkersStore.globalMarkers,
+                        nextWalls
+                      );
+                      routeApi.setRoute(prev => ({
+                        ...prev,
+                        walls: nextWalls
+                      }));
+                      notification.show(t('{0} 本の壁を自動検出しました', String(detected.length)));
+                    } else {
+                      notification.show(t('壁が検出されませんでした（または読み込み失敗）'));
+                    }
+                  }}
+                >
+                  🔍 {t('壁の自動検出を実行')}
+                </button>
+                <button
+                  className="btn-cyber danger"
+                  style={{ width: '100%', padding: '6px' }}
+                  onClick={() => {
+                    const nextWalls = {
+                      ...(routeApi.route.walls || {}),
+                      [currentFloor]: []
+                    };
+                    historyApi.pushHistory(
+                      routeApi.route.strokes,
+                      routeApi.route.markers,
+                      globalMarkersStore.globalMarkers,
+                      nextWalls
+                    );
+                    routeApi.setRoute(prev => ({
+                      ...prev,
+                      walls: nextWalls
+                    }));
+                    notification.show(t('壁データをクリアしました'));
+                  }}
+                >
+                  🗑️ {t('壁データをクリア')}
+                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={hideStrokesDuringWalls}
+                      onChange={(e) => setHideStrokesDuringWalls(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('ルート線を非表示')}
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={hideMarkersDuringWalls}
+                      onChange={(e) => setHideMarkersDuringWalls(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('マーカーを非表示')}
+                  </label>
+                </div>
+              </div>
+            )}
+
             {toolMode === 'draw' && (
               <div className="panel-section">
                 <div className="panel-title">{t('ルート線設定')}</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={bypassWallsEnabled}
+                    onChange={(e) => setBypassWallsEnabled(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  {t('壁を避けて迂回する')}
+                </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
                   <input
                     type="checkbox"
@@ -2142,6 +2336,25 @@ export default function App() {
             drawMode={drawMode}
             onStrokesChange={updateStrokes}
             onMarkersChange={updateMarkers}
+            hideStrokesDuringWalls={hideStrokesDuringWalls}
+            hideMarkersDuringWalls={hideMarkersDuringWalls}
+            walls={routeApi.route.walls ? routeApi.route.walls[currentFloor] : []}
+            onWallsChange={(newWalls) => {
+              const nextWalls = {
+                ...(routeApi.route.walls || {}),
+                [currentFloor]: newWalls
+              };
+              historyApi.pushHistory(
+                routeApi.route.strokes,
+                routeApi.route.markers,
+                globalMarkersStore.globalMarkers,
+                nextWalls
+              );
+              routeApi.setRoute(prev => ({
+                ...prev,
+                walls: nextWalls
+              }));
+            }}
             onSvgStringReady={setSvgString}
             canvasRef={canvasRef}
             focusTrigger={focusTrigger}

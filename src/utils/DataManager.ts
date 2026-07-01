@@ -657,6 +657,7 @@ export interface RouteData {
   renderCache: string;
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
+  walls?: { [key in FloorType]: [Point, Point][] };
   customBg: { [key in FloorType]: string | null }; // base64 images
   createdAt: number;
   bossCustomDurations?: { [markerId: string]: number }; // Plan-specific override for boss timers
@@ -801,6 +802,9 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   markers: [],
   customBg: {
     main: null
+  },
+  walls: {
+    main: []
   },
   bossCustomDurations: {},
   battleCustomDurations: {},
@@ -1301,6 +1305,9 @@ export class DataManager {
       strokes: route?.strokes && typeof route.strokes === 'object'
         ? route.strokes
         : def.strokes,
+      walls: route?.walls && typeof route.walls === 'object'
+        ? route.walls
+        : def.walls,
       markers: Array.isArray(route?.markers)
         ? route.markers.map(DataManager.migrateMarkerMediaFields)
         : def.markers,
