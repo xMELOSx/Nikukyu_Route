@@ -129,12 +129,13 @@ export function findBypassingPath(
       visited.set(key, n);
       uniqueNodes.push(n);
     } else {
-      // If the new node is a portal and has metadata, overwrite the existing grid node's metadata
-      if (n.isPortal && !existing.isPortal) {
+      // Robustly preserve portal metadata: if either the existing node or new node is a portal,
+      // propagate all portal properties onto the preserved uniqueNode.
+      if (n.isPortal) {
         existing.isPortal = true;
-        existing.portalName = n.portalName;
-        existing.markerId = n.markerId;
-        existing.linkedMarkerId = n.linkedMarkerId;
+        if (n.portalName) existing.portalName = n.portalName;
+        if (n.markerId) existing.markerId = n.markerId;
+        if (n.linkedMarkerId) existing.linkedMarkerId = n.linkedMarkerId;
       }
     }
   });

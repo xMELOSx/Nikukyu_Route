@@ -962,7 +962,7 @@ export default function App() {
       // OFF (default) = walls ignored: the line is accepted as-is. The
       // wall layer is purely a visual reference; the user is in full
       // control of where the line goes. When bypassWallsEnabled is ON, we
-      // check for wall hits and run an A* detour if any.
+      // always run the A* detour finder to calculate the mathematically shortest path.
       if (!bypassWallsEnabled) {
         historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
         routeApi.setRoute(prev => ({
@@ -972,26 +972,9 @@ export default function App() {
         return;
       }
 
-      const { isIntersecting } = await import('./utils/PathFinder');
       const allWalls = globalWallsRef.current as any;
-      let hitsWall = false;
-
-      const flWalls = allWalls[currentFloor] || [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        for (const w of flWalls) {
-          if (isIntersecting(p1, p2, w[0], w[1])) {
-            hitsWall = true;
-            break;
-          }
-        }
-        if (hitsWall) break;
-      }
-
-      if (hitsWall) {
-        const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
-        const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
+      const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
+      const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
         
         // Filter out hidden markers (ID-based and Type-based) so they are ignored by the pathfinder,
         // EXCEPT for 'goal' markers and any hidden portal markers that are targets of links from visible portals.
@@ -999,18 +982,18 @@ export default function App() {
         const hiddenTypes = new Set(routeRef.current.hiddenMarkerTypes || []);
         
         const rawMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
-        // Collect IDs of destinations of portals that are NOT hidden
-        const activeDestinations = new Set<string>();
+        // Collect all portal IDs that are part of a valid link pair (source or destination)
+        const linkedPortalIds = new Set<string>();
         rawMarkers.forEach(m => {
-          const isHidden = hiddenIds.has(m.id) || hiddenTypes.has(m.type);
-          if (!isHidden && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
-            activeDestinations.add(m.linkedWarpId);
+          if ((m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
+            linkedPortalIds.add(m.id);
+            linkedPortalIds.add(m.linkedWarpId);
           }
         });
 
         const allMarkers = rawMarkers.filter(m => {
           if (m.type === 'goal') return true; // Always allow exit (goal) markers
-          if (activeDestinations.has(m.id)) return true; // Keep as destination even if hidden
+          if (linkedPortalIds.has(m.id)) return true; // Keep portal if it is part of a warp link (precedes hidden check)
           if (hiddenIds.has(m.id)) return false;
           if (hiddenTypes.has(m.type)) return false;
           return true;
@@ -1089,16 +1072,15 @@ export default function App() {
             routeApi.setRoute(prev => ({ ...prev, strokes: { ...prev.strokes } }));
           }
         }, 50);
-      return;
-    }
-    }
+        return;
+      }
 
-    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
-    routeApi.setRoute(prev => ({
-      ...prev,
-      strokes: { ...prev.strokes, [currentFloor]: newStrokes }
-    }));
-  };
+      historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+      routeApi.setRoute(prev => ({
+        ...prev,
+        strokes: { ...prev.strokes, [currentFloor]: newStrokes }
+      }));
+    };
 
   const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false, options: { isDelete?: boolean } = {}) => {
     if (shouldPushHistory) {
