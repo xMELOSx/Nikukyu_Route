@@ -5,6 +5,7 @@ export interface KeyboardShortcutsOptions {
   preventDefault?: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onDeleteSelected?: () => void;
   onToggleEditMode: () => void;
   onToggleLeftSidebar: () => void;
   onToggleRightSidebar: () => void;
@@ -18,6 +19,7 @@ export interface KeyboardShortcutsOptions {
  *
  *   Ctrl/Cmd + Z → Undo
  *   Ctrl/Cmd + Y → Redo
+ *   Delete       → Delete selected strokes (edit-stroke / measure mode)
  *   P / V        → Toggle edit/view mode
  *   [            → Toggle left sidebar
  *   ]            → Toggle right sidebar
@@ -25,7 +27,7 @@ export interface KeyboardShortcutsOptions {
  */
 export function useKeyboardShortcuts({
   preventDefault = true,
-  onUndo, onRedo, onToggleEditMode,
+  onUndo, onRedo, onDeleteSelected, onToggleEditMode,
   onToggleLeftSidebar, onToggleRightSidebar,
   onCloseModal, hasOpenModal
 }: KeyboardShortcutsOptions) {
@@ -49,6 +51,11 @@ export function useKeyboardShortcuts({
         onRedo();
         return;
       }
+      if (e.key === 'Delete' && onDeleteSelected) {
+        if (preventDefault) e.preventDefault();
+        onDeleteSelected();
+        return;
+      }
       if (e.key === 'p' || e.key === 'P' || e.key === 'v' || e.key === 'V') {
         onToggleEditMode();
         return;
@@ -67,7 +74,7 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
-    preventDefault, onUndo, onRedo, onToggleEditMode,
+    preventDefault, onUndo, onRedo, onDeleteSelected, onToggleEditMode,
     onToggleLeftSidebar, onToggleRightSidebar, onCloseModal, hasOpenModal
   ]);
 }

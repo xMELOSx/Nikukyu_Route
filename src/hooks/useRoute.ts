@@ -209,16 +209,19 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   // 初回自動コピー: renderCache が空 + author が 'No name' 以外のとき、 author を
   // renderCache にコピー (= メモリ平文の代入のみ。 暗号化は保存時)。
   // 1 回だけ (= renderCache が一度セットされたら再発火しない)。
+  // saveDataVersion が設定済み (= localStorage からロード済み) の場合はスキップ。
   useEffect(() => {
     if (!route || !route.id) return;
     if (!route.author || route.author === AUTHOR_DEFAULT_PLAIN) return;
     if (route.renderCache) return; // 既にセット済み (= 1回だけ)
+    if (route.saveDataVersion) return; // ロード済みルートはスキップ
     setRouteRaw(prev => {
       if (prev.id !== route.id) return prev;
       if (prev.renderCache) return prev;
+      if (prev.saveDataVersion) return prev;
       return { ...prev, renderCache: prev.author };
     });
-  }, [route.id, route.author, route.renderCache]);
+  }, [route.id, route.author, route.renderCache, route.saveDataVersion]);
 
   // メモリの renderCache が暗号文 (= v2: / legacy:) になっていたら復号して平文に戻す。
   // (= メモリは常に平文という仕様への強制遵守。

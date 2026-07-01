@@ -133,7 +133,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
         <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid rgba(0, 240, 255, 0.15)', flexShrink: 0 }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setHelpActiveTab(tab.id)} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: helpActiveTab === tab.id ? 'bold' : 'normal', color: helpActiveTab === tab.id ? 'var(--cyan-neon)' : 'var(--text-muted)', background: helpActiveTab === tab.id ? 'rgba(0, 240, 255, 0.08)' : 'transparent', border: 'none', borderBottom: helpActiveTab === tab.id ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer', transition: 'all 0.15s' }}>
-              {tab.label}
+              {t(tab.label)}
             </button>
           ))}
         </div>
@@ -272,7 +272,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 {/* Threshold sliders */}
                 {setStopMarkerThreshold && setMovementMarkerThreshold && setWarpMarkerThreshold && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 8px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{t('判定閾値 (px)')}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{t('判定閾値 (px)')}</div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>{t('🔴 停止')}</span>
@@ -310,15 +310,15 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   </div>
                 )}
 
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
                   {t('スライダーで各マーカーの判定距離を変更できます。')}<br />
                   {t('スキルCDは 5〜20px の範囲で他とは別に調整できます (デフォルト10px)。')}<br />
                   {t('値は即座に自動ルート・判定範囲の円に反映されます。')}
                 </div>
               </div>
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>{t('デバッグ情報:')}</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>{t('デバッグ情報:')}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
                   <div>isLocal: {isLocal ? 'true' : 'false'}</div>
                   <div>isEditMode: {isEditMode ? 'true' : 'false'}</div>
                   <div>floor: {currentFloor}</div>
@@ -344,14 +344,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     return (
                       <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 4px', borderRadius: '3px', background: isHidden ? 'rgba(255,255,255,0.02)' : 'rgba(0,240,255,0.04)' }}>
                         <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
-                        <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
-                        <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '9px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
+                        <span style={{ fontSize: '11px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
+                        <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '10px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
                           {isHidden ? t('非表示') : t('表示中')}
                         </button>
                       </div>
                     );
                   })}
-                  {route.markers.length > 0 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>{t('個別:')}</div>}
+                  {route.markers.length > 0 && <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '4px', marginBottom: '2px' }}>{t('個別:')}</div>}
                   {route.markers
                     // チェックポイントピンをスタートピンの後ろ (リスト下段) に表示
                     .slice()
@@ -365,21 +365,21 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     return (
                       <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 4px', borderRadius: '3px', background: isHidden ? 'rgba(255,255,255,0.02)' : 'rgba(0,240,255,0.04)' }}>
                         <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
-                        <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
-                        <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '9px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
+                        <span style={{ fontSize: '11px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
+                        <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '10px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
                           {isHidden ? t('非表示') : t('表示中')}
                         </button>
                       </div>
                     );
                   })}
-                  {globalMarkers.length === 0 && route.markers.length === 0 && <div style={{ fontSize: '10px', color: '#666', padding: '8px', textAlign: 'center' }}>{t('マーカーがありません')}</div>}
+                  {globalMarkers.length === 0 && route.markers.length === 0 && <div style={{ fontSize: '11px', color: '#666', padding: '8px', textAlign: 'center' }}>{t('マーカーがありません')}</div>}
                 </div>
               </div>
             </div>
           ) : isSettingsTab ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px' }}>
               <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '4px' }}>
-                ⚙️ 設定
+                {t('⚙️ 設定')}
               </div>
               {onSetAutoLoadLastRoute && (
                 <div style={{ padding: '10px 14px', background: 'rgba(0, 240, 255, 0.04)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px' }}>
@@ -407,7 +407,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     💾 {t('編集内容を自動で保存する (1.5秒のデバウンス)')}
                   </label>
                   {autoSaveEnabled === false && (
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', paddingLeft: '24px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', paddingLeft: '24px' }}>
                       {t('オートセーブは無効です。手動で保存してください。')}
                     </div>
                   )}

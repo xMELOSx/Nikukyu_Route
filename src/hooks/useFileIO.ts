@@ -50,7 +50,7 @@ const GLOBAL_TYPES = new Set([
 ]);
 const INDIV_TYPES = new Set([
   'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
-  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint'
+  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'
 ]);
 const isGlobalType = (t: string) => GLOBAL_TYPES.has(t);
 

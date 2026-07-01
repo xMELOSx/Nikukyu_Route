@@ -846,6 +846,18 @@ export default function App() {
   useKeyboardShortcuts({
     onUndo: historyApi.undo,
     onRedo: historyApi.redo,
+    onDeleteSelected: () => {
+      const cur = routeApi.route.strokes[currentFloor];
+      if (!cur) return;
+      const sel = toolMode === 'edit-stroke' ? editStrokeIdxs : measureSelectedStrokeIdxs;
+      if (sel.size === 0) return;
+      historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+      const next = cur.filter((_, i) => !sel.has(i));
+      updateStrokes(next);
+      if (toolMode === 'edit-stroke') setEditStrokeIdxs(new Set());
+      else setMeasureSelectedStrokeIdxs(new Set());
+      notification.show(t('{0}本の線を削除しました', String(sel.size)));
+    },
     onToggleEditMode: () => setIsEditMode(prev => {
       const next = !prev;
       if (next === false) setToolMode('move');
@@ -887,6 +899,13 @@ export default function App() {
       // 「ドラッグした瞬間の位置」しか残らない問題を根治する。
       globalMarkersStore.mergeOrUpdate(incomingGlobal);
     }
+
+    // ピン追加モード中に新しく追加された場合、誤設置防止のために移動モードに戻す
+    const currentTotalCount = routeApi.route.markers.length + globalMarkersStore.globalMarkers.length;
+    if (toolMode === 'add-marker' && newMarkers.length > currentTotalCount) {
+      setToolMode('move');
+    }
+
     // ルートは display state (indiv マーカー + hidden リスト) のみ保持。
     routeApi.setRoute(prev => ({ ...prev, markers: newIndividual }));
   };
@@ -1403,14 +1422,14 @@ export default function App() {
                   style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
                   onClick={() => { setIsEditMode(true); }}
                 >
-                  ✏️ 編集モード
+                  ✏️ {t('編集モード')}
                 </button>
                 <button
                   className={`btn-cyber ${!isEditMode ? 'active success' : ''}`}
                   style={{ padding: '6px 0', fontSize: '12px', clipPath: 'none' }}
                   onClick={() => { setIsEditMode(false); setToolMode('move'); }}
                 >
-                  👁 表示モード
+                  👁 {t('表示モード')}
                 </button>
               </div>
             </div>
@@ -1427,7 +1446,7 @@ export default function App() {
                   onClick={() => setShowHelpModal(true)}
                   style={{ flex: 1, padding: '6px', fontSize: '12px', clipPath: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                 >
-                  ❓ ヘルプ・設定
+                  ❓ {t('ヘルプ・設定')}
                 </button>
               </div>
             </div>
@@ -2532,62 +2551,64 @@ export default function App() {
                       )}
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '4px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
                           <input type="checkbox" checked={autoRoute.waitEnabled} onChange={(e) => autoRoute.setWaitEnabled(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)' }} />
                           <span>{t('開始前に待機 (')}</span>
-                          <input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
+                          <input type="number" min="0" max="60" value={autoRoute.waitSeconds} onChange={(e) => autoRoute.setWaitSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} disabled={!autoRoute.waitEnabled} style={{ width: '36px', fontSize: '11px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
                           <span>{t('秒)')}</span>
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
                           <span>{t('🐾 スタート停止 (')}</span>
-                          <input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '10px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
+                          <input type="number" min="0" max="60" value={autoRoute.startStopSeconds} onChange={(e) => autoRoute.setStartStopSeconds(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))} style={{ width: '36px', fontSize: '11px', textAlign: 'center', padding: '1px 2px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(0,240,255,0.3)', color: 'var(--cyan-neon)', borderRadius: '2px' }} />
                           <span>{t('秒)')}</span>
                         </label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '11px', color: 'var(--text-muted)' }}>
                           <span>{t('移動速度:')}</span>
-                          {(['time', 'speed'] as const).map(mode => (
-                            <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer', opacity: autoRoute.status.active ? 0.5 : 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                            {(['time', 'speed'] as const).map(mode => (
+                              <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer', opacity: autoRoute.status.active ? 0.5 : 1 }}>
+                                <input
+                                  type="radio"
+                                  name="autoRouteSpeedMode"
+                                  checked={autoRoute.speedMode === mode}
+                                  onChange={() => autoRoute.setSpeedMode(mode)}
+                                  disabled={autoRoute.status.active}
+                                  style={{ accentColor: 'var(--cyan-neon)', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer' }}
+                                />
+                                <span>{mode === 'time' ? t('所要時間ベース') : t('速度ベース')}</span>
+                              </label>
+                            ))}
+                            {autoRoute.speedMode === 'speed' && (
                               <input
-                                type="radio"
-                                name="autoRouteSpeedMode"
-                                checked={autoRoute.speedMode === mode}
-                                onChange={() => autoRoute.setSpeedMode(mode)}
+                                type="number"
+                                min="1"
+                                max="10000"
+                                step="1"
+                                value={autoRoute.manualSpeed}
+                                onChange={(e) => autoRoute.setManualSpeed(Math.max(1, Math.min(10000, parseInt(e.target.value) || 0)))}
                                 disabled={autoRoute.status.active}
-                                style={{ accentColor: 'var(--cyan-neon)', cursor: autoRoute.status.active ? 'not-allowed' : 'pointer' }}
+                                style={{ width: '56px', fontSize: '12px', fontWeight: 700, textAlign: 'center', padding: '2px 4px', background: 'rgba(5,7,10,0.95)', border: '1px solid rgba(0,240,255,0.5)', color: 'var(--yellow-neon, #ffe600)', borderRadius: '3px', fontFamily: 'monospace', opacity: autoRoute.status.active ? 0.5 : 1, cursor: autoRoute.status.active ? 'not-allowed' : 'text' }}
                               />
-                              <span>{mode === 'time' ? t('所要時間ベース') : t('速度ベース')}</span>
-                            </label>
-                          ))}
-                          {autoRoute.speedMode === 'speed' && (
-                            <input
-                              type="number"
-                              min="1"
-                              max="10000"
-                              step="1"
-                              value={autoRoute.manualSpeed}
-                              onChange={(e) => autoRoute.setManualSpeed(Math.max(1, Math.min(10000, parseInt(e.target.value) || 0)))}
-                              disabled={autoRoute.status.active}
-                              style={{ width: '56px', fontSize: '12px', fontWeight: 700, textAlign: 'center', padding: '2px 4px', background: 'rgba(5,7,10,0.95)', border: '1px solid rgba(0,240,255,0.5)', color: 'var(--yellow-neon, #ffe600)', borderRadius: '3px', fontFamily: 'monospace', opacity: autoRoute.status.active ? 0.5 : 1, cursor: autoRoute.status.active ? 'not-allowed' : 'text' }}
-                            />
-                          )}
-                          {autoRoute.speedMode === 'speed' && <span style={{ color: 'var(--text-muted)' }}>{t('px/秒')}</span>}
+                            )}
+                            {autoRoute.speedMode === 'speed' && <span style={{ color: 'var(--text-muted)' }}>{t('px/秒')}</span>}
+                          </div>
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.fuseMode} onChange={(e) => autoRoute.setFuseMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           <span>{t('💣 導火線モード')}</span>
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.inactiveMarkersMode} onChange={(e) => autoRoute.setInactiveMarkersMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           <span>{t('🔘 通過マーカー半透明化')}</span>
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           <span>{t('🎥 カメラ追従')}</span>
                         </label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
                           <span>{t('倍速:')}</span>
                           {([1, 2, 3, 5, 10] as const).map(m => (
-                            <button key={m} translate="no" className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '10px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
+                            <button key={m} translate="no" className={`btn-cyber ${autoRoute.speedMultiplier === m ? 'active' : ''}`} style={{ flex: 1, padding: '2px', fontSize: '11px' }} onClick={() => autoRoute.setSpeedMultiplier(m)}>x{m}</button>
                           ))}
                         </div>
                       </div>
@@ -2756,10 +2777,10 @@ export default function App() {
                     <div className="panel-title" style={{ marginBottom: 0 }}>{t('プレイデータ')}</div>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: '3px' }}>
                       <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px' }} onClick={handleExportPlayData} title="履歴CSV以外の全データをJSONで保存">
-                        <Download size={9} /> 保存
+                        <Download size={9} /> {t('保存')}
                       </button>
                       <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px' }} onClick={() => playDataImportRef.current?.click()} title="JSONからプレイデータを読み込み">
-                        <Upload size={9} /> 読込
+                        <Upload size={9} /> {t('読込')}
                       </button>
                     </div>
                   </div>

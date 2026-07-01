@@ -48,7 +48,6 @@ function NumberInput({
   onChange,
   min = 0,
   step = 1,
-  bigStep,
   width = 80,
   accent = 'var(--cyan-neon)',
   align = 'right'
@@ -57,7 +56,6 @@ function NumberInput({
   onChange: (v: number) => void;
   min?: number;
   step?: number;
-  bigStep?: number;
   width?: number;
   accent?: string;
   align?: 'right' | 'center' | 'left';
@@ -75,17 +73,6 @@ function NumberInput({
     setEditing(false);
   };
   const cancel = () => setEditing(false);
-
-  // Mouse-wheel adjustment on the displayed value. Without modifiers use
-  // `bigStep` if provided (e.g. bigStep=100 for large currency amounts
-  // where the default step=1 would take forever). Shift=×10, Ctrl=×100.
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const baseStep = bigStep ?? step;
-    const wheelStep = e.ctrlKey ? step * 100 : (e.shiftKey ? step * 10 : baseStep);
-    const delta = e.deltaY < 0 ? wheelStep : -wheelStep;
-    onChange(Math.max(min, value + delta));
-  };
 
   if (editing) {
     return (
@@ -135,8 +122,7 @@ function NumberInput({
   return (
     <span
       onClick={start}
-      onWheel={handleWheel}
-      title={t('クリックで編集 / ホイールで増減 (Shift=×10, Ctrl=×100)')}
+      title={t('クリックで編集')}
       style={{
         color: accent,
         fontWeight: 700,
@@ -1263,7 +1249,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
             value={state.recordedLocation}
             onChange={(e) => setRecordedLocation(e.target.value)}
             placeholder={routeTitle
-              ? t('📍 記録名 (空なら「{0}」を使用)', routeTitle)
+              ? t('📍 記録名 (デフォルトはプラン名)')
               : t('📍 記録名 (例: 本日 1回目)')}
           />
         </div>
@@ -1294,7 +1280,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
           <BarChart3 size={12} color="var(--cyan-neon)" />
-          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('累計値 (クリックで編集 / ±で増減)')}</span>
+          <span style={{ ...labelBaseStyle, marginBottom: 0 }}>{t('累計値 (クリックで編集)')}</span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1332,14 +1318,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 {t('🪙 コイン累計 ')}<span style={{ fontSize: '9px' }}>{t('(累積)')}</span>:
               </span>
               <span>
-                <NumberInput
-                  value={state.recordedCoins}
-                  onChange={(v) => handleUpdateCumulative('recordedCoins', v)}
-                  step={1}
-                  bigStep={100}
-                  width={110}
-                  accent="var(--cyan-neon)"
-                />
+              <NumberInput
+                value={state.recordedCoins}
+                onChange={(v) => handleUpdateCumulative('recordedCoins', v)}
+                step={1}
+                width={110}
+                accent="var(--cyan-neon)"
+              />
                 <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>/ {BIWEEKLY_COINS_CAP.toLocaleString()}</span>
               </span>
             </div>
@@ -1364,7 +1349,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                 value={state.recordedNikukyuu}
                 onChange={(v) => handleUpdateCumulative('recordedNikukyuu', v)}
                 step={1}
-                bigStep={10}
                 width={110}
                 accent="var(--yellow-neon)"
               />
@@ -1593,7 +1577,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       value={goal.current}
                       onChange={(v) => handleUpdateGoalCurrent(goal.id, v)}
                       step={1}
-                      bigStep={10}
                       width={70}
                       accent={goal.completed ? 'var(--green-neon)' : 'var(--cyan-neon)'}
                     />
@@ -1602,7 +1585,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       value={goal.target}
                       onChange={(v) => handleUpdateGoalTarget(goal.id, v)}
                       step={1}
-                      bigStep={10}
                       width={70}
                       accent="var(--magenta-neon, #ff00ff)"
                     />

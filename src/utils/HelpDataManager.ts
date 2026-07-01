@@ -9,7 +9,7 @@ export const HELP_TABS: HelpTab[] = [
   { id: 'bugs', label: '奇妙な動作' },
   { id: 'help', label: '操作ヘルプ' },
   { id: 'credits', label: '出展' },
-  { id: 'settings', label: '設定' },
+  { id: 'settings', label: '⚙️ 設定' },
   { id: 'debug', label: 'デバッグ' }
 ];
 

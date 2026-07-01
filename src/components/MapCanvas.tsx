@@ -216,6 +216,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const redrawStrokesRef = useRef<((overrideElapsed?: number) => void) | null>(null);
   const runnerDotRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
+  const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
 
   // Helper to resolve connection properties between Warp/Stairs
   const getWarpConnectionInfo = (m: HeistMarker, allMarkers: HeistMarker[]) => {
@@ -359,6 +360,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const viewBottom = ((wrapperRect.bottom - containerRect.top) / containerRect.height) * 4550 + PIN_MARGIN;
     return markers.filter(m => {
       if (m.floor !== floor) return false;
+      if (erasedMarkerIdsRef.current.has(m.id)) return false;
       if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
       return m.x >= viewLeft && m.x <= viewRight && m.y >= viewTop && m.y <= viewBottom;
     });
@@ -1815,7 +1817,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
-  const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
   // 消しゴムカーソル円の半径はユーザー設定(eraseSize)に従う
   const getEraseIndicatorRadius = (): number => eraseSize;
 
@@ -1837,9 +1838,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const isIndivType = (type: string) =>
       ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'].includes(type);
     const remaining = markers
-      .filter(m => !toErase.includes(m.id))
+      .filter(m => !toErase.includes(m.id) && !erasedMarkerIdsRef.current.has(m.id))
       .map(m => {
-        if (m.linkedWarpId && toErase.includes(m.linkedWarpId)) {
+        if (m.linkedWarpId && (toErase.includes(m.linkedWarpId) || erasedMarkerIdsRef.current.has(m.linkedWarpId))) {
           const { linkedWarpId, ...rest } = m;
           return rest;
         }

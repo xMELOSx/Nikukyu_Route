@@ -17,8 +17,10 @@ function backfillDefaults(m: HeistMarker): HeistMarker {
 }
 
 function filterLegacyAndClean(markers: HeistMarker[]): HeistMarker[] {
+  const isIndivType = (t: string) =>
+    ['start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'].includes(t);
   return markers
-    .filter(m => m.type !== ('camera' as any) && m.type !== ('guard' as any))
+    .filter(m => m.type !== ('camera' as any) && m.type !== ('guard' as any) && !isIndivType(m.type))
     .map(m => {
       const cleaned: HeistMarker = { ...m };
       if (cleaned.warpWaypoints) {
