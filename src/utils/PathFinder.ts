@@ -84,6 +84,46 @@ export function findBypassingPath(
         });
       });
     });
+
+    // Detect narrow gaps (doorways) between roughly parallel opposing wall
+    // segments on the same floor. For each gap, drop a "passage" node at the
+    // midpoint so A* has a waypoint to route through the opening. We only
+    // consider wall pairs that are close (≤ 24px gap), not parallel to each
+    // other, and where the segment between their midpoints is wall-free.
+    const PASSAGE_GAP_MAX = 24;
+    for (let i = 0; i < flWalls.length; i++) {
+      const wa = flWalls[i];
+      const amid = { x: (wa[0].x + wa[1].x) / 2, y: (wa[0].y + wa[1].y) / 2 };
+      const aDx = wa[1].x - wa[0].x, aDy = wa[1].y - wa[0].y;
+      const aLen = Math.hypot(aDx, aDy);
+      if (aLen === 0) continue;
+      for (let j = i + 1; j < flWalls.length; j++) {
+        const wb = flWalls[j];
+        const bmid = { x: (wb[0].x + wb[1].x) / 2, y: (wb[0].y + wb[1].y) / 2 };
+        const bDx = wb[1].x - wb[0].x, bDy = wb[1].y - wb[0].y;
+        const bLen = Math.hypot(bDx, bDy);
+        if (bLen === 0) continue;
+
+        // Skip if the two wall segments themselves are too long (likely not
+        // the two sides of the same doorway opening).
+        if (aLen > 60 || bLen > 60) continue;
+
+        // Midpoint-to-midpoint distance is the gap width.
+        const gap = Math.hypot(amid.x - bmid.x, amid.y - bmid.y);
+        if (gap <= 0 || gap > PASSAGE_GAP_MAX) continue;
+
+        // The two wall segments must be roughly parallel (same orientation).
+        const dot = (aDx * bDx + aDy * bDy) / (aLen * bLen);
+        if (Math.abs(dot) < 0.7) continue;
+
+        // Make sure the line between the midpoints isn't blocked by another
+        // wall (otherwise this isn't a real opening).
+        if (hitsAnyWall(amid, bmid, fl, walls, 1.0)) continue;
+
+        const passage = { x: (amid.x + bmid.x) / 2, y: (amid.y + bmid.y) / 2, floor: fl };
+        nodes.push(passage);
+      }
+    }
   });
 
   // Add portal (warp/stairs) nodes with marker metadata
@@ -153,8 +193,9 @@ export function findBypassingPath(
       const nj = uniqueNodes[j];
       if (ni.floor !== nj.floor) continue;
       // Portal edges use 1px thickness (pure geometric intersection only)
-      // Regular edges use 4px thickness
-      const thickness = (ni.isPortal || nj.isPortal) ? 1.0 : 4.0;
+      // Regular edges use a thin 2px thickness so narrow corridors (≧ 4px gap)
+      // can still be traversed while wall gaps are clearly avoided.
+      const thickness = (ni.isPortal || nj.isPortal) ? 1.0 : 2.0;
       if (!hitsAnyWall(ni, nj, ni.floor, walls, thickness)) {
         const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
         adj.get(i)!.push({ to: j, cost: d, isTeleport: false });

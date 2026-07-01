@@ -541,7 +541,13 @@ export default function App() {
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>('move');
   const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
   const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
-  const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(false);
+  const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_bypass_walls_enabled');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_bypass_walls_enabled', String(bypassWallsEnabled));
+  }, [bypassWallsEnabled]);
   const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
   const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
   const [eraseSize, setEraseSize] = useState<number>(16);
