@@ -1511,6 +1511,61 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const coords = getCanvasCoords(e);
 
+    // Fast-path: if actively drawing or erasing, handle only that and return immediately
+    // to bypass heavy dragging/collision checks on every single mousemove event.
+    if (isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'draw-wall' || toolMode === 'erase-wall' || toolMode === 'toggle-vis')) {
+      if (toolMode === 'draw') {
+        if (drawMode === 'straight') {
+          setCurrentPoints([currentPoints[0], coords]);
+          const ctx = ctxRef.current;
+          if (ctx) {
+            ctx.beginPath();
+            ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+          }
+          return;
+        }
+        
+        // In active drawing, record raw points in real-time without smoothing delay.
+        // The smoothing/simplification will be applied once on MouseUp for clean performance.
+        if (currentPoints.length > 0) {
+          const last = currentPoints[currentPoints.length - 1];
+          const dx = coords.x - last.x;
+          const dy = coords.y - last.y;
+          if (dx * dx + dy * dy < 16) {
+            // Drop tiny micro-movements < 4px to avoid recording raw jitter
+            return;
+          }
+        }
+        const newPoints = [...currentPoints, coords];
+        setCurrentPoints(newPoints);
+        const ctx = ctxRef.current;
+        if (ctx) {
+          ctx.lineTo(coords.x, coords.y);
+          ctx.stroke();
+        }
+        return;
+      }
+      if (toolMode === 'erase') {
+        unifiedEraseAtPoint(coords, e.altKey);
+        return;
+      }
+      if (toolMode === 'draw-wall') {
+        setCurrentPoints([currentPoints[0], coords]);
+        return;
+      }
+      if (toolMode === 'erase-wall') {
+        eraseWallsAtPoint(coords);
+        return;
+      }
+      if (toolMode === 'toggle-vis') {
+        toggleVisibilityAtPoint(coords);
+        return;
+      }
+      return;
+    }
+
     if ((toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode) {
       setEraseCursor({ x: coords.x, y: coords.y, visible: true });
     } else if (eraseCursor.visible) {
@@ -1634,81 +1689,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    const isDrawingOrErasing = isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'toggle-vis');
-    if (!isEditMode && !isDrawingOrErasing) return;
-
-    if (isDrawing && toolMode === 'draw') {
-      // 'straight' mode: only record the start and end points; intermediate
-      // mouse moves are drawn but not stored.
-      if (drawMode === 'straight') {
-        setCurrentPoints([currentPoints[0], coords]);
-        const ctx = ctxRef.current;
-        if (ctx) {
-          ctx.beginPath();
-          ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
-          ctx.lineTo(coords.x, coords.y);
-          ctx.stroke();
-        }
-        return;
-      }
-      // 'smooth' mode: real-time jitter reduction.
-      // - Skip micro-movements (< 6px) to avoid recording hand jitter
-      // - Average the new point with the previous 2 to smooth out
-      //   larger wobbles (exponential-style moving average)
-      //
-      // IMPORTANT: the polyline (currentPoints) stores the ACTUAL mouse
-      // coords, not the smoothed one. The smoothing is only used for
-      // the on-screen rendering. This keeps the recorded route accurate
-      // enough that hit detection (AutoRoute) can stop on markers that
-      // the user's stroke actually passes through.
-      let effectiveCoord = coords;
-      if (drawMode === 'smooth' && currentPoints.length > 0) {
-        const last = currentPoints[currentPoints.length - 1];
-        const dx = coords.x - last.x;
-        const dy = coords.y - last.y;
-        if (dx * dx + dy * dy < 36) {
-          // Less than ~6px movement — treat as jitter, skip
-          return;
-        }
-        // 3-point moving average: (prev2 + prev1*2 + new) / 4
-        if (currentPoints.length >= 2) {
-          const prev2 = currentPoints[currentPoints.length - 2];
-          const prev1 = last;
-          effectiveCoord = {
-            x: (prev2.x + prev1.x * 2 + coords.x) / 4,
-            y: (prev2.y + prev1.y * 2 + coords.y) / 4
-          };
-        }
-      }
-      const newPoints = [...currentPoints, effectiveCoord];
-      setCurrentPoints(newPoints);
-      const ctx = ctxRef.current;
-      if (ctx) {
-        ctx.lineTo(effectiveCoord.x, effectiveCoord.y);
-        ctx.stroke();
-      }
-      return;
-    }
-
-    if (isDrawing && toolMode === 'erase') {
-      unifiedEraseAtPoint(coords, e.altKey);
-      return;
-    }
-
-    if (isDrawing && toolMode === 'draw-wall') {
-      setCurrentPoints([currentPoints[0], coords]);
-      return;
-    }
-
-    if (isDrawing && toolMode === 'erase-wall') {
-      eraseWallsAtPoint(coords);
-      return;
-    }
-
-    if (isDrawing && toolMode === 'toggle-vis') {
-      toggleVisibilityAtPoint(coords);
-      return;
-    }
   };
 
   const handleMouseUp = () => {
@@ -1847,7 +1827,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
         // to maintain a connected route network.
         if (strokeType === 'solid') {
-          const SNAP_THRESHOLD = drawMode === 'straight' ? 25 : 8;
+          const SNAP_THRESHOLD = drawMode === 'straight' ? 12 : 6;
           const first = points[0];
           const last = points[points.length - 1];
           const snap = (pt: Point): Point => {
