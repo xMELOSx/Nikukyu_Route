@@ -1159,6 +1159,8 @@ export class DataManager {
     try {
       const saves = this.getSavesList();
       const index = saves.findIndex(s => s.id === route.id);
+      // 既存エントリの hasCustomBg は保持する (BG 有無は setSaveMetaBg で別途更新)
+      const prevHasCustomBg = index >= 0 ? !!saves[index].hasCustomBg : false;
       const entry = {
         id: route.id,
         title: route.title,
@@ -1168,7 +1170,8 @@ export class DataManager {
         author: route.author || '',
         renderCache: route.renderCache || '',
         createdAt: route.createdAt,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        hasCustomBg: prevHasCustomBg
       };
       if (index >= 0) {
         saves[index] = entry;
@@ -1184,6 +1187,19 @@ export class DataManager {
       // QuotaExceededError 等: セーブをブロックせず失敗を通知
       console.error('DataManager.saveToLocalStorage failed:', e);
       return false;
+    }
+  }
+
+  // セーブ一覧の hasCustomBg フラグを更新する (IndexedDB 上の BG 状態と連動させる用)
+  static setSaveMetaBg(routeId: string, hasCustomBg: boolean): void {
+    try {
+      const saves = this.getSavesList();
+      const index = saves.findIndex(s => s.id === routeId);
+      if (index < 0) return;
+      saves[index] = { ...saves[index], hasCustomBg };
+      localStorage.setItem('heist_routes_list', JSON.stringify(saves));
+    } catch (e) {
+      console.error('DataManager.setSaveMetaBg failed:', e);
     }
   }
 
@@ -1308,7 +1324,7 @@ export class DataManager {
   }
 
   // Get list of saved routes
-  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; renderCache: string; createdAt: number; updatedAt: number }[] {
+  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; renderCache: string; createdAt: number; updatedAt: number; hasCustomBg?: boolean }[] {
     try {
       const listStr = localStorage.getItem('heist_routes_list');
       if (!listStr) return [];
@@ -1316,8 +1332,13 @@ export class DataManager {
       if (!Array.isArray(parsed)) return [];
       // 旧 originalAuthor フィールドを renderCache へマイグレート
       return parsed.map((e: any) => {
-        if (e && typeof e === 'object' && e.renderCache === undefined) {
-          return { ...e, renderCache: typeof e.originalAuthor === 'string' ? e.originalAuthor : '' };
+        if (e && typeof e === 'object') {
+          const out: any = { ...e };
+          if (out.renderCache === undefined) {
+            out.renderCache = typeof out.originalAuthor === 'string' ? out.originalAuthor : '';
+          }
+          if (out.hasCustomBg === undefined) out.hasCustomBg = false;
+          return out;
         }
         return e;
       });

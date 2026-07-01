@@ -2779,28 +2779,29 @@ export default function App() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                    {isLocal && (
-                      <div>
-                        <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>CUSTOM BG</label>
-                        {isEditMode ? (
-                          <>
-                            <button className="btn-cyber" style={{ width: '100%', marginTop: '4px', padding: '6px' }} onClick={() => fileIO.bgFileInputRef.current?.click()}>
-                              <ImageIcon size={12} /> Upload Map
-                            </button>
-                            <input type="file" ref={fileIO.bgFileInputRef} onChange={fileIO.onBgFileChange} accept="image/*" style={{ display: 'none' }} id="bg-file-input" />
-                          </>
-                        ) : (
-                          <div className="display-field" style={{ marginTop: '4px' }}>
-                            {routeApi.route.customBg[currentFloor] ? t('カスタムBG: 設定済み') : <span className="empty">{t('デフォルトBG使用中')}</span>}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div>
+                      <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>CUSTOM BG</label>
+                      {isEditMode ? (
+                        <>
+                          <button className="btn-cyber" style={{ width: '100%', marginTop: '4px', padding: '6px' }} onClick={() => fileIO.bgFileInputRef.current?.click()}>
+                            <ImageIcon size={12} /> Upload Map
+                          </button>
+                          <input type="file" ref={fileIO.bgFileInputRef} onChange={fileIO.onBgFileChange} accept="image/*" style={{ display: 'none' }} id="bg-file-input" />
+                        </>
+                      ) : (
+                        <div className="display-field" style={{ marginTop: '4px' }}>
+                          {routeApi.route.customBg[currentFloor] ? t('カスタムBG: 設定済み') : <span className="empty">{t('デフォルトBG使用中')}</span>}
+                        </div>
+                      )}
+                    </div>
                     {routeApi.route.customBg[currentFloor] && isEditMode && (
                       <button className="btn-cyber danger" style={{ padding: '4px', fontSize: '10px', marginTop: '4px' }} onClick={() => {
                         const id = routeApi.route.id;
                         routeApi.setRoute(prev => ({ ...prev, customBg: { main: null } }));
                         DataManager.deleteCustomBg(id);
+                        // ロードモーダル用のセーブ一覧メタも更新する
+                        DataManager.setSaveMetaBg(id, false);
+                        routeApi.refreshSavesList();
                       }}>
                         Reset to Default Background
                       </button>
@@ -3431,6 +3432,11 @@ export default function App() {
                               <span>{t('獲得値: ')}<span style={{ color: 'var(--cyan-neon)' }}>${s.targetCash ? parseInt(String(s.targetCash).replace(/,/g, '')).toLocaleString() : '-'} / 🪙{s.targetCoins ? parseInt(String(s.targetCoins).replace(/,/g, '')).toLocaleString() : '-'}</span></span>
                               {s.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
                               {s.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{s.description}</span>}
+                              {s.hasCustomBg && (
+                                <span style={{ fontSize: '9px', padding: '1px 6px', background: 'rgba(57,255,20,0.15)', color: '#39ff14', border: '1px solid #39ff1455', borderRadius: '4px', flexShrink: 0, fontWeight: 700 }}>
+                                  🖼 {t('カスタムBG: あり')}
+                                </span>
+                              )}
                               <SaveListRowAuthor
                                 authorEnc={s.author || ''}
                                 renderCacheEnc={s.renderCache || ''}

@@ -49,6 +49,7 @@ export interface SaveInfo {
   renderCache: string;
   createdAt: number;
   updatedAt: number;
+  hasCustomBg?: boolean;
 }
 
 export interface UseRouteOptions {

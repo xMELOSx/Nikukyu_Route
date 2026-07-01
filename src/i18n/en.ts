@@ -162,6 +162,7 @@ export const en: Locale = {
     '原案者名': 'Original author',
     'カスタムBG: 設定済': 'Custom BG: set',
     'カスタムBG: 設定済み': 'Custom BG: set',
+    'カスタムBG: あり': 'Custom BG: yes',
     'デフォルトBG使用中': 'Using default BG',
     'メモ': 'Memo',
     '備考': 'Memo',

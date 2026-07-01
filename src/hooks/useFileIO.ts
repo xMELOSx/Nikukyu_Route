@@ -346,14 +346,18 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
+      const id = routeApi.route.id;
       // メモリに反映
       routeApi.setRoute(prev => ({ ...prev, customBg: { main: dataUrl } }));
       // IndexedDB にも保存 (プランロード時に自動復元するため)
-      DataManager.saveCustomBg(routeApi.route.id, dataUrl).then((ok) => {
+      DataManager.saveCustomBg(id, dataUrl).then((ok) => {
         if (!ok) {
           showNotification('⚠️ カスタムBGの保存に失敗しました (次回ロード時に復元できません)', 3000);
         }
       });
+      // ロードモーダル用のメタ (= heist_routes_list) にもフラグを立てる
+      DataManager.setSaveMetaBg(id, true);
+      routeApi.refreshSavesList();
     };
     reader.readAsDataURL(f);
   }, [routeApi, routeApi.route.id, showNotification]);

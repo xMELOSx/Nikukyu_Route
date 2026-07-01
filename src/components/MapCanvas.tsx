@@ -1537,27 +1537,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'draw') {
         if (drawMode === 'straight') {
           setCurrentPoints([currentPoints[0], effectiveCoords]);
+          redrawStrokes(); // Clear previous temporary guidelines first!
           const ctx = ctxRef.current;
           if (ctx) {
+            ctx.save();
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeWidth;
+            if (strokeType === 'dashed') ctx.setLineDash([8, 6]);
+            else ctx.setLineDash([]);
             ctx.beginPath();
             ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
             ctx.lineTo(effectiveCoords.x, effectiveCoords.y);
             ctx.stroke();
+            ctx.restore();
           }
           return;
         }
         
-        // In active drawing, record raw points in real-time without smoothing delay.
-        // The smoothing/simplification will be applied once on MouseUp for clean performance.
-        if (currentPoints.length > 0) {
-          const last = currentPoints[currentPoints.length - 1];
-          const dx = coords.x - last.x;
-          const dy = coords.y - last.y;
-          if (dx * dx + dy * dy < 16) {
-            // Drop tiny micro-movements < 4px to avoid recording raw jitter
-            return;
-          }
-        }
         const newPoints = [...currentPoints, coords];
         setCurrentPoints(newPoints);
         const ctx = ctxRef.current;
