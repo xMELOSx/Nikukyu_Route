@@ -1514,14 +1514,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Fast-path: if actively drawing or erasing, handle only that and return immediately
     // to bypass heavy dragging/collision checks on every single mousemove event.
     if (isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'draw-wall' || toolMode === 'erase-wall' || toolMode === 'toggle-vis')) {
+      // 45-degree angle snap logic when Alt key is pressed during straight lines
+      let effectiveCoords = coords;
+      if (e.altKey && currentPoints.length > 0 && (toolMode === 'draw-wall' || (toolMode === 'draw' && drawMode === 'straight'))) {
+        const startPt = currentPoints[0];
+        const dx = coords.x - startPt.x;
+        const dy = coords.y - startPt.y;
+        const dist = Math.hypot(dx, dy);
+        
+        if (dist > 1) {
+          // Calculate angle in radians, snap to closest 45 degrees (PI / 4)
+          const angle = Math.atan2(dy, dx);
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          
+          effectiveCoords = {
+            x: Math.round(startPt.x + dist * Math.cos(snappedAngle)),
+            y: Math.round(startPt.y + dist * Math.sin(snappedAngle))
+          };
+        }
+      }
+
       if (toolMode === 'draw') {
         if (drawMode === 'straight') {
-          setCurrentPoints([currentPoints[0], coords]);
+          setCurrentPoints([currentPoints[0], effectiveCoords]);
           const ctx = ctxRef.current;
           if (ctx) {
             ctx.beginPath();
             ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
-            ctx.lineTo(coords.x, coords.y);
+            ctx.lineTo(effectiveCoords.x, effectiveCoords.y);
             ctx.stroke();
           }
           return;
@@ -1552,7 +1572,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       if (toolMode === 'draw-wall') {
-        setCurrentPoints([currentPoints[0], coords]);
+        setCurrentPoints([currentPoints[0], effectiveCoords]);
         return;
       }
       if (toolMode === 'erase-wall') {
