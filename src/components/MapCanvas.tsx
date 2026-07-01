@@ -1837,9 +1837,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
-        // 補正後 (smoothing applied during drawing) ・接続前 (pre-snap) の
-        // ポイント列を保持 — 距離計測モードでの「本来の長さ」の基準値。
-        const originalPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
+        
+        // Apply 3-point moving average smoothing ONLY for 'smooth' mode on MouseUp
+        if (drawMode === 'smooth' && points.length >= 3) {
+          const smoothed: Point[] = [points[0]];
+          for (let idx = 1; idx < points.length - 1; idx++) {
+            const prev = points[idx - 1];
+            const curr = points[idx];
+            const next = points[idx + 1];
+            smoothed.push({
+              x: Math.round((prev.x + curr.x * 2 + next.x) / 4),
+              y: Math.round((prev.y + curr.y * 2 + next.y) / 4)
+            });
+          }
+          smoothed.push(points[points.length - 1]);
+          points = smoothed;
+        }
+
+        // 補正後・接続前のポイント列を保持
+        const originalPoints = points.map(p => ({ x: p.x, y: p.y }));
         // Snap endpoints of solid (route) lines to nearby existing solid line endpoints
         // to maintain a connected route network.
         if (strokeType === 'solid') {

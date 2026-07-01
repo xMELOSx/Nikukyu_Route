@@ -972,7 +972,33 @@ export default function App() {
         return;
       }
 
+      // Check if the drawn line actually intersects any walls on the current floor first.
+      // If it doesn't cross any walls, we keep the user's drawn stroke exactly as-is.
       const allWalls = globalWallsRef.current as any;
+      const floorWalls = allWalls[currentFloor] || [];
+      let intersectsAnyWall = false;
+      
+      const { isIntersecting } = await import('./utils/PathFinder');
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        for (const w of floorWalls) {
+          if (isIntersecting(p1, p2, w[0], w[1], 4.0)) {
+            intersectsAnyWall = true;
+            break;
+          }
+        }
+        if (intersectsAnyWall) break;
+      }
+
+      if (!intersectsAnyWall) {
+        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        routeApi.setRoute(prev => ({
+          ...prev,
+          strokes: { ...prev.strokes, [currentFloor]: newStrokes }
+        }));
+        return;
+      }
       const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
       const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
         
