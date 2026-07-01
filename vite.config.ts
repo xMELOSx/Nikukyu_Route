@@ -13,10 +13,12 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           const apiPath = '/api/global-markers';
+          const wallsApiPath = '/api/global-walls';
           const presetApiPath = '/api/default-preset';
           const urlPath = req.url?.split('?')[0] || '';
           
           const isApiMatch = urlPath === apiPath || urlPath.endsWith(apiPath);
+          const isWallsApiMatch = urlPath === wallsApiPath || urlPath.endsWith(wallsApiPath);
           const isPresetMatch = urlPath === presetApiPath || urlPath.endsWith(presetApiPath);
           const helpApiPath = '/api/global-help';
           const isHelpMatch = urlPath === helpApiPath || urlPath.endsWith(helpApiPath);
@@ -79,6 +81,29 @@ export default defineConfig({
               });
               req.on('end', () => {
                 const filePath = path.resolve(__dirname, 'global_markers.json');
+                fs.writeFileSync(filePath, body, 'utf-8');
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true }));
+              });
+            }
+          } else if (isWallsApiMatch) {
+            if (req.method === 'GET') {
+              const filePath = path.resolve(__dirname, 'global_walls.json');
+              if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                res.setHeader('Content-Type', 'application/json');
+                res.end(data);
+              } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({}));
+              }
+            } else if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => {
+                body += chunk;
+              });
+              req.on('end', () => {
+                const filePath = path.resolve(__dirname, 'global_walls.json');
                 fs.writeFileSync(filePath, body, 'utf-8');
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ success: true }));

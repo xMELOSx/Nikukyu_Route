@@ -2901,13 +2901,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Current Position Marker (▼) */}
-          {autoRouteActive && (
+          {currentPosition && (
             <div
               ref={runnerDotRef}
               className="current-position-marker"
               style={{
-                left: `${currentPosition ? currentPosition.x : 0}px`,
-                top: `${currentPosition ? currentPosition.y : 0}px`,
+                left: `${currentPosition.x}px`,
+                top: `${currentPosition.y}px`,
                 transform: `translate(-50%, -100%) scale(${Math.min(3, 1 / Math.sqrt(zoom))})`,
                 transformOrigin: 'bottom center'
               }}

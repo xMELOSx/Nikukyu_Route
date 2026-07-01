@@ -783,13 +783,19 @@ export default function App() {
 
   const globalMarkersStore = useGlobalMarkers({ isLocal });
 
-  // Global walls are shared across all plans. The source of truth comes from
-  // `global_walls.json` (committed to the repo) for the shared default, with
-  // localStorage overriding on a per-device basis.
+  // Global Walls — shared across all plans AND all users. The hook loads from
+  // the `/api/global-walls` endpoint (with the static `global_walls.json` as
+  // a build-time fallback for static hosts) and persists edits back to the
+  // same file. `localStorage` is used as a tiny client-side cache so the
+  // first paint can show walls before the network round-trip resolves, but
+  // the server is the source of truth.
   const globalWallsStore = useGlobalWalls({ isLocal });
   const globalWalls = globalWallsStore.walls;
-  const globalWallsRef = globalWallsStore.wallsRef;
-  const updateGlobalWalls = globalWallsStore.replaceWalls;
+  const globalWallsRef = useRef(globalWalls);
+  globalWallsRef.current = globalWalls;
+  const updateGlobalWalls = (next: Record<string, any>) => {
+    globalWallsStore.replace(next as any);
+  };
 
   const routeApi = useRoute({
     isLocal,
@@ -806,6 +812,22 @@ export default function App() {
 
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
+
+  // Migration: if globalWalls is empty but route has walls, migrate them
+  useEffect(() => {
+    const gw = globalWallsRef.current;
+    const hasGlobalWalls = Object.values(gw).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+    if (!hasGlobalWalls) {
+      const routeWalls = routeApi.route.walls;
+      if (routeWalls) {
+        const hasRouteWalls = Object.values(routeWalls).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+        if (hasRouteWalls) {
+          console.log('[Walls Migration] Migrating walls from route to global:', routeWalls);
+          updateGlobalWalls(routeWalls as any);
+        }
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ロードモーダルを開いた時にプリセットをメモリにロード、
   // 閉じた時にメモリから破棄する (= プリセットの routeData が巨大なので
@@ -2164,33 +2186,6 @@ export default function App() {
                 >
                   🗑️ {t('壁データをクリア')}
                 </button>
-                <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
-                  <button
-                    className="btn-cyber"
-                    style={{ flex: 1, padding: '5px', fontSize: '10px' }}
-                    title={t('現在の壁データを global_walls.json 形式で書き出します。共有したい場合はこのファイルをリポジトリにコミットしてください。')}
-                    onClick={() => {
-                      globalWallsStore.downloadJson('global_walls.json');
-                      notification.show(t('壁データをJSONとして書き出しました'));
-                    }}
-                  >
-                    💾 {t('JSONに保存')}
-                  </button>
-                  <button
-                    className="btn-cyber"
-                    style={{ flex: 1, padding: '5px', fontSize: '10px' }}
-                    title={t('ローカル保存と全フロア壁データを破棄し、リポジトリの global_walls.json を再読込します。')}
-                    onClick={() => {
-                      globalWallsStore.clearFloorWalls();
-                      try { localStorage.removeItem('heist_global_walls_v2'); } catch {}
-                      notification.show(t('壁データをデフォルトに戻しました'));
-                      // ページ再読込で global_walls.json から再シード
-                      setTimeout(() => window.location.reload(), 400);
-                    }}
-                  >
-                    ↩️ {t('デフォルトに戻す')}
-                  </button>
-                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
                     <input

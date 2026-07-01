@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { type FloorType, type Point } from '../utils/DataManager';
-
-const GLOBAL_WALLS_FILE = 'global_walls.json';
-const LOCAL_STORAGE_KEY = 'heist_global_walls_v2';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { type Point } from '../utils/DataManager';
 
 export type GlobalWalls = { [key: string]: [Point, Point][] };
 
-function normalizeFloorKey(k: string): string {
-  if (k === 'main' || k === 'second' || k === 'third' || k === 'fourth') return k;
-  return k;
-}
+const GLOBAL_WALLS_FILE = 'global_walls.json';
+const LOCAL_WALLS_KEY = 'heist_global_walls';
+const FLOORS = ['main', 'second', 'third', 'fourth'] as const;
+const EMPTY_WALLS: GlobalWalls = {
+  main: [],
+  second: [],
+  third: [],
+  fourth: []
+};
 
 function sanitizeWalls(raw: unknown): GlobalWalls {
-  const out: GlobalWalls = {};
+  const out: GlobalWalls = { ...EMPTY_WALLS };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const [floor, segs] of Object.entries(raw as Record<string, unknown>)) {
     if (!Array.isArray(segs)) continue;
@@ -28,36 +30,35 @@ function sanitizeWalls(raw: unknown): GlobalWalls {
       ) continue;
       cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
     }
-    if (cleaned.length > 0) {
-      out[normalizeFloorKey(floor)] = cleaned;
-    }
+    out[floor] = cleaned;
   }
   return out;
 }
 
-function isEmpty(walls: GlobalWalls): boolean {
-  return Object.values(walls).every((arr) => !Array.isArray(arr) || arr.length === 0);
+function ensureFloors(walls: GlobalWalls): GlobalWalls {
+  const next: GlobalWalls = { ...walls };
+  for (const f of FLOORS) {
+    if (!Array.isArray(next[f])) next[f] = [];
+  }
+  return next;
 }
 
 function loadFromLocalStorage(): GlobalWalls | null {
-  if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const cleaned = sanitizeWalls(parsed);
-    if (isEmpty(cleaned)) return null;
-    return cleaned;
+    const saved = localStorage.getItem(LOCAL_WALLS_KEY);
+    if (!saved) return null;
+    return ensureFloors(sanitizeWalls(JSON.parse(saved)));
   } catch {
     return null;
   }
 }
 
-function saveToLocalStorage(walls: GlobalWalls): void {
-  if (typeof window === 'undefined') return;
+function saveToLocalStorage(walls: GlobalWalls) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(walls));
-  } catch { /* quota / unavailable: ignore */ }
+    localStorage.setItem(LOCAL_WALLS_KEY, JSON.stringify(ensureFloors(walls)));
+  } catch {
+    // localStorage が利用不可でもエラーで止めない
+  }
 }
 
 export interface UseGlobalWallsOptions {
@@ -66,155 +67,160 @@ export interface UseGlobalWallsOptions {
 
 export interface UseGlobalWallsApi {
   walls: GlobalWalls;
-  /** Direct ref to the current walls (always up-to-date, safe for callbacks). */
-  wallsRef: React.MutableRefObject<GlobalWalls>;
-  /** Replace the whole wall set (e.g. on clear). */
-  replaceWalls: (next: GlobalWalls) => void;
-  /** Update walls for a single floor. */
-  setFloorWalls: (floor: FloorType | string, segments: [Point, Point][]) => void;
-  /** Clear walls for a specific floor (or all floors when omitted). */
-  clearFloorWalls: (floor?: FloorType | string) => void;
-  /** Build a JSON string for exporting back into global_walls.json. */
-  exportJson: () => string;
-  /** Trigger a browser download of the current walls as JSON. */
-  downloadJson: (filename?: string) => void;
-  /** True when global_walls.json has been fetched (success or fail). */
   loaded: boolean;
+  /** Replace the entire wall set. Persists to localStorage and the global API. */
+  replace: (walls: GlobalWalls) => void;
+  /** Merge incoming wall segments into the current set (used by seed). */
+  mergeFromImport: (incoming: GlobalWalls) => void;
 }
 
 /**
- * Global wall state. Walls are shared across all plans, so the data must
- * come from a place that is shared by everyone, not from a single browser's
- * localStorage.
+ * Global wall state — shared across all plans/users.
  *
- * Priority on load:
- *   1) localStorage  — local edits win on this device
- *   2) global_walls.json (fetched from BASE_URL) — committed shared default
+ * The walls live in a single repo-tracked file (`global_walls.json`) and are
+ * exposed through `/api/global-walls` (mirroring the global-markers API).
+ * Every visitor sees the same wall data:
  *
- * Mutations (replaceWalls / setFloorWalls / clearFloorWalls) are persisted
- * to localStorage so the user's local edits survive page reload. To push
- * a curated change to everyone, the user can call `downloadJson` and
- * commit the result back to global_walls.json in the repo.
+ *   1. The API (`/api/global-walls`) is the source of truth on the server.
+ *   2. A static `global_walls.json` ships as a build-time fallback for static
+ *      hosting (GitHub Pages etc.).
+ *   3. `localStorage` is used as a tiny client-side cache so the first paint
+ *      can show walls before the network round-trip resolves, and so the
+ *      write happens to feel instant. The cache is reconciled with the API
+ *      on every load — the server wins.
+ *
+ * The previous implementation wrote walls to localStorage only, which meant
+ * one user's edits were invisible to everyone else. This rewrite persists
+ * walls globally so all collaborators see the same walls.
  */
 export function useGlobalWalls({ isLocal }: UseGlobalWallsOptions): UseGlobalWallsApi {
-  void isLocal;
-  const [walls, setWalls] = useState<GlobalWalls>({});
+  const [walls, setWalls] = useState<GlobalWalls>(() => {
+    return ensureFloors(loadFromLocalStorage() ?? EMPTY_WALLS);
+  });
   const [loaded, setLoaded] = useState(false);
+  const isLocalRef = useRef(isLocal);
+  isLocalRef.current = isLocal;
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wallsRef = useRef<GlobalWalls>(walls);
+  wallsRef.current = walls;
 
-  // Keep wallsRef in sync with the latest walls state.
-  useEffect(() => {
-    wallsRef.current = walls;
-  }, [walls]);
+  const persistToServer = useCallback((next: GlobalWalls) => {
+    if (!isLocalRef.current) return;
+    const json = JSON.stringify(ensureFloors(next));
+    fetch(`${import.meta.env.BASE_URL}api/global-walls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json
+    }).catch(err => {
+      console.error('Failed to persist walls to /api/global-walls:', err);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    const apply = (next: GlobalWalls) => {
+    const applyMerge = (incoming: GlobalWalls) => {
       if (cancelled) return;
-      setWalls(next);
-      wallsRef.current = next;
+      setWalls(prev => {
+        const next = ensureFloors({ ...prev });
+        for (const [floor, segs] of Object.entries(incoming)) {
+          if (segs.length === 0) continue;
+          const existing = next[floor] || [];
+          const sigs = new Set(existing.map(w => `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`));
+          for (const w of segs) {
+            const sig = `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`;
+            if (!sigs.has(sig)) {
+              existing.push([{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }]);
+              sigs.add(sig);
+            }
+          }
+          next[floor] = existing;
+        }
+        return next;
+      });
     };
 
-    const loadFromFile = async () => {
+    const seedFromApiOrFile = async () => {
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}${GLOBAL_WALLS_FILE}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const cleaned = sanitizeWalls(data);
-        if (cancelled || isEmpty(cleaned)) return;
-        apply(cleaned);
+        const apiRes = await fetch(`${import.meta.env.BASE_URL}api/global-walls`);
+        if (apiRes.ok) {
+          const data = await apiRes.json();
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const total = Object.values(data as GlobalWalls).reduce(
+              (sum, segs) => sum + (Array.isArray(segs) ? segs.length : 0), 0
+            );
+            if (total > 0) {
+              applyMerge(sanitizeWalls(data));
+              return;
+            }
+          }
+        }
+      } catch { /* fall through to static file */ }
+
+      try {
+        const fileRes = await fetch(`${import.meta.env.BASE_URL}${GLOBAL_WALLS_FILE}`);
+        if (fileRes.ok) {
+          const data = await fileRes.json();
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const total = Object.values(data as GlobalWalls).reduce(
+              (sum, segs) => sum + (Array.isArray(segs) ? segs.length : 0), 0
+            );
+            if (total > 0) {
+              applyMerge(sanitizeWalls(data));
+            }
+          }
+        }
       } catch (err) {
-        console.error('Failed to load global_walls.json:', err);
+        console.error('Failed to load global walls from any source:', err);
       }
     };
 
-    const local = loadFromLocalStorage();
-    if (local) {
-      apply(local);
-      setLoaded(true);
-    } else {
-      loadFromFile().then(() => {
-        if (!cancelled) setLoaded(true);
-      });
-    }
+    // Always seed from the server/file so the latest shared walls appear for
+    // every visitor. Existing local edits are preserved via the merge logic.
+    seedFromApiOrFile().finally(() => {
+      if (!cancelled) setLoaded(true);
+    });
 
     return () => { cancelled = true; };
   }, []);
 
-  const replaceWalls = useCallback((next: GlobalWalls) => {
-    const cleaned = sanitizeWalls(next);
-    setWalls(cleaned);
-    wallsRef.current = cleaned;
-    saveToLocalStorage(cleaned);
+  // Debounced persist: write to localStorage (instant) and to the API
+  // (debounced so a wall-draw stroke produces a single network request).
+  useEffect(() => {
+    if (!loaded) return;
+    saveToLocalStorage(walls);
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistToServer(walls);
+    }, 150);
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, [walls, loaded, persistToServer]);
+
+  const replace = useCallback((next: GlobalWalls) => {
+    setWalls(ensureFloors(next));
   }, []);
 
-  const setFloorWalls = useCallback((floor: FloorType | string, segments: [Point, Point][]) => {
-    const key = normalizeFloorKey(String(floor));
-    const cleaned: [Point, Point][] = [];
-    for (const seg of segments) {
-      if (!Array.isArray(seg) || seg.length < 2) continue;
-      const a = seg[0] as Point;
-      const b = seg[1] as Point;
-      if (
-        !a || !b ||
-        typeof a.x !== 'number' || typeof a.y !== 'number' ||
-        typeof b.x !== 'number' || typeof b.y !== 'number'
-      ) continue;
-      cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
-    }
-    setWalls((prev) => {
-      const next: GlobalWalls = { ...prev };
-      if (cleaned.length === 0) {
-        delete next[key];
-      } else {
-        next[key] = cleaned;
+  const mergeFromImport = useCallback((incoming: GlobalWalls) => {
+    setWalls(prev => {
+      const next = ensureFloors({ ...prev });
+      for (const [floor, segs] of Object.entries(incoming)) {
+        if (!segs.length) continue;
+        const existing = next[floor] || [];
+        const sigs = new Set(existing.map(w => `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`));
+        for (const w of segs) {
+          const sig = `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`;
+          if (!sigs.has(sig)) {
+            existing.push([{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }]);
+            sigs.add(sig);
+          }
+        }
+        next[floor] = existing;
       }
-      wallsRef.current = next;
-      saveToLocalStorage(next);
       return next;
     });
   }, []);
 
-  const clearFloorWalls = useCallback((floor?: FloorType | string) => {
-    setWalls((prev) => {
-      const next: GlobalWalls = { ...prev };
-      if (floor === undefined) {
-        for (const k of Object.keys(next)) delete next[k];
-      } else {
-        delete next[normalizeFloorKey(String(floor))];
-      }
-      wallsRef.current = next;
-      saveToLocalStorage(next);
-      return next;
-    });
-  }, []);
-
-  const exportJson = useCallback((): string => {
-    return JSON.stringify(wallsRef.current, null, 2);
-  }, []);
-
-  const downloadJson = useCallback((filename: string = 'global_walls.json') => {
-    if (typeof window === 'undefined') return;
-    const blob = new Blob([exportJson()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [exportJson]);
-
-  return {
-    walls,
-    wallsRef,
-    replaceWalls,
-    setFloorWalls,
-    clearFloorWalls,
-    exportJson,
-    downloadJson,
-    loaded
-  };
+  return { walls, loaded, replace, mergeFromImport };
 }
