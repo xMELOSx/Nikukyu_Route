@@ -35,6 +35,8 @@ export interface UseFileIOApi {
     canvas: HTMLCanvasElement | null;
     svgString: string;
     skipDataBar?: boolean;
+    lineThickness?: number;
+    showTimestamp?: boolean;
   }) => void;
   onJsonFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBgFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -110,7 +112,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   }, [routeApi.route, markerScale]);
 
   const exportPNG = useCallback((params: {
-    floor: FloorType; canvas: HTMLCanvasElement | null; svgString: string; skipDataBar?: boolean;
+    floor: FloorType; canvas: HTMLCanvasElement | null; svgString: string; skipDataBar?: boolean; lineThickness?: number; showTimestamp?: boolean;
   }) => {
     const routeForExport: RouteData = {
       ...routeApi.route,
@@ -130,7 +132,9 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         a.click();
         document.body.removeChild(a);
       },
-      params.skipDataBar
+      params.skipDataBar,
+      params.lineThickness,
+      params.showTimestamp
     );
   }, [routeApi.route, globalMarkersStore.globalMarkers, markerScale]);
 
@@ -234,11 +238,12 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         img.src = url;
       });
       URL.revokeObjectURL(url);
-      const data = await DataManager.decodePngData(img, rawBuffer);
-      if (!data) {
+      const result = await DataManager.decodePngData(img, rawBuffer);
+      if (!result) {
         showNotification('PNGからデータを読み取れませんでした（データバー未検出）', 3000);
         return;
       }
+      const { data, source } = result;
       const clean = DataManager.sanitizeRouteForExport(data);
       // 旧 originalAuthor キーを renderCache へマイグレート
       const cleanMigrated = migrateOriginalAuthorToRenderCache(clean as any) as RouteData;
@@ -308,7 +313,8 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
           3000
         );
       }
-      showNotification(`PNGインポート完了: ${importedRoute.title}`, 2000);
+      const sourceLabel = source === 'dataBar' ? 'データバー' : 'メタデータ';
+      showNotification(`PNGインポート完了: ${importedRoute.title} (${sourceLabel}から読み込み)`, 2000);
     } catch (err) {
       showNotification('PNG読み込みに失敗しました', 3000);
     }

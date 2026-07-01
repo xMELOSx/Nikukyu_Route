@@ -88,8 +88,13 @@ export function t(key: string, ...args: unknown[]): string {
   // 1. アプリ辞書 (固定) を引く
   const locale = locales[currentLang];
   let s = (locale?.dict && locale.dict[key]) || '';
-  // 2. アプリ辞書に無ければユーザー辞書を引く
-  //    UI 言語に対応する「逆方向」の辞書を引く
+  // 2. アプリ辞書に無ければユーザー辞書 (= localStorage) を引く
+  //    個人データ優先 = まず UI 言語のユーザー辞書を試し、
+  //    無ければ逆方向の辞書を引く
+  if (!s) {
+    const sameLang = getUserDictFor(currentLang);
+    s = sameLang[key] || '';
+  }
   if (!s) {
     const user = getUserDictFor(getInverseDictLang());
     s = user[key] || '';
@@ -122,9 +127,13 @@ export function tNote(note: string | undefined | null): string {
     //  - UI=ja, 原文=英語   → ja 辞書を引く
     // それ以外 (= 原文と UI 言語が同じ、または辞書に該当なし) は原文のまま
     if (currentLang === 'en' && hasJa) {
+      const sysDict = locales['en'].dict;
+      if (sysDict[trimmed]) return sysDict[trimmed];
       const en = getUserDictFor('en');
       if (en[trimmed]) return en[trimmed];
     } else if (currentLang === 'ja' && !hasJa) {
+      const sysDict = locales['ja'].dict;
+      if (sysDict[trimmed]) return sysDict[trimmed];
       const ja = getUserDictFor('ja');
       if (ja[trimmed]) return ja[trimmed];
     }

@@ -34,6 +34,10 @@ interface MapCanvasProps {
   editStrokeIdxs?: Set<number>;
   /** 線分編集ツールの選択集合を更新する */
   onEditStrokeIdxsChange?: (next: Set<number>) => void;
+  /** 距離計測ツールの選択集合 (App 側でツールバー表示するため) */
+  measureSelectedStrokeIdxs?: Set<number>;
+  /** 距離計測ツールの選択集合を更新する */
+  onMeasureSelectedStrokeIdxsChange?: (next: Set<number>) => void;
   /** ツール使用中 (draw / edit-stroke / measure) にマーカーへのヒットを無効化
    *  (= ピンに隠れて線がクリックできない問題を防ぐ共通トグル) */
   blockMarkerClicksDuringTools?: boolean;
@@ -140,6 +144,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   eraseSize = 16,
   editStrokeIdxs,
   onEditStrokeIdxsChange,
+  measureSelectedStrokeIdxs,
+  onMeasureSelectedStrokeIdxsChange,
   blockMarkerClicksDuringTools,
   strokeColor,
   strokeWidth,
@@ -801,7 +807,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const prev = prevStrokesLengthRef.current;
     if (strokes.length > prev) {
       // ライン追加 → 旧選択を破棄して新規末尾だけ覚える
-      setHighlightedStrokeIdxs(new Set([strokes.length - 1]));
+      const next = new Set([strokes.length - 1]);
+      setHighlightedStrokeIdxs(next);
+      onMeasureSelectedStrokeIdxsChange?.(next);
     }
     prevStrokesLengthRef.current = strokes.length;
   }, [strokes.length]);
@@ -1021,7 +1029,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // ハイライト描画 (measure と edit-stroke 共通)
     // - measure: 計測用に選択した線を光らせる
     // - edit-stroke: 編集中に選択した線を光らせる
-    const activeHighlight = (toolMode === 'measure' ? highlightedStrokeIdxs : (editStrokeIdxs ?? new Set<number>()));
+    const activeHighlight = (toolMode === 'measure'
+      ? (measureSelectedStrokeIdxs ?? highlightedStrokeIdxs)
+      : (editStrokeIdxs ?? new Set<number>()));
     if ((toolMode === 'measure' || toolMode === 'edit-stroke') && activeHighlight.size > 0) {
       ctx.save();
       ctx.lineCap = 'round';
@@ -1243,7 +1253,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const coords = getCanvasCoords(e);
 
-    // 距離計測モード: クリックで線を選択 (Alt でトグル追加、通常クリックで置き換え)
+    // 距離計測モード: クリックで線を選択 (Alt で累積追加、通常クリックで置き換え)
     if (toolMode === 'measure' && isEditMode) {
       const HIT_THRESHOLD = 16;
       let bestIdx = -1;
@@ -1259,20 +1269,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (bestIdx >= 0) {
         if (e.altKey) {
-          // Alt: セットにトグル (あれば外す、なければ追加) — 前の選択を保持
+          // Alt: 常に追加
           setHighlightedStrokeIdxs(prev => {
             const next = new Set(prev);
-            if (next.has(bestIdx)) next.delete(bestIdx);
-            else next.add(bestIdx);
+            next.add(bestIdx);
+            onMeasureSelectedStrokeIdxsChange?.(next);
             return next;
           });
         } else {
           // 通常: クリックした線だけにする (置き換え)
-          setHighlightedStrokeIdxs(new Set([bestIdx]));
+          const next = new Set([bestIdx]);
+          setHighlightedStrokeIdxs(next);
+          onMeasureSelectedStrokeIdxsChange?.(next);
         }
       } else if (!e.altKey) {
         // 空所クリック (Alt なし): クリア
         setHighlightedStrokeIdxs(new Set());
+        onMeasureSelectedStrokeIdxsChange?.(new Set());
       }
       // Alt 押下時の空所クリック → 何もせず前のセットを保持
       return;
@@ -2778,6 +2791,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     {(() => {
                       const note = (m.note || '').trim();
                       if (!note) return t('Text');
+                      const translated = t(note);
+                      if (translated !== note) return translated;
                       const en = getUserDictFor('en');
                       if (en[note]) return en[note];
                       const ja = getUserDictFor('ja');
@@ -3596,7 +3611,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const showTT = isEditing ? textTooltip : !!hm.textTooltip;
             if (showTT) text = desc || hm.note || 'Text';
           } else {
-            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || 'Info Pin') : isNoteType(hm.type) ? (hm.note || 'Memo') : hm.note || (hm.type === 'warp' ? 'Warp Point' : hm.type === 'iwarp' ? 'Warp Point' : hm.type === 'stairs' ? 'Stairs' : hm.type === 'phone' ? (hm.phoneLocked ? '🔒 Always On' : (hm.phoneActive ? 'ACTIVE' : 'Inactive')) : hm.type === 'boss' ? (hm.note?.trim() || 'Boss') : (hm.type === 'battle' || hm.type === 'gbattle') ? 'Battle' : (hm.type === 'picking' || hm.type === 'gpicking') ? 'Picking' : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? 'Long Picking' : hm.type === 'eh' ? 'エターナルハート発見地点' : hm.type === 'cardkey' ? 'カードキー発見ポイント' : hm.type === 'skill_cd' ? `${(hm.skillLabel || hm.note || 'スキル').trim() || 'スキル'} (CD ${hm.skillCdSeconds ?? 0}秒)` : '');
+            text = isInfoType(hm.type) ? (hm.infoLabel?.trim() || t('Info Pin')) : isNoteType(hm.type) ? (tNote(hm.note) || t('Memo')) : tNote(hm.note) || (hm.type === 'warp' ? t('Warp Point') : hm.type === 'iwarp' ? t('Warp Point') : hm.type === 'stairs' ? t('Stairs') : hm.type === 'phone' ? (hm.phoneLocked ? t('🔒 Always On') : (hm.phoneActive ? t('ACTIVE') : t('Inactive'))) : hm.type === 'boss' ? (tNote(hm.note)?.trim() || t('Boss')) : (hm.type === 'battle' || hm.type === 'gbattle') ? t('Battle') : (hm.type === 'picking' || hm.type === 'gpicking') ? t('Picking') : (hm.type === 'long_picking' || hm.type === 'glong_picking') ? t('Long Picking') : hm.type === 'eh' ? t('エターナルハート発見地点') : hm.type === 'cardkey' ? t('カードキー発見ポイント') : hm.type === 'skill_cd' ? `${(hm.skillLabel || tNote(hm.note) || t('スキル')).trim() || t('スキル')} (CD ${hm.skillCdSeconds ?? 0}${t('秒')})` : '');
           }
           if (!text) return null;
           const pad = 14;
@@ -3791,7 +3806,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           <textarea
-            placeholder={isInfoType(activeNoteMarker.type) ? '説明テキスト' : 'ルートのメモや攻略情報を記入...'}
+            placeholder={isInfoType(activeNoteMarker.type) ? t('説明テキスト') : t('ルートのメモや攻略情報を記入...')}
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             autoFocus
@@ -4266,7 +4281,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                 />
                 <label htmlFor="eh-high-rate-cb" style={{ fontSize: '10px', color: 'var(--cyan-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
-                  出現率が高い (High Spawn Rate) - 強調表示する
+                  {t('出現率が高い')} (High Spawn Rate) - {t('強調表示する')}
                 </label>
               </div>
               {activeNoteMarker && <MediaManager marker={activeNoteMarker} markers={markers} onMarkersChange={onMarkersChange} isLocal={isLocal} isIndividual={isIndiv} />}
@@ -4293,7 +4308,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: 'var(--green-neon)', cursor: 'pointer' }}
                 />
                 <label htmlFor="cardkey-high-rate-cb" style={{ fontSize: '10px', color: 'var(--green-neon)', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' }}>
-                  出現率が高い (High Spawn Rate) - 強調表示する
+                  {t('出現率が高い')} (High Spawn Rate) - {t('強調表示する')}
                 </label>
               </div>
             </div>

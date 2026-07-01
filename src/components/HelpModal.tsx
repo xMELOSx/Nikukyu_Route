@@ -122,7 +122,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 240, 255, 0.2)', paddingBottom: '10px', marginBottom: '0' }}>
           <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--cyan-neon)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            ❓ ヘルプ・情報
+            {t('ヘルプ・情報')}
           </span>
           <button onClick={() => { onClose(); setIsHelpPreviewMode(false); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>
             ✕
@@ -143,7 +143,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           {isDebugTab ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px' }}>
               <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--cyan-neon)', marginBottom: '4px' }}>
-                🔧 デバッグメニュー（グローバル編集モード専用）
+                {t('デバッグメニュー（グローバル編集モード専用）')}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '4px' }}>
                 <span>{t('🏷️ アプリバージョン')}</span>
@@ -243,13 +243,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       <button className="btn-cyber success" style={{ fontSize: '10px', padding: '4px 12px', clipPath: 'none' }} onClick={async () => {
                         try {
                           const res = await fetch('/api/global-markers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: globalMarkerJson });
-                          if (res.ok) { setGlobalMarkerSaveMsg('保存しました'); setTimeout(() => setGlobalMarkerSaveMsg(''), 2000); }
-                          else { setGlobalMarkerSaveMsg('保存失敗'); }
-                        } catch { setGlobalMarkerSaveMsg('エラー'); }
+                          if (res.ok) { setGlobalMarkerSaveMsg(t('保存しました')); setTimeout(() => setGlobalMarkerSaveMsg(''), 2000); }
+                          else { setGlobalMarkerSaveMsg(t('保存失敗')); }
+                        } catch { setGlobalMarkerSaveMsg(t('エラー')); }
                       }}>
-                        💾 保存
+                        💾 {t('保存')}
                       </button>
-                      {globalMarkerSaveMsg && <span style={{ fontSize: '10px', color: globalMarkerSaveMsg === '保存しました' ? '#0f0' : '#f55' }}>{globalMarkerSaveMsg}</span>}
+                      {globalMarkerSaveMsg && <span style={{ fontSize: '10px', color: globalMarkerSaveMsg === t('保存しました') ? '#0f0' : '#f55' }}>{globalMarkerSaveMsg}</span>}
                     </div>
                   </div>
                 )}
@@ -265,7 +265,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       onChange={(e) => onSetShowDetectionRanges(e.target.checked)}
                       style={{ accentColor: '#ff9500', cursor: 'pointer' }}
                     />
-                    🎯 判定範囲を強調表示
+                    🎯 {t('判定範囲を強調表示')}
                   </label>
                 )}
 
@@ -311,9 +311,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 )}
 
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
-                  スライダーで各マーカーの判定距離を変更できます。<br />
-                  スキルCDは 5〜20px の範囲で他とは別に調整できます (デフォルト10px)。<br />
-                  値は即座に自動ルート・判定範囲の円に反映されます。
+                  {t('スライダーで各マーカーの判定距離を変更できます。')}<br />
+                  {t('スキルCDは 5〜20px の範囲で他とは別に調整できます (デフォルト10px)。')}<br />
+                  {t('値は即座に自動ルート・判定範囲の円に反映されます。')}
                 </div>
               </div>
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
@@ -346,7 +346,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                         <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
                         <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
                         <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '9px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
-                          {isHidden ? '非表示' : '表示中'}
+                          {isHidden ? t('非表示') : t('表示中')}
                         </button>
                       </div>
                     );
@@ -367,7 +367,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                         <span style={{ fontSize: '12px' }}>{meta.emoji}</span>
                         <span style={{ fontSize: '10px', color: isHidden ? '#666' : meta.color, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label} {m.note ? `(${m.note.substring(0, 15)})` : ''}</span>
                         <button className="btn-cyber" style={{ padding: '1px 6px', fontSize: '9px', clipPath: 'none', borderColor: isHidden ? '#f55' : '#0f0', color: isHidden ? '#f55' : '#0f0' }} onClick={() => { if (isHidden) onShowGlobalMarker(m.id); else onHideGlobalMarker(m.id); }}>
-                          {isHidden ? '非表示' : '表示中'}
+                          {isHidden ? t('非表示') : t('表示中')}
                         </button>
                       </div>
                     );
@@ -390,7 +390,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       onChange={(e) => onSetAutoLoadLastRoute(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                     />
-                    🚀 起動時に最後に使用していたデータを自動で読み込む
+                    🚀 {t('起動時に最後に使用していたデータを自動で読み込む')}
                   </label>
                 </div>
               )}
@@ -436,7 +436,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto', marginTop: '8px' }}>
                   {skillCdPresets.length === 0 ? (
                     <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '8px', textAlign: 'center' }}>
-                      なし
+                      {t('なし')}
                     </div>
                   ) : (
                     skillCdPresets.map(p => (
@@ -450,6 +450,22 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     ))
                   )}
                 </div>
+              </div>
+
+              {/* 言語切替 (全ユーザーが利用可能) */}
+              <div style={{ padding: '10px 14px', background: 'rgba(255, 215, 0, 0.04)', border: '1px solid rgba(255, 215, 0, 0.25)', borderRadius: '4px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffd700', marginBottom: '8px' }}>
+                  🌐 {t('言語切替')}
+                </div>
+                <LanguageSwitcher />
+              </div>
+
+              {/* 翻訳辞書エディタ (全ユーザーが個人データとして localStorage に追加可能) */}
+              <div style={{ padding: '10px 14px', background: 'rgba(255, 215, 0, 0.04)', border: '1px solid rgba(255, 215, 0, 0.25)', borderRadius: '4px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffd700', marginBottom: '8px' }}>
+                  📖 {t('翻訳辞書エディタ')}
+                </div>
+                <DictionaryEditor />
               </div>
             </div>
           ) : isEditMode && isLocal ? (
@@ -466,7 +482,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <textarea
                   value={currentText}
                   onChange={setCurrentText ? (e) => setCurrentText(e.target.value) : undefined}
-                  placeholder="HTMLタグを使って自由に記述してください"
+                  placeholder={t('HTMLタグを使って自由に記述してください')}
                   tabIndex={isHelpPreviewMode ? -1 : 0}
                   aria-hidden={isHelpPreviewMode}
                   style={{
@@ -515,7 +531,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           {isEditMode && isLocal ? (
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
               <input type="checkbox" checked={isHelpPreviewMode} onChange={(e) => setIsHelpPreviewMode(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-              👁 プレビュー表示 (HTML表示)
+              👁 {t('プレビュー表示 (HTML表示)')}
             </label>
           ) : <div />}
         </div>
@@ -605,10 +621,10 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = () => {
   return (
     <div style={{ padding: '10px 14px', background: 'rgba(255, 230, 0, 0.04)', border: '1px solid rgba(255, 230, 0, 0.25)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--yellow-neon, #ffe600)' }}>💾 ローカルストレージ容量</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--yellow-neon, #ffe600)' }}>{t('ローカルストレージ容量')}</span>
       </div>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        localStorage の使用量と上限を管理します。「計測」を押すと現在の使用量から上限まで書き込みを試して、このブラウザでの最大容量を推定します (数秒〜数十秒かかる場合があります)。
+        {t('localStorage の使用量と上限を管理します。「計測」を押すと現在の使用量から上限まで書き込みを試して、このブラウザでの最大容量を推定します (数秒〜数十秒かかる場合があります)。')}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -618,33 +634,33 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = () => {
           onClick={runMeasure}
           disabled={measuring || !supported}
         >
-          {measuring ? '計測中…' : '容量を計測'}
+          {measuring ? t('計測中…') : t('容量を計測')}
         </button>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          現在の使用量: <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(usage)}</span>
+          {t('現在の使用量:')} <span style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(usage)}</span>
         </span>
         {supported && (
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            ブラウザ割当: <span style={{ color: 'var(--green-neon, #39ff14)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(quota)}</span>
+            {t('ブラウザ割当:')} <span style={{ color: 'var(--green-neon, #39ff14)', fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(quota)}</span>
           </span>
         )}
         {measuredMax !== null && (
           <span style={{ fontSize: '11px', color: 'var(--green-neon, #39ff14)' }}>
-            実測最大: <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(measuredMax)}</span>
+            {t('実測最大:')} <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{formatStorageBytes(measuredMax)}</span>
           </span>
         )}
       </div>
 
       {measuring && (
         <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-          書込中: <span style={{ color: 'var(--yellow-neon)', fontFamily: 'monospace' }}>{formatStorageBytes(progress)}</span> …
+          {t('書込中:')} <span style={{ color: 'var(--yellow-neon)', fontFamily: 'monospace' }}>{formatStorageBytes(progress)}</span> …
         </div>
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          目標上限: <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontFamily: 'monospace' }}>{TARGET_LIMIT_MB} MB</span>
-          (= バッジの警告色判定基準。実容量上限は quota で決まります)
+          {t('目標上限:')} <span style={{ color: 'var(--yellow-neon, #ffe600)', fontWeight: 700, fontFamily: 'monospace' }}>{TARGET_LIMIT_MB} MB</span>
+          {t(' (= バッジの警告色判定基準。実容量上限は quota で決まります)')}
         </span>
       </div>
 
@@ -655,20 +671,20 @@ const StorageLimitSection: React.FC<StorageLimitSectionProps> = () => {
             style={{ padding: '4px 10px', fontSize: '11px', clipPath: 'none' }}
             onClick={onRequestPersist}
             disabled={persisted}
-            title="永続化ストレージを要求。承認されると、ストレージ逼迫時にブラウザが自動削除しなくなります"
+            title={t('永続化ストレージを要求。承認されると、ストレージ逼迫時にブラウザが自動削除しなくなります')}
           >
-            {persisted ? '✓ 永続化承認済み' : '永続化を要求'}
+            {persisted ? t('✓ 永続化承認済み') : t('永続化を要求')}
           </button>
           <button
             className="btn-cyber"
             style={{ padding: '4px 10px', fontSize: '11px', clipPath: 'none' }}
             onClick={refresh}
           >
-            再計測
+            {t('再計測')}
           </button>
           {!supported && (
             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              ※ このブラウザは navigator.storage に対応していません (localStorage のみで動作)
+              {t('※ このブラウザは navigator.storage に対応していません (localStorage のみで動作)')}
             </span>
           )}
         </div>
@@ -706,7 +722,7 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
         <input
           type="text"
           value={label}
-          placeholder="スキル名"
+          placeholder={t('スキル名')}
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           style={{ flex: 1, fontSize: '12px', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: 'var(--text-primary)', border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px' }}
@@ -715,7 +731,7 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
           type="color"
           value={color}
           onChange={(e) => setColor(e.target.value)}
-          title="色"
+          title={t('色')}
           style={{ width: '32px', height: '26px', padding: 0, border: '1px solid rgba(0, 240, 255, 0.3)', borderRadius: '3px', cursor: 'pointer' }}
         />
         <button
@@ -724,23 +740,23 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
           onClick={submit}
           disabled={!label.trim()}
         >
-          追加
+          {t('追加')}
         </button>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>モード:</span>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{t('モード:')}</span>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
           <input type="radio" checked={mode === 'fixed'} onChange={() => setMode('fixed')} style={{ accentColor: '#39ff14' }} />
-          固定 (CD秒数)
+          {t('固定 (CD秒数)')}
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
           <input type="radio" checked={mode === 'per_second'} onChange={() => setMode('per_second')} style={{ accentColor: '#39ff14' }} />
-          変動 (使用秒×係数)
+          {t('変動 (使用秒×係数)')}
         </label>
       </div>
       {mode === 'per_second' ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>使用秒数</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('使用秒数')}</span>
           <input
             type="number"
             min={0}
@@ -749,7 +765,7 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
             onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
             style={{ width: '60px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
           />
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒 ×</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒 ×')}</span>
           <input
             type="number"
             min={0}
@@ -758,12 +774,12 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
             onChange={(e) => setPerSecondCd(Math.max(0, parseInt(e.target.value) || 0))}
             style={{ width: '50px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
           />
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒CD/秒 =</span>
-          <span style={{ fontSize: '12px', fontWeight: 'bold', color: color, minWidth: '40px', textAlign: 'right' }}>{seconds * perSecondCd}秒</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒CD/秒 =')}</span>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', color: color, minWidth: '40px', textAlign: 'right' }}>{seconds * perSecondCd}{t('秒')}</span>
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>CD秒数</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('CD秒数')}</span>
           <input
             type="number"
             min={0}
@@ -772,7 +788,7 @@ const SkillCdPresetAddForm: React.FC<SkillCdPresetAddFormProps> = ({ onAdd }) =>
             onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
             style={{ width: '80px', fontSize: '13px', fontWeight: 'bold', padding: '4px 6px', background: 'rgba(5, 7, 10, 0.85)', color: color, border: `1px solid ${color}80`, borderRadius: '3px', textAlign: 'center' }}
           />
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒')}</span>
         </div>
       )}
     </div>
@@ -798,13 +814,13 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
         <span style={{ fontSize: '12px', color: preset.color, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preset.label}</span>
         {isPer ? (
           <>
-            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace' }}>{preset.seconds}秒×{preset.perSecondCd}</span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>= {(preset.seconds || 0) * (preset.perSecondCd || 0)}秒</span>
+            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace' }}>{preset.seconds}{t('秒')}×{preset.perSecondCd}</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>= {(preset.seconds || 0) * (preset.perSecondCd || 0)}{t('秒')}</span>
           </>
         ) : (
           <>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CD</span>
-            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace', minWidth: '40px', textAlign: 'right' }}>{preset.seconds}秒</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('CD')}</span>
+            <span style={{ fontSize: '13px', color: preset.color, fontWeight: 700, fontFamily: 'monospace', minWidth: '40px', textAlign: 'right' }}>{preset.seconds}{t('秒')}</span>
           </>
         )}
         {editable && onUpdate && (
@@ -839,19 +855,19 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>モード:</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{t('モード:')}</span>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
               <input type="radio" checked={!isPer} onChange={() => onUpdate(preset.id, { mode: 'fixed' })} style={{ accentColor: '#39ff14' }} />
-              固定 (CD秒数)
+              {t('固定 (CD秒数)')}
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', color: 'var(--text-primary)', cursor: 'pointer' }}>
               <input type="radio" checked={isPer} onChange={() => onUpdate(preset.id, { mode: 'per_second' })} style={{ accentColor: '#39ff14' }} />
-              変動 (使用秒×係数)
+              {t('変動 (使用秒×係数)')}
             </label>
           </div>
           {isPer ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>使用秒数</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('使用秒数')}</span>
               <input
                 type="number"
                 min={0}
@@ -860,7 +876,7 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
                 onBlur={(e) => onUpdate(preset.id, { seconds: Math.max(0, parseInt(e.target.value) || 0) })}
                 style={{ width: '55px', fontSize: '11px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
               />
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒 ×</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒 ×')}</span>
               <input
                 type="number"
                 min={0}
@@ -869,11 +885,11 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
                 onBlur={(e) => onUpdate(preset.id, { perSecondCd: Math.max(0, parseInt(e.target.value) || 0) })}
                 style={{ width: '45px', fontSize: '11px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
               />
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒CD/秒</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒CD/秒')}</span>
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>CD秒数</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('CD秒数')}</span>
               <input
                 type="number"
                 min={0}
@@ -882,7 +898,7 @@ const SkillCdPresetRow: React.FC<SkillCdPresetRowProps> = ({ preset, editable = 
                 onBlur={(e) => onUpdate(preset.id, { seconds: Math.max(0, parseInt(e.target.value) || 0) })}
                 style={{ width: '70px', fontSize: '12px', fontWeight: 'bold', padding: '3px 4px', background: 'rgba(5, 7, 10, 0.85)', color: preset.color, border: `1px solid ${preset.color}80`, borderRadius: '3px', textAlign: 'center' }}
               />
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>秒</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('秒')}</span>
             </div>
           )}
         </div>

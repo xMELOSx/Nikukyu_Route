@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Plus, Trash2, Search, Download, Upload, Eraser } from 'lucide-react';
-import { useLang, type LangCode } from '../i18n';
+import { useLang, t, type LangCode } from '../i18n';
 import {
   getUserDict,
   setEntry,
@@ -10,15 +10,16 @@ import {
 } from '../i18n/userDict';
 
 const LANG_OPTIONS: { code: LangCode; label: string; description: string }[] = [
-  { code: 'en', label: '🇺🇸 English', description: 'Used to translate ja → en' },
-  { code: 'ja', label: '🇯🇵 日本語', description: 'Used to translate en → ja' },
+  { code: 'en', label: '🇺🇸 English', description: t('Personal user dictionary (ja → en) — stored in localStorage') },
+  { code: 'ja', label: '🇯🇵 日本語', description: t('Personal user dictionary (en → ja) — stored in localStorage') },
 ];
 
 export function DictionaryEditor() {
   const { lang: uiLang } = useLang();
-  // デフォルト編集対象は「UI 言語が ja のときは en、en のときは ja」
-  // つまり逆翻訳(原文→UI) 用の言語
-  const defaultTarget: LangCode = uiLang === 'ja' ? 'en' : (uiLang === 'en' ? 'ja' : 'en');
+  // デフォルト編集対象: 日本語→英語 (ユーザー辞書 = 個人データ = localStorage)
+  // UI 言語にかかわらず、原文=日本語、訳=英語 の翻訳エントリを追加する形を既定とする。
+  // UI が英語のときは、原文=英語(=日本語キーはそのまま)→日本語訳、という逆翻訳エントリ用。
+  const defaultTarget: LangCode = uiLang === 'en' ? 'ja' : 'en';
   const [targetLang, setTargetLang] = useState<LangCode>(defaultTarget);
   const [, force] = useState(0);
   const [filter, setFilter] = useState('');
@@ -47,13 +48,13 @@ export function DictionaryEditor() {
   };
 
   const handleDelete = (k: string) => {
-    if (!confirm(`Delete entry "${k}" from ${targetLang}?`)) return;
+    if (!confirm(t('Delete entry "{0}" from {1}?', k, targetLang))) return;
     deleteEntry(targetLang, k);
     force(x => x + 1);
   };
 
   const handleClear = () => {
-    if (!confirm(`Clear all entries in ${targetLang}?`)) return;
+    if (!confirm(t('Clear all entries in {0}?', targetLang))) return;
     clearForLang(targetLang);
     force(x => x + 1);
   };
@@ -87,7 +88,7 @@ export function DictionaryEditor() {
         }
         force(x => x + 1);
       } catch {
-        alert('Failed to parse user dictionary file');
+        alert(t('Failed to parse user dictionary file'));
       }
     };
     reader.readAsText(file);
@@ -104,24 +105,24 @@ export function DictionaryEditor() {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ color: '#ffd700', fontWeight: 700, fontSize: '12px' }}>
-          📖 Dictionary Editor — {list.length} entries
+          {t('Dictionary Editor — {0} entries', String(list.length))}
         </span>
         <div style={{ display: 'flex', gap: '4px' }}>
           <button onClick={handleExport} className="btn-cyber" style={{ padding: '2px 6px', fontSize: '10px' }}>
-            <Download size={10} /> Export
+            <Download size={10} /> {t('Export')}
           </button>
           <label className="btn-cyber" style={{ padding: '2px 6px', fontSize: '10px', cursor: 'pointer' }}>
-            <Upload size={10} /> Import
+            <Upload size={10} /> {t('Import')}
             <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
           </label>
           <button onClick={handleClear} className="btn-cyber danger" style={{ padding: '2px 6px', fontSize: '10px' }}>
-            <Eraser size={10} /> Clear
+            <Eraser size={10} /> {t('Clear')}
           </button>
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', border: '1px solid rgba(255,215,0,0.15)' }}>
-        <span style={{ fontSize: '10px', color: '#aaa' }}>Editing:</span>
+        <span style={{ fontSize: '10px', color: '#aaa' }}>{t('Editing:')}</span>
         <select
           value={targetLang}
           onChange={(e) => setTargetLang(e.target.value as LangCode)}
@@ -143,7 +144,7 @@ export function DictionaryEditor() {
           <input
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            placeholder="Filter..."
+            placeholder={t('Filter...')}
             style={{
               width: '100%', padding: '4px 6px 4px 22px',
               background: 'rgba(5,7,10,0.8)', color: '#fff',
@@ -158,7 +159,7 @@ export function DictionaryEditor() {
         <input
           value={newKey}
           onChange={e => setNewKey(e.target.value)}
-          placeholder="key (原文)"
+          placeholder={t('key (原文)')}
           onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
           style={{
             flex: 1, padding: '4px 6px',
@@ -170,7 +171,7 @@ export function DictionaryEditor() {
         <input
           value={newVal}
           onChange={e => setNewVal(e.target.value)}
-          placeholder={`translation (${targetLang})`}
+          placeholder={t('translation ({0})', targetLang)}
           onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
           style={{
             flex: 1, padding: '4px 6px',
@@ -180,20 +181,20 @@ export function DictionaryEditor() {
           }}
         />
         <button onClick={handleAdd} className="btn-cyber success" style={{ padding: '4px 10px', fontSize: '11px' }}>
-          <Plus size={11} /> Add
+          <Plus size={11} /> {t('Add')}
         </button>
       </div>
 
       <div style={{ fontSize: '9px', color: '#888', padding: '0 2px', lineHeight: 1.4 }}>
-        Tip: To translate Japanese UI text to English, edit the <strong style={{ color: '#ffd700' }}>🇺🇸 English</strong> dictionary
-        (key = Japanese text, value = English translation).<br />
-        For translating user-entered marker names, paste the original Japanese in the key field and the English version in the value field.
+        {t('Tip: To translate Japanese UI text to English, edit the')} <strong style={{ color: '#ffd700' }}>🇺🇸 English</strong> {t('dictionary')}
+        {t('(key = Japanese text, value = English translation).')}<br />
+        {t('For translating user-entered marker names, paste the original Japanese in the key field and the English version in the value field.')}
       </div>
 
       <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {list.length === 0 ? (
           <div style={{ color: '#888', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
-            No entries. Add some above.
+            {t('No entries. Add some above.')}
           </div>
         ) : (
           list.map(([k, v]) => (

@@ -5,6 +5,7 @@ import { HistoryModal } from './components/HistoryModal';
 import { HelpModal } from './components/HelpModal';
 import { PlayDataPanel } from './components/PlayDataPanel';
 import { OcrDebugModal } from './components/OcrDebugModal';
+import { SaveModal, type SaveModalExportParams } from './components/SaveModal';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { t, useLangState } from './i18n';
 
@@ -411,19 +412,33 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
   );
 };
 
-// 距離計測サブメニュー — 選択操作の補助設定 (現時点では共通トグルのみ)。
+// 距離計測サブメニュー
 interface MeasureSubMenuProps {
   blockMarkerClicksDuringTools: boolean;
   setBlockMarkerClicksDuringTools: (v: boolean) => void;
+  selectedCount: number;
+  onClear: () => void;
+  onSelectAll: () => void;
+  onDeleteSelected: () => void;
 }
 const MeasureSubMenu: React.FC<MeasureSubMenuProps> = ({
-  blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools
+  blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools,
+  selectedCount, onClear, onSelectAll, onDeleteSelected
 }) => {
   return (
     <div className="panel-section">
       <div className="panel-title">{t('距離計測設定')}</div>
       <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '6px' }}>
         {t('線をクリックで選択 (Alt+クリックで累積追加)。')}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
+        <span>{t('選択中の線:')}</span>
+        <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{selectedCount}{t('本')}</span>
+      </div>
+      <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginBottom: '8px' }}>
+        <button className="btn-cyber" style={{ fontSize: '10px', padding: '4px 2px' }} onClick={onSelectAll}>{t('すべて選択')}</button>
+        <button className="btn-cyber" style={{ fontSize: '10px', padding: '4px 2px' }} disabled={selectedCount === 0} onClick={onClear}>{t('選択を解除')}</button>
+        <button className="btn-cyber danger" style={{ fontSize: '10px', padding: '4px 2px' }} disabled={selectedCount === 0} onClick={onDeleteSelected}>{t('選択を削除')}</button>
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
         <input
@@ -528,6 +543,8 @@ export default function App() {
   // 単一選択 (mode に応じて「最後に選択された 1 本」を覚える) と
   // 複数選択 (Alt+クリックで累積) の両方をサポート。
   const [editStrokeIdxs, setEditStrokeIdxs] = useState<Set<number>>(() => new Set());
+  // 距離計測ツールで選択中のストローク集合 (measure 用、edit-stroke とは別管理)
+  const [measureSelectedStrokeIdxs, setMeasureSelectedStrokeIdxs] = useState<Set<number>>(() => new Set());
   // 平滑化の繰り返し回数
   const [editSmoothIterations, setEditSmoothIterations] = useState<number>(3);
   // ルート線 / 線分編集 / 距離計測の各ツール使用中、
@@ -635,7 +652,7 @@ export default function App() {
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
       }
-    } catch {}
+    } catch { }
     return [];
   });
   // プリセットを隠すフィルタ: 非表示プリセット ID リストを localStorage に保存
@@ -646,18 +663,18 @@ export default function App() {
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
       }
-    } catch {}
+    } catch { }
     return [];
   });
   // 表示フィルタ: 'all' | 'favorites' | 'presets' | 'saves'
   const [saveLoadFilter, setSaveLoadFilter] = useState<'all' | 'favorites' | 'presets' | 'saves'>('all');
 
   useEffect(() => {
-    try { localStorage.setItem('heist_save_load_favorites_v1', JSON.stringify(favoriteIds)); } catch {}
+    try { localStorage.setItem('heist_save_load_favorites_v1', JSON.stringify(favoriteIds)); } catch { }
   }, [favoriteIds]);
 
   useEffect(() => {
-    try { localStorage.setItem('heist_save_load_hidden_presets_v1', JSON.stringify(hiddenPresetIds)); } catch {}
+    try { localStorage.setItem('heist_save_load_hidden_presets_v1', JSON.stringify(hiddenPresetIds)); } catch { }
   }, [hiddenPresetIds]);
   const [urlLoadConfirm, setUrlLoadConfirm] = useState<{ type: 'preset' | 'save'; id: string; name: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -671,6 +688,7 @@ export default function App() {
   const [currentPosTrigger, setCurrentPosTrigger] = useState<number>(0);
   const [autoStartMarker, setAutoStartMarker] = useState<HeistMarker | null>(null);
   const [showOcrDebugModal, setShowOcrDebugModal] = useState<boolean>(false);
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
 
   const [hideRouteLines, setHideRouteLines] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_hide_route_lines');
@@ -1210,16 +1228,12 @@ export default function App() {
   // (currentStrokesCount / currentMarkersCount intentionally not surfaced
   //  in the new UI; left as comments for future reference if needed.)
 
-  // Wire handleExportPNG with the current refs/state
-  // Default: 画像とデータのみ (PNG tEXt メタデータのみ。データバー非描画)
-  // Alt+クリック: データーバー入り (上記に加えて画像下部にピクセル符号化データバーを描画)
-  const handleExportPNG = (e?: React.MouseEvent) => {
-    fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString, skipDataBar: !e?.altKey });
-  };
 
-  const handleExportJSON = () => {
-    fileIO.exportJSON();
-  };
+  const handleSaveModalExport = useCallback((params: SaveModalExportParams) => {
+    if (params.mode === 'png') {
+      fileIO.exportPNG({ floor: currentFloor, canvas: canvasRef.current, svgString, skipDataBar: !params.dataBar, lineThickness: params.lineThickness });
+    }
+  }, [currentFloor, svgString, fileIO]);
 
   const handleExportPlayData = () => {
     const raw = localStorage.getItem(PLAY_DATA_KEY);
@@ -1687,6 +1701,30 @@ export default function App() {
             {toolMode === 'edit-stroke' && (
               <div className="panel-section">
                 <div className="panel-title">{t('線分編集')}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
+                  <span>{t('選択中の線:')}</span>
+                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editStrokeIdxs.size}{t('本')}</span>
+                </div>
+                <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                  <button className="btn-cyber" style={{ fontSize: '10px', padding: '4px 2px' }} onClick={() => {
+                    const cur = routeApi.route.strokes[currentFloor];
+                    if (!cur) return;
+                    const all = new Set<number>();
+                    for (let i = 0; i < cur.length; i++) all.add(i);
+                    setEditStrokeIdxs(all);
+                  }}>{t('すべて選択')}</button>
+                  <button className="btn-cyber" style={{ fontSize: '10px', padding: '4px 2px' }} disabled={editStrokeIdxs.size === 0} onClick={() => setEditStrokeIdxs(new Set())}>{t('選択を解除')}</button>
+                  <button className="btn-cyber danger" style={{ fontSize: '10px', padding: '4px 2px' }} disabled={editStrokeIdxs.size === 0} onClick={() => {
+                    const cur = routeApi.route.strokes[currentFloor];
+                    if (!cur) return;
+                    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                    const next = cur.filter((_, i) => !editStrokeIdxs.has(i));
+                    updateStrokes(next);
+                    setEditStrokeIdxs(new Set());
+                    notification.show(t('{0}本の線を削除しました', String(editStrokeIdxs.size)));
+                  }}>{t('選択を削除')}</button>
+                </div>
+
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
                   <input
                     type="checkbox"
@@ -1696,18 +1734,6 @@ export default function App() {
                   />
                   {t('マーカーを遮断')}
                 </label>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
-                  <span>{t('選択中の線:')}</span>
-                  <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editStrokeIdxs.size}{t('本')}</span>
-                </div>
-                <button
-                  className="btn-cyber"
-                  style={{ width: '100%', fontSize: '10px', padding: '4px', marginBottom: '6px' }}
-                  disabled={editStrokeIdxs.size === 0}
-                  onClick={() => setEditStrokeIdxs(new Set())}
-                >
-                  {t('選択を解除')}
-                </button>
 
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 6px' }} />
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('色 (クリックで選択線に適用):')}</div>
@@ -1859,12 +1885,39 @@ export default function App() {
               <MeasureSubMenu
                 blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
                 setBlockMarkerClicksDuringTools={setBlockMarkerClicksDuringTools}
+                selectedCount={measureSelectedStrokeIdxs.size}
+                onClear={() => setMeasureSelectedStrokeIdxs(new Set())}
+                onSelectAll={() => {
+                  const cur = routeApi.route.strokes[currentFloor];
+                  if (!cur) return;
+                  const all = new Set<number>();
+                  for (let i = 0; i < cur.length; i++) all.add(i);
+                  setMeasureSelectedStrokeIdxs(all);
+                }}
+                onDeleteSelected={() => {
+                  const cur = routeApi.route.strokes[currentFloor];
+                  if (!cur) return;
+                  historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                  const next = cur.filter((_, i) => !measureSelectedStrokeIdxs.has(i));
+                  updateStrokes(next);
+                  setMeasureSelectedStrokeIdxs(new Set());
+                  notification.show(t('{0}本の線を削除しました', String(measureSelectedStrokeIdxs.size)));
+                }}
               />
             )}
 
             {toolMode === 'draw' && (
               <div className="panel-section">
                 <div className="panel-title">{t('ルート線設定')}</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={blockMarkerClicksDuringTools}
+                    onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  {t('マーカーを遮断')}
+                </label>
                 <div className="color-picker">
                   {['#ff0055', '#ffe600', '#39ff14', '#00f0ff', '#ff00ff', '#ffffff'].map(c => (
                     <div key={c} className={`color-dot ${strokeColor === c ? 'active' : ''}`} style={{ backgroundColor: c, color: c }} onClick={() => setStrokeColor(c)} />
@@ -1906,10 +1959,6 @@ export default function App() {
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>線の太さ: {strokeWidth}px</span>
                   <input type="range" min="2" max="12" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '8px', userSelect: 'none' }}>
-                  <input type="checkbox" checked={blockMarkerClicksDuringTools} onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
-                  {t('マーカーを遮断')}
-                </label>
               </div>
             )}
 
@@ -2104,6 +2153,8 @@ export default function App() {
             eraseSize={eraseSize}
             editStrokeIdxs={editStrokeIdxs}
             onEditStrokeIdxsChange={setEditStrokeIdxs}
+            measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
+            onMeasureSelectedStrokeIdxsChange={setMeasureSelectedStrokeIdxs}
             blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
             onMarkersDragStart={historyApi.startDragSnapshot}
             onMarkersDragEnd={historyApi.commitDragSnapshot}
@@ -2212,7 +2263,7 @@ export default function App() {
                     <Save size={12} /> {t('セーブ')}
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => setPresetListVisible(true)}>
-                    <Upload size={12} /> {t('読込')}
+                    <Upload size={12} /> {t('ロード')}
                   </button>
                   <button className="btn-cyber danger" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={createNewPlan}>
                     <FilePlus size={12} /> {newPlanConfirm ? t('実行?') : t('新規')}
@@ -2220,14 +2271,11 @@ export default function App() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                  <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportJSON}>
-                    <Download size={12} /> {t('JSON保存')}
-                  </button>
-                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={handleExportPNG} title={t('ALT+クリックでデーターバー入り')}>
-                    <ImageIcon size={12} /> {t('画像保存')}
+                  <button className="btn-cyber success" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => setShowSaveModal(true)}>
+                    <Download size={12} /> {t('ファイルに保存')}
                   </button>
                   <button className="btn-cyber" style={{ flex: 1, padding: '4px', fontSize: '10px' }} onClick={() => fileIO.jsonFileInputRef.current?.click()}>
-                    <Upload size={12} /> {t('インポート')}
+                    <Upload size={12} /> {t('ファイルから開く')}
                   </button>
                   <input
                     type="file"
@@ -2468,9 +2516,9 @@ export default function App() {
               </div>
             </>)}
 
+            <LangSync />
             {rightTab === 'play' && (
               <>
-                <LangSync />
                 <div className="panel-section">
                   <button type="button" onClick={autoRoute.toggleCollapsed} style={{ width: '100%', padding: '4px 8px', fontSize: '11px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '4px', color: 'var(--cyan-neon)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: autoRoute.collapsed ? 0 : '8px' }} title={t('自動ルート案内を使わない場合は畳んで非表示にできます')}>
                     <span>{t('🐾 自動ルート案内')}</span>
@@ -2909,7 +2957,7 @@ export default function App() {
                               >
                                 {hiddenPresetIds.includes(p.id) ? '👁 非表示中' : '非表示'}
                               </button>
-                               {isLocal && (
+                              {isLocal && (
                                 <button
                                   className="btn-cyber"
                                   style={{ fontSize: '9px', padding: '2px 8px', clipPath: 'none', borderColor: '#ffd700', color: '#ffd700' }}
@@ -3231,6 +3279,17 @@ export default function App() {
         markers={isLocal ? [...globalMarkersStore.globalMarkers, ...routeApi.route.markers] : [...routeApi.route.markers]}
         globalMarkerIds={globalMarkersStore.globalMarkers.map(m => m.id)}
         onFocusTrigger={setFocusTrigger}
+      />
+
+      <SaveModal
+        show={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        onExport={handleSaveModalExport}
+        route={routeApi.route}
+        currentFloor={currentFloor}
+        canvas={canvasRef.current}
+        svgString={svgString}
+        globalMarkers={isLocal ? globalMarkersStore.globalMarkers : []}
       />
     </div>
   );

@@ -28,6 +28,33 @@ function save(d: UserDict) {
 
 let current: UserDict = (typeof window !== 'undefined') ? load() : structuredClone(EMPTY);
 
+// public/user-dict.json を読み込み、localStorage にないエントリをマージ
+// コードと一緒にデプロイされる辞書なので、どのオリジンでも利用可能
+if (typeof window !== 'undefined') {
+  fetch(`${import.meta.env.BASE_URL}user-dict.json`)
+    .then(r => r.ok ? r.json() : null)
+    .then((deployed: UserDict | null) => {
+      if (!deployed) return;
+      let changed = false;
+      for (const lang of ['en', 'ja'] as LangCode[]) {
+        const entries = deployed[lang];
+        if (!entries) continue;
+        if (!current[lang]) current[lang] = {};
+        for (const [k, v] of Object.entries(entries)) {
+          if (!current[lang]![k]) {
+            current[lang]![k] = v;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        save(current);
+        emit();
+      }
+    })
+    .catch(() => {});
+}
+
 const listeners = new Set<() => void>();
 function emit() {
   for (const l of listeners) l();

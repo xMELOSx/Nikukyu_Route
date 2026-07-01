@@ -1298,10 +1298,6 @@ export class DataManager {
       targetDuration:
         typeof route?.targetDuration === 'string' ? route.targetDuration : def.targetDuration,
       author: typeof route?.author === 'string' ? route.author : def.author,
-      renderCache:
-        typeof route?.renderCache === 'string'
-          ? route.renderCache
-          : (typeof route?.originalAuthor === 'string' ? route.originalAuthor : def.renderCache),
       strokes: route?.strokes && typeof route.strokes === 'object'
         ? route.strokes
         : def.strokes,
@@ -1335,7 +1331,11 @@ export class DataManager {
       mapVersion: typeof route?.mapVersion === 'number' ? route.mapVersion : def.mapVersion,
       markerScale: typeof route?.markerScale === 'number' ? route.markerScale : def.markerScale,
       hiddenMarkers: Array.isArray(route?.hiddenMarkers) ? route.hiddenMarkers : def.hiddenMarkers,
-      hiddenMarkerTypes: Array.isArray(route?.hiddenMarkerTypes) ? route.hiddenMarkerTypes : def.hiddenMarkerTypes
+      hiddenMarkerTypes: Array.isArray(route?.hiddenMarkerTypes) ? route.hiddenMarkerTypes : def.hiddenMarkerTypes,
+      renderCache:
+        typeof route?.renderCache === 'string'
+          ? route.renderCache
+          : (typeof route?.originalAuthor === 'string' ? route.originalAuthor : def.renderCache),
     };
   }
 
@@ -1372,7 +1372,9 @@ export class DataManager {
     _svgString: string,
     canvasElement: HTMLCanvasElement | null,
     onComplete: (dataUrl: string) => void,
-    skipDataBar?: boolean
+    skipDataBar?: boolean,
+    lineThickness?: number,
+    showTimestamp?: boolean
   ): Promise<void> {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = 1600;
@@ -1399,14 +1401,26 @@ export class DataManager {
     const drawAllImpl = async (): Promise<void> => {
       ctx.drawImage(bgImg, 0, 0, 1600, 4550);
 
-      // Draw Stroke Lines
-      if (canvasElement) {
-        ctx.drawImage(canvasElement, 0, 0, 1600, 4550);
-      }
-      ctx.drawImage(bgImg, 0, 0, 1600, 4550);
-      
-      // Draw Stroke Lines
-      if (canvasElement) {
+      // Draw Stroke Lines — if lineThickness is specified, re-draw from route data
+      if (typeof lineThickness === 'number' && lineThickness > 0 && route.strokes?.[floor]) {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const thicknessMultiplier = lineThickness / 3;
+        for (const stroke of route.strokes[floor]) {
+          if (!stroke.points || stroke.points.length < 2) continue;
+          const isDashed = stroke.type === 'dashed';
+          ctx.strokeStyle = stroke.color;
+          ctx.lineWidth = Math.max(1, stroke.width * thicknessMultiplier);
+          ctx.setLineDash(isDashed ? [8, 6] : []);
+          ctx.beginPath();
+          stroke.points.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      } else if (canvasElement) {
         ctx.drawImage(canvasElement, 0, 0, 1600, 4550);
       }
       
@@ -1623,6 +1637,32 @@ export class DataManager {
       fctx.textAlign = 'left';
       fctx.textBaseline = 'top';
 
+      // Timestamp badge (below version badge, top-right)
+      if (showTimestamp) {
+        const now = new Date();
+        const tsLabel = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        fctx.font = '13px Rajdhani, Orbitron, Arial';
+        const tsPadX = 8;
+        const tsTextW = fctx.measureText(tsLabel).width;
+        const tsBoxW = tsTextW + tsPadX * 2;
+        const tsBoxH = 22;
+        const tsBoxX = EXTW - tsBoxW - 16;
+        const tsBoxY = vBoxY + vBoxH + 6;
+        fctx.fillStyle = 'rgba(255, 215, 0, 0.10)';
+        fctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+        fctx.lineWidth = 1;
+        fctx.beginPath();
+        fctx.rect(tsBoxX, tsBoxY, tsBoxW, tsBoxH);
+        fctx.fill();
+        fctx.stroke();
+        fctx.fillStyle = '#ffd700';
+        fctx.textAlign = 'center';
+        fctx.textBaseline = 'middle';
+        fctx.fillText(tsLabel, tsBoxX + tsBoxW / 2, tsBoxY + tsBoxH / 2);
+        fctx.textAlign = 'left';
+        fctx.textBaseline = 'top';
+      }
+
       // Target values
       const toNum = (s: string | undefined | null) => {
         const cleaned = (s || '').replace(/,/g, '');
@@ -1765,10 +1805,10 @@ export class DataManager {
   }
 
   // Decode pixel-encoded JSON from a PNG image
-  static async decodePngData(image: HTMLImageElement, rawBuffer?: ArrayBuffer): Promise<RouteData | null> {
+  static async decodePngData(image: HTMLImageElement, rawBuffer?: ArrayBuffer): Promise<{ data: RouteData; source: 'dataBar' | 'metadata' } | null> {
     // --- Pass 1: pixel data bar (existing logic) ---
     const fromBar = await DataManager.decodePngDataBar(image);
-    if (fromBar) return fromBar;
+    if (fromBar) return { data: fromBar, source: 'dataBar' };
 
     // --- Pass 2: PNG tEXt metadata fallback ---
     try {
@@ -1794,7 +1834,7 @@ export class DataManager {
               }
               delete parsed._v;
             }
-            return parsed as RouteData;
+            return { data: parsed as RouteData, source: 'metadata' };
           }
         }
       }
