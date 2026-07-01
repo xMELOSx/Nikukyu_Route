@@ -7,7 +7,7 @@ export function generateId(prefix: string = ''): string {
 
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd' | 'passage';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd';
 
 // ---------------------------------------------------------------------------
 // 作者名 / 原作者名 の難読化
@@ -1015,8 +1015,7 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' },
   start: { emoji: '🐾', label: 'START', color: '#39ff14' },
   checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' },
-  skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' },
-  passage: { emoji: '◈', label: 'PASSAGE NODE', color: '#39ff14' }
+  skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' }
 };
 
 /**

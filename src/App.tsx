@@ -954,15 +954,28 @@ export default function App() {
   const updateStrokes = async (newStrokes: DrawingStroke[]) => {
     const strokesData = routeRef.current.strokes as any;
     const prevStrokes = strokesData[currentFloor] || [];
-    
-    if (newStrokes.length > prevStrokes.length && bypassWallsEnabled) {
+
+    if (newStrokes.length > prevStrokes.length) {
       const addedStroke = newStrokes[newStrokes.length - 1];
       const pts = addedStroke.points;
-      
+
+      // OFF (default) = walls ignored: the line is accepted as-is. The
+      // wall layer is purely a visual reference; the user is in full
+      // control of where the line goes. When bypassWallsEnabled is ON, we
+      // check for wall hits and run an A* detour if any.
+      if (!bypassWallsEnabled) {
+        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        routeApi.setRoute(prev => ({
+          ...prev,
+          strokes: { ...prev.strokes, [currentFloor]: newStrokes }
+        }));
+        return;
+      }
+
       const { isIntersecting } = await import('./utils/PathFinder');
       const allWalls = globalWallsRef.current as any;
       let hitsWall = false;
-      
+
       const flWalls = allWalls[currentFloor] || [];
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = pts[i];
@@ -975,11 +988,33 @@ export default function App() {
         }
         if (hitsWall) break;
       }
-      
+
       if (hitsWall) {
         const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
         const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
-        const allMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
+        
+        // Filter out hidden markers (ID-based and Type-based) so they are ignored by the pathfinder,
+        // EXCEPT for 'goal' markers and any hidden portal markers that are targets of links from visible portals.
+        const hiddenIds = new Set(routeRef.current.hiddenMarkers || []);
+        const hiddenTypes = new Set(routeRef.current.hiddenMarkerTypes || []);
+        
+        const rawMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
+        // Collect IDs of destinations of portals that are NOT hidden
+        const activeDestinations = new Set<string>();
+        rawMarkers.forEach(m => {
+          const isHidden = hiddenIds.has(m.id) || hiddenTypes.has(m.type);
+          if (!isHidden && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
+            activeDestinations.add(m.linkedWarpId);
+          }
+        });
+
+        const allMarkers = rawMarkers.filter(m => {
+          if (m.type === 'goal') return true; // Always allow exit (goal) markers
+          if (activeDestinations.has(m.id)) return true; // Keep as destination even if hidden
+          if (hiddenIds.has(m.id)) return false;
+          if (hiddenTypes.has(m.type)) return false;
+          return true;
+        });
         
         // Show loading notification first
         notification.show(t('壁を迂回するルートを計算中...'));
@@ -2228,7 +2263,7 @@ export default function App() {
                     onChange={(e) => setBypassWallsEnabled(e.target.checked)}
                     style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                   />
-                  {t('壁を避けて迂回する')}
+                  {t('壁を自動で迂回する')}
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
                   <input

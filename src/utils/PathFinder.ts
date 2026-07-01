@@ -5,6 +5,7 @@ export interface PathNode {
   y: number;
   floor: string;
   isPortal?: boolean;
+  isPassage?: boolean;
   portalName?: string;
   markerId?: string;
   linkedMarkerId?: string;
@@ -56,72 +57,51 @@ export function findBypassingPath(
   walls: { [key: string]: [Point, Point][] },
   markers: any[]
 ): PathfindingResult {
+  const distPointSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
+    const ex = bx - ax, ey = by - ay;
+    const l2 = ex * ex + ey * ey;
+    if (l2 === 0) return Math.hypot(px - ax, py - ay);
+    let t = ((px - ax) * ex + (py - ay) * ey) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * ex), py - (ay + t * ey));
+  };
+
   const nodes: PathNode[] = [start, end];
   const activeFloors = new Set<string>([start.floor, end.floor]);
   Object.keys(walls).forEach(fl => activeFloors.add(fl));
   markers.forEach(m => { if (m.floor) activeFloors.add(m.floor); });
 
-  const offsets = [
-    { dx: -20, dy: -20 }, { dx: 20, dy: -20 },
-    { dx: -20, dy: 20 },  { dx: 20, dy: 20 },
-    { dx: 0, dy: -24 },   { dx: 0, dy: 24 },
-    { dx: -24, dy: 0 },   { dx: 24, dy: 0 }
-  ];
-
+  // Generate grid nodes on the floors to guarantee topological connectivity
   activeFloors.forEach(fl => {
+    // Determine bounds from walls and markers
     const flWalls = walls[fl] || [];
-    const pts = new Set<string>();
+    let minX = start.x, maxX = start.x, minY = start.y, maxY = start.y;
     flWalls.forEach(w => {
-      [w[0], w[1]].forEach(p => {
-        const key = `${Math.round(p.x)},${Math.round(p.y)}`;
-        if (pts.has(key)) return;
-        pts.add(key);
-        offsets.forEach(off => {
-          const bp = { x: p.x + off.dx, y: p.y + off.dy };
-          if (!hitsAnyWall(p, bp, fl, walls, 2)) {
-            nodes.push({ x: bp.x, y: bp.y, floor: fl });
-          }
-        });
-      });
+      minX = Math.min(minX, w[0].x, w[1].x);
+      maxX = Math.max(maxX, w[0].x, w[1].x);
+      minY = Math.min(minY, w[0].y, w[1].y);
+      maxY = Math.max(maxY, w[0].y, w[1].y);
     });
+    // Add margin
+    minX -= 40; maxX += 40;
+    minY -= 40; maxY += 40;
 
-    // Detect narrow gaps (doorways) between roughly parallel opposing wall
-    // segments on the same floor. For each gap, drop a "passage" node at the
-    // midpoint so A* has a waypoint to route through the opening. We only
-    // consider wall pairs that are close (≤ 24px gap), not parallel to each
-    // other, and where the segment between their midpoints is wall-free.
-    const PASSAGE_GAP_MAX = 24;
-    for (let i = 0; i < flWalls.length; i++) {
-      const wa = flWalls[i];
-      const amid = { x: (wa[0].x + wa[1].x) / 2, y: (wa[0].y + wa[1].y) / 2 };
-      const aDx = wa[1].x - wa[0].x, aDy = wa[1].y - wa[0].y;
-      const aLen = Math.hypot(aDx, aDy);
-      if (aLen === 0) continue;
-      for (let j = i + 1; j < flWalls.length; j++) {
-        const wb = flWalls[j];
-        const bmid = { x: (wb[0].x + wb[1].x) / 2, y: (wb[0].y + wb[1].y) / 2 };
-        const bDx = wb[1].x - wb[0].x, bDy = wb[1].y - wb[0].y;
-        const bLen = Math.hypot(bDx, bDy);
-        if (bLen === 0) continue;
-
-        // Skip if the two wall segments themselves are too long (likely not
-        // the two sides of the same doorway opening).
-        if (aLen > 60 || bLen > 60) continue;
-
-        // Midpoint-to-midpoint distance is the gap width.
-        const gap = Math.hypot(amid.x - bmid.x, amid.y - bmid.y);
-        if (gap <= 0 || gap > PASSAGE_GAP_MAX) continue;
-
-        // The two wall segments must be roughly parallel (same orientation).
-        const dot = (aDx * bDx + aDy * bDy) / (aLen * bLen);
-        if (Math.abs(dot) < 0.7) continue;
-
-        // Make sure the line between the midpoints isn't blocked by another
-        // wall (otherwise this isn't a real opening).
-        if (hitsAnyWall(amid, bmid, fl, walls, 1.0)) continue;
-
-        const passage = { x: (amid.x + bmid.x) / 2, y: (amid.y + bmid.y) / 2, floor: fl };
-        nodes.push(passage);
+    // Grid spacing (dense enough to capture small 10px gaps, but thin enough to compute fast)
+    const step = 18;
+    for (let x = Math.floor(minX / step) * step; x <= maxX; x += step) {
+      for (let y = Math.floor(minY / step) * step; y <= maxY; y += step) {
+        // Only keep if it does not touch any wall within 1px thickness
+        const pt = { x, y };
+        let touches = false;
+        for (const w of flWalls) {
+          if (distPointSeg(pt.x, pt.y, w[0].x, w[0].y, w[1].x, w[1].y) < 1.0) {
+            touches = true;
+            break;
+          }
+        }
+        if (!touches) {
+          nodes.push({ x, y, floor: fl });
+        }
       }
     }
   });
@@ -138,92 +118,126 @@ export function findBypassingPath(
     }
   });
 
-  // Deduplicate nodes
+  // Deduplicate nodes: always prefer portal nodes (which carry markerId metadata) over grid nodes
   const uniqueNodes: PathNode[] = [];
-  const visited = new Set<string>();
+  const visited = new Map<string, PathNode>();
+  
   nodes.forEach(n => {
     const key = `${n.floor}:${Math.round(n.x)},${Math.round(n.y)}`;
-    if (!visited.has(key)) {
-      visited.add(key);
+    const existing = visited.get(key);
+    if (!existing) {
+      visited.set(key, n);
       uniqueNodes.push(n);
+    } else {
+      // If the new node is a portal and has metadata, overwrite the existing grid node's metadata
+      if (n.isPortal && !existing.isPortal) {
+        existing.isPortal = true;
+        existing.portalName = n.portalName;
+        existing.markerId = n.markerId;
+        existing.linkedMarkerId = n.linkedMarkerId;
+      }
     }
   });
 
-  // Cap node count but always keep portals
-  if (uniqueNodes.length > 250) {
-    const keep = uniqueNodes.filter((n, i) => i < 2 || n.isPortal);
-    const rest = uniqueNodes.filter((n, i) => i >= 2 && !n.isPortal);
-    rest.sort((a, b) => {
-      const da = Math.min(Math.hypot(a.x - start.x, a.y - start.y), Math.hypot(a.x - end.x, a.y - end.y));
-      const db = Math.min(Math.hypot(b.x - start.x, b.y - start.y), Math.hypot(b.x - end.x, b.y - end.y));
-      return da - db;
-    });
-    uniqueNodes.length = 0;
-    uniqueNodes.push(...keep, ...rest.slice(0, 200));
-  }
-
-
-  // Add bypass nodes specifically around portal locations to ensure connectivity
-  uniqueNodes.forEach((n) => {
-    if (!n.isPortal) return;
-    const portalOffsets = [
-      { dx: -15, dy: 0 }, { dx: 15, dy: 0 },
-      { dx: 0, dy: -15 }, { dx: 0, dy: 15 },
-      { dx: -10, dy: -10 }, { dx: 10, dy: -10 },
-      { dx: -10, dy: 10 }, { dx: 10, dy: 10 }
-    ];
-    portalOffsets.forEach(off => {
-      const bp = { x: n.x + off.dx, y: n.y + off.dy };
-      const key = `${n.floor}:${Math.round(bp.x)},${Math.round(bp.y)}`;
-      if (!visited.has(key) && !hitsAnyWall(n, bp, n.floor, walls, 1)) {
-        visited.add(key);
-        uniqueNodes.push({ x: bp.x, y: bp.y, floor: n.floor });
-      }
-    });
-  });
-
-  // Rebuild adjacency after adding portal bypass nodes
+  // Build adjacency
   const adj = new Map<number, { to: number; cost: number; isTeleport: boolean }[]>();
   for (let i = 0; i < uniqueNodes.length; i++) adj.set(i, []);
 
-  // Physical edges (same floor, wall check with appropriate thickness)
+  // Spatial hashing or Grid-neighbor optimization:
+  // Map coordinates to node indices to find adjacent nodes in O(1) instead of O(N^2)
+  const coordMap = new Map<string, number>();
+  uniqueNodes.forEach((n, idx) => {
+    // Map both exact coordinates and integer rounded coordinates to catch all neighboring nodes
+    coordMap.set(`${n.floor}:${Math.round(n.x)},${Math.round(n.y)}`, idx);
+  });
+
+  // Connect neighbors. For each node, check surrounding offsets
+  // (covering grid step of 18 and diagonal step of ~25.5)
+  const searchOffsets: { dx: number; dy: number }[] = [];
+  const GRID_STEP = 18;
+  for (let dx = -GRID_STEP; dx <= GRID_STEP; dx += GRID_STEP) {
+    for (let dy = -GRID_STEP; dy <= GRID_STEP; dy += GRID_STEP) {
+      if (dx === 0 && dy === 0) continue;
+      searchOffsets.push({ dx, dy });
+    }
+  }
+
+
+
   for (let i = 0; i < uniqueNodes.length; i++) {
     const ni = uniqueNodes[i];
-    for (let j = i + 1; j < uniqueNodes.length; j++) {
-      const nj = uniqueNodes[j];
-      if (ni.floor !== nj.floor) continue;
-      // Portal edges use 1px thickness (pure geometric intersection only)
-      // Regular edges use a thin 2px thickness so narrow corridors (≧ 4px gap)
-      // can still be traversed while wall gaps are clearly avoided.
-      const thickness = (ni.isPortal || nj.isPortal) ? 1.0 : 2.0;
-      if (!hitsAnyWall(ni, nj, ni.floor, walls, thickness)) {
+
+    // 1. Grid neighbor connections (Local)
+    searchOffsets.forEach(off => {
+      const tx = Math.round(ni.x + off.dx);
+      const ty = Math.round(ni.y + off.dy);
+      const key = `${ni.floor}:${tx},${ty}`;
+      const j = coordMap.get(key);
+      if (j !== undefined && j > i) {
+        const nj = uniqueNodes[j];
+        if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
+          const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
+          adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+          adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+        }
+      }
+    });
+
+    // 2. Portal connections (Only connect portals to grid if they have a valid partner linked)
+    if (ni.isPortal) {
+      // Check if this portal has any valid pairing in markers
+      const hasPartner = markers.some((x: any) =>
+        x.id !== ni.markerId && (
+          (ni.linkedMarkerId && x.id === ni.linkedMarkerId) ||
+          (x.linkedWarpId && x.linkedWarpId === ni.markerId)
+        )
+      );
+
+      if (hasPartner) {
+        for (let j = 0; j < uniqueNodes.length; j++) {
+          if (i === j) continue;
+          const nj = uniqueNodes[j];
+          if (ni.floor !== nj.floor) continue;
+          const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
+          if (d < 40) {
+            if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
+              adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+              adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+            }
+          }
+        }
+      }
+    }
+    // 3. Start/End Node connections (Allow start/end to connect to any node within 40px radius to snap to grid)
+    if (i === 0 || i === 1) {
+      for (let j = 0; j < uniqueNodes.length; j++) {
+        if (i === j) continue;
+        const nj = uniqueNodes[j];
+        if (ni.floor !== nj.floor) continue;
         const d = Math.hypot(ni.x - nj.x, ni.y - nj.y);
-        adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
-        adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+        if (d < 40) {
+          if (!hitsAnyWall(ni, nj, ni.floor, walls, 0.1)) {
+            adj.get(i)!.push({ to: j, cost: d, isTeleport: false });
+            adj.get(j)!.push({ to: i, cost: d, isTeleport: false });
+          }
+        }
       }
     }
   }
 
-  // Teleport edges (linked portal pairs)
-  const processed = new Set<string>();
+  // Teleport edges (linked portal pairs) - strictly directed based on linkedWarpId!
   markers.forEach(m => {
     if (!(m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs')) return;
-    const partner = markers.find((x: any) =>
-      x.id !== m.id && (
-        (m.linkedWarpId && x.id === m.linkedWarpId) ||
-        (x.linkedWarpId && x.linkedWarpId === m.id)
-      )
-    );
+    if (!m.linkedWarpId) return;
+
+    const partner = markers.find((x: any) => x.id === m.linkedWarpId);
     if (!partner) return;
-    const pairKey = [m.id, partner.id].sort().join(':');
-    if (processed.has(pairKey)) return;
-    processed.add(pairKey);
 
     const idxA = uniqueNodes.findIndex(n => n.markerId === m.id);
     const idxB = uniqueNodes.findIndex(n => n.markerId === partner.id);
     if (idxA >= 0 && idxB >= 0) {
+      // Connect strictly A -> B (directed edge)
       adj.get(idxA)!.push({ to: idxB, cost: TELEPORT_COST, isTeleport: true });
-      adj.get(idxB)!.push({ to: idxA, cost: TELEPORT_COST, isTeleport: true });
     }
   });
 
@@ -236,35 +250,55 @@ export function findBypassingPath(
     return { name: node.portalName || 'Portal', floor: node.floor, edges: physicalEdges };
   });
 
-  // A* search
-  const dist = new Array(uniqueNodes.length).fill(Infinity);
-  const parentIdx = new Array(uniqueNodes.length).fill(-1);
-  // Track which edge was used to reach each node (to identify teleports in path)
-  const parentEdgeTeleport = new Array(uniqueNodes.length).fill(false);
-  dist[0] = 0;
+  // A* search with state expansion (idx, wasTeleport) to block consecutive teleports!
+  // State representation: nodeIdx * 2 + (wasTeleport ? 1 : 0)
+  const numStates = uniqueNodes.length * 2;
+  const dist = new Array(numStates).fill(Infinity);
+  const parentState = new Array(numStates).fill(-1);
+  dist[0] = 0; // Start node (index 0, wasTeleport=0)
 
-  const queue: { idx: number; f: number }[] = [{ idx: 0, f: Math.hypot(start.x - end.x, start.y - end.y) }];
+  // Simple binary heap/sorted queue implementation for high performance
+  const queue: { stateIdx: number; f: number }[] = [{ stateIdx: 0, f: Math.hypot(start.x - end.x, start.y - end.y) }];
+
+  const insertQueue = (item: { stateIdx: number; f: number }) => {
+    let low = 0, high = queue.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (queue[mid].f < item.f) low = mid + 1;
+      else high = mid;
+    }
+    queue.splice(low, 0, item);
+  };
 
   while (queue.length > 0) {
-    queue.sort((a, b) => a.f - b.f);
-    const { idx } = queue.shift()!;
+    const { stateIdx } = queue.shift()!;
+    const curIdx = stateIdx >> 1;
+    const curWasTeleport = (stateIdx & 1) === 1;
 
-    if (idx === 1) {
-      // Reconstruct path
-      const pathIndices: number[] = [];
-      let cur = 1;
-      while (cur !== -1) { pathIndices.push(cur); cur = parentIdx[cur]; }
-      pathIndices.reverse();
+    // Target reached (End node index 1, regardless of how we reached it)
+    if (curIdx === 1) {
+      // Reconstruct path states
+      const pathStates: number[] = [];
+      let cur = stateIdx;
+      while (cur !== -1) {
+        pathStates.push(cur);
+        cur = parentState[cur];
+      }
+      pathStates.reverse();
 
-      const path = pathIndices.map(i => uniqueNodes[i]);
+      const path = pathStates.map(st => uniqueNodes[st >> 1]);
       const teleportIndices: number[] = [];
-      for (let i = 1; i < pathIndices.length; i++) {
-        if (parentEdgeTeleport[pathIndices[i]]) {
-          teleportIndices.push(i - 1); // path[i-1] → path[i] is teleport
+      for (let i = 1; i < pathStates.length; i++) {
+        const prevWasTeleport = (pathStates[i - 1] & 1) === 1;
+        const curWasTeleport = (pathStates[i] & 1) === 1;
+        // If cur state is teleport and prev state is not teleport, this transition path[i-1] -> path[i] is a teleport
+        // Wait, the transition itself sets wasTeleport=1 for the destination node
+        if (curWasTeleport && !prevWasTeleport) {
+          teleportIndices.push(i - 1);
         }
       }
 
-      console.log('[PathFinder] Path found:', path.map((n, i) => ({
+      console.log('[PathFinder] Directed Path found:', path.map((n, i) => ({
         i, x: Math.round(n.x), y: Math.round(n.y), floor: n.floor,
         portal: n.isPortal ? n.portalName : undefined,
         teleportAfter: teleportIndices.includes(i)
@@ -281,17 +315,28 @@ export function findBypassingPath(
       };
     }
 
-    for (const edge of (adj.get(idx) || [])) {
-      const nd = dist[idx] + edge.cost;
-      if (nd < dist[edge.to]) {
-        dist[edge.to] = nd;
-        parentIdx[edge.to] = idx;
-        parentEdgeTeleport[edge.to] = edge.isTeleport;
+    const edges = adj.get(curIdx) || [];
+    for (const edge of edges) {
+      // Rule: Do not allow back-to-back teleports!
+      if (curWasTeleport && edge.isTeleport) continue;
+
+      const nextWasTeleport = edge.isTeleport ? 1 : 0;
+      const nextState = (edge.to << 1) + nextWasTeleport;
+      const nd = dist[stateIdx] + edge.cost;
+
+      if (nd < dist[nextState]) {
+        dist[nextState] = nd;
+        parentState[nextState] = stateIdx;
         const tn = uniqueNodes[edge.to];
         const h = tn.floor === end.floor ? Math.hypot(tn.x - end.x, tn.y - end.y) : 0;
-        const qi = queue.findIndex(q => q.idx === edge.to);
-        if (qi >= 0) queue[qi].f = nd + h;
-        else queue.push({ idx: edge.to, f: nd + h });
+        const f = nd + h;
+
+        // Fast queue update
+        const qi = queue.findIndex(q => q.stateIdx === nextState);
+        if (qi >= 0) {
+          queue.splice(qi, 1);
+        }
+        insertQueue({ stateIdx: nextState, f });
       }
     }
   }
