@@ -542,6 +542,7 @@ export default function App() {
     }
   }, []);
 
+
   const [isEditMode, setIsEditMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_is_edit_mode');
     return saved !== null ? saved === 'true' : false;
@@ -1070,6 +1071,19 @@ export default function App() {
 
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
+
+  // === サブウィンドウ (ブラウザツールバーなしの別ウィンドウ) ===
+  const openSubWindow = () => {
+    const w = window.open(
+      window.location.href,
+      '_blank',
+      'menubar=no,toolbar=no,location=no,status=no,width=1280,height=800'
+    );
+    if (!w) {
+      notification.show('⚠️ ポップアップブロックを解除してください');
+    }
+  };
+
 
   // Migration: if globalWalls is empty but route has walls, migrate them
   useEffect(() => {
@@ -1963,7 +1977,7 @@ export default function App() {
                   marginBottom: showSettingsExpanded ? '8px' : '0'
                 }}
               >
-                <span>{t('⚙️ マーカー表示設定')}</span>
+                <span>{t('⚙️ 表示設定')}</span>
                 <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{showSettingsExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
               </button>
 
@@ -2072,6 +2086,12 @@ export default function App() {
                       />
                     </div>
                   )}
+
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '8px', marginTop: '4px' }}>
+                    <button className="btn-cyber" style={{ width: '100%', padding: '5px 8px', fontSize: '11px', clipPath: 'none' }} onClick={openSubWindow}>
+                      🗔 {t('別ウィンドウで開く (フルマップ)')}
+                    </button>
+                  </div>
                 </div>
               )}
 
