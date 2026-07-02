@@ -117,7 +117,6 @@ export const en: Locale = {
     '🏷️ マーカー表示設定': '🏷️ Marker display settings',
     '🏷️ ラベル表示': '🏷️ Show labels',
     '🖱️ 表示モードでテキストピンのクリックを透過': '🖱️ Pass through text pin clicks in view mode',
-    '🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)': '🧭 Compass to nearest active ReroRero Phone Booth (Always On excluded)',
     '📌 ピン・ラベル倍率:': '📌 Pin / label scale:',
     '最小 (30%)': 'Min (30%)',
     '最大 (200%)': 'Max (200%)',

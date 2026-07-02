@@ -149,14 +149,15 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
   const clearTemporaryStrokes = useCallback(() => {
     const filterTemp = (snapshots: HistorySnapshot[]) => {
       return snapshots.map(snap => {
-        const nextStrokes = { ...snap.strokes } as Record<string, DrawingStroke[]>;
+        const nextStrokes = { ...snap.strokes } as HistorySnapshot['strokes'];
         let changed = false;
         for (const fl of Object.keys(nextStrokes)) {
-          if (nextStrokes[fl]) {
-            const origLen = nextStrokes[fl].length;
-            const filtered = nextStrokes[fl].filter(s => s.type !== 'temporary');
+          const flKey = fl as FloorType;
+          if (nextStrokes[flKey]) {
+            const origLen = nextStrokes[flKey].length;
+            const filtered = nextStrokes[flKey].filter(s => s.type !== 'temporary');
             if (filtered.length !== origLen) {
-              nextStrokes[fl] = filtered;
+              nextStrokes[flKey] = filtered;
               changed = true;
             }
           }
@@ -167,14 +168,15 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     setPastHistory(prev => filterTemp(prev));
     setFutureHistory(prev => filterTemp(prev));
     if (dragSnapshotRef.current) {
-      const nextStrokes = { ...dragSnapshotRef.current.strokes } as Record<string, DrawingStroke[]>;
+      const nextStrokes = { ...dragSnapshotRef.current.strokes } as HistorySnapshot['strokes'];
       let changed = false;
       for (const fl of Object.keys(nextStrokes)) {
-        if (nextStrokes[fl]) {
-          const origLen = nextStrokes[fl].length;
-          const filtered = nextStrokes[fl].filter(s => s.type !== 'temporary');
+        const flKey = fl as FloorType;
+        if (nextStrokes[flKey]) {
+          const origLen = nextStrokes[flKey].length;
+          const filtered = nextStrokes[flKey].filter(s => s.type !== 'temporary');
           if (filtered.length !== origLen) {
-            nextStrokes[fl] = filtered;
+            nextStrokes[flKey] = filtered;
             changed = true;
           }
         }

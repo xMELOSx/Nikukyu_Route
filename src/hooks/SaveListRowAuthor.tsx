@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER, aesGcmDecrypt, AUTHOR_TAMPERED, getRenderCacheKey } from '../utils/DataManager';
+import React from 'react';
+import { AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER, getRenderCacheKey } from '../utils/DataManager';
 import { useAuthorField } from './useAuthorField';
 
 interface SaveListRowAuthorProps {

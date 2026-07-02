@@ -545,7 +545,6 @@ export default function App() {
     const saved = localStorage.getItem('heist_show_labels');
     return saved !== null ? saved === 'true' : true;
   });
-  const [markerVisExpanded, setMarkerVisExpanded] = useState<boolean>(false);
   const [floorNavCollapsed, setFloorNavCollapsed] = useState<boolean>(() => loadFloorNavCollapsed());
   useEffect(() => {
     saveFloorNavCollapsed(floorNavCollapsed);
@@ -558,11 +557,11 @@ export default function App() {
     if (prev === 'draw' && toolMode !== 'draw') {
       routeApi.setRoute(prev => {
         let changed = false;
-        const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
+        const nextStrokes = { ...prev.strokes } as RouteData['strokes'];
         for (const floor of Object.keys(nextStrokes)) {
-          const arr = nextStrokes[floor];
+          const arr = nextStrokes[floor as FloorType];
           if (arr && arr.some(s => s.type === 'temporary')) {
-            nextStrokes[floor] = arr.filter(s => s.type !== 'temporary');
+            nextStrokes[floor as FloorType] = arr.filter(s => s.type !== 'temporary');
             changed = true;
           }
         }
@@ -771,6 +770,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_local_marker_list_expanded', String(localMarkerListExpanded));
   }, [localMarkerListExpanded]);
+
+  // 表示設定の折りたたみ状態 (default: 展開)
+  const [showSettingsExpanded, setShowSettingsExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_settings_expanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_settings_expanded', String(showSettingsExpanded));
+  }, [showSettingsExpanded]);
+
+  // MARKER VISIBILITYの折りたたみ状態 (default: 展開)
+  const [markerVisibilityExpanded, setMarkerVisibilityExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_marker_visibility_expanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_marker_visibility_expanded', String(markerVisibilityExpanded));
+  }, [markerVisibilityExpanded]);
 
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
@@ -1786,7 +1803,7 @@ export default function App() {
             <div className="panel-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px' }}>
               <button
                 type="button"
-                onClick={() => setMarkerVisExpanded(!markerVisExpanded)}
+                onClick={() => setShowSettingsExpanded(!showSettingsExpanded)}
                 style={{
                   width: '100%',
                   padding: '4px 8px',
@@ -1799,16 +1816,17 @@ export default function App() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
+                  marginBottom: showSettingsExpanded ? '8px' : '0'
                 }}
               >
-                <span>{t('🏷️ マーカー表示設定')}</span>
-                <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{markerVisExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
+                <span>{t('⚙️ マーカー表示設定')}</span>
+                <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{showSettingsExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
               </button>
 
-              {markerVisExpanded && (
-                <>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginBottom: '6px', marginTop: '8px' }}>
+              {showSettingsExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={showMarkerLabels}
@@ -1844,7 +1862,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={textPinPassThrough}
@@ -1854,7 +1872,7 @@ export default function App() {
                     {t('🖱️ 表示モードでテキストピンのクリックを透過')}
                   </label>
 
-                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={showPhoneCompass}
@@ -1864,7 +1882,7 @@ export default function App() {
                     {t('🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)')}
                   </label>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={showPhoneBoxHud}
@@ -1874,7 +1892,7 @@ export default function App() {
                     {t('📞 電話ボックスHUDの表示')}
                   </label>
                   {showPhoneBoxHud && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', paddingLeft: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '20px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
                         <span>{t('HUDサイズ:')}</span>
                         <span style={{ color: '#ff00ff', fontWeight: 'bold' }}>{phoneBoxHudSize}%</span>
@@ -1888,7 +1906,7 @@ export default function App() {
                     </div>
                   )}
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={showBottomRightHud}
@@ -1898,7 +1916,7 @@ export default function App() {
                     {t('🔍 右下HUD (ズームコントロール) の表示')}
                   </label>
                   {showBottomRightHud && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', paddingLeft: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '20px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
                         <span>{t('HUDサイズ:')}</span>
                         <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{zoomHudSize}%</span>
@@ -1911,39 +1929,62 @@ export default function App() {
                       />
                     </div>
                   )}
+                </div>
+              )}
 
-                  <div style={{ marginTop: '8px' }}>
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0' }} />
-                    <div className="panel-title" style={{ marginBottom: '6px' }}>MARKER VISIBILITY</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '12px', color: '#7ec8e3', fontWeight: 'bold' }}>GLOBAL:</div>
-                      <div style={{ display: 'flex', gap: '3px' }}>
-                        <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
-                          onClick={() => {
-                            // 一括トグル: クロージャ毎の route 参照で hidden 判定すると
-                            // ループ末尾の状態 (旧値基準) しか反映されないため、
-                            // 旧値から最終状態を一度だけ計算して単一の setRoute にまとめる
-                            const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
-                            const next = current.filter(t => !targetTypes.includes(t as string));
-                            if (next.length === current.length) return;
-                            const nextHidden = routeApi.route.hiddenMarkers || [];
-                            postGlobalDefaults(nextHidden, next);
-                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
-                          }}>ALL ON</button>
-                        <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
-                          onClick={() => {
-                            const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
-                            const additions = targetTypes.filter(t => !current.includes(t));
-                            if (additions.length === 0) return;
-                            const next = Array.from(new Set([...current, ...additions]));
-                            const nextHidden = routeApi.route.hiddenMarkers || [];
-                            postGlobalDefaults(nextHidden, next);
-                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
-                          }}>ALL OFF</button>
-                      </div>
+              {/* MARKER VISIBILITYアコーディオン */}
+              <button
+                type="button"
+                onClick={() => setMarkerVisibilityExpanded(!markerVisibilityExpanded)}
+                style={{
+                  width: '100%',
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  background: 'rgba(255, 0, 255, 0.05)',
+                  border: '1px solid rgba(255, 0, 255, 0.15)',
+                  borderRadius: '4px',
+                  color: 'var(--text-accent, #ff00ff)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontWeight: 'bold',
+                  marginTop: '8px',
+                  marginBottom: markerVisibilityExpanded ? '8px' : '0'
+                }}
+              >
+                <span>{t('👁️ MARKER VISIBILITY')}</span>
+                <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{markerVisibilityExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
+              </button>
+
+              {markerVisibilityExpanded && (
+                <div style={{ marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '12px', color: '#7ec8e3', fontWeight: 'bold' }}>GLOBAL:</div>
+                    <div style={{ display: 'flex', gap: '3px' }}>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
+                        onClick={() => {
+                          const current = routeApi.route.hiddenMarkerTypes || [];
+                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
+                          const next = current.filter(t => !targetTypes.includes(t as string));
+                          if (next.length === current.length) return;
+                          const nextHidden = routeApi.route.hiddenMarkers || [];
+                          postGlobalDefaults(nextHidden, next);
+                          routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                        }}>ALL ON</button>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
+                        onClick={() => {
+                          const current = routeApi.route.hiddenMarkerTypes || [];
+                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
+                          const additions = targetTypes.filter(t => !current.includes(t));
+                          if (additions.length === 0) return;
+                          const next = Array.from(new Set([...current, ...additions]));
+                          const nextHidden = routeApi.route.hiddenMarkers || [];
+                          postGlobalDefaults(nextHidden, next);
+                          routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                        }}>ALL OFF</button>
                     </div>
+                  </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
                       {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
                         const meta = MARKER_META[t];
@@ -1999,7 +2040,6 @@ export default function App() {
                       })}
                     </div>
                   </div>
-                </>
               )}
             </div>
 
