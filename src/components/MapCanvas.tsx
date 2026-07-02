@@ -876,24 +876,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // まず範囲外を掃除
       const cleaned = new Set<number>();
       for (const idx of prev) {
-        if (idx < strokes.length) cleaned.add(idx);
+        if (idx < strokes.length && strokes[idx]?.type !== 'temporary') cleaned.add(idx);
       }
       return cleaned;
     });
   }, [strokes.length]);
 
   // ストローク数が増加した瞬間に旧選択を破棄し、新規末尾を「次回表示セット」にする
-  const prevStrokesLengthRef = useRef<number>(strokes.length);
+  const realStrokesCount = strokes.filter(s => s.type !== 'temporary').length;
+  const lastRealStrokeIdx = (() => {
+    for (let i = strokes.length - 1; i >= 0; i--) {
+      if (strokes[i] && strokes[i].type !== 'temporary') return i;
+    }
+    return -1;
+  })();
+
+  const prevRealCountRef = useRef<number>(realStrokesCount);
   useEffect(() => {
-    const prev = prevStrokesLengthRef.current;
-    if (strokes.length > prev) {
+    const prev = prevRealCountRef.current;
+    if (realStrokesCount > prev && lastRealStrokeIdx >= 0) {
       // ライン追加 → 旧選択を破棄して新規末尾だけ覚える
-      const next = new Set([strokes.length - 1]);
+      const next = new Set([lastRealStrokeIdx]);
       setHighlightedStrokeIdxs(next);
       onMeasureSelectedStrokeIdxsChange?.(next);
     }
-    prevStrokesLengthRef.current = strokes.length;
-  }, [strokes.length]);
+    prevRealCountRef.current = realStrokesCount;
+  }, [realStrokesCount, lastRealStrokeIdx]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -903,14 +911,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (toolMode === 'measure') {
       setHighlightedStrokeIdxs(prev => {
         if (prev.size > 0) return prev; // 既に表示セットあり → 維持
-        if (strokes.length === 0) return prev; // 線がまだ無い → 何もしない
+        if (lastRealStrokeIdx < 0) return prev; // 実線が無い → 何もしない
         const next = new Set(prev);
-        next.add(strokes.length - 1);
+        next.add(lastRealStrokeIdx);
         return next;
       });
     }
     // 計測モード解除時はクリアしない (セッションをまたいで保持)
-  }, [toolMode, strokes.length]);
+  }, [toolMode, lastRealStrokeIdx]);
 
   // 線分編集モード:
   // - ストローク数変化 (削除・分割) に追随して範囲外インデックスを掃除
@@ -1431,7 +1439,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       let bestDist = HIT_THRESHOLD;
       for (let i = 0; i < strokes.length; i++) {
         const s = strokes[i];
-        if (!s || !s.points || s.points.length < 2) continue;
+        if (!s || !s.points || s.points.length < 2 || s.type === 'temporary') continue;
         const d = getDistanceToStroke(coords, s);
         if (d < bestDist) {
           bestDist = d;
@@ -1472,7 +1480,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       let bestDist = HIT_THRESHOLD;
       for (let i = 0; i < strokes.length; i++) {
         const s = strokes[i];
-        if (!s || !s.points || s.points.length < 2) continue;
+        if (!s || !s.points || s.points.length < 2 || s.type === 'temporary') continue;
         const d = getDistanceToStroke(coords, s);
         if (d < bestDist) {
           bestDist = d;
