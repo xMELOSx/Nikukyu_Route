@@ -2517,6 +2517,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const resetView = () => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+    
     if (startupFocusMarkerId) {
       const marker = markersRef.current.find(m => m.id === startupFocusMarkerId);
       if (marker) {

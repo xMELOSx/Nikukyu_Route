@@ -738,6 +738,23 @@ export default function App() {
     localStorage.setItem('heist_show_bottom_right_hud', String(showBottomRightHud));
   }, [showBottomRightHud]);
 
+  // マーカー一覧折りたたみ状態 (default: 展開)
+  const [globalMarkerListExpanded, setGlobalMarkerListExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_global_marker_list_expanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_global_marker_list_expanded', String(globalMarkerListExpanded));
+  }, [globalMarkerListExpanded]);
+
+  const [localMarkerListExpanded, setLocalMarkerListExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_local_marker_list_expanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_local_marker_list_expanded', String(localMarkerListExpanded));
+  }, [localMarkerListExpanded]);
+
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
   const [markerScale, setMarkerScale] = useState<number>(() => {
@@ -2436,41 +2453,85 @@ export default function App() {
 
             {isEditMode && isLocal && (
               <div className="panel-section">
-                <div className="panel-title">{t('マーカー(グローバル)')}</div>
-                <div className="marker-list">
-                  {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
-                    const meta = MARKER_META[t];
-                    return (
-                      <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
-                        onClick={() => { setToolMode('add-marker'); setActiveMarkerType(t); }}
-                        style={{ '--theme-color': meta.color } as React.CSSProperties}>
-                        <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{t === 'start' ? 'START' : t === 'cardkey' ? 'CARD KEY' : meta.label.split(' ')[0]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setGlobalMarkerListExpanded(!globalMarkerListExpanded)}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    background: 'rgba(0, 255, 255, 0.05)',
+                    border: '1px solid rgba(0, 255, 255, 0.15)',
+                    borderRadius: '4px',
+                    color: 'var(--cyan-neon)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  <span>{t('📍 マーカー(グローバル)')}</span>
+                  <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{globalMarkerListExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
+                </button>
+                {globalMarkerListExpanded && (
+                  <div className="marker-list" style={{ marginTop: '6px' }}>
+                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                      const meta = MARKER_META[t];
+                      return (
+                        <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
+                          onClick={() => { setToolMode('add-marker'); setActiveMarkerType(t); }}
+                          style={{ '--theme-color': meta.color } as React.CSSProperties}>
+                          <span className="marker-icon-preview">{meta.emoji}</span>
+                          <span>{t === 'start' ? 'START' : t === 'cardkey' ? 'CARD KEY' : meta.label.split(' ')[0]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
             {isEditMode && (
               <div className="panel-section">
-                <div className="panel-title">{t('マーカー')}</div>
-                <div className="marker-list">
-                  {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(mt => {
-                    const meta = MARKER_META[mt];
-                    const isActive = toolMode === 'add-marker' && activeMarkerType === mt;
-                    return (
-                      <button key={mt} className={`marker-item ${isActive ? 'active' : ''}`}
-                        onClick={() => { setToolMode('add-marker'); setActiveMarkerType(mt); }}
-                        style={{ '--theme-color': meta.color } as React.CSSProperties}
-                        title={mt === 'skill_cd' ? t('スキルクールタイム (P1の前に配置。通過時にCD秒ぶん停止して、自動案内の累計停止行の下に残時間を表示)') : undefined}>
-                        <span className="marker-icon-preview">{meta.emoji}</span>
-                        <span>{mt === 'start' ? 'START' : mt === 'iwarp' ? 'I-WARP' : mt === 'skill_cd' ? 'SKILL CD' : meta.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setLocalMarkerListExpanded(!localMarkerListExpanded)}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    background: 'rgba(255, 0, 255, 0.05)',
+                    border: '1px solid rgba(255, 0, 255, 0.15)',
+                    borderRadius: '4px',
+                    color: 'var(--text-accent, #ff00ff)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  <span>{t('📍 マーカー')}</span>
+                  <span style={{ fontSize: '9px', opacity: 0.6, fontWeight: 'normal' }}>{localMarkerListExpanded ? t('▼ 折りたたむ') : t('▶ 展開')}</span>
+                </button>
+                {localMarkerListExpanded && (
+                  <div className="marker-list" style={{ marginTop: '6px' }}>
+                    {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(mt => {
+                      const meta = MARKER_META[mt];
+                      const isActive = toolMode === 'add-marker' && activeMarkerType === mt;
+                      return (
+                        <button key={mt} className={`marker-item ${isActive ? 'active' : ''}`}
+                          onClick={() => { setToolMode('add-marker'); setActiveMarkerType(mt); }}
+                          style={{ '--theme-color': meta.color } as React.CSSProperties}
+                          title={mt === 'skill_cd' ? t('スキルクールタイム (P1の前に配置。通過時にCD秒ぶん停止して、自動案内の累計停止行の下に残時間を表示)') : undefined}>
+                          <span className="marker-icon-preview">{meta.emoji}</span>
+                          <span>{mt === 'start' ? 'START' : mt === 'iwarp' ? 'I-WARP' : mt === 'skill_cd' ? 'SKILL CD' : meta.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2656,6 +2717,7 @@ export default function App() {
               warpMarkerThreshold={warpMarkerThreshold}
               skillCdThreshold={skillCdThreshold}
               showDetectionRanges={showDetectionRanges}
+              startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
               hiddenMarkers={routeApi.route.hiddenMarkers || []}
               hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
               onHideGlobalMarker={handleHideGlobalMarker}
@@ -2749,7 +2811,8 @@ export default function App() {
             stairsColor,
             autoRoute.fuseMode,
             autoRoute.inactiveMarkersMode,
-            globalDefaults.skillCdPresets
+            globalDefaults.skillCdPresets,
+            globalDefaultsRef.current.startupFocusMarkerId
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
