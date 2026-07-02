@@ -457,7 +457,7 @@ export function decompressStrokes(compressed: CompressedStroke[]): DrawingStroke
       y += zigzagDecode(cs.p[i + 1]);
       points.push({ x, y });
     }
-    return { points, color: cs.c, width: cs.w, type: cs.t as 'solid' | 'dashed' };
+    return { points, color: cs.c, width: cs.w, type: cs.t as 'solid' | 'dashed' | 'temporary' };
   });
 }
 

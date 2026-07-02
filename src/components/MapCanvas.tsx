@@ -334,7 +334,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
+  const [currentPoints, _setCurrentPoints] = useState<Point[]>([]);
+  const currentPointsRef = useRef<Point[]>([]);
+  const setCurrentPoints = (pts: Point[] | ((prev: Point[]) => Point[])) => {
+    _setCurrentPoints(prev => {
+      const next = typeof pts === 'function' ? pts(prev) : pts;
+      currentPointsRef.current = next;
+      return next;
+    });
+  };
 
   // Distance Measure mode: 選択中のストロークインデックス集合 (セッションをまたいで保持)
   // - 通常クリック: 集合を「クリックした線だけ」に置き換える
@@ -1185,6 +1193,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       ctx.restore();
     }
+
+    // 3. Render the active uncommitted hand-drawn path
+    if (isDrawingRef.current && currentPointsRef.current.length >= 2) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+
+      if (strokeType === 'temporary') {
+        ctx.globalAlpha = 0.4;
+        ctx.setLineDash([6, 4]);
+      } else if (strokeType === 'dashed') {
+        ctx.setLineDash([8, 6]);
+      } else {
+        ctx.setLineDash([]);
+      }
+
+      if (autoRouteActive && strokeType !== 'temporary') {
+        ctx.globalAlpha = 0.5;
+      }
+
+      ctx.beginPath();
+      currentPointsRef.current.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
@@ -1548,22 +1586,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDrawing(true);
       isDrawingRef.current = true;
       setCurrentPoints([coords]);
-      const ctx = ctxRef.current;
-      if (ctx) {
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
-        if (strokeType === 'temporary') {
-          ctx.globalAlpha = 0.4;
-          ctx.setLineDash([6, 4]);
-        } else if (strokeType === 'dashed') {
-          ctx.setLineDash([8, 6]);
-        } else {
-          ctx.setLineDash([]);
-        }
-        ctx.beginPath();
-        ctx.moveTo(coords.x, coords.y);
-      }
       return;
     }
 
@@ -1622,65 +1644,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'draw') {
         if (drawMode === 'straight') {
           setCurrentPoints([currentPoints[0], effectiveCoords]);
-          redrawStrokes(undefined, true); // Clear previous temporary guidelines first!
-          const ctx = ctxRef.current;
-          if (ctx) {
-            ctx.save();
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = strokeWidth;
-            if (strokeType === 'temporary') {
-              ctx.globalAlpha = 0.4;
-              ctx.setLineDash([6, 4]);
-            } else if (strokeType === 'dashed') {
-              ctx.setLineDash([8, 6]);
-            } else {
-              ctx.setLineDash([]);
-            }
-            // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
-            if (autoRouteActive && strokeType !== 'temporary') ctx.globalAlpha = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
-            ctx.lineTo(effectiveCoords.x, effectiveCoords.y);
-            ctx.stroke();
-            ctx.restore();
-          }
+          redrawStrokes(undefined, true);
           return;
         }
 
         const newPoints = [...currentPoints, coords];
         setCurrentPoints(newPoints);
-        const ctx = ctxRef.current;
-        if (ctx) {
-          ctx.save();
-          ctx.strokeStyle = strokeColor;
-          ctx.lineWidth = strokeWidth;
-
-          if (strokeType === 'temporary') {
-            // 一時線: 最後の1セグメントだけを独立パスで描画し、重ね描きを防止
-            const prevPt = currentPoints[currentPoints.length - 1];
-            ctx.globalAlpha = 0.4;
-            ctx.setLineDash([6, 4]);
-            ctx.beginPath();
-            ctx.moveTo(prevPt.x, prevPt.y);
-            ctx.lineTo(coords.x, coords.y);
-            ctx.stroke();
-          } else {
-            // 通常線: 累積パスに lineTo して stroke
-            if (strokeType === 'dashed') {
-              ctx.setLineDash([8, 6]);
-            } else {
-              ctx.setLineDash([]);
-            }
-            if (autoRouteActive) {
-              ctx.globalAlpha = 0.5;
-            } else {
-              ctx.globalAlpha = 1.0;
-            }
-            ctx.lineTo(coords.x, coords.y);
-            ctx.stroke();
-          }
-          ctx.restore();
-        }
+        redrawStrokes(undefined, true);
         return;
       }
       if (toolMode === 'erase') {
@@ -2017,6 +1987,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.globalAlpha = 1;
         ctx.setLineDash([]);
       }
+      redrawStrokes(undefined, true);
     }
   };
 
