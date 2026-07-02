@@ -3218,17 +3218,15 @@ export default function App() {
                           value={authorEdit}
                           onChange={(e) => {
                             const v = e.target.value;
-                            // author 変更時に renderCache (=原作者) も同期 (= 1回だけ author を renderCache にコピー)
-                            //   - author が設定された (= 何かしらの文字列、 'No name' 以外) → renderCache も同じ値
-                            //   - author が空 or 'No name' → renderCache は AUTHOR_DEFAULT_PLAIN ('No name') に
+                            // 重要: renderCache (=原作者) は author (=編集者) 編集で変化しない。
+                            // author 編集は author のみ更新する (= 原作者は独立した保護対象)。
                             setAuthorEdit(v);
-                            const nextRenderCache = v && v !== AUTHOR_DEFAULT_PLAIN ? v : AUTHOR_DEFAULT_PLAIN;
-                            routeApi.setRoute({ ...routeApi.route, author: v, renderCache: nextRenderCache });
+                            routeApi.setRoute({ ...routeApi.route, author: v });
                           }}
                           onBlur={() => {
                             // 編集完了時: 空文字なら 'No name' に正規化
                             if (!authorEdit) {
-                              routeApi.setRoute({ ...routeApi.route, author: AUTHOR_DEFAULT_PLAIN, renderCache: AUTHOR_DEFAULT_PLAIN });
+                              routeApi.setRoute({ ...routeApi.route, author: AUTHOR_DEFAULT_PLAIN });
                               setAuthorEdit(AUTHOR_DEFAULT_PLAIN);
                             }
                           }}

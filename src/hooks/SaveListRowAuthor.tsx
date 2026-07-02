@@ -45,16 +45,10 @@ export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
   // key は routeId / createdAt が変わらない限り同じ (= useMemo で参照を固定し、
   // useAuthorField の依存配列での再発火を防ぐ)
   const key = useMemo(
-    () => getOriginalAuthorKey(routeId, createdAt, presetSourceId),
-    [routeId, createdAt, presetSourceId]
+    () => getOriginalAuthorKey(routeId, createdAt),
+    [routeId, createdAt]
   );
-  const debugKey = useMemo(
-    () => ({ routeId, createdAt, presetSourceId: presetSourceId || null }),
-    [routeId, createdAt, presetSourceId]
-  );
-  // 強制ログ出力: セーブ一覧の復号経路を必ずコンソールに出す
-  console.log('[SaveListRowAuthor.render]', { routeId, createdAt, presetSourceId, key, renderCacheEnc_preview: (renderCacheEnc || '').slice(0, 40), renderCacheEnc_len: (renderCacheEnc || '').length });
-  const renderCache = useAuthorField(renderCacheEnc || '', key, { editable: false, debugKey });
+  const renderCache = useAuthorField(renderCacheEnc || '', key, { editable: false });
   const isOriginalDefault = renderCache.isDefault || !renderCache.plain || renderCache.plain === AUTHOR_DEFAULT_PLAIN;
   const isOriginalTampered = renderCache.tampered;
 

@@ -8,8 +8,6 @@ export interface UseAuthorFieldOptions {
    *   - editable=false: 破損時は plain = AUTHOR_TAMPERED のまま編集不可 (表示のみ)。
    *                      (原作者名 = 保護対象のため、 破損 = 改ざんなので そのまま Anomaly 表示) */
   editable: boolean;
-  /** デバッグ用: 復号キーの元情報。 aesGcmDecrypt に渡してデバッグログ出力に使う。 */
-  debugKey?: { routeId: string; createdAt: number; presetSourceId: string | null };
 }
 
 export interface UseAuthorFieldResult {
@@ -40,7 +38,7 @@ export interface UseAuthorFieldResult {
  * 「No name」 として扱う。
  */
 export function useAuthorField(encoded: string, passphrase: string, options: UseAuthorFieldOptions): UseAuthorFieldResult {
-  const { editable, debugKey } = options;
+  const { editable } = options;
   const [state, setState] = useState<{ plain: string | undefined; loading: boolean; tampered: boolean; isDefault: boolean }>(() => ({
     plain: encoded ? undefined : '',
     loading: encoded !== '',
@@ -65,9 +63,7 @@ export function useAuthorField(encoded: string, passphrase: string, options: Use
       Promise.resolve().then(() => apply({ plain: AUTHOR_DEFAULT_PLAIN, loading: false, tampered: false, isDefault: true }));
       return;
     }
-    console.log('[useAuthorField.decrypt]', { encoded_preview: (encoded || '').slice(0, 40), encoded_len: (encoded || '').length, passphrase_preview: (passphrase || '').slice(0, 40), debugKey });
-    aesGcmDecrypt(encoded, passphrase, debugKey).then((v) => {
-      console.log('[useAuthorField.decrypt.result]', { v, debugKey });
+    aesGcmDecrypt(encoded, passphrase).then((v) => {
       if (v === AUTHOR_TAMPERED) {
         if (editable) {
           // 編集可フィールドは破損時に No name にフォールバック (編集可能状態にする)
@@ -81,7 +77,7 @@ export function useAuthorField(encoded: string, passphrase: string, options: Use
       }
     });
     return () => { cancelled = true; };
-  }, [encoded, passphrase, editable, debugKey?.routeId, debugKey?.createdAt, debugKey?.presetSourceId]);
+  }, [encoded, passphrase, editable]);
 
   return useMemo(() => ({ ...state, editable }), [state, editable]);
 }

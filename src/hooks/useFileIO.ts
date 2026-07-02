@@ -4,14 +4,12 @@ import {
   type RouteData,
   type HeistMarker,
   DataManager,
-  aesGcmEncrypt,
-  aesGcmDecrypt,
-  AUTHOR_TAMPERED,
-  AUTHOR_UNKNOWN_MARKER,
-  getOriginalAuthorKey,
-  migrateOriginalAuthorToRenderCache,
-  runSaveDataMigrations
 } from '../utils/DataManager';
+import {
+  encryptRenderCache,
+  importJSON as unifiedImportJSON,
+  importPNG as unifiedImportPNG,
+} from '../utils/SaveLoadService';
 import type { UseRouteApi } from './useRoute';
 import type { UseGlobalMarkersApi } from './useGlobalMarkers';
 
@@ -90,24 +88,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   const bgFileInputRef = useRef<HTMLInputElement>(null);
 
   const exportJSON = useCallback(async () => {
-    // メモリ上の renderCache (平文) を暗号化してエクスポートする。
-    // JSON ファイルを開かれても原作者名が読めない (= 保護目的) 。
-    // 復号キーは routeId + createdAt を含む派生鍵 (= getOriginalAuthorKey) を使用。
-    let encodedCache: string;
-    const plain = routeApi.route.renderCache || '';
-    if (plain) {
-      try {
-        encodedCache = await aesGcmEncrypt(plain, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt, (routeApi.route as any).presetSourceId || null), { routeId: routeApi.route.id, createdAt: routeApi.route.createdAt, presetSourceId: (routeApi.route as any).presetSourceId || null });
-      } catch {
-        // 暗号化失敗 -> 平文のままエクスポート (ブロックしない)
-        encodedCache = plain;
-      }
-    } else {
-      encodedCache = AUTHOR_UNKNOWN_MARKER;
-    }
+    const encoded = await encryptRenderCache(routeApi.route);
     const toExport: RouteData = {
       ...routeApi.route, mapVersion: 2, markerScale,
-      renderCache: encodedCache
+      renderCache: encoded
     };
     DataManager.exportToJSON(toExport);
   }, [routeApi.route, markerScale]);
@@ -139,91 +123,34 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     );
   }, [routeApi.route, globalMarkersStore.globalMarkers, markerScale]);
 
-  const importFromJsonText = useCallback((text: string) => {
+  const importFromJsonText = useCallback(async (text: string) => {
     try {
       onBeforeLoad?.();
-      const raw = JSON.parse(text) as RouteData;
-      if (!raw.strokes || !raw.markers) {
+      const result = await unifiedImportJSON(text);
+      if (!result) {
         showNotification('JSONファイルの形式が無効です', 2000);
         return;
       }
-      // Coordinate scale + structure migration
-      const data: RouteData = { ...raw };
-      if (data.strokes && !data.strokes.main) {
-        const merged = ([] as any[]).concat(...Object.values(data.strokes));
-        data.strokes = { main: merged as any };
+      const { data, globalMarkers, anomaly, noname } = result;
+
+      if (globalMarkers.length > 0) {
+        globalMarkersStore.mergeFromImport(globalMarkers);
       }
-      data.markers = (data.markers || []).filter(
-        m => m.type !== ('camera' as any) && m.type !== ('guard' as any)
-      );
-      const { indiv, global } = splitMarkers(data.markers.map(m => backfillMarker({ ...m, floor: 'main' as FloorType })));
-      if (global.length > 0) {
-        globalMarkersStore.mergeFromImport(global);
-      }
-      data.markers = indiv;
-      if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
-      // インポートJSON に customBg が埋まっていれば IndexedDB に保存
+
       if (data.customBg.main) {
-        DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => { /* noop */ });
-      }
-      data.bossCustomDurations = data.bossCustomDurations || {};
-      data.battleCustomDurations = data.battleCustomDurations || {};
-      data.pickingCustomDurations = data.pickingCustomDurations || {};
-      data.longPickingCustomDurations = data.longPickingCustomDurations || {};
-      data.pickyMarkerIds = data.pickyMarkerIds || {};
-      // Migrate legacy marker-level `pickingPicky` into the route-level
-      // `pickyMarkerIds`. The picky state belongs to the plan, not the
-      // (possibly global) marker. Cover BOTH the individual markers and
-      // the global ones, so gpicking/glong_picking pickies are preserved.
-      const legacyPickySources: HeistMarker[] = [
-        ...(Array.isArray(indiv) ? indiv : []),
-        ...(Array.isArray(global) ? global : [])
-      ];
-      for (const m of legacyPickySources) {
-        if (m && m.pickingPicky) {
-          data.pickyMarkerIds![m.id] = true;
-        }
-      }
-      data.hiddenMarkers = data.hiddenMarkers || [];
-      data.hiddenMarkerTypes = data.hiddenMarkerTypes || [];
-      if (data.author === undefined) data.author = '';
-
-      // 旧 originalAuthor フィールドを renderCache へマイグレート
-      // (data は const なので、renderCache フィールドだけ上書き)
-      const migratedAny: any = migrateOriginalAuthorToRenderCache(data as any);
-      data.renderCache = typeof migratedAny.renderCache === 'string' ? migratedAny.renderCache : '';
-      // @ts-ignore - originalAuthor は削除済み
-      delete (data as any).originalAuthor;
-
-      // renderCache のロード時フォールバック:
-      //   author: 平文フィールド。 空文字 = 「No name」 (デフォルト値) として扱う。
-      //   renderCache: 暗号文 (v2: / legacy:) / AUTHOR_UNKNOWN_MARKER / 空 (= 改ざんの疑い)
-      //   JSON 取り込み時は平文として扱う (暗号化は保存時 / メモリ→ストレージへの書き出しで実施)
-      if (!data.renderCache) {
-        data.renderCache = '';
+        DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => {});
       }
 
-      // バージョンアップ済みならマイグレーションを適用
-      const mig = runSaveDataMigrations(data);
-      if (mig.unknown) {
-        showNotification(
-          `⚠️ 未登録バージョンのJSONです (v${mig.unknownVersion})。そのまま読み込みます。`,
-          5000
-        );
-      } else if (mig.applied.length > 0) {
-        showNotification(
-          `JSONを ${mig.applied.length} 件マイグレーションしました (→ v${mig.finalVersion})`,
-          3000
-        );
+      if (anomaly) {
+        showNotification('⚠️ renderCache の復号に失敗しました（Anomaly）', 4000);
       }
-      const finalData: RouteData = mig.data;
 
-      routeApi.setRouteWithGlobalDefaults(finalData);
-      localStorage.setItem('heist_last_used_route_id', finalData.id);
-      if (finalData.markerScale !== undefined) {
-        localStorage.setItem('heist_marker_scale', String(finalData.markerScale));
+      routeApi.setRouteWithGlobalDefaults(data);
+      localStorage.setItem('heist_last_used_route_id', data.id);
+      if (data.markerScale !== undefined) {
+        localStorage.setItem('heist_marker_scale', String(data.markerScale));
       }
-      showNotification(`インポート完了: ${finalData.title}`, 2000);
+      showNotification(`インポート完了: ${data.title}`, 2000);
     } catch (err) {
       showNotification('JSONファイルの読み込みに失敗しました', 2000);
     }
@@ -233,69 +160,17 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
     if (!file.name.toLowerCase().endsWith('.png')) return;
     try {
       onBeforeLoad?.();
-      // Read raw bytes first (for metadata fallback) and create blob URL for image display
-      const rawBuffer = await file.arrayBuffer();
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('load failed'));
-        img.src = url;
-      });
-      URL.revokeObjectURL(url);
-      const result = await DataManager.decodePngData(img, rawBuffer);
+      const result = await unifiedImportPNG(file);
       if (!result) {
-        showNotification('PNGからデータを読み取れませんでした（データバー未検出）', 3000);
+        showNotification('PNGからデータを読み取れませんでした', 3000);
         return;
       }
-      const { data, source } = result;
-      const clean = DataManager.sanitizeRouteForExport(data);
-      // 旧 originalAuthor キーを renderCache へマイグレート
-      const cleanMigrated = migrateOriginalAuthorToRenderCache(clean as any) as RouteData;
-      // バージョンアップ済みならマイグレーションを適用
-      const mig = runSaveDataMigrations(cleanMigrated);
-      const migrated = mig.data;
-      const newId = `route_${Date.now()}`;
-      const newCreatedAt = Date.now();
-      // author は平文フィールド (旧 v2: 暗号文でもロード後に平文化されている前提)。
-      // renderCache は AES-GCM 暗号化 (旧キーで復号 → 新キーで再暗号化)
-      // 復号キーは routeId + createdAt を含む派生鍵 (= getOriginalAuthorKey)
-      const plainAuthor = (migrated.author && !migrated.author.startsWith('v2:') && !migrated.author.startsWith('legacy:'))
-        ? migrated.author : '';
-      const plainOriginal = await aesGcmDecrypt(migrated.renderCache || '', getOriginalAuthorKey(migrated.id, migrated.createdAt, (migrated as any).presetSourceId || null), { routeId: migrated.id, createdAt: migrated.createdAt, presetSourceId: (migrated as any).presetSourceId || null });
-      const allMarkers = migrated.markers || [];
-      const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
-      const importedGlobals = allMarkers.filter(m => isGlobalType(m.type));
-      // Migrate legacy marker-level `pickingPicky` for BOTH individual
-      // and global markers into the route-level `pickyMarkerIds`.
-      const importedPickyMarkerIds: { [markerId: string]: boolean } = {};
-      for (const m of allMarkers) {
-        if (m && m.pickingPicky) importedPickyMarkerIds[m.id] = true;
+      const { data: importedRoute, globalMarkers: importedGlobals, anomaly } = result;
+
+      if (anomaly) {
+        showNotification('⚠️ renderCache の復号に失敗しました（Anomaly）', 4000);
       }
-      const safeOriginal = plainOriginal === AUTHOR_TAMPERED ? '' : (plainOriginal || '');
-      let encodedCache: string;
-      if (safeOriginal) {
-        try {
-          encodedCache = await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt, (migrated as any).presetSourceId || null), { routeId: newId, createdAt: newCreatedAt, presetSourceId: (migrated as any).presetSourceId || null });
-        } catch {
-          encodedCache = safeOriginal;
-        }
-      } else {
-        encodedCache = AUTHOR_UNKNOWN_MARKER;
-      }
-      const importedRoute: RouteData = {
-        ...migrated,
-        id: newId,
-        createdAt: newCreatedAt,
-        markers: individualMarkers,
-        pickyMarkerIds: { ...(migrated.pickyMarkerIds || {}), ...importedPickyMarkerIds },
-        author: plainAuthor,
-        renderCache: encodedCache
-      };
-      // カスタムBG (= base64 画像) は localStorage 容量を圧迫するため、
-      // メモリには載せるが localStorage には保存しない。 これで QuotaExceededError を回避。
-      // PNGエクスポートでは BG は画像として焼き込まれるため、 PNGインポート時に
-      // customBg データを取り出すことはできない (= インポート後に BG は無し)。
+
       const toSaveToStorage: RouteData = {
         ...importedRoute,
         customBg: { main: null }
@@ -310,19 +185,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       if (importedGlobals.length > 0) {
         globalMarkersStore.mergeFromImport(importedGlobals);
       }
-      if (mig.unknown) {
-        showNotification(
-          `⚠️ 未登録バージョンのPNGです (v${mig.unknownVersion})。そのまま読み込みます。`,
-          5000
-        );
-      } else if (mig.applied.length > 0) {
-        showNotification(
-          `PNGを ${mig.applied.length} 件マイグレーションしました (→ v${mig.finalVersion})`,
-          3000
-        );
-      }
-      const sourceLabel = source === 'dataBar' ? 'データバー' : 'メタデータ';
-      showNotification(`PNGインポート完了: ${importedRoute.title} (${sourceLabel}から読み込み)`, 2000);
+      showNotification(`PNGインポート完了: ${importedRoute.title}`, 2000);
     } catch (err) {
       showNotification('PNG読み込みに失敗しました', 3000);
     }

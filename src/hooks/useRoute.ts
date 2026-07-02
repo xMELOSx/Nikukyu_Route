@@ -255,12 +255,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         // 復号キーは routeId + createdAt + presetSourceId を含む派生鍵 (= getOriginalAuthorKey)。
         const plainCache = route.renderCache;
 
-        const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null);
+        const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt);
         let encoded: string;
         try {
           if (typeof plainCache === 'string' && plainCache.length > 0) {
             // 平文 renderCache → 暗号化
-            encoded = await aesGcmEncrypt(plainCache, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+            encoded = await aesGcmEncrypt(plainCache, safeAuthorKey);
           } else {
             // 空文字 ('') または未定義 → どちらも No name として保存
             // (空文字は本来 Anomaly だが、 ロード直後の race condition で一時的に空になる
@@ -351,12 +351,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     //     空になることがあるため、 ここでは No name センチネルで保存 (= Anomaly 状態を回避)
     //   - 未定義 → No name のセンチネルで保存
     const plainCache = route.renderCache;
-    const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null);
+    const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt);
     let encoded: string;
     try {
       if (typeof plainCache === 'string' && plainCache.length > 0) {
         // 平文 renderCache → 暗号化
-        encoded = await aesGcmEncrypt(plainCache, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+        encoded = await aesGcmEncrypt(plainCache, safeAuthorKey);
       } else {
         // 空文字 / 未定義 → No name のセンチネルで保存
         encoded = AUTHOR_UNKNOWN_MARKER;
@@ -379,7 +379,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     // ---- デバッグ: 復号テスト (復号キーが正しいか) ----
     if (encoded.startsWith('v2:') && encoded !== AUTHOR_UNKNOWN_MARKER) {
       try {
-        const decoded = await aesGcmDecrypt(encoded, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+        const decoded = await aesGcmDecrypt(encoded, safeAuthorKey);
         console.log('[useRoute.saveToLocal] self-decrypt check:', { encoded_preview: encoded.slice(0, 40), decoded });
       } catch (e) {
         console.error('[useRoute.saveToLocal] self-decrypt FAILED:', e);
@@ -424,7 +424,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     let encoded: string;
     if (typeof plainCache === 'string' && plainCache.length > 0) {
       try {
-        encoded = await aesGcmEncrypt(plainCache, getOriginalAuthorKey(newId, newCreatedAt, (route as any).presetSourceId || null), { routeId: newId, createdAt: newCreatedAt, presetSourceId: (route as any).presetSourceId || null });
+        encoded = await aesGcmEncrypt(plainCache, getOriginalAuthorKey(newId, newCreatedAt));
       } catch {
         encoded = plainCache;
       }
@@ -504,31 +504,49 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       let data: RouteData | null = null;
       if (id.startsWith('__preset__')) {
         const presetId = id.replace('__preset__', '');
-        // プリセットを presets.json (= サーバ、 922KB) から直接 fetch (= シンプル)
-        // 重要: presetsRef.current (= metaOnly、 routeData 抜き) ではなく、
-        //       presets.json (= routeData 込み) から取得する。
-        let preset: PresetData | undefined;
-        try {
-          const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
-          if (res.ok) {
-            const fromServer = normalizePresets(await res.json());
-            // presets.json から取得した完全なプリセット配列 (= routeData 込み) でメモリを更新
-            setPresetsState(fromServer);
-            presetsRef.current = fromServer;
-            preset = fromServer.find(p => p.id === presetId);
-          }
-        } catch { /* ignore */ }
-        if (!preset) return;
         // 実体は次の優先順で取得:
-        //   1. プリセットメタに routeData が埋まっている (= 旧形式/サーバデータ)
-        //   2. ローカルの heist_preset_body_<id> (= ユーザ作成プリセットの実体)
-        //   3. サーバ presets.json からオンデマンド取得
-        let body: RouteData | null | undefined = preset.routeData ?? loadPresetBody(presetId);
-        if (!body) {
-          const serverMap = await ensureServerPresetBodies();
-          body = serverMap.get(presetId) || null;
+        //   1. localStorage 由来のメモリ上のプリセット (= presetsRef.current)
+        //   2. プリセットメタに routeData が埋まっている (= 旧形式/サーバデータ)
+        //   3. ローカルの heist_preset_body_<id> (= ユーザ作成プリセットの実体)
+        //   4. サーバ presets.json からオンデマンド取得
+        let preset: PresetData | undefined;
+        let body: RouteData | null | undefined;
+
+        // まずローカルストレージ由来のプリセットをチェック
+        if (presetsRef.current) {
+          preset = presetsRef.current.find(p => p.id === presetId);
+          if (preset) {
+            body = preset.routeData ?? loadPresetBody(presetId);
+          }
         }
-        if (!body) {
+
+        // ローカルに見つからなければサーバにフォールバック
+        if (!preset || !body) {
+          try {
+            const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
+            if (res.ok) {
+              const fromServer = normalizePresets(await res.json());
+              // サーバ由来のプリセットでメモリを更新（ローカルにない新規プリセットを補完）
+              const merged = presetsRef.current
+                ? [...fromServer.filter(s => !presetsRef.current!.find(l => l.id === s.id)), ...presetsRef.current]
+                : fromServer;
+              setPresetsState(merged);
+              presetsRef.current = merged;
+              if (!preset) preset = merged.find(p => p.id === presetId);
+              if (preset && !body) body = preset.routeData ?? loadPresetBody(presetId);
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!preset || !body) {
+          // 最終手段: サーバのオンデマンドキャッシュを確認
+          if (!body) {
+            const serverMap = await ensureServerPresetBodies();
+            body = serverMap.get(presetId) || null;
+          }
+        }
+
+        if (!preset || !body) {
           showNotificationRef.current('プリセットの実体が見つかりません (サーバから取得失敗?)');
           return;
         }
@@ -656,8 +674,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
           try {
             plain = await aesGcmDecrypt(
               stored,
-              getOriginalAuthorKey(decryptKeyId, data.createdAt, (data as any).presetSourceId || null),
-              { routeId: decryptKeyId, createdAt: data.createdAt, presetSourceId: (data as any).presetSourceId || null }
+              getOriginalAuthorKey(decryptKeyId, data.createdAt)
             );
           } catch {
             plain = AUTHOR_TAMPERED;
