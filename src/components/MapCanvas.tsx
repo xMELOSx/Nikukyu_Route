@@ -150,6 +150,9 @@ interface MapCanvasProps {
   spawnItems?: RegisteredItem[];
   spawnFocusTrigger?: { x: number; y: number; ts: number } | null;
   spawnHighlightItemIds?: string[] | null;
+  spawnMovingPointId?: string | null;
+  onSpawnMoveComplete?: (id: string, x: number, y: number) => void;
+  spawnVisible?: boolean;
   hideMapBg?: boolean;
   onSpawnPointAdd?: (x: number, y: number) => void;
   onSpawnPointDelete?: (id: string) => void;
@@ -246,6 +249,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   spawnItems = [],
   spawnFocusTrigger,
   spawnHighlightItemIds,
+  spawnMovingPointId,
+  onSpawnMoveComplete,
+  spawnVisible = true,
   hideMapBg = false,
   onSpawnPointAdd,
   onSpawnPointDelete,
@@ -893,12 +899,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnMovingPointId, spawnVisible]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnMovingPointId, spawnVisible]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1051,8 +1057,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const drawSpawnPoints = () => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    const sp = spawnPoints;
-    if (!sp || sp.length === 0) return;
+    // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
+    if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0)) return;
+    const sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
+    if (sp.length === 0) return;
     const itemMap: Record<string, RegisteredItem> = {};
     for (const item of spawnItems) itemMap[item.id] = item;
     const rarityRank: Record<string, number> = { green: 0, blue: 1, purple: 2, yellow: 3, red: 4, cyan: 5 };
@@ -1499,6 +1507,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (e.button !== 0) return;
 
+    // スポーンビューワークリック: 非編集モードでは常に点検出 (移動ツール時はskip)
+    if (onSpawnPointView && toolMode !== 'move' && !isEditMode) {
+      const c = getCanvasCoords(e);
+      for (const p of (spawnPoints || [])) {
+        if (p.floor !== floor) continue;
+        if (Math.hypot(p.x - c.x, p.y - c.y) <= 12) {
+          onSpawnPointView(p.id);
+          return;
+        }
+      }
+    }
+
+    // 点の配置し直し: マップクリックで移動先を決定
+    if (spawnMovingPointId && onSpawnMoveComplete) {
+      const moveCoords = getCanvasCoords(e);
+      onSpawnMoveComplete(spawnMovingPointId, moveCoords.x, moveCoords.y);
+      return;
+    }
+
     if (!isEditMode) {
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       setIsPanning(true);
@@ -1731,17 +1758,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    // スポーンビューワークリック (ツールモード関係なく点をクリック)
-    if (onSpawnPointView) {
-      const HIT = 12;
-      for (const p of spawnPoints) {
-        if (p.floor !== floor) continue;
-        if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
-          onSpawnPointView(p.id);
-          return;
-        }
-      }
-    }
+
 
     if (toolMode === 'draw') {
       setIsDrawing(true);

@@ -34,6 +34,7 @@ import {
   MARKER_META,
   TEXTCOLOR_OPTIONS,
   TEXTCOLOR_META,
+  SPAWN_CATEGORIES,
   DataManager,
   normalizeStrokes,
   smoothStrokePointsKeepEnds,
@@ -697,7 +698,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) applyPressed(true);
 
-      // Undo shortcut (Ctrl+Z)
+      // Undo shortcut (Ctrl+Z) — メイン履歴 → スポーン履歴
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -706,10 +707,13 @@ export default function App() {
         if (historyApi.canUndo) {
           e.preventDefault();
           historyApi.undo();
+        } else if (spawnUndoRef.current.length > 0) {
+          e.preventDefault();
+          undoPoints();
         }
       }
 
-      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z)
+      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — メイン履歴 → スポーン履歴
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -718,6 +722,9 @@ export default function App() {
         if (historyApi.canRedo) {
           e.preventDefault();
           historyApi.redo();
+        } else if (spawnRedoRef.current.length > 0) {
+          e.preventDefault();
+          redoPoints();
         }
       }
     };
@@ -1012,9 +1019,16 @@ export default function App() {
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
   const [spawnMoveX, setSpawnMoveX] = useState(0);
   const [spawnMoveY, setSpawnMoveY] = useState(0);
+  const [spawnMovingPointId, setSpawnMovingPointId] = useState<string | null>(null);
   const [spawnViewPointId, setSpawnViewPointId] = useState<string | null>(null);
+  const [viewerFilterPlayers, setViewerFilterPlayers] = useState<number | null>(null);
   const [spawnHighlightItemIds, setSpawnHighlightItemIds] = useState<string[] | null>(null);
   const [spawnTabMode, setSpawnTabMode] = useState<'view' | 'manage'>('view');
+  const [spawnVisible, setSpawnVisible] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_spawn_visible');
+    return saved === null ? true : saved === 'true';
+  });
+  useEffect(() => { localStorage.setItem('heist_spawn_visible', String(spawnVisible)); }, [spawnVisible]);
   const [spawnHideOther, setSpawnHideOther] = useState(false);
   const [spawnHideBg, setSpawnHideBg] = useState(false);
   const [spawnFocusTrigger, setSpawnFocusTrigger] = useState<{ x: number; y: number; ts: number } | null>(null);
@@ -1071,6 +1085,11 @@ export default function App() {
       return next;
     });
   }, []);
+  const handleSpawnMoveComplete = useCallback((id: string, x: number, y: number) => {
+    pushSpawnHistory();
+    spawnApi.updatePoint(id, { x, y });
+    setSpawnMovingPointId(null);
+  }, [spawnApi, pushSpawnHistory]);
 
   // スポーン点追加: マップクリック時 (空の点)
   const handleSpawnPointAdd = useCallback((x: number, y: number) => {
@@ -2884,6 +2903,10 @@ export default function App() {
                       マップ上のスポーン点をクリックして削除
                     </div>
                     <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>削除はローカルのみ反映</div>
+                    <button className="btn-cyber danger" style={{ width: '100%', fontSize: '9px', padding: '4px', clipPath: 'none', marginTop: '6px' }}
+                      onClick={() => { const empty = spawnApi.points.filter(p => !p.items || p.items.length === 0); if (empty.length === 0) return; pushSpawnHistory(); empty.forEach(p => spawnApi.removePoint(p.id)); }}>
+                      未設定の点を一括除去 ({spawnApi.points.filter(p => !p.items || p.items.length === 0).length})
+                    </button>
                   </div>
                 )}
 
@@ -3147,25 +3170,39 @@ export default function App() {
                       <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }}
                         onClick={() => { setShowEditModal(false); setEditPointId(null); }}>✕ 閉じる</button>
                     </div>
-                    {/* 座標移動 */}
-                    <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(79,195,247,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>座標</span>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        X
-                        <input type="number" value={spawnMoveX}
-                          onChange={e => setSpawnMoveX(parseInt(e.target.value) || 0)}
-                          style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
-                      </label>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        Y
-                        <input type="number" value={spawnMoveY}
-                          onChange={e => setSpawnMoveY(parseInt(e.target.value) || 0)}
-                          style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
-                      </label>
-                      <button className="btn-cyber success" style={{ fontSize: '10px', padding: '4px 10px', clipPath: 'none' }}
-                        onClick={() => { pushSpawnHistory(); spawnApi.updatePoint(pt.id, { x: spawnMoveX, y: spawnMoveY }); }}>
-                        移動して保存
-                      </button>
+                    {/* 座標移動 + 種別 */}
+                    <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(79,195,247,0.1)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>座標</span>
+                        <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          X
+                          <input type="number" value={spawnMoveX}
+                            onChange={e => setSpawnMoveX(parseInt(e.target.value) || 0)}
+                            style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
+                        </label>
+                        <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          Y
+                          <input type="number" value={spawnMoveY}
+                            onChange={e => setSpawnMoveY(parseInt(e.target.value) || 0)}
+                            style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
+                        </label>
+                        <button className="btn-cyber success" style={{ fontSize: '10px', padding: '4px 10px', clipPath: 'none' }}
+                          onClick={() => { pushSpawnHistory(); spawnApi.updatePoint(pt.id, { x: spawnMoveX, y: spawnMoveY }); }}>
+                          移動
+                        </button>
+                        <button className="btn-cyber" style={{ fontSize: '10px', padding: '4px 10px', clipPath: 'none' }}
+                          onClick={() => { setSpawnMovingPointId(pt.id); setShowEditModal(false); setEditPointId(null); }}>
+                          配置し直す
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>種別</span>
+                        <select value={pt.category ?? ''} onChange={e => spawnApi.updatePoint(pt.id, { category: e.target.value as any || undefined })}
+                          style={{ fontSize: '12px', padding: '4px 8px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }}>
+                          <option value="">-</option>
+                          {SPAWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
                     </div>
                     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                       {/* 登録アイテム一覧 */}
@@ -3252,54 +3289,53 @@ export default function App() {
             {/* スポーン点ビューワーモーダル */}
             {spawnViewPointId && (() => {
               const pt = spawnApi.points.find(p => p.id === spawnViewPointId);
-              if (!pt) { setTimeout(() => setSpawnViewPointId(null), 0); return null; }
+              if (!pt) { return null; }
+              const filteredItems = !pt.items ? [] : viewerFilterPlayers === null
+                ? pt.items : pt.items.filter(pi => pi.playerCount === viewerFilterPlayers);
+              const grouped: { [id: string]: { item: RegisteredItem | undefined; count: number } } = {};
+              for (const pi of filteredItems) {
+                if (!grouped[pi.itemId]) grouped[pi.itemId] = { item: spawnApi.items.find(i => i.id === pi.itemId), count: 0 };
+                grouped[pi.itemId].count++;
+              }
+              const sorted = Object.values(grouped).sort((a, b) => b.count - a.count);
               return (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 5002, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   onClick={() => setSpawnViewPointId(null)}>
-                  <div style={{ background: 'var(--panel-bg, #0a0e18)', width: '420px', maxHeight: '70vh', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                  <div style={{ background: 'var(--panel-bg, #0a0e18)', width: '400px', maxHeight: '70vh', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                     onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>点情報 X:{pt.x} Y:{pt.y}</span>
                       <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setSpawnViewPointId(null)}>✕ 閉じる</button>
                     </div>
+                    {/* 人数絞り込み */}
+                    <div style={{ display: 'flex', gap: '4px', padding: '8px 16px', borderBottom: '1px solid rgba(79,195,247,0.1)' }}>
+                      {[{ v: null, label: '全データ' }, { v: 1, label: '1人' }, { v: 2, label: '2人' }, { v: 3, label: '3人' }, { v: 4, label: '4人' }].map(({ v, label }) => (
+                        <button key={String(v)} onClick={() => setViewerFilterPlayers(v)}
+                          style={{
+                            flex: 1, fontSize: '11px', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer',
+                            border: `1px solid ${v === viewerFilterPlayers ? '#39ff14' : 'rgba(255,255,255,0.15)'}`,
+                            background: v === viewerFilterPlayers ? 'rgba(57,255,20,0.15)' : 'transparent',
+                            color: v === viewerFilterPlayers ? '#39ff14' : 'var(--text-muted)',
+                            fontWeight: v === viewerFilterPlayers ? 700 : 400,
+                          }}
+                        >{label}</button>
+                      ))}
+                    </div>
                     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
-                      {(!pt.items || pt.items.length === 0) ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>アイテム未登録</div>
+                      {sorted.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>該当アイテムなし</div>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {(() => {
-                            const grouped: { [id: string]: { item: RegisteredItem | undefined; occurrences: typeof pt.items; dates: string[]; players: number[] } } = {};
-                            for (const pi of pt.items) {
-                              if (!grouped[pi.itemId]) grouped[pi.itemId] = { item: spawnApi.items.find(i => i.id === pi.itemId), occurrences: [], dates: [], players: [] };
-                              grouped[pi.itemId].occurrences.push(pi);
-                              try { grouped[pi.itemId].dates.push(new Date(pi.discoveredAt).toLocaleDateString()); } catch { grouped[pi.itemId].dates.push(pi.discoveredAt); }
-                              grouped[pi.itemId].players.push(pi.playerCount || 1);
-                            }
-                            return Object.values(grouped).map(({ item, occurrences, dates, players }) => {
-                              const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
-                              const avgPlayers = players.reduce((s, v) => s + v, 0) / players.length;
-                              return (
-                                <div key={item?.id || Math.random()} style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
-                                    <span style={{ color: tc?.color || '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>{item?.name || '(不明)'}</span>
-                                    <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '14px' }}>{occurrences.length}回</span>
-                                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>平均{avgPlayers.toFixed(1)}人</span>
-                                  </div>
-                                  {item && (
-                                    <div style={{ display: 'flex', gap: '8px', fontSize: '11px', marginLeft: '16px' }}>
-                                      <span style={{ color: '#ffd700' }}>F {item.fans.toLocaleString()}</span>
-                                      <span style={{ color: '#ff9500' }}>C {item.coins.toLocaleString()}</span>
-                                      {item.description && <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{item.description}</span>}
-                                    </div>
-                                  )}
-                                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', marginLeft: '16px' }}>
-                                    発見日: {dates.join(', ')}
-                                  </div>
-                                </div>
-                              );
-                            });
-                          })()}
+                          {sorted.map(({ item, count }) => {
+                            const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                            return (
+                              <div key={item?.id || Math.random()} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                                <span style={{ color: tc?.color || '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>{item?.name || '(不明)'}</span>
+                                <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '14px' }}>{count}回</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       <button className="btn-cyber" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none', marginTop: '10px' }}
@@ -3508,7 +3544,7 @@ export default function App() {
             <MapCanvas
               floor={currentFloor}
               strokes={memoizedStrokes}
-              markers={spawnHideOther ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              markers={(rightTab === 'spawn' && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
               customBg={routeApi.route.customBg[currentFloor] ?? null}
               toolMode={toolMode}
               activeMarkerType={activeMarkerType}
@@ -3555,9 +3591,9 @@ export default function App() {
               onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
               pickyMarkerIds={routeApi.route.pickyMarkerIds}
               onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
-              hideRouteLines={spawnHideOther ? true : hideRouteLines}
+              hideRouteLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideRouteLines}
               routeLines1px={routeLines1px}
-              hideBranchLines={spawnHideOther ? true : hideBranchLines}
+              hideBranchLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideBranchLines}
               branchLines1px={branchLines1px}
               textPinPassThrough={textPinPassThrough}
               showPhoneCompass={showPhoneCompass}
@@ -3624,7 +3660,10 @@ export default function App() {
               spawnToolMode={spawnToolMode}
               spawnFocusTrigger={spawnFocusTrigger}
               spawnHighlightItemIds={spawnHighlightItemIds}
-              hideMapBg={spawnHideBg}
+              spawnMovingPointId={spawnMovingPointId}
+              onSpawnMoveComplete={handleSpawnMoveComplete}
+              spawnVisible={spawnVisible}
+              hideMapBg={(rightTab === 'spawn' && spawnHideBg) ? true : false}
             />
           ), [
             currentFloor,
@@ -3695,9 +3734,10 @@ export default function App() {
             spawnApi.items,
             spawnHideOther,
             spawnHideBg,
+            spawnVisible,
             spawnFocusTrigger,
-            spawnViewPointId,
             spawnHighlightItemIds,
+            spawnMovingPointId,
             spawnMoveX,
             spawnMoveY,
             spawnToolMode,
@@ -3713,7 +3753,8 @@ export default function App() {
             bulkInput,
             bulkColor,
             showItemModal,
-            showEditModal
+            showEditModal,
+            rightTab
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -3772,7 +3813,7 @@ export default function App() {
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
               {isLocal && (
-                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => { setRightTab('spawn'); setToolMode('add-spawn'); }}>{t('スポーン')}</button>
+                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
               )}
             </div>
           </div>
@@ -4075,6 +4116,8 @@ export default function App() {
                   isManage={spawnTabMode === 'manage'}
                   onPointDelete={(id) => spawnApi.removePoint(id)}
                   onPointFocus={(x, y) => setSpawnFocusTrigger({ x, y, ts: Date.now() })}
+                  spawnVisible={spawnVisible}
+                  onSpawnVisibleChange={setSpawnVisible}
                   hideOther={spawnHideOther}
                   onHideOtherChange={setSpawnHideOther}
                   hideBg={spawnHideBg}

@@ -7,6 +7,8 @@ interface SpawnAnalysisPanelProps {
   isManage: boolean;
   onPointDelete: (id: string) => void;
   onPointFocus?: (x: number, y: number) => void;
+  spawnVisible?: boolean;
+  onSpawnVisibleChange?: (v: boolean) => void;
   hideOther?: boolean;
   onHideOtherChange?: (v: boolean) => void;
   hideBg?: boolean;
@@ -18,7 +20,8 @@ interface SpawnAnalysisPanelProps {
 export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   points, items, isManage, onPointDelete, onPointFocus,
   hideOther, onHideOtherChange, hideBg, onHideBgChange,
-  highlightItemIds: _highlightItemIds, onHighlightItemIdsChange,
+  highlightItemIds, onHighlightItemIdsChange,
+  spawnVisible, onSpawnVisibleChange,
 }) => {
   // 全モード共通のフック
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -127,6 +130,12 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   return (
     <>
       <div className="panel-section" style={{ paddingBottom: '4px' }}>
+        {onSpawnVisibleChange && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginBottom: '4px' }}>
+            <input type="checkbox" checked={!!spawnVisible} onChange={e => onSpawnVisibleChange(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+            スポーンポイント表示
+          </label>
+        )}
         {onHideOtherChange && (
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginBottom: '4px' }}>
             <input type="checkbox" checked={!!hideOther} onChange={e => onHideOtherChange(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
@@ -154,7 +163,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
         <div className="panel-title" style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
           {selectedItemIds.size > 0 ? `${filteredPoints.length} 点に含有` : ''}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '350px', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '70vh', overflowY: 'auto' }}>
           {sortedItems.map(({ item, count }) => {
             const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
             const isSel = selectedItemIds.has(item.id);
