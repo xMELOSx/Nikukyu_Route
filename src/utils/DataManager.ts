@@ -1492,10 +1492,11 @@ export class DataManager {
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
-      const normalized = normalizePresets(parsed);
-      // 旧形式 (routeData が埋まっている) は新形式にマイグレートして
-      // 配列から実体を取り除く (= localStorage の容量を削減)
-      return migrateLegacyPresetBodies(normalized);
+      // 重要: routeData を含めた完全版としてそのまま返す。
+      // 旧コードは migrateLegacyPresetBodies で routeData を別キーに
+      // 切り出していたが、 それではプリセットのマップデータが消える
+      // バグがあった。 ここでは presets 配列をそのまま返す。
+      return normalizePresets(parsed);
     } catch {
       return [];
     }
@@ -1503,11 +1504,11 @@ export class DataManager {
 
   static savePresetsToLocalStorage(presets: PresetData[]): void {
     try {
-      // 容量削減のため、プリセット実体 (routeData) は別キーに切り出した
-      // メタ情報のみを書き込む。各プリセットの routeData は事前に
-      // savePresetBody で保存しておくこと。
-      const metaOnly = presets.map(({ routeData: _r, ...rest }) => rest);
-      localStorage.setItem('heist_presets', JSON.stringify(metaOnly));
+      // 重要: プリセットは routeData (= マップ本体) を含めた完全版で保存する。
+      // 旧コードは routeData を除外して別キーに保存していたが、 それでは
+      // プリセットのマップデータが消えるバグがあった (= 容量削減の意図が
+      // アプリ破壊に転じた)。 ここでは presets 配列をそのまま保存する。
+      localStorage.setItem('heist_presets', JSON.stringify(presets));
     } catch {
       // Ignore quota / serialization errors — the server copy is the source
       // of truth and the list will be refreshed on the next successful sync.

@@ -504,25 +504,20 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       let data: RouteData | null = null;
       if (id.startsWith('__preset__')) {
         const presetId = id.replace('__preset__', '');
-        // プリセットを presets.json (= サーバ) から直接 fetch (= シンプル)
-        let current = presetsRef.current;
-        if (current === null) {
-          current = [];
-        }
-        let preset = current.find(p => p.id === presetId);
-        if (!preset) {
-          // presets.json から直接取得 (= routeData 付き)
-          try {
-            const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
-            if (res.ok) {
-              const fromServer = normalizePresets(await res.json());
-              current = fromServer;
-              preset = fromServer.find(p => p.id === presetId);
-              setPresetsState(current);
-              presetsRef.current = current;
-            }
-          } catch { /* ignore */ }
-        }
+        // プリセットを presets.json (= サーバ、 922KB) から直接 fetch (= シンプル)
+        // 重要: presetsRef.current (= metaOnly、 routeData 抜き) ではなく、
+        //       presets.json (= routeData 込み) から取得する。
+        let preset: PresetData | undefined;
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
+          if (res.ok) {
+            const fromServer = normalizePresets(await res.json());
+            // presets.json から取得した完全なプリセット配列 (= routeData 込み) でメモリを更新
+            setPresetsState(fromServer);
+            presetsRef.current = fromServer;
+            preset = fromServer.find(p => p.id === presetId);
+          }
+        } catch { /* ignore */ }
         if (!preset) return;
         // 実体は次の優先順で取得:
         //   1. プリセットメタに routeData が埋まっている (= 旧形式/サーバデータ)
@@ -741,19 +736,26 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
 
   const savePresetsToServer = useCallback((next: PresetData[]) => {
     const normalized = normalizePresets(next);
-    // 旧形式のプリセット (routeData 内蔵) は実体を別キーに切り出す
-    migrateLegacyPresetBodies(normalized);
-    const metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
+    // プリセット保存: routeData を含めてそのまま保存 (= プリセット本体を完全に保持)
+    // 注: 旧コードは metaOnly (= routeData 抜き) で保存していたため、プリセット本体の
+    //     ルートデータが消えるバグがあった。 ここでは routeData 込みで保存する。
     // メモリに展開されていれば (モーダル開時) state にも反映
     if (presetsRef.current !== null) {
-      setPresetsState(metaOnly);
-      presetsRef.current = metaOnly;
+      setPresetsState(normalized);
+      presetsRef.current = normalized;
     }
-    DataManager.savePresetsToLocalStorage(metaOnly);
+    // 別キーに routeData を切り出す (旧形式との互換性のため)
+    for (const p of normalized) {
+      if (p.routeData) {
+        try { savePresetBody(p.id, p.routeData); } catch { /* quota 等: 無視 */ }
+      }
+    }
+    // localStorage と サーバには routeData 込みで保存
+    DataManager.savePresetsToLocalStorage(normalized);
     fetch(`${import.meta.env.BASE_URL}api/presets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(metaOnly)
+      body: JSON.stringify(normalized)
     }).catch(() => { });
   }, []);
 
@@ -950,27 +952,20 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   // transient server failures (avoids "temporarily empty" preset list).
   // visibility は常に normalizePresets で正規化してから保存する (レガシーデータ
   // や壊れた JSON でも公開レベルが 'public' 補完される)。
-  const setPresets = useCallback((next: PresetData[], opts?: { fromServer?: boolean }) => {
+  //
+  // 重要: プリセット保存時に routeData (= ルート本体データ) を切り捨てない。
+  // 旧コードは metaOnly (= routeData 抜き) で保存していたが、 それでは
+  // プリセット本体のルートデータが消えるバグがあった (= プリセットを
+  // 1つ保存するたびに routeData が消える)。 ここでは normalized (= routeData 込み) を
+  // そのまま保存する。
+  const setPresets = useCallback((next: PresetData[], _opts?: { fromServer?: boolean }) => {
     const normalized = normalizePresets(next);
-    let metaOnly: PresetData[];
-    if (opts?.fromServer) {
-      // サーバから取得したプリセットは「メタのみ」を保持する。
-      // routeData が埋まっていた場合は切り落とし、実体 (body キー) も作らない。
-      // こうすることでサーバの presets.json (= 1MB超) を再取得しても
-      // localStorage に重複コピーを作らない (= 容量問題の主因を除去)。
-      metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
-    } else {
-      // 旧形式のプリセット (routeData 内蔵) は実体を別キーに切り出す
-      migrateLegacyPresetBodies(normalized);
-      // 新しい (メタのみ) 形式に統一: routeData を取り除く
-      metaOnly = normalized.map(({ routeData: _r, ...rest }) => rest as PresetData);
-    }
-    // メモリに展開されていない (=null) ときは state を触らず localStorage のみ更新
+    // routeData を含めた完全な配列を保存 (= プリセット本体が消えない)
     if (presetsRef.current !== null) {
-      setPresetsState(metaOnly);
-      presetsRef.current = metaOnly;
+      setPresetsState(normalized);
+      presetsRef.current = normalized;
     }
-    DataManager.savePresetsToLocalStorage(metaOnly);
+    DataManager.savePresetsToLocalStorage(normalized);
   }, []);
 
   /**

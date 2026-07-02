@@ -11,6 +11,28 @@ export default defineConfig({
     {
       name: 'global-markers-api',
       configureServer(server) {
+        // サーバ起動時: public/presets.json (= 編集された版) をルート presets.json に同期
+        // 重要: presets.json は容量削減のため metaOnly (= routeData 抜き) で上書きされることがある。
+        // public/presets.json (= 完全版、 routeData 付き) をソースとして使う。
+        const publicPresets = path.resolve(__dirname, 'public/presets.json');
+        const rootPresets = path.resolve(__dirname, 'presets.json');
+        if (fs.existsSync(publicPresets)) {
+          const publicContent = fs.readFileSync(publicPresets, 'utf-8');
+          const rootExists = fs.existsSync(rootPresets);
+          if (rootExists) {
+            const rootContent = fs.readFileSync(rootPresets, 'utf-8');
+            // public の方が routeData を含むサイズが大きい、またはルートに routeData がない場合
+            // (= metaOnly に縮んでいる) は public から復元
+            const rootHasRouteData = rootContent.includes('"routeData"');
+            const publicHasRouteData = publicContent.includes('"routeData"');
+            if (publicHasRouteData && !rootHasRouteData) {
+              fs.writeFileSync(rootPresets, publicContent, 'utf-8');
+              console.log('[presets.json] Restored from public/presets.json (root was missing routeData)');
+            }
+          } else {
+            fs.writeFileSync(rootPresets, publicContent, 'utf-8');
+          }
+        }
         server.middlewares.use((req, res, next) => {
           const apiPath = '/api/global-markers';
           const wallsApiPath = '/api/global-walls';
@@ -221,6 +243,10 @@ export default defineConfig({
               let body = '';
               req.on('data', chunk => { body += chunk; });
               req.on('end', () => {
+                // 受け取った body (= プリセット配列、 routeData 含む) をそのまま保存
+                // 注: 旧コードは metaOnly (= routeData 抜き) で保存していたが、 それでは
+                //     プリセット本体のルートデータが消えるバグがあった。 ここでは
+                //     受け取った body をそのまま保存する (= routeData 込み)。
                 fs.writeFileSync(presetsFile, body, 'utf-8');
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ success: true }));
