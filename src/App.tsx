@@ -568,6 +568,8 @@ export default function App() {
         }
         return changed ? { ...prev, strokes: nextStrokes } : prev;
       });
+      // 履歴からも一時線を一括クリーンアップ
+      historyApi.clearTemporaryStrokes();
     }
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
@@ -1055,9 +1057,7 @@ export default function App() {
       // control of where the line goes. When bypassWallsEnabled is ON, we
       // always run the A* detour finder to calculate the mathematically shortest path.
       if (!bypassWallsEnabled) {
-        if (addedStroke.type !== 'temporary') {
-          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
-        }
+        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
         routeApi.setRoute(prev => ({
           ...prev,
           strokes: { ...prev.strokes, [currentFloor]: newStrokes }
@@ -1085,9 +1085,7 @@ export default function App() {
       }
 
       if (!intersectsAnyWall) {
-        if (addedStroke.type !== 'temporary') {
-          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
-        }
+        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
         routeApi.setRoute(prev => ({
           ...prev,
           strokes: { ...prev.strokes, [currentFloor]: newStrokes }
@@ -1130,9 +1128,7 @@ export default function App() {
           const { findBypassingPath } = await import('./utils/PathFinder');
           const pathfindStartTime = performance.now();
 
-          if (addedStroke.type !== 'temporary') {
-            historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
-          }
+          historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
 
           let finalPath: { x: number; y: number; floor: string; isPortal?: boolean; portalName?: string; markerId?: string }[] = [];
           let finalTeleportIndices: number[] = [];

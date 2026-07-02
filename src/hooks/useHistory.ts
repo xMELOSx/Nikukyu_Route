@@ -46,6 +46,8 @@ export interface UseHistoryApi {
   startDragSnapshot: () => void;
   /** Commit the drag-start snapshot to the past history (called on drop). */
   commitDragSnapshot: () => void;
+  /** Strip all 'temporary' strokes from all snapshots currently stored in history. */
+  clearTemporaryStrokes: () => void;
 }
 
 const HISTORY_LIMIT = 50;
@@ -144,11 +146,51 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     }
   }, []);
 
+  const clearTemporaryStrokes = useCallback(() => {
+    const filterTemp = (snapshots: HistorySnapshot[]) => {
+      return snapshots.map(snap => {
+        const nextStrokes = { ...snap.strokes } as Record<string, DrawingStroke[]>;
+        let changed = false;
+        for (const fl of Object.keys(nextStrokes)) {
+          if (nextStrokes[fl]) {
+            const origLen = nextStrokes[fl].length;
+            const filtered = nextStrokes[fl].filter(s => s.type !== 'temporary');
+            if (filtered.length !== origLen) {
+              nextStrokes[fl] = filtered;
+              changed = true;
+            }
+          }
+        }
+        return changed ? { ...snap, strokes: nextStrokes } : snap;
+      });
+    };
+    setPastHistory(prev => filterTemp(prev));
+    setFutureHistory(prev => filterTemp(prev));
+    if (dragSnapshotRef.current) {
+      const nextStrokes = { ...dragSnapshotRef.current.strokes } as Record<string, DrawingStroke[]>;
+      let changed = false;
+      for (const fl of Object.keys(nextStrokes)) {
+        if (nextStrokes[fl]) {
+          const origLen = nextStrokes[fl].length;
+          const filtered = nextStrokes[fl].filter(s => s.type !== 'temporary');
+          if (filtered.length !== origLen) {
+            nextStrokes[fl] = filtered;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        dragSnapshotRef.current.strokes = nextStrokes;
+      }
+    }
+  }, []);
+
   return {
     pastHistory, futureHistory,
     canUndo: pastHistory.length > 0,
     canRedo: futureHistory.length > 0,
     pushHistory, undo, redo,
-    startDragSnapshot, commitDragSnapshot
+    startDragSnapshot, commitDragSnapshot,
+    clearTemporaryStrokes
   };
 }
