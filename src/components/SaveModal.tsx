@@ -251,7 +251,7 @@ export const SaveModal: React.FC<SaveModalProps> = ({
                     {t('データバー')}
                     {dataBar && (
                       <span style={{ color: 'var(--text-muted)', fontSize: '12px', marginLeft: '4px' }}>
-                        {dataBarInfo.EXTW}x{dataBarInfo.rows} (元画像の{dataBarInfo.totalPercent.toFixed(1)}%)
+                        {dataBarInfo.EXTW}x{dataBarInfo.rows} ({t('元画像の{0}%', dataBarInfo.totalPercent.toFixed(1))})
                       </span>
                     )}
                   </label>

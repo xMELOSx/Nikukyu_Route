@@ -383,8 +383,8 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
         </div>
         <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
           {([
-            { v: 'normal' as const, label: '通常' },
-            { v: 'split' as const, label: '部分' }
+            { v: 'normal' as const, label: t('通常') },
+            { v: 'split' as const, label: t('部分') }
           ]).map(opt => {
             const isActiveNow = effectiveEraseBehavior === opt.v;
             const isDefault = eraseDefaultBehavior === opt.v;
@@ -403,7 +403,7 @@ const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
                   outlineOffset: '2px'
                 }}
                 onClick={() => setEraseDefaultBehavior(opt.v)}
-                title={opt.v === 'normal' ? '既定=通常削除。Altを押している間だけ部分削除' : '既定=部分削除。Altを押している間だけ通常削除'}
+                title={opt.v === 'normal' ? t('既定=通常削除。Altを押している間だけ部分削除') : t('既定=部分削除。Altを押している間だけ通常削除')}
               >
                 <span>{opt.label}</span>
               </button>
@@ -1122,7 +1122,7 @@ export default function App() {
               return { ...prev, strokes: nextStrokes as any };
             });
             
-            notification.show(t('壁を迂回するルートを自動生成しました ({0}ms / 最大 500ms)', String(pathfindElapsed)));
+            notification.show(t('壁を迂回するルートを自動生成しました ({0}ms)', String(pathfindElapsed)) + t(' / 最大 500ms'));
           } else {
             const isolated = statsToReturn.details.filter((p: any) => p.edges === 0).map((p: any) => p.name);
             let errorMsg = t('壁を越えて迂回する経路が見つかりません ({0}ms)。操作をキャンセルしました。', String(pathfindElapsed));
@@ -2316,16 +2316,16 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                  {(['solid', 'dashed'] as const).map(t => (
-                    <button key={t} className={`btn-cyber ${strokeType === t ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }} onClick={() => setStrokeType(t)}>
-                      {t === 'solid' ? '進行ルート' : '分岐ルート'}
+                  {(['solid', 'dashed'] as const).map(st => (
+                    <button key={st} className={`btn-cyber ${strokeType === st ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }} onClick={() => setStrokeType(st)}>
+                      {st === 'solid' ? t('進行ルート') : t('分岐ルート')}
                     </button>
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
                   {(['free', 'smooth', 'straight'] as const).map(m => (
-                    <button key={m} className={`btn-cyber ${drawMode === m ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }} onClick={() => setDrawMode(m)} title={m === 'free' ? '通常描画 (全ポイント記録)' : m === 'smooth' ? '間引き描画 (滑らかな線)' : '直線ツール (始点→終点のみ)'}>
-                      {m === 'free' ? 'フリー' : m === 'smooth' ? 'スムーズ' : '直線'}
+                    <button key={m} className={`btn-cyber ${drawMode === m ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }} onClick={() => setDrawMode(m)} title={m === 'free' ? t('通常描画 (全ポイント記録)') : m === 'smooth' ? t('間引き描画 (滑らかな線)') : t('直線ツール (始点→終点のみ)')}>
+                      {m === 'free' ? t('フリー') : m === 'smooth' ? t('スムーズ') : t('直線')}
                     </button>
                   ))}
                 </div>
@@ -2345,10 +2345,10 @@ export default function App() {
                     updateStrokes([...routeApi.route.strokes[currentFloor].slice(0, lastIdx), { ...last, points: smoothed, originalPoints: smoothedOriginal }]);
                   }
                 }}>
-                  ✨ 最後の線を平滑化
+                  ✨ {t('最後の線を平滑化')}
                 </button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>線の太さ: {strokeWidth}px</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('線の太さ: ')}{strokeWidth}px</span>
                   <input type="range" min="2" max="12" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                 </div>
               </div>

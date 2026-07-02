@@ -2955,29 +2955,73 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
           {/* Nearest active ReroRero電話ボックス の方向コンパス (常時起動は除外) */}
           {currentPosition && showPhoneCompass && nearestActivePhone && (() => {
-            const dx = nearestActivePhone.x - currentPosition.x;
-            const dy = nearestActivePhone.y - currentPosition.y;
+            // 現在地から電話ボックスへの角度 = 電話ボックスから見た現在地方向
+            const dx = currentPosition.x - nearestActivePhone.x;
+            const dy = currentPosition.y - nearestActivePhone.y;
             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
             const dist = Math.hypot(dx, dy);
-            // scale は親 .canvas-container の zoom に合わせた補正のみ。
-            // rotate は矢印要素側で行い、ラッパー (📞 の中心) は回転させない。
             const compScale = Math.min(3, 1 / Math.sqrt(zoom));
+            // 矢印を電話ボックスから 30px 外側に配置し、
+            // 電話ボックスの周囲を回転する軌道に沿って現在地方向を指す
+            const orbitRadius = 30;
             return (
               <div
-                className="phone-compass-indicator"
                 style={{
-                  left: `${currentPosition.x}px`,
-                  top: `${currentPosition.y}px`,
+                  position: 'absolute',
+                  left: `${nearestActivePhone.x}px`,
+                  top: `${nearestActivePhone.y}px`,
                   transform: `translate(-50%, -50%) scale(${compScale})`,
-                  transformOrigin: 'center center'
+                  transformOrigin: 'center center',
+                  pointerEvents: 'none',
+                  zIndex: 99
                 }}
-                title={`📞 ${Math.round(dist)}px`}
+                title={`📞 ${Math.round(dist)}px 方向`}
               >
-                <div
-                  className="phone-compass-arrow"
-                  style={{ transform: `translateY(-50%) rotate(${angle}deg)` }}
-                >▶</div>
-                <div className="phone-compass-label">📞</div>
+                {/* 軌道の円 (半透明) */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: `${orbitRadius * 2}px`,
+                  height: `${orbitRadius * 2}px`,
+                  transform: 'translate(-50%, -50%)',
+                  border: '1px dashed rgba(255, 0, 255, 0.3)',
+                  borderRadius: '50%'
+                }} />
+                {/* 電話ボックスの中央ラベル */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: '14px',
+                  lineHeight: 1,
+                  filter: 'drop-shadow(0 0 3px rgba(255, 0, 255, 0.8))',
+                  zIndex: 2
+                }}>📞</div>
+                {/* 現在地方向の矢印 — 電話ボックスから軌道上を回転 */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                  transformOrigin: 'center center',
+                  fontSize: '18px',
+                  color: '#ff00ff',
+                  textShadow: '0 0 4px #fff, 0 0 8px #ff00ff',
+                  lineHeight: 1,
+                  animation: 'phone-compass-pulse 1.4s infinite ease-in-out',
+                  zIndex: 3
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: `-${orbitRadius}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    transformOrigin: `${orbitRadius}px center`,
+                    rotate: '0deg'
+                  }}>▶</div>
+                </div>
               </div>
             );
           })()}
