@@ -2504,110 +2504,171 @@ export default function App() {
 
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
-          <MapCanvas
-            floor={currentFloor}
-            strokes={memoizedStrokes}
-            markers={[...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
-            customBg={routeApi.route.customBg[currentFloor] ?? null}
-            toolMode={toolMode}
-            activeMarkerType={activeMarkerType}
-            strokeColor={strokeColor}
-            strokeWidth={strokeWidth}
-            strokeType={strokeType}
-            drawMode={drawMode}
-            onStrokesChange={updateStrokes}
-            onMarkersChange={updateMarkers}
-            hideStrokesDuringWalls={hideStrokesDuringWalls}
-            hideMarkersDuringWalls={hideMarkersDuringWalls}
-            walls={globalWalls[currentFloor] || []}
-            onWallsChange={(newWalls) => {
-              const prevWalls = JSON.parse(JSON.stringify(globalWalls));
-              const nextWalls = {
-                ...globalWalls,
-                [currentFloor]: newWalls
-              };
-              historyApi.pushHistory(
-                routeRef.current.strokes,
-                routeRef.current.markers,
-                globalMarkersStore.globalMarkers,
-                prevWalls
-              );
-              updateGlobalWalls(nextWalls);
-            }}
-            onSvgStringReady={setSvgString}
-            canvasRef={canvasRef}
-            focusTrigger={focusTrigger}
-            onClearFocusTrigger={() => setFocusTrigger(null)}
-            currentPosTrigger={currentPosTrigger}
-            isEditMode={isEditMode}
-            showMarkerLabels={showMarkerLabels}
-            markerScale={markerScale}
-            leftSidebarCollapsed={leftSidebarCollapsed}
-            rightSidebarCollapsed={rightSidebarCollapsed}
-            bossCustomDurations={routeApi.route.bossCustomDurations}
-            onBossCustomDurationChange={(id, dur) => routeApi.setBossCustomDuration(id, dur)}
-            battleCustomDurations={routeApi.route.battleCustomDurations}
-            onBattleCustomDurationChange={(id, dur) => routeApi.setBattleCustomDuration(id, dur)}
-            pickingCustomDurations={routeApi.route.pickingCustomDurations}
-            onPickingCustomDurationChange={(id, dur) => routeApi.setPickingCustomDuration(id, dur)}
-            longPickingCustomDurations={routeApi.route.longPickingCustomDurations}
-            onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
-            pickyMarkerIds={routeApi.route.pickyMarkerIds}
-            onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
-            hideRouteLines={hideRouteLines}
-            routeLines1px={routeLines1px}
-            hideBranchLines={hideBranchLines}
-            branchLines1px={branchLines1px}
-            textPinPassThrough={textPinPassThrough}
-            showPhoneCompass={showPhoneCompass}
-            eraseTarget={eraseTarget}
-            eraseDefaultBehavior={eraseDefaultBehavior}
-            eraseSize={eraseSize}
-            editStrokeIdxs={editStrokeIdxs}
-            onEditStrokeIdxsChange={setEditStrokeIdxs}
-            measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
-            onMeasureSelectedStrokeIdxsChange={setMeasureSelectedStrokeIdxs}
-            blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
-            onMarkersDragStart={historyApi.startDragSnapshot}
-            onMarkersDragEnd={historyApi.commitDragSnapshot}
-            stopMarkerThreshold={stopMarkerThreshold}
-            movementMarkerThreshold={movementMarkerThreshold}
-            warpMarkerThreshold={warpMarkerThreshold}
-            skillCdThreshold={skillCdThreshold}
-            showDetectionRanges={showDetectionRanges}
-            hiddenMarkers={routeApi.route.hiddenMarkers || []}
-            hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
-            onHideGlobalMarker={handleHideGlobalMarker}
-            onShowGlobalMarker={handleShowGlobalMarker}
-            onToggleMarkerVisibility={handleToggleMarkerVisibility}
-            onAutoRouteStatusChange={autoRoute.setStatus}
-            autoRouteCommand={autoRoute.command}
-            autoRouteSettings={{
-              waitEnabled: autoRoute.waitEnabled,
-              waitSeconds: autoRoute.waitSeconds,
-              startStopSeconds: autoRoute.startStopSeconds,
-              speedMode: autoRoute.speedMode,
-              manualSpeed: autoRoute.manualSpeed,
-              speedMultiplier: autoRoute.speedMultiplier,
-              followCamera: autoRoute.followCamera
-            }}
-            followCamera={autoRoute.followCamera}
-            targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
-            autoStartMarker={autoStartMarker}
-            onAutoStartMarkerChange={setAutoStartMarker}
-            warpColor={warpColor}
-            stairsColor={stairsColor}
-            fuseMode={autoRoute.fuseMode}
-            inactiveMarkersMode={autoRoute.inactiveMarkersMode}
-            skillCdPresets={globalDefaults.skillCdPresets}
-            onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
-            onAutoRouteStart={() => {
-              const updated = globalMarkersStore.globalMarkers.map(m =>
-                m.type === 'phone' && !m.phoneLocked ? { ...m, phoneActive: false } : m
-              );
-              globalMarkersStore.replace(updated);
-            }}
-          />
+          {useMemo(() => (
+            <MapCanvas
+              floor={currentFloor}
+              strokes={memoizedStrokes}
+              markers={[...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              customBg={routeApi.route.customBg[currentFloor] ?? null}
+              toolMode={toolMode}
+              activeMarkerType={activeMarkerType}
+              strokeColor={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeType={strokeType}
+              drawMode={drawMode}
+              onStrokesChange={updateStrokes}
+              onMarkersChange={updateMarkers}
+              hideStrokesDuringWalls={hideStrokesDuringWalls}
+              hideMarkersDuringWalls={hideMarkersDuringWalls}
+              walls={globalWalls[currentFloor] || []}
+              onWallsChange={(newWalls) => {
+                const prevWalls = JSON.parse(JSON.stringify(globalWalls));
+                const nextWalls = {
+                  ...globalWalls,
+                  [currentFloor]: newWalls
+                };
+                historyApi.pushHistory(
+                  routeRef.current.strokes,
+                  routeRef.current.markers,
+                  globalMarkersStore.globalMarkers,
+                  prevWalls
+                );
+                updateGlobalWalls(nextWalls);
+              }}
+              onSvgStringReady={setSvgString}
+              canvasRef={canvasRef}
+              focusTrigger={focusTrigger}
+              onClearFocusTrigger={() => setFocusTrigger(null)}
+              currentPosTrigger={currentPosTrigger}
+              isEditMode={isEditMode}
+              showMarkerLabels={showMarkerLabels}
+              markerScale={markerScale}
+              leftSidebarCollapsed={leftSidebarCollapsed}
+              rightSidebarCollapsed={rightSidebarCollapsed}
+              bossCustomDurations={routeApi.route.bossCustomDurations}
+              onBossCustomDurationChange={(id, dur) => routeApi.setBossCustomDuration(id, dur)}
+              battleCustomDurations={routeApi.route.battleCustomDurations}
+              onBattleCustomDurationChange={(id, dur) => routeApi.setBattleCustomDuration(id, dur)}
+              pickingCustomDurations={routeApi.route.pickingCustomDurations}
+              onPickingCustomDurationChange={(id, dur) => routeApi.setPickingCustomDuration(id, dur)}
+              longPickingCustomDurations={routeApi.route.longPickingCustomDurations}
+              onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
+              pickyMarkerIds={routeApi.route.pickyMarkerIds}
+              onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
+              hideRouteLines={hideRouteLines}
+              routeLines1px={routeLines1px}
+              hideBranchLines={hideBranchLines}
+              branchLines1px={branchLines1px}
+              textPinPassThrough={textPinPassThrough}
+              showPhoneCompass={showPhoneCompass}
+              eraseTarget={eraseTarget}
+              eraseDefaultBehavior={eraseDefaultBehavior}
+              eraseSize={eraseSize}
+              editStrokeIdxs={editStrokeIdxs}
+              onEditStrokeIdxsChange={setEditStrokeIdxs}
+              measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
+              onMeasureSelectedStrokeIdxsChange={setMeasureSelectedStrokeIdxs}
+              blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
+              onMarkersDragStart={historyApi.startDragSnapshot}
+              onMarkersDragEnd={historyApi.commitDragSnapshot}
+              stopMarkerThreshold={stopMarkerThreshold}
+              movementMarkerThreshold={movementMarkerThreshold}
+              warpMarkerThreshold={warpMarkerThreshold}
+              skillCdThreshold={skillCdThreshold}
+              showDetectionRanges={showDetectionRanges}
+              hiddenMarkers={routeApi.route.hiddenMarkers || []}
+              hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
+              onHideGlobalMarker={handleHideGlobalMarker}
+              onShowGlobalMarker={handleShowGlobalMarker}
+              onToggleMarkerVisibility={handleToggleMarkerVisibility}
+              onAutoRouteStatusChange={autoRoute.setStatus}
+              autoRouteCommand={autoRoute.command}
+              autoRouteSettings={{
+                waitEnabled: autoRoute.waitEnabled,
+                waitSeconds: autoRoute.waitSeconds,
+                startStopSeconds: autoRoute.startStopSeconds,
+                speedMode: autoRoute.speedMode,
+                manualSpeed: autoRoute.manualSpeed,
+                speedMultiplier: autoRoute.speedMultiplier,
+                followCamera: autoRoute.followCamera
+              }}
+              followCamera={autoRoute.followCamera}
+              targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
+              autoStartMarker={autoStartMarker}
+              onAutoStartMarkerChange={setAutoStartMarker}
+              warpColor={warpColor}
+              stairsColor={stairsColor}
+              fuseMode={autoRoute.fuseMode}
+              inactiveMarkersMode={autoRoute.inactiveMarkersMode}
+              skillCdPresets={globalDefaults.skillCdPresets}
+              onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
+              onAutoRouteStart={() => {
+                const updated = globalMarkersStore.globalMarkers.map(m =>
+                  m.type === 'phone' && !m.phoneLocked ? { ...m, phoneActive: false } : m
+                );
+                globalMarkersStore.replace(updated);
+              }}
+            />
+          ), [
+            currentFloor,
+            memoizedStrokes,
+            globalMarkersStore.globalMarkers,
+            routeApi.route.markers,
+            routeApi.route.customBg,
+            toolMode,
+            activeMarkerType,
+            strokeColor,
+            strokeWidth,
+            strokeType,
+            drawMode,
+            globalWalls,
+            focusTrigger,
+            currentPosTrigger,
+            isEditMode,
+            showMarkerLabels,
+            markerScale,
+            leftSidebarCollapsed,
+            rightSidebarCollapsed,
+            routeApi.route.bossCustomDurations,
+            routeApi.route.battleCustomDurations,
+            routeApi.route.pickingCustomDurations,
+            routeApi.route.longPickingCustomDurations,
+            routeApi.route.pickyMarkerIds,
+            hideRouteLines,
+            routeLines1px,
+            hideBranchLines,
+            branchLines1px,
+            textPinPassThrough,
+            showPhoneCompass,
+            eraseTarget,
+            eraseDefaultBehavior,
+            eraseSize,
+            editStrokeIdxs,
+            measureSelectedStrokeIdxs,
+            blockMarkerClicksDuringTools,
+            stopMarkerThreshold,
+            movementMarkerThreshold,
+            warpMarkerThreshold,
+            skillCdThreshold,
+            showDetectionRanges,
+            routeApi.route.hiddenMarkers,
+            routeApi.route.hiddenMarkerTypes,
+            autoRoute.command,
+            autoRoute.waitEnabled,
+            autoRoute.waitSeconds,
+            autoRoute.startStopSeconds,
+            autoRoute.speedMode,
+            autoRoute.manualSpeed,
+            autoRoute.speedMultiplier,
+            autoRoute.followCamera,
+            routeApi.route.targetDuration,
+            autoStartMarker,
+            warpColor,
+            stairsColor,
+            autoRoute.fuseMode,
+            autoRoute.inactiveMarkersMode,
+            globalDefaults.skillCdPresets
+          ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
               a close button, even when a pane is open. */}

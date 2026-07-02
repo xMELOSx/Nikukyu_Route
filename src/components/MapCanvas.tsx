@@ -224,6 +224,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const redrawStrokesRef = useRef<((overrideElapsed?: number) => void) | null>(null);
+  const lastRedrawnElapsedRef = useRef<number>(-999);
+  const lastRedrawnStrokesLengthRef = useRef<number>(-1);
   const runnerDotRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
@@ -960,6 +962,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const redrawStrokes = (overrideElapsed?: number) => {
     const ctx = ctxRef.current;
     if (!ctx) return;
+
+    let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
+
+    // Cache guard: If elapsed time has barely changed and stroke counts match, skip expensive redraw
+    if (
+      autoRouteActive &&
+      Math.abs(lastRedrawnElapsedRef.current - remaining) < 0.04 &&
+      lastRedrawnStrokesLengthRef.current === strokes.length
+    ) {
+      return;
+    }
+    lastRedrawnElapsedRef.current = remaining;
+    lastRedrawnStrokesLengthRef.current = strokes.length;
+
     ctx.clearRect(0, 0, 1600, 4550);
 
     const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
@@ -970,7 +986,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
-        let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
         ctx.strokeStyle = '#ff0055';
         ctx.lineWidth = routeLines1px ? 1 : 3;
@@ -2981,33 +2996,72 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
-          {/* 現在地マーカーにコンパス — 電話ボックス方向を指す */}
+          {/* Nearest active ReroRero電話ボックス の方向コンパス (常時起動は除外) */}
           {currentPosition && showPhoneCompass && nearestActivePhone && (() => {
             const dx = nearestActivePhone.x - currentPosition.x;
             const dy = nearestActivePhone.y - currentPosition.y;
             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
             const dist = Math.hypot(dx, dy);
+            const compScale = Math.min(3, 1 / Math.sqrt(zoom));
+            const orbitRadius = 30;
             return (
               <div
-                className="phone-compass-indicator"
                 style={{
                   position: 'absolute',
                   left: `${currentPosition.x}px`,
                   top: `${currentPosition.y}px`,
-                  transform: `translate(-50%, -100%) scale(${Math.min(3, 1 / Math.sqrt(zoom))})`,
-                  transformOrigin: 'bottom center',
+                  transform: `translate(-50%, -50%) scale(${compScale})`,
+                  transformOrigin: 'center center',
                   pointerEvents: 'none',
-                  zIndex: 101,
+                  zIndex: 99
                 }}
                 title={`📞 ${Math.round(dist)}px 方向`}
               >
-                <div
-                  className="phone-compass-arrow"
-                  style={{ transform: `rotate(${angle}deg)` }}
-                >
-                  ◀
+                {/* 軌道の円 (半透明) */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: `${orbitRadius * 2}px`,
+                  height: `${orbitRadius * 2}px`,
+                  transform: 'translate(-50%, -50%)',
+                  border: '1px dashed rgba(255, 0, 255, 0.3)',
+                  borderRadius: '50%'
+                }} />
+                {/* 📞 中央ラベル */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: '14px',
+                  lineHeight: 1,
+                  filter: 'drop-shadow(0 0 3px rgba(255, 0, 255, 0.8))',
+                  zIndex: 2
+                }}>📞</div>
+                {/* ▲ 軌道上を回転し起動中電話の方向を指す */}
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                  transformOrigin: 'center center',
+                  fontSize: '18px',
+                  color: '#ff00ff',
+                  textShadow: '0 0 4px #fff, 0 0 8px #ff00ff',
+                  lineHeight: 1,
+                  animation: 'phone-compass-pulse 1.4s infinite ease-in-out',
+                  zIndex: 3
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: `${orbitRadius}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    transformOrigin: `-${orbitRadius}px center`,
+                    rotate: '0deg'
+                  }}>▶</div>
                 </div>
-                <div className="phone-compass-label">📞</div>
               </div>
             );
           })()}
