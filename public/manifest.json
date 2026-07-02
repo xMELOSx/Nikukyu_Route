@@ -1,7 +1,7 @@
 {
-  "name": "にくきゅう大強盗 Route Planner",
-  "short_name": "にくきゅう大強盗",
-  "description": "にくきゅう大強盗のルート計画・マップビューワーアプリ",
+  "name": "Nikukyu_Route",
+  "short_name": "Nikukyu_Route",
+  "description": "Nikukyu_Route - にくきゅう大強盗のルート計画・マップビューワーアプリ",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0a0e18",

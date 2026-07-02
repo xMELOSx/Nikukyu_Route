@@ -12,7 +12,7 @@ import {
   getSkillCdIcon,
   getSkillCdColor
 } from '../utils/DataManager';
-import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Trash2 } from 'lucide-react';
 import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';

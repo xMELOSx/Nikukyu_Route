@@ -678,7 +678,7 @@ export interface RouteData {
  * セーブデータ (RouteData.saveDataVersion) に書き込まれ、どのバージョンで作られたか
  * 後から判別できるようにする。デバッグタブの上部に表示される。
  */
-export const APP_VERSION = '0.9.1';
+export const APP_VERSION = '0.9.2';
 
 /**
  * セーブデータ マイグレーション定義。
@@ -686,7 +686,7 @@ export const APP_VERSION = '0.9.1';
  * 新しいバージョンを追加するときは SAVE_DATA_VERSION_HISTORY と
  * SAVE_DATA_MIGRATIONS の両方を更新する。
  *  - SAVE_DATA_VERSION_HISTORY: リリース済みバージョンの配列 (古い順)
- *  - SAVE_DATA_MIGRATIONS:     連続する from→to マイグレーションの配列
+ *  - SAVE_DATA_MIGRATIONS:     連続する from→to マイグレーション of 配列
  *    (App.tsx の migrateRouteCoordinates をここに段階的に移管する)。
  *
  * マイグレーションは saveDataVersion を持たない旧データを "最初の登録済みバージョン"
@@ -698,7 +698,8 @@ export const SAVE_DATA_VERSION_HISTORY: string[] = [
   // 新しいバージョンを末尾に追加していく (例: '0.9.0', '0.9.1', '0.10.0')
   // ※ 0.9.1 より前は saveDataVersion 自体が存在しないため、このリストは
   //    「0.9.1 で saveDataVersion が付与された」以降のバージョンを表す。
-  '0.9.1'
+  '0.9.1',
+  '0.9.2'
 ];
 
 export interface SaveDataMigration {
@@ -717,13 +718,12 @@ export interface SaveDataMigration {
  * 新しいマイグレーションはここに追加する。
  */
 export const SAVE_DATA_MIGRATIONS: SaveDataMigration[] = [
-  // 例:
-  // {
-  //   fromVersion: '0.9.1',
-  //   toVersion: '0.10.0',
-  //   description: '○○フィールドを追加',
-  //   migrate: (d) => ({ ...d, newField: defaultNewField })
-  // }
+  {
+    fromVersion: '0.9.1',
+    toVersion: '0.9.2',
+    description: 'セーブデータバージョンを0.9.2に引き上げ',
+    migrate: (d) => d
+  }
 ];
 
 /**

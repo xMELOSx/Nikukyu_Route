@@ -31,7 +31,6 @@ import {
   MARKER_META,
   DataManager,
   normalizeStrokes,
-  smoothStrokePoints,
   smoothStrokePointsKeepEnds,
   AUTHOR_DEFAULT_PLAIN,
   generateId,

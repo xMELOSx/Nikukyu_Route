@@ -1175,8 +1175,8 @@ select.input-cyber {
 /* 電話ボックス状態HUD (左下隅固定) — 開閉トグル付きコンパクト版 */
 .phone-box-hud {
   position: absolute;
-  bottom: 8px;
-  left: 8px;
+  bottom: 20px;
+  left: 20px;
   z-index: 50;
   pointer-events: auto;
   user-select: none;
