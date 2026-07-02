@@ -469,6 +469,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     checkpointVoiceOn,
     pickyMarkerIds,
     wrapperRef,
+    containerRef,
     animZoomRef,
     animPanRef,
     targetPanRef,

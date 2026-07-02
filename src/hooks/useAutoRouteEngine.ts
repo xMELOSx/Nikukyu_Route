@@ -32,6 +32,7 @@ export interface UseAutoRouteEngineParams {
   pickyMarkerIds?: { [markerId: string]: boolean };
   // Viewport refs for follow-camera
   wrapperRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   animZoomRef: React.MutableRefObject<number>;
   animPanRef: React.MutableRefObject<{ x: number; y: number }>;
   targetPanRef: React.MutableRefObject<{ x: number; y: number }>;
@@ -102,6 +103,7 @@ export function useAutoRouteEngine({
   checkpointVoiceOn,
   pickyMarkerIds,
   wrapperRef,
+  containerRef,
   animZoomRef,
   animPanRef,
   targetPanRef,
@@ -133,6 +135,7 @@ export function useAutoRouteEngine({
   const followCameraRef = useRef<boolean>(false);
   followCameraRef.current = followCamera;
   const autoRouteElapsedRef = useRef<number>(0);
+  const lastSetPanTimeRef = useRef<number>(0);
   const markersRef = useRef<HeistMarker[]>(markers);
   markersRef.current = markers;
   const pickyMarkerIdsRef = useRef<{ [markerId: string]: boolean } | undefined>(pickyMarkerIds);
@@ -227,6 +230,10 @@ export function useAutoRouteEngine({
 
   const pauseAutoRoute = () => {
     setAutoRouteRunning(false);
+    // Sync React state with DOM-driven pan position
+    if (followCameraRef.current && animPanRef.current) {
+      setPan({ ...animPanRef.current });
+    }
   };
 
   const resumeAutoRoute = () => {
@@ -276,6 +283,10 @@ export function useAutoRouteEngine({
         setAutoRouteRunning(false);
         setAutoRouteElapsed(autoRouteTiming.totalTime);
         setCurrentPosition({ x: last.end.x, y: last.end.y });
+        // Final sync of pan to React state when playback ends
+        if (followCameraRef.current && animPanRef.current) {
+          setPan({ ...animPanRef.current });
+        }
         return;
       }
       latestElapsedRef.current = elapsed;
@@ -331,7 +342,15 @@ export function useAutoRouteEngine({
             if (isFinite(tgtPan.x) && isFinite(tgtPan.y)) {
               targetPanRef.current = tgtPan;
               animPanRef.current = tgtPan;
-              setPan(tgtPan);
+              // DOM direct update for smooth 60fps camera follow
+              if (containerRef.current) {
+                containerRef.current.style.transform = `translate(${tgtPan.x}px, ${tgtPan.y}px) scale(${tgtZoom})`;
+              }
+              // Throttle React state sync to ~150ms to avoid expensive re-renders
+              if (now - lastSetPanTimeRef.current > 150) {
+                lastSetPanTimeRef.current = now;
+                setPan(tgtPan);
+              }
             }
           }
         }
