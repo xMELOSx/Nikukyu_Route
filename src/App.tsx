@@ -33,6 +33,8 @@ import {
   getPresetVisibility,
   MARKER_META,
   SPAWN_ITEM_ORDER,
+  TEXTCOLOR_DETAILS,
+  TEXTCOLOR_DETAIL_META,
   DataManager,
   normalizeStrokes,
   smoothStrokePointsKeepEnds,
