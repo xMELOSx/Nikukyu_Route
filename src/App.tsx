@@ -2291,15 +2291,17 @@ export default function App() {
                     />
                     {t('壁を自動で迂回する')}
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={bypassShortestOnly}
-                      onChange={(e) => setBypassShortestOnly(e.target.checked)}
-                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                    />
-                    {t('終始直結')}
-                  </label>
+                  {bypassWallsEnabled && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={bypassShortestOnly}
+                        onChange={(e) => setBypassShortestOnly(e.target.checked)}
+                        style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                      />
+                      {t('終始直結')}
+                    </label>
+                  )}
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
                   <input

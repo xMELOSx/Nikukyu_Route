@@ -1035,6 +1035,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         });
         ctx.stroke();
       });
+
+      // ルート案内中 (fuseMode) はメインルート以外 (実線) は描画されないため、
+      // その間に新規描画した線 (= strokes の末尾) を半透明で再描画して
+      // 「書きかけ」が消えないようにする。
+      // - 直前に draw ツールで描いて追加された線を対象とする
+      // - 編集中の線は不透明度 1 で扱う (途中の編集がルート案内の影響を受けて薄くなるのを避ける)
+      if (strokes.length > 0) {
+        const last = strokes[strokes.length - 1];
+        if (last && last.points && last.points.length >= 2 && last.type !== 'dashed') {
+          ctx.save();
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = last.color;
+          ctx.lineWidth = routeLines1px ? 1 : last.width;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          last.points.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     } else {
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
@@ -1543,6 +1566,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.save();
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = strokeWidth;
+            // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
+            if (autoRouteActive) ctx.globalAlpha = 0.5;
             if (strokeType === 'dashed') ctx.setLineDash([8, 6]);
             else ctx.setLineDash([]);
             ctx.beginPath();
@@ -1553,13 +1578,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
           return;
         }
-        
+
         const newPoints = [...currentPoints, coords];
         setCurrentPoints(newPoints);
         const ctx = ctxRef.current;
         if (ctx) {
+          // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
+          if (autoRouteActive) ctx.globalAlpha = 0.5;
           ctx.lineTo(coords.x, coords.y);
           ctx.stroke();
+          ctx.globalAlpha = 1;
         }
         return;
       }
@@ -2953,75 +2981,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
-          {/* Nearest active ReroRero電話ボックス の方向コンパス (常時起動は除外) */}
+          {/* 現在地マーカーにコンパス — 電話ボックス方向を指す */}
           {currentPosition && showPhoneCompass && nearestActivePhone && (() => {
-            // 現在地から電話ボックスへの角度 = 電話ボックスから見た現在地方向
-            const dx = currentPosition.x - nearestActivePhone.x;
-            const dy = currentPosition.y - nearestActivePhone.y;
+            const dx = nearestActivePhone.x - currentPosition.x;
+            const dy = nearestActivePhone.y - currentPosition.y;
             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
             const dist = Math.hypot(dx, dy);
-            const compScale = Math.min(3, 1 / Math.sqrt(zoom));
-            // 矢印を電話ボックスから 30px 外側に配置し、
-            // 電話ボックスの周囲を回転する軌道に沿って現在地方向を指す
-            const orbitRadius = 30;
             return (
               <div
+                className="phone-compass-indicator"
                 style={{
                   position: 'absolute',
-                  left: `${nearestActivePhone.x}px`,
-                  top: `${nearestActivePhone.y}px`,
-                  transform: `translate(-50%, -50%) scale(${compScale})`,
-                  transformOrigin: 'center center',
+                  left: `${currentPosition.x}px`,
+                  top: `${currentPosition.y}px`,
+                  transform: `translate(-50%, -100%) scale(${Math.min(3, 1 / Math.sqrt(zoom))})`,
+                  transformOrigin: 'bottom center',
                   pointerEvents: 'none',
-                  zIndex: 99
+                  zIndex: 101,
                 }}
                 title={`📞 ${Math.round(dist)}px 方向`}
               >
-                {/* 軌道の円 (半透明) */}
-                <div style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  width: `${orbitRadius * 2}px`,
-                  height: `${orbitRadius * 2}px`,
-                  transform: 'translate(-50%, -50%)',
-                  border: '1px dashed rgba(255, 0, 255, 0.3)',
-                  borderRadius: '50%'
-                }} />
-                {/* 電話ボックスの中央ラベル */}
-                <div style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  fontSize: '14px',
-                  lineHeight: 1,
-                  filter: 'drop-shadow(0 0 3px rgba(255, 0, 255, 0.8))',
-                  zIndex: 2
-                }}>📞</div>
-                {/* 現在地方向の矢印 — 電話ボックスから軌道上を回転 */}
-                <div style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: `translate(-50%, -50%) rotate(${angle}deg)`,
-                  transformOrigin: 'center center',
-                  fontSize: '18px',
-                  color: '#ff00ff',
-                  textShadow: '0 0 4px #fff, 0 0 8px #ff00ff',
-                  lineHeight: 1,
-                  animation: 'phone-compass-pulse 1.4s infinite ease-in-out',
-                  zIndex: 3
-                }}>
-                  <div style={{
-                    position: 'absolute',
-                    left: `-${orbitRadius}px`,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    transformOrigin: `${orbitRadius}px center`,
-                    rotate: '0deg'
-                  }}>▶</div>
+                <div
+                  className="phone-compass-arrow"
+                  style={{ transform: `rotate(${angle}deg)` }}
+                >
+                  ◀
                 </div>
+                <div className="phone-compass-label">📞</div>
               </div>
             );
           })()}
