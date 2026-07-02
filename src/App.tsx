@@ -1395,7 +1395,7 @@ export default function App() {
 
   // --- Cross-cutting handlers (coordinate multiple stores) ---
 
-  const updateStrokes = async (newStrokes: DrawingStroke[]) => {
+  const updateStrokes = useCallback(async (newStrokes: DrawingStroke[]) => {
     const strokesData = routeRef.current.strokes as any;
     const prevStrokes = strokesData[currentFloor] || [];
 
@@ -1582,7 +1582,7 @@ export default function App() {
         ...prev,
         strokes: { ...prev.strokes, [currentFloor]: newStrokes }
       }));
-    };
+    }, [bypassWallsEnabled, bypassShortestOnly]);
 
   const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false, options: { isDelete?: boolean } = {}) => {
     if (shouldPushHistory) {
@@ -3698,6 +3698,7 @@ export default function App() {
             strokeWidth,
             strokeType,
             drawMode,
+            updateStrokes,
             globalWalls,
             focusTrigger,
             currentPosTrigger,
