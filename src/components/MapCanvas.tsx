@@ -28,7 +28,7 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
-  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall';
+  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall' | 'add-spawn';
   walls?: [Point, Point][];
   onWallsChange?: (walls: [Point, Point][]) => void;
   hideStrokesDuringWalls?: boolean;
@@ -240,9 +240,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   startupFocusMarkerId,
   spawnRecords = [],
   spawnVisibleTypes,
-  activeSpawnItem,
-  onSpawnAdd,
-  onSpawnDelete
+  onSpawnAdd
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 

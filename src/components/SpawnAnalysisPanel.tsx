@@ -4,7 +4,6 @@ import {
   type SpawnItemType,
   SPAWN_ITEM_META,
   SPAWN_ITEM_ORDER,
-  generateId,
 } from '../utils/DataManager';
 
 interface SpawnAnalysisPanelProps {

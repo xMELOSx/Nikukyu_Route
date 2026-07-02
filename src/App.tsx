@@ -32,7 +32,6 @@ import {
   normalizePresets,
   getPresetVisibility,
   MARKER_META,
-  SPAWN_ITEM_META,
   SPAWN_ITEM_ORDER,
   DataManager,
   normalizeStrokes,

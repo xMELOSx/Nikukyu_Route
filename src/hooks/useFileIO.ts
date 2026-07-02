@@ -2,7 +2,6 @@ import { useRef, useCallback } from 'react';
 import {
   type FloorType,
   type RouteData,
-  type HeistMarker,
   DataManager,
 } from '../utils/DataManager';
 import {
