@@ -16,10 +16,6 @@ import {
   loadPresetBody,
 } from './DataManager';
 
-const INDIV_TYPES = new Set([
-  'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
-  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'
-]);
 const GLOBAL_TYPES = new Set([
   'eh', 'rare', 'cardkey', 'vault', 'boss', 'phone',
   'warp', 'stairs', 'info', 'note', 'text', 'room',

@@ -22,7 +22,6 @@ import {
   savePresetBody,
   loadPresetBody,
   removePresetBody,
-  migrateLegacyPresetBodies,
   generateId
 } from '../utils/DataManager';
 import type { GlobalDefaults } from './useGlobalDefaults';

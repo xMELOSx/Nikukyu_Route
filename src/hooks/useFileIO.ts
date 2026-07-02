@@ -41,41 +41,6 @@ export interface UseFileIOApi {
   importPngFile: (file: File) => Promise<void>;
 }
 
-const GLOBAL_TYPES = new Set([
-  'eh', 'rare', 'cardkey', 'vault', 'boss', 'phone',
-  'warp', 'stairs', 'info', 'note', 'text', 'room',
-  'gbattle', 'gpicking', 'glong_picking'
-]);
-const INDIV_TYPES = new Set([
-  'start', 'p1', 'p2', 'p3', 'battle', 'picking', 'long_picking',
-  'iwarp', 'iinfo', 'inote', 'itext', 'checkpoint', 'skill_cd'
-]);
-const isGlobalType = (t: string) => GLOBAL_TYPES.has(t);
-
-function splitMarkers(markers: HeistMarker[]): { indiv: HeistMarker[]; global: HeistMarker[] } {
-  const indiv: HeistMarker[] = [];
-  const global: HeistMarker[] = [];
-  for (const m of markers) {
-    if (INDIV_TYPES.has(m.type)) indiv.push(m);
-    else global.push(m);
-  }
-  return { indiv, global };
-}
-
-function backfillMarker(m: HeistMarker): HeistMarker {
-  if (m.type === 'boss') {
-    if (m.bossDurationSeconds === undefined) m.bossDurationSeconds = 60;
-    if (m.bossDrops === undefined) m.bossDrops = [];
-  } else if (m.type === 'battle' || m.type === 'gbattle') {
-    if (m.battleDurationSeconds === undefined) m.battleDurationSeconds = 20;
-  } else if (m.type === 'picking' || m.type === 'gpicking') {
-    if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
-  } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
-    if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 8;
-  }
-  return m;
-}
-
 /**
  * JSON / PNG import/export. The file input ref is owned by the hook and
  * exposed to the component so a single <input> element can dispatch both
@@ -131,7 +96,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         showNotification('JSONファイルの形式が無効です', 2000);
         return;
       }
-      const { data, globalMarkers, anomaly, noname } = result;
+      const { data, globalMarkers, anomaly } = result;
 
       if (globalMarkers.length > 0) {
         globalMarkersStore.mergeFromImport(globalMarkers);

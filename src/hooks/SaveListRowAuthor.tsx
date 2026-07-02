@@ -35,7 +35,7 @@ const FieldText: React.FC<{
  *    (= useAuthorField 側で処理)。
  */
 export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
-  authorEnc, renderCacheEnc, routeId, createdAt, presetSourceId
+  authorEnc, renderCacheEnc, routeId, createdAt
 }) => {
   const authorPlain = authorEnc || '';
   const isAuthorDefault = !authorPlain || authorPlain === AUTHOR_DEFAULT_PLAIN;
