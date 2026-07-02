@@ -34,8 +34,8 @@ import {
   smoothStrokePointsKeepEnds,
   AUTHOR_DEFAULT_PLAIN,
   generateId,
-  runSaveDataMigrations,
-  savePresetBody
+  savePresetBody,
+  migrateLoadedRoute
 } from './utils/DataManager';
 import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
@@ -107,48 +107,6 @@ import {
   Fence
 } from 'lucide-react';
 
-const migrateRouteCoordinates = (data: RouteData): RouteData => {
-  if (data.mapVersion && data.mapVersion >= 2) {
-    return data;
-  }
-  const migratedMarkers = (data.markers || []).map(m => {
-    const updated = { ...m, x: m.x * 2, y: m.y * 2 };
-    if (m.scrollConfig) {
-      updated.scrollConfig = {
-        ...m.scrollConfig,
-        x: m.scrollConfig.x * 2,
-        y: m.scrollConfig.y * 2
-      };
-    }
-    return updated;
-  });
-  const migratedStrokes: { [key in FloorType]: DrawingStroke[] } = { main: [] };
-  if (data.strokes) {
-    Object.keys(data.strokes).forEach(floorKey => {
-      const floorStrokes = data.strokes[floorKey as FloorType];
-      if (Array.isArray(floorStrokes)) {
-        migratedStrokes[floorKey as FloorType] = floorStrokes.map(stroke => ({
-          ...stroke,
-          points: (stroke.points || []).map(pt => ({ x: pt.x * 2, y: pt.y * 2 }))
-        }));
-      }
-    });
-  }
-  return { ...data, markers: migratedMarkers, strokes: migratedStrokes, mapVersion: 2 };
-};
-
-/**
- * セーブデータを読み込み可能な最新形式に揃える。
- * 1. レガシー座標マイグレーション (v1 → v2 座標系)
- * 2. SAVE_DATA_MIGRATIONS に登録された from→to 変換
- * 3. 結果 (適用されたマイグレーション、不明バージョン) を返す
- */
-const migrateLoadedRoute = (data: RouteData): { data: RouteData; result: ReturnType<typeof runSaveDataMigrations>; legacyMigrated: boolean } => {
-  const legacyMigrated = !data.mapVersion || data.mapVersion < 2;
-  const afterLegacy = migrateRouteCoordinates(data);
-  const result = runSaveDataMigrations(afterLegacy);
-  return { data: result.data, result, legacyMigrated };
-};
 
 const formatTime = (seconds: number): string => {
   if (!isFinite(seconds) || seconds < 0) return '--:--';

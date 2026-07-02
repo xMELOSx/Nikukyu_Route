@@ -2125,3 +2125,40 @@ export class DataManager {
     });
   }
 }
+
+export function migrateRouteCoordinates(data: RouteData): RouteData {
+  if (data.mapVersion && data.mapVersion >= 2) {
+    return data;
+  }
+  const migratedMarkers = (data.markers || []).map(m => {
+    const updated = { ...m, x: m.x * 2, y: m.y * 2 };
+    if (m.scrollConfig) {
+      updated.scrollConfig = {
+        ...m.scrollConfig,
+        x: m.scrollConfig.x * 2,
+        y: m.scrollConfig.y * 2
+      };
+    }
+    return updated;
+  });
+  const migratedStrokes: { [key in FloorType]: DrawingStroke[] } = { main: [] };
+  if (data.strokes) {
+    Object.keys(data.strokes).forEach(floorKey => {
+      const floorStrokes = data.strokes[floorKey as FloorType];
+      if (Array.isArray(floorStrokes)) {
+        migratedStrokes[floorKey as FloorType] = floorStrokes.map(stroke => ({
+          ...stroke,
+          points: (stroke.points || []).map(pt => ({ x: pt.x * 2, y: pt.y * 2 }))
+        }));
+      }
+    });
+  }
+  return { ...data, markers: migratedMarkers, strokes: migratedStrokes, mapVersion: 2 };
+}
+
+export function migrateLoadedRoute(data: RouteData): { data: RouteData; result: MigrationResult; legacyMigrated: boolean } {
+  const legacyMigrated = !data.mapVersion || data.mapVersion < 2;
+  const afterLegacy = migrateRouteCoordinates(data);
+  const result = runSaveDataMigrations(afterLegacy);
+  return { data: result.data, result, legacyMigrated };
+}

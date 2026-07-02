@@ -10,6 +10,7 @@ import {
   normalizePresets,
   DEFAULT_ROUTE,
   DataManager,
+  migrateLoadedRoute,
   normalizeStrokes,
   AUTHOR_DEFAULT_PLAIN,
   AUTHOR_UNKNOWN_MARKER,
@@ -540,6 +541,10 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       }
       if (!data) return;
 
+      // マイグレーションを適用 (座標系 v1 -> v2 や saveDataVersion 0.9.1 -> 0.9.2 など)
+      const migration = migrateLoadedRoute(data);
+      data = migration.data;
+
       // 旧 originalAuthor フィールドを renderCache へマイグレート
       data = migrateOriginalAuthorToRenderCache(data as any) as RouteData;
 
@@ -597,6 +602,10 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       //   4. author と一致するならそのまま (= 元の作者が原作者を兼ねている)
       // 「ロード時に何事もなかったかのように No name に補完」すると改ざんに気づけなくなる
       // ため、復号失敗 = 改ざんの疑い として author には触らず renderCache は空に。
+      // 復号に使用するキーIDを決定
+      // プリセットの場合は presetId (presetSourceId), セーブデータの場合は data.id
+      const decryptKeyId = (data as any).presetSourceId || data.id;
+
       const applyRenderCacheSync = () => {
         const stored = data!.renderCache;
         if (typeof stored !== 'string' || !stored) {
@@ -612,7 +621,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
           // 同期では復号できないので、async で復号してから setRoute する
           // ここではまず空にし、後で非同期に復号結果を反映する
           data!.renderCache = '';
-          aesGcmDecrypt(stored, getRenderCacheKey(data!.id)).then((plain) => {
+          aesGcmDecrypt(stored, getRenderCacheKey(decryptKeyId)).then((plain) => {
             if (plain === AUTHOR_TAMPERED) {
               // 改ざん: 空のまま (= Anomaly として UI 側でハンドリング)
               return;
@@ -710,8 +719,9 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       author: route.author || '',
       renderCache: route.renderCache || '',
       updatedAt: Date.now(),
-      visibility: normalizePresetVisibility(input.visibility)
-      // routeData は別キーに保存するためここには含めない
+      visibility: normalizePresetVisibility(input.visibility),
+      // 容量問題解決済みのため routeData を直接埋め込む (確実に読み込めるように)
+      routeData: toSave
     };
     // 実体を別キーに保存 (容量削減のため配列には入れない)
     try { savePresetBody(newPreset.id, toSave); } catch (e) {
@@ -758,8 +768,9 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       targetCoins: route.targetCoins,
       author: route.author || '',
       renderCache: route.renderCache || '',
-      updatedAt: Date.now()
-      // routeData は別キーに保存するためここには含めない
+      updatedAt: Date.now(),
+      // 容量問題解決済みのため routeData を直接埋め込む
+      routeData: toSave
     };
     const nextPresets = [...current];
     nextPresets[idx] = updatedPreset;
