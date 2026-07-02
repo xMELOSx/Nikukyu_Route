@@ -1028,7 +1028,7 @@ export interface SpawnPointItem {
   playerCount: number;      // 発見時のプレイヤー人数 (レア確率に影響)
 }
 
-export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床'] as const;
+export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床', '植木鉢'] as const;
 export type SpawnCategory = typeof SPAWN_CATEGORIES[number];
 
 /** マップ上の出現ポイント (1点に複数アイテムを保持) */

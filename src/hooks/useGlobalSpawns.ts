@@ -1,42 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { type SpawnPoint, type RegisteredItem } from '../utils/DataManager';
-
-const POINTS_KEY = 'heist_global_spawns';
-const ITEMS_KEY = 'heist_spawn_items';
 
 function normalizePoint(p: any): SpawnPoint {
   const items = Array.isArray(p.items) ? p.items.map((pi: any) => ({ ...pi, playerCount: pi.playerCount ?? 0 })) : [];
   return { ...p, items };
 }
 
-function loadPoints(): SpawnPoint[] {
-  try {
-    const saved = localStorage.getItem(POINTS_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.filter((s: any) => s && typeof s.id === 'string').map(normalizePoint) : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePoints(points: SpawnPoint[]) {
-  try { localStorage.setItem(POINTS_KEY, JSON.stringify(points)); } catch { /* ignore */ }
-}
-
-function loadItems(): RegisteredItem[] {
-  try {
-    const saved = localStorage.getItem(ITEMS_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.filter((s: any) => s && typeof s.id === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveItems(items: RegisteredItem[]) {
-  try { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)); } catch { /* ignore */ }
+function normalizeItem(i: any): RegisteredItem {
+  return { id: i.id, name: i.name || '', textColor: i.textColor || 'blue', fans: i.fans ?? 0, coins: i.coins ?? 0, image: i.image, description: i.description };
 }
 
 export interface UseGlobalSpawnsApi {
@@ -52,47 +23,80 @@ export interface UseGlobalSpawnsApi {
 }
 
 export function useGlobalSpawns(): UseGlobalSpawnsApi {
-  const [points, setPoints] = useState<SpawnPoint[]>(() => loadPoints());
-  const [items, setItems] = useState<RegisteredItem[]>(() => loadItems());
+  const [points, setPoints] = useState<SpawnPoint[]>([]);
+  const [items, setItems] = useState<RegisteredItem[]>([]);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { if (points.length > 0) savePoints(points); }, [points]);
-  useEffect(() => { if (items.length > 0) saveItems(items); }, [items]);
-
-  // マウント時に公開データとマージ
+  // マウント時にサーバーから読み込み
   useEffect(() => {
     let cancelled = false;
-    const seed = async () => {
+    (async () => {
+      let data: { points?: any[]; items?: any[] } | null = null;
       try {
         const res = await fetch(`${import.meta.env.BASE_URL}api/global-spawns`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0 && !cancelled) {
-            setPoints(prev => {
-              const ids = new Set(prev.map(p => p.id));
-              const newPts = data.filter((p: SpawnPoint) => p && p.id && !ids.has(p.id));
-              return newPts.length === 0 ? prev : [...prev, ...newPts];
-            });
-            return;
-          }
-        }
+        if (res.ok) data = await res.json();
       } catch { /* fall through */ }
-      try {
-        const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0 && !cancelled) {
-            setPoints(prev => {
-              const ids = new Set(prev.map(p => p.id));
-              const newPts = data.filter((p: SpawnPoint) => p && p.id && !ids.has(p.id));
-              return newPts.length === 0 ? prev : [...prev, ...newPts];
-            });
-          }
+      // サーバーが空なら localStorage から移行
+      if (!data || !data.points || data.points.length === 0) {
+        const ls = localStorage.getItem('heist_global_spawns');
+        if (ls) {
+          try {
+            const parsed = JSON.parse(ls);
+            if (Array.isArray(parsed)) {
+              data = { points: parsed, items: [] };
+              // 即座にサーバーに書き戻す
+              fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ points: parsed, items: [] })
+              }).catch(() => {});
+            }
+          } catch {}
         }
-      } catch { /* fall through */ }
-    };
-    seed();
+      }
+      // items がサーバーにない場合 localStorage から
+      if (data && (!data.items || data.items.length === 0)) {
+        const ls = localStorage.getItem('heist_spawn_items');
+        if (ls) {
+          try {
+            const parsed = JSON.parse(ls);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              data.items = parsed;
+              // サーバーに書き戻す
+              fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+              }).catch(() => {});
+            }
+          } catch {}
+        }
+      }
+      // 静的 JSON フォールバック
+      if (!data || !data.points) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
+          if (res.ok) data = await res.json();
+        } catch { /* fall through */ }
+      }
+      if (!cancelled && data) {
+        if (Array.isArray(data.points)) setPoints(data.points.filter((s: any) => s && typeof s.id === 'string').map(normalizePoint));
+        if (Array.isArray(data.items)) setItems(data.items.filter((s: any) => s && typeof s.id === 'string').map(normalizeItem));
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
+
+  // points 変更時サーバーに保存
+  useEffect(() => {
+    if (points.length === 0) return;
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points, items })
+      }).catch(() => {});
+    }, 50);
+    return () => { if (persistTimerRef.current) clearTimeout(persistTimerRef.current); };
+  }, [points, items]);
 
   const addPoint = useCallback((p: SpawnPoint) => setPoints(prev => [...prev, p]), []);
   const updatePoint = useCallback((id: string, updates: Partial<SpawnPoint>) => {

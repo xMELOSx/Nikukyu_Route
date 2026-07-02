@@ -3325,7 +3325,7 @@ export default function App() {
                   <div style={{ background: 'var(--panel-bg, #0a0e18)', width: '400px', maxHeight: '70vh', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                     onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>点情報 X:{pt.x} Y:{pt.y}</span>
+                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>点情報 X:{pt.x} Y:{pt.y}{pt.category ? ` (${pt.category})` : ''}</span>
                       <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setSpawnViewPointId(null)}>✕ 閉じる</button>
                     </div>
                     {/* 人数絞り込み */}

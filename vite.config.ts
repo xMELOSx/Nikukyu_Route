@@ -57,6 +57,15 @@ export default defineConfig({
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify([]));
               }
+            } else if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', () => {
+                const filePath = path.resolve(__dirname, 'global_spawns.json');
+                fs.writeFileSync(filePath, body, 'utf-8');
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true }));
+              });
             }
           } else if (isHelpMatch) {
             if (req.method === 'GET') {
