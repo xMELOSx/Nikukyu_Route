@@ -1507,8 +1507,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (e.button !== 0) return;
 
-    // スポーンビューワークリック: 非編集モードでは常に点検出 (移動ツール時はskip)
-    if (onSpawnPointView && toolMode !== 'move' && !isEditMode) {
+    // スポーンビューワークリック: スポーンツール以外では最優先 (パンより先)
+    if (onSpawnPointView && toolMode !== 'add-spawn') {
       const c = getCanvasCoords(e);
       for (const p of (spawnPoints || [])) {
         if (p.floor !== floor) continue;
@@ -1732,30 +1732,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'add-spawn' && isEditMode) {
+      let handled = false;
       if (spawnToolMode === 'place' && onSpawnPointAdd) {
         onSpawnPointAdd(coords.x, coords.y);
+        handled = true;
       } else if (spawnToolMode === 'edit' && onSpawnPointEdit) {
         const HIT = 12;
-        let bestId: string | null = null;
-        let bestDist = HIT;
         for (const p of spawnPoints) {
           if (p.floor !== floor) continue;
-          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
-          if (d < bestDist) { bestDist = d; bestId = p.id; }
+          if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
+            onSpawnPointEdit(p.id); handled = true; break;
+          }
         }
-        if (bestId) onSpawnPointEdit(bestId);
       } else if (spawnToolMode === 'erase' && onSpawnPointDelete) {
         const HIT = 12;
-        let bestId: string | null = null;
-        let bestDist = HIT;
         for (const p of spawnPoints) {
           if (p.floor !== floor) continue;
-          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
-          if (d < bestDist) { bestDist = d; bestId = p.id; }
+          if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
+            onSpawnPointDelete(p.id); handled = true; break;
+          }
         }
-        if (bestId) onSpawnPointDelete(bestId);
       }
-      return;
+      if (handled) return;
+      // fall through to viewer check if nothing handled
     }
 
 
@@ -1791,6 +1790,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDrawing(true);
       return;
     }
+
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {

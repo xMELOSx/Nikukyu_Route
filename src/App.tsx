@@ -2443,7 +2443,7 @@ export default function App() {
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
                   {isLocal && (
-                    <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => { setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn'); if (toolMode !== 'add-spawn') setRightTab('spawn'); }} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
+                    <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn')} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
                       <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
                     </button>
                   )}
