@@ -17,7 +17,7 @@ import {
   AUTHOR_TAMPERED,
   aesGcmEncrypt,
   aesGcmDecrypt,
-  getRenderCacheKey,
+  getOriginalAuthorKey,
   migrateOriginalAuthorToRenderCache,
   savePresetBody,
   loadPresetBody,
@@ -213,56 +213,59 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   const autoSaveIntervalRef = useRef<number>(autoSaveInterval);
   autoSaveIntervalRef.current = autoSaveInterval;
 
-  // 初回自動コピー: renderCache が空 + author が 'No name' 以外のとき、 author を
-  // renderCache にコピー (= メモリ平文の代入のみ。 暗号化は保存時)。
-  // 1 回だけ (= renderCache が一度セットされたら再発火しない)。
-  // saveDataVersion が設定済み (= localStorage からロード済み) の場合はスキップ。
-  useEffect(() => {
-    if (!route || !route.id) return;
-    if (!route.author || route.author === AUTHOR_DEFAULT_PLAIN) return;
-    if (route.renderCache) return; // 既にセット済み (= 1回だけ)
-    if (route.saveDataVersion) return; // ロード済みルートはスキップ
-    setRouteRaw(prev => {
-      if (prev.id !== route.id) return prev;
-      if (prev.renderCache) return prev;
-      if (prev.saveDataVersion) return prev;
-      return { ...prev, renderCache: prev.author };
-    });
-  }, [route.id, route.author, route.renderCache, route.saveDataVersion]);
-
-  // メモリの renderCache が暗号文 (= v2: / legacy:) になっていたら復号して平文に戻す。
-  // (= メモリは常に平文という仕様への強制遵守。
-  //  何かの race condition / 旧経路で暗号文が混入した場合のリカバリ用。)
-  //  AUTHOR_UNKNOWN_MARKER ('v2:0:') は「No name として保存」されたセーブのセンチネル
-  //  なので復号せず、メモリも AUTHOR_UNKNOWN_MARKER (= 空として表示) のままにする。
+  // メモリの renderCache が暗号文 (= v2: / legacy: プレフィックス) の場合、
+  // 復号して平文に戻す (= メモリは常に平文という仕様)。
+  // 何かの race condition / 旧経路で暗号文が混入した場合のリカバリ用。
+  //
+  // 復号結果の判定 (メモリ上の値):
+  //   - AUTHOR_TAMPERED (改竄) → 空文字 ('') = Anomaly。 UI 側で「Anomaly」表示
+  //   - 'No name' (AUTHOR_DEFAULT_PLAIN) → 「意図的に No name として保存された」正常値
+  //     → メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') のまま保持
+  //   - 正しい文字列 → そのまま平文として表示 (= 設計通りの原作者)
+  //
+  // AUTHOR_UNKNOWN_MARKER ('v2:0:') は No name の暗号文 (正常値)。
+  // → メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') に正規化
+  //
+  // 空文字 ('') は異常値 (Anomaly)。 そのまま保持 (= UI 側で Anomaly 表示)
+  //
+  // 重要: author (=編集者) からは絶対に補完しない。 author 編集で原作者が変化してはならない。
   useEffect(() => {
     if (!route || !route.id) return;
     const cache = route.renderCache;
     if (typeof cache !== 'string') return;
-    if (!cache) return;
+    if (!cache) return; // 空文字はそのまま (= Anomaly)
     if (cache === AUTHOR_UNKNOWN_MARKER) {
-      // 'v2:0:' → メモリ上は空文字 (No name 表示) に正規化
+      // No name の暗号文 (正常値)。 メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') に正規化
       setRouteRaw(prev => prev.id === route.id && prev.renderCache === AUTHOR_UNKNOWN_MARKER
-        ? { ...prev, renderCache: '' }
+        ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN }
         : prev);
       return;
     }
     if (cache.startsWith('v2:') || cache.startsWith('legacy:')) {
       // 暗号文 → 復号して平文に戻す
-      aesGcmDecrypt(cache, getRenderCacheKey(route.id)).then((plain) => {
+      aesGcmDecrypt(cache, getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null), { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null }).then((plain) => {
         if (plain === AUTHOR_TAMPERED) {
-          // 改ざん → メモリ上は空 (Anomaly として SaveListRowAuthor 側で表示)
+          // 改竄 → メモリ上は空文字 ('') (= Anomaly)
           setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
             ? { ...prev, renderCache: '' }
             : prev);
           return;
         }
+        if (plain === AUTHOR_DEFAULT_PLAIN) {
+          // 復号結果が 'No name' → 「意図的に No name として保存された」正常値
+          // メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') のまま保持。 author から補完しない。
+          setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
+            ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN }
+            : prev);
+          return;
+        }
+        // 復号成功: 正しい原作者名 → そのまま
         setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
           ? { ...prev, renderCache: plain }
           : prev);
       }).catch(() => { /* ignore */ });
     }
-  }, [route.id, route.renderCache]);
+  }, [route.id, route.createdAt, route.renderCache]);
 
   useEffect(() => {
     if (!route || !route.id) return;
@@ -286,18 +289,22 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }
     autoSaveTimerRef.current = window.setTimeout(async () => {
       try {
-        // 自動コピー: renderCache が空 + author が No name 以外のとき、初回のみ
-        // メモリに author (= 平文) を代入。 これは別 useEffect (= 初回コピー用) で
-        // 行い、 ここでは読取のみ。 autoSave は「現在メモリの renderCache を
-        // route.id 派生キーで暗号化して保存する」だけのシンプルな処理にする。
-        const plainCache = route.renderCache || '';
+        // renderCache (=原作者) を保存。 author からは独立 (= author から補完しない)。
+        // 復号キーは routeId + createdAt + presetSourceId を含む派生鍵 (= getOriginalAuthorKey)。
+        const plainCache = route.renderCache;
 
-        const safeAuthorKey = getRenderCacheKey(route.id);
+        const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null);
         let encoded: string;
         try {
-          encoded = plainCache
-            ? await aesGcmEncrypt(plainCache, safeAuthorKey)
-            : AUTHOR_UNKNOWN_MARKER;
+          if (typeof plainCache === 'string' && plainCache.length > 0) {
+            // 平文 renderCache → 暗号化
+            encoded = await aesGcmEncrypt(plainCache, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+          } else {
+            // 空文字 ('') または未定義 → どちらも No name として保存
+            // (空文字は本来 Anomaly だが、 ロード直後の race condition で一時的に空になる
+            //  ことがあるため、 ここでは No name センチネルで保存 = Anomaly 状態を回避)
+            encoded = AUTHOR_UNKNOWN_MARKER;
+          }
         } catch (e) {
           // 暗号化失敗 -> 平文のまま保存 (セーブをブロックしない)
           console.error('renderCache encryption failed, saving as plain:', e);
@@ -371,16 +378,27 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   }, [route]);
 
   const saveToLocal = useCallback(async () => {
-    // メモリ上の renderCache (平文) を取得
-    const plainCache = route.renderCache || '';
-    // 保存用キーは author (= 保存対象の平文) を使う。
-    // メモリ上の renderCache を route.id 派生キーで暗号化して localStorage に書く。
-    const safeAuthorKey = getRenderCacheKey(route.id);
+    // renderCache (=原作者) は author (=編集者) と完全に独立した保護対象。
+    // 復号キーは routeId + createdAt を含む派生鍵 (= getOriginalAuthorKey) を使い、
+    // 暗号化された値は author の編集では変わらない (= author から補完しない)。
+    //
+    // メモリ上の renderCache の取り得る値:
+    //   - 正規の原作者名 (平文) → 暗号化して保存
+    //   - AUTHOR_DEFAULT_PLAIN ('No name') → 暗号化 ('No name' の暗号文) して保存
+    //   - 空文字 ('') → 異常値 (Anomaly)。 ロード直後の race condition で一時的に
+    //     空になることがあるため、 ここでは No name センチネルで保存 (= Anomaly 状態を回避)
+    //   - 未定義 → No name のセンチネルで保存
+    const plainCache = route.renderCache;
+    const safeAuthorKey = getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null);
     let encoded: string;
     try {
-      encoded = plainCache
-        ? await aesGcmEncrypt(plainCache, safeAuthorKey)
-        : AUTHOR_UNKNOWN_MARKER;
+      if (typeof plainCache === 'string' && plainCache.length > 0) {
+        // 平文 renderCache → 暗号化
+        encoded = await aesGcmEncrypt(plainCache, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+      } else {
+        // 空文字 / 未定義 → No name のセンチネルで保存
+        encoded = AUTHOR_UNKNOWN_MARKER;
+      }
     } catch (e) {
       console.error('renderCache encryption failed, saving as plain:', e);
       encoded = plainCache || '';
@@ -396,6 +414,15 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       encoded_len: encoded.length,
       isUnknownMarker: encoded === AUTHOR_UNKNOWN_MARKER
     });
+    // ---- デバッグ: 復号テスト (復号キーが正しいか) ----
+    if (encoded.startsWith('v2:') && encoded !== AUTHOR_UNKNOWN_MARKER) {
+      try {
+        const decoded = await aesGcmDecrypt(encoded, safeAuthorKey, { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null });
+        console.log('[useRoute.saveToLocal] self-decrypt check:', { encoded_preview: encoded.slice(0, 40), decoded });
+      } catch (e) {
+        console.error('[useRoute.saveToLocal] self-decrypt FAILED:', e);
+      }
+    }
 
     const toSave: RouteData = {
       ...route,
@@ -429,15 +456,20 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   const saveAsCopy = useCallback(async () => {
     const newId = generateId('route');
     const newCreatedAt = Date.now();
-    // メモリ上の renderCache (平文) を新 ID のキーで暗号化して localStorage に保存
-    const plainCache = route.renderCache || '';
+    // renderCache (=原作者) は author と独立。 author から補完しない。
+    // 新 ID + 新 createdAt で派生鍵を作り直す (= コピー後の新ルート用に再暗号化)。
+    const plainCache = route.renderCache;
     let encoded: string;
-    if (plainCache) {
+    if (typeof plainCache === 'string' && plainCache.length > 0) {
       try {
-        encoded = await aesGcmEncrypt(plainCache, getRenderCacheKey(newId));
+        encoded = await aesGcmEncrypt(plainCache, getOriginalAuthorKey(newId, newCreatedAt, (route as any).presetSourceId || null), { routeId: newId, createdAt: newCreatedAt, presetSourceId: (route as any).presetSourceId || null });
       } catch {
         encoded = plainCache;
       }
+    } else if (plainCache === '') {
+      // 空文字 = 異常値 (Anomaly)。 警告ログを出してそのまま保存
+      console.warn('[useRoute.saveAsCopy] renderCache is empty string (Anomaly), saving as-is', { routeId: route.id });
+      encoded = '';
     } else {
       encoded = AUTHOR_UNKNOWN_MARKER;
     }
@@ -445,7 +477,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     // メモリ上は常に平文という仕様。
     const copy: RouteData = {
       ...route, id: newId, title: `${route.title} (COPY)`, createdAt: newCreatedAt,
-      renderCache: plainCache
+      renderCache: plainCache ?? ''
     };
     // localStorage には暗号文を保存するため、保存直前にもう一度コピーして暗号文を差し込む
     // customBg は localStorage 容量圧迫のため null に
@@ -463,11 +495,15 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     const currentAuthor = route.author;
     const newId = generateId('route');
     const newRoute = DEFAULT_ROUTE(newId);
-    if (currentAuthor) {
+    if (currentAuthor && currentAuthor !== AUTHOR_DEFAULT_PLAIN) {
       // author は平文なのでそのまま引き継ぎ
       newRoute.author = currentAuthor;
-      // 新規プランは renderCache 空 (= No name) から開始
-      newRoute.renderCache = '';
+      // 新規プラン作成時 (= 1回だけ): author を renderCache (=原作者) の初期値にする
+      // (= 「作者 = 原作者を兼ねる」前提の初期化。 以降の author 編集では renderCache は不変)
+      newRoute.renderCache = currentAuthor;
+    } else {
+      // author が未設定 (= 空 or 'No name') → 新規プランは renderCache = 'No name' (= AUTHOR_DEFAULT_PLAIN)
+      newRoute.renderCache = AUTHOR_DEFAULT_PLAIN;
     }
     setRouteWithGlobalDefaults(newRoute);
     localStorage.setItem('heist_last_used_route_id', newId);
@@ -598,41 +634,63 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       // renderCache ロード時フォールバック:
       //   1. 旧 originalAuthor キーが残っていれば migrate 済み
       //   2. 既に暗号文 (v2: / legacy:) なら復号を試みて平文にする
-      //   3. 空 / AUTHOR_UNKNOWN_MARKER / 改ざん → メモリ上は空文字 (No name 表示)
-      //   4. author と一致するならそのまま (= 元の作者が原作者を兼ねている)
-      // 「ロード時に何事もなかったかのように No name に補完」すると改ざんに気づけなくなる
-      // ため、復号失敗 = 改ざんの疑い として author には触らず renderCache は空に。
-      // 復号に使用するキーIDを決定
-      // プリセットの場合は presetId (presetSourceId), セーブデータの場合は data.id
-      const decryptKeyId = (data as any).presetSourceId || data.id;
+      //   3. 復号成功 (= AES-GCM 認証OK) → 平文をメモリに反映 (= 正規の原作者)
+      //   4. 復号結果が 'No name' (= AUTHOR_DEFAULT_PLAIN) → 「意図的に No name として保存」
+      //      された正常値。 メモリ上は No name (= 空に正規化) として表示
+      //   5. 復号失敗 (AUTHOR_TAMPERED) → 改竄の疑い、 Anomaly として保持
+      //   6. プレフィックスなしの平文 (旧マイグレート途中) → そのまま (= 旧平文)
+      //   7. 空文字 ('') → 異常値 (= フィールド欠損/破壊)。 Anomaly として保持。
+      //      (= 「空」は No name ではなく不正な状態。 「No name」は設定値 = AUTHOR_DEFAULT_PLAIN
+      //        (= AUTHOR_UNKNOWN_MARKER 暗号文 v2:0: を復号した結果) で表現する)
+      //   8. AUTHOR_UNKNOWN_MARKER ('v2:0:') → No name の正常な暗号文。
+      //      メモリ上は No name (= 空に正規化) として表示
+      //
+      // 重要: author (=編集者) からは絶対に補完しない。
+      // author は編集で変化する、 renderCache (=原作者) は不変で author と独立。
+      //
+      // 復号キーは暗号化時と同じ (data.id, data.createdAt) を使う。
+      // プリセット由来データでも、 保存 (= saveToLocal) 時に data.id / data.createdAt で
+      // 暗号化しているので、 ロード時も data.id / data.createdAt で復号する必要がある。
+      // presetSourceId は BG 引き継ぎ等では使うが、 暗号鍵としては data.id (= 新 id) を使う。
+      const decryptKeyId = data.id;
 
       const applyRenderCacheSync = () => {
         const stored = data!.renderCache;
         if (typeof stored !== 'string' || !stored) {
-          data!.renderCache = '';
+          // 空文字は異常値 (Anomaly)。 そのまま空文字として保持 (= UI 側で Anomaly 表示)
           return;
         }
         if (stored === AUTHOR_UNKNOWN_MARKER) {
-          // 暗号文は AUTHOR_UNKNOWN_MARKER (v2:0:) → 空として扱う
-          data!.renderCache = '';
+          // No name の暗号文 (正常値)。 メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') に正規化
+          // data ミューテーションではなく setRouteRaw で新オブジェクトを設定
+          setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN } : prev);
+          data!.renderCache = AUTHOR_DEFAULT_PLAIN;
           return;
         }
         if (stored.startsWith('v2:') || stored.startsWith('legacy:')) {
-          // 同期では復号できないので、async で復号してから setRoute する
-          // ここではまず空にし、後で非同期に復号結果を反映する
-          data!.renderCache = '';
-          aesGcmDecrypt(stored, getRenderCacheKey(decryptKeyId)).then((plain) => {
+          // 暗号文 → 復号して平文にする (同期では復号できないので async)
+          // data.renderCache をミューテーションせず setRouteRaw で新オブジェクトを設定
+          // (= 復号中に route.renderCache が '' になる問題を回避)
+          setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: stored } : prev);
+          aesGcmDecrypt(stored, getOriginalAuthorKey(decryptKeyId, data.createdAt, (data as any).presetSourceId || null), { routeId: decryptKeyId, createdAt: data.createdAt, presetSourceId: (data as any).presetSourceId || null }).then((plain) => {
             if (plain === AUTHOR_TAMPERED) {
-              // 改ざん: 空のまま (= Anomaly として UI 側でハンドリング)
+              // 改竄: 改竄の疑い。 renderCache を空文字 ('') に正規化 (= Anomaly)
+              setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: '' } : prev);
               return;
             }
-            // 復号成功: 平文をメモリに反映
+            if (plain === AUTHOR_DEFAULT_PLAIN) {
+              // 復号結果が 'No name' → 「意図的に No name として保存された」正常値
+              setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN } : prev);
+              return;
+            }
+            // 復号成功 (正しい原作者名) → そのまま平文として表示
             setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: plain } : prev);
           }).catch(() => { /* ignore */ });
           return;
         }
-        // プレフィックスなし: 旧平文 (旧マイグレート途中のデータ等) → そのまま
-        data!.renderCache = stored;
+        // プレフィックスなし: 旧平文 (旧マイグレート途中のデータ等) → そのまま (= 旧平文)
+        // data ミューテーションではなく setRouteRaw
+        setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: stored } : prev);
       };
       applyRenderCacheSync();
 

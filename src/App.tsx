@@ -1069,13 +1069,18 @@ export default function App() {
     }
   }, [presetListVisible, routeApi]);
 
-  // 編集中は input 制御用のローカル state を持つ。初期値はプレーンテキストの作者名。
-  // route.id / route.author が変わったら再同期する。
-  const [authorEdit, setAuthorEdit] = useState<string>(AUTHOR_DEFAULT_PLAIN);
+  // 編集中は input 制御用のローカル state を持つ。初期値は route.author の平文 (=空文字も許容)。
+  // 編集中の route.author の変化 (= 他 useEffect からの更新) では上書きしない (= 入力中の値を保護)。
+  // route.id が変わった (= 別ルートに切り替わった) ときだけ再同期。
+  // 注: AUTHOR_DEFAULT_PLAIN ('No name') を初期値や未入力時の代用に使ってはならない。
+  // 空文字と 'No name' は別物。 ユーザーが空文字で送信 (= blur) した時に route.author を
+  // 'No name' に正規化するのは別ロジックで行う。
+  const [authorEdit, setAuthorEdit] = useState<string>(routeApi.route.author || '');
   useEffect(() => {
-    const authorPlain = routeApi.route.author || '';
-    setAuthorEdit(!authorPlain || authorPlain === AUTHOR_DEFAULT_PLAIN ? AUTHOR_DEFAULT_PLAIN : authorPlain);
-  }, [routeApi.route.id, routeApi.route.author]);
+    // route.id 変化時のみ再同期 (= 別ルートに切り替わった)。 route.author の変化では触らない。
+    setAuthorEdit(routeApi.route.author || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeApi.route.id]);
 
   const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
     routeApi.setRouteWithGlobalDefaults(prev => ({
@@ -3213,8 +3218,19 @@ export default function App() {
                           value={authorEdit}
                           onChange={(e) => {
                             const v = e.target.value;
+                            // 編集中は author のみ更新。 renderCache (=原作者) は独立した保護対象なので
+                            // author 編集で上書きしない。 新規プラン作成時の初期化 (createNewPlan) で
+                            // 1回だけ author から renderCache を作る。 それ以降は不変。
                             setAuthorEdit(v);
+                            console.log('[App.onChange.author]', { v, prevAuthor: routeApi.route.author, prevRenderCache: routeApi.route.renderCache });
                             routeApi.setRoute({ ...routeApi.route, author: v });
+                          }}
+                          onBlur={() => {
+                            // 編集完了時: 空文字なら 'No name' に正規化 (= AUTHOR_DEFAULT_PLAIN)
+                            if (!authorEdit) {
+                              routeApi.setRoute({ ...routeApi.route, author: AUTHOR_DEFAULT_PLAIN });
+                              setAuthorEdit(AUTHOR_DEFAULT_PLAIN);
+                            }
                           }}
                           placeholder={AUTHOR_DEFAULT_PLAIN}
                         />
@@ -3230,15 +3246,21 @@ export default function App() {
                       <div>
                         <label style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('原作者名')}</label>
                         {(() => {
-                          // renderCache はメモリ上は平文。空文字 → No name、空でなく
-                          // AUTHOR_DEFAULT_PLAIN と一致 → No name、それ以外 → 平文表示。
-                          // 改ざんの疑い (復号失敗) はメモリに反映されない (loadFromLocal で
-                          // AUTHOR_TAMPERED は空文字扱い) ので、ここでは Anomaly 表示は
-                          // 出さない。 必要なら将来 getSavesList 側で生暗号文のままだと
-                          // 検出できるが、本仕様ではメモリに復号済みを置く前提。
-                          const cache = routeApi.route.renderCache || '';
-                          const isEmpty = !cache || cache === AUTHOR_DEFAULT_PLAIN;
-                          if (isEmpty) {
+                          // renderCache はメモリ上は平文。表示ルール:
+                          //   1. 空文字 ('') → 異常値 (Anomaly)。 復号失敗や欠損でここに到達
+                          //   2. 'No name' (AUTHOR_DEFAULT_PLAIN) → 「意図的に No name に設定」= 正常
+                          //   3. それ以外の文字列 → 正しい原作者名 (復号成功)
+                          // 注: ロード/復号時に AUTHOR_UNKNOWN_MARKER ('v2:0:') は空文字に
+                          // 正規化済み (= No name として表示)。 ここで扱うのはあくまで
+                          // メモリ上の値。 メモリ上は「空文字 = Anomaly」「No name 文字列 = No name 表示」
+                          // 「その他の文字列 = 原作者名表示」の3状態。
+                          const cache = routeApi.route.renderCache;
+                          if (typeof cache !== 'string' || !cache) {
+                            // 空文字 → 異常値 (Anomaly)
+                            return <div className="display-field" style={{ color: 'var(--red-neon, #f44)' }}><span style={{ color: 'var(--red-neon, #f44)' }}>Anomaly</span></div>;
+                          }
+                          if (cache === AUTHOR_DEFAULT_PLAIN) {
+                            // メモリ上で 'No name' として保持されている (= 意図的な設定)
                             return <div className="display-field" style={{ color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-muted)' }}>No name</span></div>;
                           }
                           return <div className="display-field">{cache}</div>;
@@ -3911,6 +3933,7 @@ export default function App() {
                                 renderCacheEnc={s.renderCache || ''}
                                 routeId={s.id}
                                 createdAt={s.createdAt}
+                                presetSourceId={(s as any).presetSourceId || null}
                               />
                               <span style={{ color: 'var(--text-muted)' }}>最終更新: {new Date(s.updatedAt).toLocaleString()}</span>
                             </div>
@@ -4067,7 +4090,11 @@ export default function App() {
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
         onSetStartupFocus={(markerId) => globalDefaults.setStartupFocusMarkerId(markerId || null)}
         onClearOriginalAuthor={() => {
-          routeApi.setRoute(prev => ({ ...prev, renderCache: '' }));
+          // 原作者名を「意図的に No name として設定」する。 メモリ上は AUTHOR_DEFAULT_PLAIN
+          // 文字列 (= 'No name') として保持。 保存時に 'No name' の暗号文 (= AUTHOR_UNKNOWN_MARKER
+          // 'v2:0:') に変換されて localStorage に書かれる。 ロード時は復号して 'No name' に戻る。
+          // (= 「No name」は設定値 AUTHOR_DEFAULT_PLAIN で表現、 空文字 = Anomaly とは別)
+          routeApi.setRoute(prev => ({ ...prev, renderCache: AUTHOR_DEFAULT_PLAIN }));
           notification.show('原作者名を No name にリセットしました');
         }}
         showDetectionRanges={showDetectionRanges}

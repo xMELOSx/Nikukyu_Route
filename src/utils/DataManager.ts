@@ -92,7 +92,7 @@ function base64ToBytes(b64: string): Uint8Array {
  * 場合は AUTHOR_DEFAULT_PLAIN ('No name') を暗号化する。復号側で平文が 'No name'
  * なら「未設定」相当として表示する。
  */
-export async function aesGcmEncrypt(plain: string, passphrase: string): Promise<string> {
+export async function aesGcmEncrypt(plain: string, passphrase: string, debugKey?: { routeId: string; createdAt: number; presetSourceId: string | null }): Promise<string> {
   if (!plain) return aesGcmEncrypt(AUTHOR_DEFAULT_PLAIN, passphrase);
   const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
   if (!subtle) throw new Error('Web Crypto API が利用できない環境です');
@@ -108,7 +108,11 @@ export async function aesGcmEncrypt(plain: string, passphrase: string): Promise<
   const out = new Uint8Array(IV_BYTES + cipher.length);
   out.set(iv, 0);
   out.set(cipher, IV_BYTES);
-  return AES_GCM_PREFIX + bytesToBase64(out);
+  const result = AES_GCM_PREFIX + bytesToBase64(out);
+  if (debugKey) {
+    recordSaveKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, plain, result);
+  }
+  return result;
 }
 
 /**
@@ -119,18 +123,26 @@ export async function aesGcmEncrypt(plain: string, passphrase: string): Promise<
  * で復号を試み、成功したら新形式にマイグレートせず平文を返す (呼び出し側で再暗号化)。
  * 旧復号も失敗したら AUTHOR_TAMPERED。
  */
-export async function aesGcmDecrypt(encoded: string, passphrase: string): Promise<string> {
+export async function aesGcmDecrypt(encoded: string, passphrase: string, debugKey?: { routeId: string; createdAt: number; presetSourceId: string | null }): Promise<string> {
   if (!encoded) return '';
   // "不明" マーカー (v2:0:) は復号せず AUTHOR_TAMPERED を返す。
-  // 設定されるケース: ロード時に renderCache が空かつ author と異なる場合 (= 改ざんの疑い)
-  if (encoded === AUTHOR_UNKNOWN_MARKER) return AUTHOR_TAMPERED;
+  if (encoded === AUTHOR_UNKNOWN_MARKER) {
+    if (debugKey) recordLoadKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, encoded, 'AUTHOR_UNKNOWN_MARKER');
+    return AUTHOR_TAMPERED;
+  }
   // AES-GCM 新形式
   if (encoded.startsWith(AES_GCM_PREFIX)) {
     try {
       const subtle = (typeof crypto !== 'undefined' ? crypto.subtle : null);
-      if (!subtle) return AUTHOR_TAMPERED;
+      if (!subtle) {
+        if (debugKey) recordLoadKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, encoded, 'NO_SUBTLE');
+        return AUTHOR_TAMPERED;
+      }
       const payload = base64ToBytes(encoded.slice(AES_GCM_PREFIX.length));
-      if (payload.length < IV_BYTES + 16) return AUTHOR_TAMPERED;
+      if (payload.length < IV_BYTES + 16) {
+        if (debugKey) recordLoadKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, encoded, 'PAYLOAD_TOO_SHORT');
+        return AUTHOR_TAMPERED;
+      }
       const iv = payload.slice(0, IV_BYTES);
       const cipher = payload.slice(IV_BYTES);
       const key = await deriveAesKey(passphrase);
@@ -139,8 +151,11 @@ export async function aesGcmDecrypt(encoded: string, passphrase: string): Promis
         key,
         cipher
       );
-      return new TextDecoder().decode(plainBuf);
-    } catch {
+      const result = new TextDecoder().decode(plainBuf);
+      if (debugKey) recordLoadKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, encoded, result);
+      return result;
+    } catch (e: any) {
+      if (debugKey) recordLoadKey(debugKey.routeId, debugKey.createdAt, debugKey.presetSourceId, passphrase, encoded, 'EXCEPTION: ' + (e?.message || 'unknown'));
       return AUTHOR_TAMPERED;
     }
   }
@@ -211,21 +226,116 @@ function deriveKey(baseKey: string, routeId: string, createdAt: number): string 
   return baseKey + '|' + routeId + '|' + String(createdAt);
 }
 
-export function getAuthorKey(routeId: string, createdAt: number): string {
-  return deriveKey(AUTHOR_KEY, routeId, createdAt);
+/**
+ * デバッグ用: 暗号化時のキーと暗号文をグローバルに保持し、 ロード時のキーと比較する。
+ * window.__renderCacheDebug__ に { routeId, createdAt, presetSourceId, key, encoded } を記録。
+ * 復号失敗 (Anomaly) 時にコンソールで saveToLocal 時のキーと loadFromLocal 時のキーを比較できる。
+ */
+declare global {
+  interface Window {
+    __renderCacheDebug__?: {
+      saves: Array<{
+        routeId: string;
+        createdAt: number;
+        presetSourceId: string | null;
+        key: string;
+        plainCache: string;
+        encoded: string;
+        timestamp: number;
+      }>;
+      loads: Array<{
+        routeId: string;
+        createdAt: number;
+        presetSourceId: string | null;
+        key: string;
+        stored: string;
+        result: string;
+        timestamp: number;
+      }>;
+    };
+  }
 }
 
-export function getOriginalAuthorKey(routeId: string, createdAt: number): string {
-  return deriveKey(RENDER_CACHE_KEY, routeId, createdAt);
+export function recordSaveKey(routeId: string, createdAt: number, presetSourceId: string | null, key: string, plainCache: string, encoded: string): void {
+  if (typeof window === 'undefined') return;
+  if (!window.__renderCacheDebug__) {
+    window.__renderCacheDebug__ = { saves: [], loads: [] };
+  }
+  window.__renderCacheDebug__.saves.push({ routeId, createdAt, presetSourceId, key, plainCache, encoded, timestamp: Date.now() });
+  // 直近 10 件だけ保持
+  if (window.__renderCacheDebug__.saves.length > 10) {
+    window.__renderCacheDebug__.saves = window.__renderCacheDebug__.saves.slice(-10);
+  }
+}
+
+export function recordLoadKey(routeId: string, createdAt: number, presetSourceId: string | null, key: string, stored: string, result: string): void {
+  if (typeof window === 'undefined') return;
+  if (!window.__renderCacheDebug__) {
+    window.__renderCacheDebug__ = { saves: [], loads: [] };
+  }
+  window.__renderCacheDebug__.loads.push({ routeId, createdAt, presetSourceId, key, stored, result, timestamp: Date.now() });
+  if (window.__renderCacheDebug__.loads.length > 10) {
+    window.__renderCacheDebug__.loads = window.__renderCacheDebug__.loads.slice(-10);
+  }
+  // セーブとロードの対応を比較
+  const matchingSave = window.__renderCacheDebug__.saves.find(s => s.encoded === stored);
+  if (matchingSave) {
+    const sameKey = matchingSave.key === key;
+    console.log('[renderCacheDebug] LOAD vs SAVE comparison:', {
+      stored: stored.slice(0, 40),
+      stored_len: stored.length,
+      save_key: matchingSave.key,
+      save_plainCache: matchingSave.plainCache,
+      load_key: key,
+      sameKey,
+      load_result: result,
+      save_presetSourceId: matchingSave.presetSourceId,
+      load_presetSourceId: presetSourceId
+    });
+    if (!sameKey) {
+      console.error('[renderCacheDebug] KEY MISMATCH! Save key vs Load key differ:');
+      console.error('  save.routeId:', matchingSave.routeId, ' load.routeId:', routeId);
+      console.error('  save.createdAt:', matchingSave.createdAt, ' load.createdAt:', createdAt);
+      console.error('  save.presetSourceId:', matchingSave.presetSourceId, ' load.presetSourceId:', presetSourceId);
+    }
+  }
 }
 
 /**
- * renderCache 暗号化/復号用の派生鍵 (route.id のみ)。
- * 旧 getOriginalAuthorKey(routeId, createdAt) は createdAt を含めていたが、
- * renderCache 移行後は ID 固定の安定キーに変更。
+ * renderCache (=原作者) 暗号化/復号用の派生鍵。
+ *
+ * 派生鍵 = RENDER_CACHE_KEY ('Colins') | 不動ID | createdAt
+ *
+ * 不動ID = プリセット由来なら presetSourceId (= プリセット ID)、
+ *          通常セーブなら routeId (= ロード毎に変わらない固定 ID)。
+ *
+ * なぜ routeId だけだと不十分か:
+ *   - プリセット読込時に `loadFromLocal` で新 ID が発行される
+ *   - 同じプリセットを別ファイル (=別 export) にコピーしてロードすると、 ID が変わる
+ *   - 結果、 別ファイルからのコピーを検出できない (= 保護が機能しない)
+ *
+ * プリセット ID を不動要素として使うことで、 プリセット単位で原作者の暗号文が
+ * 束縛され、 コピーしても (=同じプリセット ID なので) 同じ原作者が復元されるが、
+ * 別プリセット (= 別 presetSourceId) をコピーすると鍵が違って Anomaly になる。
  */
-export function getRenderCacheKey(routeId: string): string {
-  return RENDER_CACHE_KEY + '|' + routeId;
+export function getOriginalAuthorKey(
+  routeId: string,
+  createdAt: number,
+  presetSourceId?: string | null
+): string {
+  const stableId = presetSourceId || routeId;
+  return deriveKey(RENDER_CACHE_KEY, stableId, createdAt);
+}
+
+/**
+ * renderCache 暗号化/復号用の派生鍵。 既存コード (= getRenderCacheKey(routeId) の単一引数) との
+ * 互換のため、 createdAt と presetSourceId は optional。 単一引数呼び出しは
+ * 旧挙動 (= routeId のみ) になる (= createdAt 0 扱い、 暗号化/復号で鍵が一致する保証なし)。
+ *
+ * 新規コードでは getOriginalAuthorKey(routeId, createdAt, presetSourceId) を使うこと。
+ */
+export function getRenderCacheKey(routeId: string, createdAt?: number, presetSourceId?: string | null): string {
+  return getOriginalAuthorKey(routeId, createdAt ?? 0, presetSourceId);
 }
 
 /**
@@ -796,7 +906,9 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   targetCoins: '500',
   targetDuration: '720',
   author: '',
-  renderCache: '',
+  // 新規プランの原作者は「意図的に No name で開始」。
+  // 空文字 = Anomaly とは区別。 AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') で表現。
+  renderCache: AUTHOR_DEFAULT_PLAIN,
   strokes: {
     main: []
   },
@@ -1843,7 +1955,7 @@ export class DataManager {
       let originalAuthor = '';
       let showOriginal = false;
       if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '::1')) {
-        originalAuthor = await aesGcmDecrypt(route.renderCache || '', getRenderCacheKey(route.id));
+        originalAuthor = await aesGcmDecrypt(route.renderCache || '', getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null));
         showOriginal = !!originalAuthor && originalAuthor !== author && originalAuthor !== AUTHOR_TAMPERED;
       }
       fctx.font = 'bold 18px Rajdhani, Orbitron, Arial';

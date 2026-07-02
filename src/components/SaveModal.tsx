@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Download, FileJson, Image as ImageIcon, X, Copy, Check, ZoomIn } from 'lucide-react';
 import { t } from '../i18n';
-import { type FloorType, type RouteData, type HeistMarker, DataManager, aesGcmEncrypt, getRenderCacheKey, AUTHOR_UNKNOWN_MARKER, compressStrokes } from '../utils/DataManager';
+import { type FloorType, type RouteData, type HeistMarker, DataManager, aesGcmEncrypt, getOriginalAuthorKey, AUTHOR_UNKNOWN_MARKER, compressStrokes } from '../utils/DataManager';
 import MediaLightbox from './MediaLightbox';
 
 export interface SaveModalExportParams {
@@ -98,7 +98,7 @@ export const SaveModal: React.FC<SaveModalProps> = ({
       let encodedCache: string;
       if (plain) {
         try {
-          encodedCache = await aesGcmEncrypt(plain, getRenderCacheKey(clean.id));
+          encodedCache = await aesGcmEncrypt(plain, getOriginalAuthorKey(clean.id, clean.createdAt, (clean as any).presetSourceId || null), { routeId: clean.id, createdAt: clean.createdAt, presetSourceId: (clean as any).presetSourceId || null });
         } catch {
           encodedCache = plain;
         }

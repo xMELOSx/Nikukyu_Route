@@ -1,5 +1,5 @@
-import React from 'react';
-import { AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER, getRenderCacheKey } from '../utils/DataManager';
+import React, { useMemo } from 'react';
+import { AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER, getOriginalAuthorKey } from '../utils/DataManager';
 import { useAuthorField } from './useAuthorField';
 
 interface SaveListRowAuthorProps {
@@ -7,6 +7,7 @@ interface SaveListRowAuthorProps {
   renderCacheEnc: string;
   routeId: string;
   createdAt: number;
+  presetSourceId?: string | null;
 }
 
 const FieldText: React.FC<{
@@ -34,13 +35,26 @@ const FieldText: React.FC<{
  *    (= useAuthorField 側で処理)。
  */
 export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
-  authorEnc, renderCacheEnc, routeId
+  authorEnc, renderCacheEnc, routeId, createdAt, presetSourceId
 }) => {
   const authorPlain = authorEnc || '';
   const isAuthorDefault = !authorPlain || authorPlain === AUTHOR_DEFAULT_PLAIN;
 
-  // renderCache を routeId をキーに復号 (editable=false: 改ざん時に AUTHOR_TAMPERED を維持)
-  const renderCache = useAuthorField(renderCacheEnc || '', getRenderCacheKey(routeId), { editable: false });
+  // renderCache を routeId + createdAt 派生鍵で復号 (editable=false: 改ざん時に AUTHOR_TAMPERED を維持)
+  // 暗号化と復号で同じ鍵 (= getOriginalAuthorKey) を使うことが保護の前提
+  // key は routeId / createdAt が変わらない限り同じ (= useMemo で参照を固定し、
+  // useAuthorField の依存配列での再発火を防ぐ)
+  const key = useMemo(
+    () => getOriginalAuthorKey(routeId, createdAt, presetSourceId),
+    [routeId, createdAt, presetSourceId]
+  );
+  const debugKey = useMemo(
+    () => ({ routeId, createdAt, presetSourceId: presetSourceId || null }),
+    [routeId, createdAt, presetSourceId]
+  );
+  // 強制ログ出力: セーブ一覧の復号経路を必ずコンソールに出す
+  console.log('[SaveListRowAuthor.render]', { routeId, createdAt, presetSourceId, key, renderCacheEnc_preview: (renderCacheEnc || '').slice(0, 40), renderCacheEnc_len: (renderCacheEnc || '').length });
+  const renderCache = useAuthorField(renderCacheEnc || '', key, { editable: false, debugKey });
   const isOriginalDefault = renderCache.isDefault || !renderCache.plain || renderCache.plain === AUTHOR_DEFAULT_PLAIN;
   const isOriginalTampered = renderCache.tampered;
 

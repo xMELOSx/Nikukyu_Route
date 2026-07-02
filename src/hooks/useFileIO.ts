@@ -8,7 +8,7 @@ import {
   aesGcmDecrypt,
   AUTHOR_TAMPERED,
   AUTHOR_UNKNOWN_MARKER,
-  getRenderCacheKey,
+  getOriginalAuthorKey,
   migrateOriginalAuthorToRenderCache,
   runSaveDataMigrations
 } from '../utils/DataManager';
@@ -92,11 +92,12 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
   const exportJSON = useCallback(async () => {
     // メモリ上の renderCache (平文) を暗号化してエクスポートする。
     // JSON ファイルを開かれても原作者名が読めない (= 保護目的) 。
+    // 復号キーは routeId + createdAt を含む派生鍵 (= getOriginalAuthorKey) を使用。
     let encodedCache: string;
     const plain = routeApi.route.renderCache || '';
     if (plain) {
       try {
-        encodedCache = await aesGcmEncrypt(plain, getRenderCacheKey(routeApi.route.id));
+        encodedCache = await aesGcmEncrypt(plain, getOriginalAuthorKey(routeApi.route.id, routeApi.route.createdAt, (routeApi.route as any).presetSourceId || null), { routeId: routeApi.route.id, createdAt: routeApi.route.createdAt, presetSourceId: (routeApi.route as any).presetSourceId || null });
       } catch {
         // 暗号化失敗 -> 平文のままエクスポート (ブロックしない)
         encodedCache = plain;
@@ -258,9 +259,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       const newCreatedAt = Date.now();
       // author は平文フィールド (旧 v2: 暗号文でもロード後に平文化されている前提)。
       // renderCache は AES-GCM 暗号化 (旧キーで復号 → 新キーで再暗号化)
+      // 復号キーは routeId + createdAt を含む派生鍵 (= getOriginalAuthorKey)
       const plainAuthor = (migrated.author && !migrated.author.startsWith('v2:') && !migrated.author.startsWith('legacy:'))
         ? migrated.author : '';
-      const plainOriginal = await aesGcmDecrypt(migrated.renderCache || '', getRenderCacheKey(migrated.id));
+      const plainOriginal = await aesGcmDecrypt(migrated.renderCache || '', getOriginalAuthorKey(migrated.id, migrated.createdAt, (migrated as any).presetSourceId || null), { routeId: migrated.id, createdAt: migrated.createdAt, presetSourceId: (migrated as any).presetSourceId || null });
       const allMarkers = migrated.markers || [];
       const individualMarkers = allMarkers.filter(m => !isGlobalType(m.type));
       const importedGlobals = allMarkers.filter(m => isGlobalType(m.type));
@@ -274,7 +276,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       let encodedCache: string;
       if (safeOriginal) {
         try {
-          encodedCache = await aesGcmEncrypt(safeOriginal, getRenderCacheKey(newId));
+          encodedCache = await aesGcmEncrypt(safeOriginal, getOriginalAuthorKey(newId, newCreatedAt, (migrated as any).presetSourceId || null), { routeId: newId, createdAt: newCreatedAt, presetSourceId: (migrated as any).presetSourceId || null });
         } catch {
           encodedCache = safeOriginal;
         }
