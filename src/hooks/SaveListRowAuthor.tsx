@@ -52,59 +52,9 @@ export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
   // 原作者行を出す必要なし (author 行と重複)。
   const isUnknownMarker = renderCacheEnc === AUTHOR_UNKNOWN_MARKER;
 
-    // ---- デバッグ表示 (一時) ----
-    // 生データ・キー・復号結果を画面とコンソールに出す。
-    // 復号失敗の原因 (= 鍵違い / 改ざん / フォーマット不正) を切り分けやすくする。
-    const [debugInfo, setDebugInfo] = useState<string>('');
-    useEffect(() => {
-      let cancelled = false;
-      const enc = renderCacheEnc || '';
-      const key = getRenderCacheKey(routeId);
-      (async () => {
-        let result = 'n/a';
-        let reason = 'n/a';
-        if (!enc) {
-          result = '(empty)';
-          reason = 'no data';
-        } else if (enc === AUTHOR_UNKNOWN_MARKER) {
-          result = AUTHOR_UNKNOWN_MARKER;
-          reason = 'AUTHOR_UNKNOWN_MARKER (No name saved)';
-        } else {
-          try {
-            const v = await aesGcmDecrypt(enc, key);
-            if (v === AUTHOR_TAMPERED) {
-              result = 'AUTHOR_TAMPERED';
-              reason = 'decrypt failed (wrong key? tampered?)';
-            } else {
-              result = v;
-              reason = 'ok';
-            }
-          } catch (e: any) {
-            result = 'EXCEPTION';
-            reason = e?.message || String(e);
-          }
-        }
-        if (cancelled) return;
-        setDebugInfo(`[enc=${enc.slice(0, 24)}… len=${enc.length}] [key=${key}] [result=${result}] [reason=${reason}]`);
-        console.log('[SaveListRowAuthor]', {
-          routeId,
-          author: authorEnc,
-          enc_preview: enc.slice(0, 40),
-          enc_len: enc.length,
-          key,
-          result,
-          reason
-        });
-      })();
-      return () => { cancelled = true; };
-    }, [renderCacheEnc, routeId, authorEnc]);
-
   if (isUnknownMarker) {
     return (
-      <>
-        <FieldText isDefault={isAuthorDefault} plain={authorPlain} label="作者" />
-        <span style={{ fontSize: '9px', color: '#888', marginLeft: '8px' }}>{debugInfo}</span>
-      </>
+      <FieldText isDefault={isAuthorDefault} plain={authorPlain} label="作者" />
     );
   }
 
@@ -114,7 +64,6 @@ export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
       {(renderCacheEnc || isOriginalTampered) && !hideOriginal
         ? <FieldText isDefault={isOriginalDefault} plain={renderCache.plain || ''} label="原作者" tampered={isOriginalTampered} />
         : null}
-      <span style={{ fontSize: '9px', color: '#888', marginLeft: '8px' }}>{debugInfo}</span>
     </>
   );
 };

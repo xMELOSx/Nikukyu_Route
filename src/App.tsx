@@ -728,6 +728,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_show_phone_box_hud', String(showPhoneBoxHud));
   }, [showPhoneBoxHud]);
+  const [phoneBoxHudOpen, setPhoneBoxHudOpen] = useState<boolean>(false);
+  const [phoneBoxHudSize, setPhoneBoxHudSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_phone_box_hud_size') || '');
+    return !isNaN(v) && v >= 60 && v <= 140 ? v : 100;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_phone_box_hud_size', String(phoneBoxHudSize));
+  }, [phoneBoxHudSize]);
 
   // 右下HUD (default: オン)
   const [showBottomRightHud, setShowBottomRightHud] = useState<boolean>(() => {
@@ -737,6 +745,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_show_bottom_right_hud', String(showBottomRightHud));
   }, [showBottomRightHud]);
+  const [zoomHudSize, setZoomHudSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_zoom_hud_size') || '');
+    return !isNaN(v) && v >= 60 && v <= 140 ? v : 100;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_zoom_hud_size', String(zoomHudSize));
+  }, [zoomHudSize]);
 
   // マーカー一覧折りたたみ状態 (default: 展開)
   const [globalMarkerListExpanded, setGlobalMarkerListExpanded] = useState<boolean>(() => {
@@ -1862,6 +1877,20 @@ export default function App() {
                     />
                     {t('📞 電話ボックスHUDの表示')}
                   </label>
+                  {showPhoneBoxHud && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', paddingLeft: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
+                        <span>{t('HUDサイズ:')}</span>
+                        <span style={{ color: '#ff00ff', fontWeight: 'bold' }}>{phoneBoxHudSize}%</span>
+                      </div>
+                      <input
+                        type="range" min="60" max="140" step="5"
+                        value={phoneBoxHudSize}
+                        onChange={(e) => setPhoneBoxHudSize(parseInt(e.target.value))}
+                        style={{ accentColor: '#ff00ff', cursor: 'pointer', width: '100%' }}
+                      />
+                    </div>
+                  )}
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
                     <input
@@ -1872,6 +1901,20 @@ export default function App() {
                     />
                     {t('🔍 右下HUD (ズームコントロール) の表示')}
                   </label>
+                  {showBottomRightHud && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', paddingLeft: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
+                        <span>{t('HUDサイズ:')}</span>
+                        <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{zoomHudSize}%</span>
+                      </div>
+                      <input
+                        type="range" min="60" max="140" step="5"
+                        value={zoomHudSize}
+                        onChange={(e) => setZoomHudSize(parseInt(e.target.value))}
+                        style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
+                      />
+                    </div>
+                  )}
 
                   <div style={{ marginTop: '8px' }}>
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0' }} />
@@ -2701,7 +2744,11 @@ export default function App() {
               textPinPassThrough={textPinPassThrough}
               showPhoneCompass={showPhoneCompass}
               showPhoneBoxHud={showPhoneBoxHud}
+              phoneBoxHudOpen={phoneBoxHudOpen}
+              onPhoneBoxHudOpenChange={setPhoneBoxHudOpen}
+              phoneBoxHudSize={phoneBoxHudSize}
               showBottomRightHud={showBottomRightHud}
+              zoomHudSize={zoomHudSize}
               eraseTarget={eraseTarget}
               eraseDefaultBehavior={eraseDefaultBehavior}
               eraseSize={eraseSize}
@@ -2783,7 +2830,10 @@ export default function App() {
             textPinPassThrough,
             showPhoneCompass,
             showPhoneBoxHud,
+            phoneBoxHudOpen,
+            phoneBoxHudSize,
             showBottomRightHud,
+            zoomHudSize,
             eraseTarget,
             eraseDefaultBehavior,
             eraseSize,
