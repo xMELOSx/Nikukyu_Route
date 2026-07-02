@@ -3218,17 +3218,17 @@ export default function App() {
                           value={authorEdit}
                           onChange={(e) => {
                             const v = e.target.value;
-                            // 編集中は author のみ更新。 renderCache (=原作者) は独立した保護対象なので
-                            // author 編集で上書きしない。 新規プラン作成時の初期化 (createNewPlan) で
-                            // 1回だけ author から renderCache を作る。 それ以降は不変。
+                            // author 変更時に renderCache (=原作者) も同期 (= 1回だけ author を renderCache にコピー)
+                            //   - author が設定された (= 何かしらの文字列、 'No name' 以外) → renderCache も同じ値
+                            //   - author が空 or 'No name' → renderCache は AUTHOR_DEFAULT_PLAIN ('No name') に
                             setAuthorEdit(v);
-                            console.log('[App.onChange.author]', { v, prevAuthor: routeApi.route.author, prevRenderCache: routeApi.route.renderCache });
-                            routeApi.setRoute({ ...routeApi.route, author: v });
+                            const nextRenderCache = v && v !== AUTHOR_DEFAULT_PLAIN ? v : AUTHOR_DEFAULT_PLAIN;
+                            routeApi.setRoute({ ...routeApi.route, author: v, renderCache: nextRenderCache });
                           }}
                           onBlur={() => {
-                            // 編集完了時: 空文字なら 'No name' に正規化 (= AUTHOR_DEFAULT_PLAIN)
+                            // 編集完了時: 空文字なら 'No name' に正規化
                             if (!authorEdit) {
-                              routeApi.setRoute({ ...routeApi.route, author: AUTHOR_DEFAULT_PLAIN });
+                              routeApi.setRoute({ ...routeApi.route, author: AUTHOR_DEFAULT_PLAIN, renderCache: AUTHOR_DEFAULT_PLAIN });
                               setAuthorEdit(AUTHOR_DEFAULT_PLAIN);
                             }
                           }}

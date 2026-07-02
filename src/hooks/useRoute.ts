@@ -231,44 +231,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   // 重要: author (=編集者) からは絶対に補完しない。 author 編集で原作者が変化してはならない。
   useEffect(() => {
     if (!route || !route.id) return;
-    const cache = route.renderCache;
-    if (typeof cache !== 'string') return;
-    if (!cache) return; // 空文字はそのまま (= Anomaly)
-    if (cache === AUTHOR_UNKNOWN_MARKER) {
-      // No name の暗号文 (正常値)。 メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') に正規化
-      setRouteRaw(prev => prev.id === route.id && prev.renderCache === AUTHOR_UNKNOWN_MARKER
-        ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN }
-        : prev);
-      return;
-    }
-    if (cache.startsWith('v2:') || cache.startsWith('legacy:')) {
-      // 暗号文 → 復号して平文に戻す
-      aesGcmDecrypt(cache, getOriginalAuthorKey(route.id, route.createdAt, (route as any).presetSourceId || null), { routeId: route.id, createdAt: route.createdAt, presetSourceId: (route as any).presetSourceId || null }).then((plain) => {
-        if (plain === AUTHOR_TAMPERED) {
-          // 改竄 → メモリ上は空文字 ('') (= Anomaly)
-          setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
-            ? { ...prev, renderCache: '' }
-            : prev);
-          return;
-        }
-        if (plain === AUTHOR_DEFAULT_PLAIN) {
-          // 復号結果が 'No name' → 「意図的に No name として保存された」正常値
-          // メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') のまま保持。 author から補完しない。
-          setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
-            ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN }
-            : prev);
-          return;
-        }
-        // 復号成功: 正しい原作者名 → そのまま
-        setRouteRaw(prev => prev.id === route.id && prev.renderCache === cache
-          ? { ...prev, renderCache: plain }
-          : prev);
-      }).catch(() => { /* ignore */ });
-    }
-  }, [route.id, route.createdAt, route.renderCache]);
-
-  useEffect(() => {
-    if (!route || !route.id) return;
     // オートセーブが無効なら何もしない (手動保存のみ有効)
     if (autoSaveEnabledRef.current !== true) {
       if (autoSaveTimerRef.current !== null) {
@@ -654,45 +616,67 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       // presetSourceId は BG 引き継ぎ等では使うが、 暗号鍵としては data.id (= 新 id) を使う。
       const decryptKeyId = data.id;
 
-      const applyRenderCacheSync = () => {
+      // renderCache ロード時フォールバック (= 1回のみ):
+      //   1. 旧 originalAuthor キーが残っていれば migrate 済み
+      //   2. 暗号文 (v2: / legacy:) なら await で復号して data.renderCache を平文に置換
+      //   3. AUTHOR_UNKNOWN_MARKER ('v2:0:') → AUTHOR_DEFAULT_PLAIN ('No name') に置換
+      //   4. 旧平文 (プレフィックスなし) → そのまま
+      //   5. 空文字 → そのまま (Anomaly として保持)
+      // ※ 復号は同期で await してから setRouteWithGlobalDefaults する。 これにより
+      //   メモリに暗号文が一瞬乗る問題 (= UI に暗号文が表示される) を防ぐ。
+      const decryptRenderCache = async (): Promise<void> => {
         const stored = data!.renderCache;
         if (typeof stored !== 'string' || !stored) {
-          // 空文字は異常値 (Anomaly)。 そのまま空文字として保持 (= UI 側で Anomaly 表示)
+          // 空文字 → 異常値 (Anomaly)。 補完せずそのまま保持 (= UI で Anomaly 表示)。
           return;
         }
+        // メモリに 'No name' (= AUTHOR_DEFAULT_PLAIN) が入った時点で「正常値」として扱い、
+        // 1回だけ author を renderCache にコピー (= 「作者 = 原作者」前提)
+        // author が空文字 or 'No name' の場合は補完しない (= 「作者 = 原作者 = No name」)
+        const applyAuthorCopy = () => {
+          if (data!.author && data!.author !== AUTHOR_DEFAULT_PLAIN) {
+            data!.renderCache = data!.author;
+          } else {
+            data!.renderCache = AUTHOR_DEFAULT_PLAIN;
+          }
+        };
+
         if (stored === AUTHOR_UNKNOWN_MARKER) {
-          // No name の暗号文 (正常値)。 メモリ上は AUTHOR_DEFAULT_PLAIN 文字列 (= 'No name') に正規化
-          // data ミューテーションではなく setRouteRaw で新オブジェクトを設定
-          setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN } : prev);
-          data!.renderCache = AUTHOR_DEFAULT_PLAIN;
+          applyAuthorCopy();
           return;
         }
         if (stored.startsWith('v2:') || stored.startsWith('legacy:')) {
-          // 暗号文 → 復号して平文にする (同期では復号できないので async)
-          // data.renderCache をミューテーションせず setRouteRaw で新オブジェクトを設定
-          // (= 復号中に route.renderCache が '' になる問題を回避)
-          setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: stored } : prev);
-          aesGcmDecrypt(stored, getOriginalAuthorKey(decryptKeyId, data.createdAt, (data as any).presetSourceId || null), { routeId: decryptKeyId, createdAt: data.createdAt, presetSourceId: (data as any).presetSourceId || null }).then((plain) => {
-            if (plain === AUTHOR_TAMPERED) {
-              // 改竄: 改竄の疑い。 renderCache を空文字 ('') に正規化 (= Anomaly)
-              setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: '' } : prev);
-              return;
-            }
+          // 暗号文 → 同期で復号して data.renderCache を平文に置換
+          let plain: string = '';
+          try {
+            plain = await aesGcmDecrypt(
+              stored,
+              getOriginalAuthorKey(decryptKeyId, data.createdAt, (data as any).presetSourceId || null),
+              { routeId: decryptKeyId, createdAt: data.createdAt, presetSourceId: (data as any).presetSourceId || null }
+            );
+          } catch {
+            plain = AUTHOR_TAMPERED;
+          }
+          if (plain === AUTHOR_TAMPERED) {
+            // 改竄の疑い → 空文字 (Anomaly) に置換
+            data!.renderCache = '';
+          } else {
+            data!.renderCache = plain;
+            // 復号結果が 'No name' (= AUTHOR_DEFAULT_PLAIN) の場合のみ author から補完
             if (plain === AUTHOR_DEFAULT_PLAIN) {
-              // 復号結果が 'No name' → 「意図的に No name として保存された」正常値
-              setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: AUTHOR_DEFAULT_PLAIN } : prev);
-              return;
+              applyAuthorCopy();
             }
-            // 復号成功 (正しい原作者名) → そのまま平文として表示
-            setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: plain } : prev);
-          }).catch(() => { /* ignore */ });
+          }
           return;
         }
-        // プレフィックスなし: 旧平文 (旧マイグレート途中のデータ等) → そのまま (= 旧平文)
-        // data ミューテーションではなく setRouteRaw
-        setRouteRaw(prev => prev.id === data!.id ? { ...prev, renderCache: stored } : prev);
+        if (stored === AUTHOR_DEFAULT_PLAIN) {
+          applyAuthorCopy();
+          return;
+        }
+        // プレフィックスなし: 旧平文 → そのまま
+        data!.renderCache = stored;
       };
-      applyRenderCacheSync();
+      await decryptRenderCache();
 
       if (data.id !== 'default') {
         const gd = globalDefaultsRefRef.current.current;
