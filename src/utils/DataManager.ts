@@ -258,8 +258,8 @@ export interface DrawingStroke {
   points: Point[];
   color: string;
   width: number;
-  // 'solid' = 進行ルート (route, with arrowhead), 'dashed' = 分岐ルート (branch, no arrowhead)
-  type: 'solid' | 'dashed';
+  // 'solid' = 進行ルート (route, with arrowhead), 'dashed' = 分岐ルート (branch, no arrowhead), 'temporary' = 一時線 (semi-transparent dashed, auto-removed on tool switch)
+  type: 'solid' | 'dashed' | 'temporary';
   // 補正後・接続前のポイント列 (post-smooth, pre-snap) — 距離計測用
   // 未設定なら points を使う (古いデータとの後方互換)
   originalPoints?: Point[];

@@ -47,6 +47,8 @@ interface HelpModalProps {
   onSetAutoLoadLastRoute?: (enabled: boolean) => void;
   autoSaveEnabled?: boolean;
   onSetAutoSaveEnabled?: (enabled: boolean) => void;
+  autoSaveInterval?: number;
+  onSetAutoSaveInterval?: (ms: number) => void;
   showDetectionRanges?: boolean;
   onSetShowDetectionRanges?: (enabled: boolean) => void;
   stopMarkerThreshold?: number;
@@ -81,6 +83,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   onSetAutoLoadLastRoute,
   autoSaveEnabled,
   onSetAutoSaveEnabled,
+  autoSaveInterval,
+  onSetAutoSaveInterval,
   showDetectionRanges,
   onSetShowDetectionRanges,
   stopMarkerThreshold,
@@ -404,8 +408,35 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                       onChange={(e) => onSetAutoSaveEnabled(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                     />
-                    💾 {t('編集内容を自動で保存する (1.5秒のデバウンス)')}
+                    💾 {t('編集内容を自動で保存する')}
                   </label>
+                  {autoSaveEnabled && onSetAutoSaveInterval && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingLeft: '24px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <span>{t('保存間隔:')}</span>
+                      <select
+                        value={autoSaveInterval ?? 300000}
+                        onChange={(e) => onSetAutoSaveInterval(parseInt(e.target.value))}
+                        style={{
+                          background: 'rgba(0,0,0,0.4)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid rgba(0, 240, 255, 0.3)',
+                          borderRadius: '4px',
+                          padding: '3px 6px',
+                          fontSize: '11px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={1500}>{t('即時 (1.5秒デバウンス)')}</option>
+                        <option value={30000}>{t('30秒')}</option>
+                        <option value={60000}>{t('1分')}</option>
+                        <option value={180000}>{t('3分')}</option>
+                        <option value={300000}>{t('5分 (デフォルト)')}</option>
+                        <option value={600000}>{t('10分')}</option>
+                        <option value={900000}>{t('15分')}</option>
+                        <option value={1800000}>{t('30分')}</option>
+                      </select>
+                    </div>
+                  )}
                   {autoSaveEnabled === false && (
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', paddingLeft: '24px' }}>
                       {t('オートセーブは無効です。手動で保存してください。')}

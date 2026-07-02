@@ -481,6 +481,19 @@ export default function App() {
     localStorage.setItem('heist_auto_save', String(autoSaveEnabled));
   }, [autoSaveEnabled]);
 
+  // オートセーブ間隔 (ms)。デフォルト 5分 (300000ms)。最小 1500ms (= デバウンス即時)
+  const [autoSaveInterval, setAutoSaveInterval] = useState<number>(() => {
+    const stored = localStorage.getItem('heist_auto_save_interval');
+    if (stored !== null) {
+      const v = parseInt(stored);
+      if (!isNaN(v) && v >= 1500) return v;
+    }
+    return 300000; // デフォルト 5分
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_auto_save_interval', String(autoSaveInterval));
+  }, [autoSaveInterval]);
+
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
@@ -539,6 +552,23 @@ export default function App() {
   }, [floorNavCollapsed]);
 
   const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>('move');
+  const prevToolModeRef = useRef(toolMode);
+  useEffect(() => {
+    const prev = prevToolModeRef.current;
+    if (prev === 'draw' && toolMode !== 'draw') {
+      routeApi.setRoute(prev => {
+        const floorStrokes = prev.strokes?.[currentFloor];
+        if (floorStrokes && floorStrokes.some(s => s.type === 'temporary')) {
+          return {
+            ...prev,
+            strokes: { ...prev.strokes, [currentFloor]: floorStrokes.filter(s => s.type !== 'temporary') }
+          };
+        }
+        return prev;
+      });
+    }
+    prevToolModeRef.current = toolMode;
+  }, [toolMode, currentFloor]);
   const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
   const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
   const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(() => {
@@ -666,7 +696,7 @@ export default function App() {
 
   const [strokeColor, setStrokeColor] = useState('#ff0055');
   const [strokeWidth, setStrokeWidth] = useState(3);
-  const [strokeType, setStrokeType] = useState<'solid' | 'dashed'>('solid');
+  const [strokeType, setStrokeType] = useState<'solid' | 'dashed' | 'temporary'>('solid');
 
   const warpColor = '#ff00ff';
   const stairsColor = '#ffaa00';
@@ -820,7 +850,8 @@ export default function App() {
       setMarkerScale(s);
       localStorage.setItem('heist_marker_scale', String(s));
     },
-    autoSaveEnabled
+    autoSaveEnabled,
+    autoSaveInterval
   });
 
   const routeRef = useRef(routeApi.route);
@@ -964,6 +995,17 @@ export default function App() {
 
     if (newStrokes.length > prevStrokes.length) {
       const addedStroke = newStrokes[newStrokes.length - 1];
+
+      // 一時線は壁迂回・補正を一切受けずそのまま保存
+      if (addedStroke.type === 'temporary') {
+        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        routeApi.setRoute(prev => ({
+          ...prev,
+          strokes: { ...prev.strokes, [currentFloor]: newStrokes }
+        }));
+        return;
+      }
+
       const pts = addedStroke.points;
 
       // OFF (default) = walls ignored: the line is accepted as-is. The
@@ -1765,7 +1807,7 @@ export default function App() {
                       onChange={(e) => setTextPinPassThrough(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                     />
-                    🖱️ 表示モードでテキストピンのクリックを透過
+                    {t('🖱️ 表示モードでテキストピンのクリックを透過')}
                   </label>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
@@ -1775,7 +1817,7 @@ export default function App() {
                       onChange={(e) => setShowPhoneCompass(e.target.checked)}
                       style={{ accentColor: '#ff00ff', cursor: 'pointer' }}
                     />
-                    🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)
+                    {t('🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)')}
                   </label>
 
                   <div style={{ marginTop: '8px' }}>
@@ -2318,9 +2360,9 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                  {(['solid', 'dashed'] as const).map(st => (
-                    <button key={st} className={`btn-cyber ${strokeType === st ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '11px' }} onClick={() => setStrokeType(st)}>
-                      {st === 'solid' ? t('進行ルート') : t('分岐ルート')}
+                  {(['solid', 'dashed', 'temporary'] as const).map(st => (
+                    <button key={st} className={`btn-cyber ${strokeType === st ? 'active' : ''}`} style={{ flex: 1, padding: '4px 2px', fontSize: '10px' }} onClick={() => setStrokeType(st)}>
+                      {st === 'solid' ? t('進行ルート') : st === 'dashed' ? t('分岐ルート') : t('一時線')}
                     </button>
                   ))}
                 </div>
@@ -3751,6 +3793,8 @@ export default function App() {
         onSetAutoLoadLastRoute={setAutoLoadLastRoute}
         autoSaveEnabled={autoSaveEnabled}
         onSetAutoSaveEnabled={setAutoSaveEnabled}
+        autoSaveInterval={autoSaveInterval}
+        onSetAutoSaveInterval={setAutoSaveInterval}
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
         skillCdPresets={globalDefaults.skillCdPresets}
         onAddSkillCdPreset={globalDefaults.addSkillCdPreset}

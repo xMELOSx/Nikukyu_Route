@@ -66,6 +66,8 @@ export interface UseRouteOptions {
   onMarkerScaleChange: (scale: number) => void;
   /** オートセーブの有効/無効 (デフォルト true)。設定タブから切り替え可能。 */
   autoSaveEnabled?: boolean;
+  /** オートセーブ間隔 (ms)。デフォルト 300000 (5分)。最小 1500 (デバウンス即時)。 */
+  autoSaveInterval?: number;
 }
 
 export interface UseRouteApi {
@@ -138,7 +140,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     isLocal, globalDefaultsRef, globalMarkersStore,
     showNotification,
     initialMarkerScale, onMarkerScaleChange,
-    autoSaveEnabled = true
+    autoSaveEnabled = true,
+    autoSaveInterval = 300000
   } = options;
 
   const [route, setRouteRaw] = useState<RouteData>(DEFAULT_ROUTE());
@@ -206,6 +209,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
   const lastSavedSnapshotRef = useRef<string>('');
   const autoSaveEnabledRef = useRef<boolean>(autoSaveEnabled);
   autoSaveEnabledRef.current = autoSaveEnabled;
+  const autoSaveIntervalRef = useRef<number>(autoSaveInterval);
+  autoSaveIntervalRef.current = autoSaveInterval;
 
   // 初回自動コピー: renderCache が空 + author が 'No name' 以外のとき、 author を
   // renderCache にコピー (= メモリ平文の代入のみ。 暗号化は保存時)。
@@ -356,7 +361,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       } catch (e) {
         console.error('Auto-save failed:', e);
       }
-    }, 1500);
+    }, autoSaveIntervalRef.current);
     return () => {
       if (autoSaveTimerRef.current !== null) {
         window.clearTimeout(autoSaveTimerRef.current);

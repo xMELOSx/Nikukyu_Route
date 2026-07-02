@@ -47,7 +47,7 @@ interface MapCanvasProps {
   blockMarkerClicksDuringTools?: boolean;
   strokeColor: string;
   strokeWidth: number;
-  strokeType: 'solid' | 'dashed';
+  strokeType: 'solid' | 'dashed' | 'temporary';
   drawMode?: 'free' | 'smooth' | 'straight';
   onStrokesChange: (strokes: DrawingStroke[]) => void;
   onMarkersChange: (markers: HeistMarker[], shouldPushHistory?: boolean, options?: { isDelete?: boolean }) => void;
@@ -1038,11 +1038,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // Also draw branch lines (dashed) during auto-route playback unless hidden
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
-        if (!isDashed || hideBranchLines) return;
+        const isTemporary = stroke.type === 'temporary';
+        if ((!isDashed && !isTemporary) || (isDashed && hideBranchLines)) return;
 
         ctx.strokeStyle = stroke.color;
         ctx.lineWidth = branchLines1px ? 1 : stroke.width;
         ctx.setLineDash([8, 6]);
+
+        if (isTemporary) {
+          ctx.globalAlpha = 0.4;
+          ctx.setLineDash([6, 4]);
+        }
 
         ctx.beginPath();
         stroke.points.forEach((pt, idx) => {
@@ -1050,6 +1056,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           else ctx.lineTo(pt.x, pt.y);
         });
         ctx.stroke();
+
+        if (isTemporary) {
+          ctx.globalAlpha = 1;
+        }
       });
 
       // ルート案内中 (fuseMode) はメインルート以外 (実線) は描画されないため、
@@ -1077,23 +1087,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     } else {
       strokes.forEach(stroke => {
         const isDashed = stroke.type === 'dashed';
+        const isTemporary = stroke.type === 'temporary';
 
         if (isDashed && hideBranchLines) return;
-        if (!isDashed && hideRouteLines) return;
+        if (!isDashed && !isTemporary && hideRouteLines) return;
 
         ctx.strokeStyle = stroke.color;
 
-        if (isDashed && branchLines1px) {
-          ctx.lineWidth = 1;
-        } else if (!isDashed && routeLines1px) {
-          ctx.lineWidth = 1;
-        } else {
+        if (isTemporary) {
+          ctx.globalAlpha = 0.4;
           ctx.lineWidth = stroke.width;
-        }
-
-        if (isDashed) {
+          ctx.setLineDash([6, 4]);
+        } else if (isDashed) {
+          ctx.lineWidth = branchLines1px ? 1 : stroke.width;
           ctx.setLineDash([8, 6]);
         } else {
+          ctx.lineWidth = routeLines1px ? 1 : stroke.width;
           ctx.setLineDash([]);
         }
 
@@ -1103,6 +1112,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           else ctx.lineTo(pt.x, pt.y);
         });
         ctx.stroke();
+
+        if (isTemporary) {
+          ctx.globalAlpha = 1;
+        }
       });
     }
 
@@ -1513,8 +1526,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (ctx) {
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
-        if (strokeType === 'dashed') ctx.setLineDash([8, 6]);
-        else ctx.setLineDash([]);
+        if (strokeType === 'temporary') {
+          ctx.globalAlpha = 0.4;
+          ctx.setLineDash([6, 4]);
+        } else if (strokeType === 'dashed') {
+          ctx.setLineDash([8, 6]);
+        } else {
+          ctx.setLineDash([]);
+        }
         ctx.beginPath();
         ctx.moveTo(coords.x, coords.y);
       }
@@ -1582,10 +1601,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.save();
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = strokeWidth;
+            if (strokeType === 'temporary') {
+              ctx.globalAlpha = 0.4;
+              ctx.setLineDash([6, 4]);
+            } else if (strokeType === 'dashed') {
+              ctx.setLineDash([8, 6]);
+            } else {
+              ctx.setLineDash([]);
+            }
             // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
-            if (autoRouteActive) ctx.globalAlpha = 0.5;
-            if (strokeType === 'dashed') ctx.setLineDash([8, 6]);
-            else ctx.setLineDash([]);
+            if (autoRouteActive && strokeType !== 'temporary') ctx.globalAlpha = 0.5;
             ctx.beginPath();
             ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
             ctx.lineTo(effectiveCoords.x, effectiveCoords.y);
@@ -1600,14 +1625,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const ctx = ctxRef.current;
         if (ctx) {
           // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
-          if (autoRouteActive) ctx.globalAlpha = 0.5;
+          if (autoRouteActive && strokeType !== 'temporary') ctx.globalAlpha = 0.5;
           ctx.lineTo(coords.x, coords.y);
           ctx.stroke();
-          ctx.globalAlpha = 1;
+          ctx.globalAlpha = strokeType === 'temporary' ? 0.4 : 1;
         }
         return;
       }
       if (toolMode === 'erase') {
+        setEraseCursor({ x: coords.x, y: coords.y, visible: true });
         unifiedEraseAtPoint(coords, e.altKey);
         return;
       }
@@ -1616,6 +1642,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       if (toolMode === 'erase-wall') {
+        setEraseCursor({ x: coords.x, y: coords.y, visible: true });
         eraseWallsAtPoint(coords);
         return;
       }
