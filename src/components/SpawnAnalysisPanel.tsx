@@ -18,7 +18,7 @@ interface SpawnAnalysisPanelProps {
 export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   points, items, isManage, onPointDelete, onPointFocus,
   hideOther, onHideOtherChange, hideBg, onHideBgChange,
-  highlightItemIds, onHighlightItemIdsChange,
+  highlightItemIds: _highlightItemIds, onHighlightItemIdsChange,
 }) => {
   // 全モード共通のフック
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -151,7 +151,10 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '200px', overflowY: 'auto' }}>
+        <div className="panel-title" style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+          {selectedItemIds.size > 0 ? `${filteredPoints.length} 点に含有` : ''}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '350px', overflowY: 'auto' }}>
           {sortedItems.map(({ item, count }) => {
             const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
             const isSel = selectedItemIds.has(item.id);
