@@ -557,18 +557,20 @@ export default function App() {
     const prev = prevToolModeRef.current;
     if (prev === 'draw' && toolMode !== 'draw') {
       routeApi.setRoute(prev => {
-        const floorStrokes = prev.strokes?.[currentFloor];
-        if (floorStrokes && floorStrokes.some(s => s.type === 'temporary')) {
-          return {
-            ...prev,
-            strokes: { ...prev.strokes, [currentFloor]: floorStrokes.filter(s => s.type !== 'temporary') }
-          };
+        let changed = false;
+        const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
+        for (const floor of Object.keys(nextStrokes)) {
+          const arr = nextStrokes[floor];
+          if (arr && arr.some(s => s.type === 'temporary')) {
+            nextStrokes[floor] = arr.filter(s => s.type !== 'temporary');
+            changed = true;
+          }
         }
-        return prev;
+        return changed ? { ...prev, strokes: nextStrokes } : prev;
       });
     }
     prevToolModeRef.current = toolMode;
-  }, [toolMode, currentFloor]);
+  }, [toolMode]);
   const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
   const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
   const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(() => {
@@ -996,9 +998,8 @@ export default function App() {
     if (newStrokes.length > prevStrokes.length) {
       const addedStroke = newStrokes[newStrokes.length - 1];
 
-      // 一時線は壁迂回・補正を一切受けずそのまま保存
+      // 一時線は壁迂回・補正を一切受けずそのまま保存 (undo履歴にも入れない)
       if (addedStroke.type === 'temporary') {
-        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
         routeApi.setRoute(prev => ({
           ...prev,
           strokes: { ...prev.strokes, [currentFloor]: newStrokes }

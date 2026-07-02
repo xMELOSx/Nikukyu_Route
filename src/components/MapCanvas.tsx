@@ -227,6 +227,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const lastRedrawnElapsedRef = useRef<number>(-999);
   const lastRedrawnStrokesLengthRef = useRef<number>(-1);
   const runnerDotRef = useRef<HTMLDivElement>(null);
+  const isDrawingRef = useRef(false);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
 
@@ -343,8 +344,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   //                       非空なら「最後に表示していたセット」を復元
   const [highlightedStrokeIdxs, setHighlightedStrokeIdxs] = useState<Set<number>>(() => new Set());
 
-  // Eraser cursor tracking (薄い青円表示用)
-  const [eraseCursor, setEraseCursor] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
+  // Eraser cursor: Canvas で動的にカーソル画像を生成し CSS cursor に適用
+  const eraseCursorUrl = useMemo(() => {
+    const size = Math.max(eraseSize * 2, 4);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return 'crosshair';
+    const r = size / 2;
+    ctx.strokeStyle = 'rgba(80, 180, 255, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(r, r, r - 1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(80, 180, 255, 0.12)';
+    ctx.fill();
+    return `url(${canvas.toDataURL()}) ${r} ${r}, crosshair`;
+  }, [eraseSize]);
 
   // 線分編集モードのラバーバンド矩形: ドラッグ範囲選択
   // - pressedAlt: MouseDown 時の Alt 状態を覚える (MouseUp 時の最終判定用)
@@ -960,9 +979,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   });
 
   // Redraw all strokes on canvas
-  const redrawStrokes = (overrideElapsed?: number) => {
+  const redrawStrokes = (overrideElapsed?: number, forceWhileDrawing?: boolean) => {
     const ctx = ctxRef.current;
     if (!ctx) return;
+
+    // 描画中 (mousedown → mouseup 間) はキャンバスをクリアしない。
+    // これにより、useEffect 経由の redrawStrokes が進行中の描画を消すのを防ぐ。
+    // ただし forceWhileDrawing=true の場合は直線ツール等からの意図的な呼び出しなので許可。
+    if (isDrawingRef.current && !forceWhileDrawing) return;
 
     let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
 
@@ -978,6 +1002,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     lastRedrawnStrokesLengthRef.current = strokes.length;
 
     ctx.clearRect(0, 0, 1600, 4550);
+    ctx.globalAlpha = 1;
 
     const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
     if (isWallMode && hideStrokesDuringWalls) {
@@ -1069,7 +1094,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // - 編集中の線は不透明度 1 で扱う (途中の編集がルート案内の影響を受けて薄くなるのを避ける)
       if (strokes.length > 0) {
         const last = strokes[strokes.length - 1];
-        if (last && last.points && last.points.length >= 2 && last.type !== 'dashed') {
+        if (last && last.points && last.points.length >= 2 && last.type === 'solid') {
           ctx.save();
           ctx.globalAlpha = 0.5;
           ctx.strokeStyle = last.color;
@@ -1521,9 +1546,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (toolMode === 'draw') {
       setIsDrawing(true);
+      isDrawingRef.current = true;
       setCurrentPoints([coords]);
       const ctx = ctxRef.current;
       if (ctx) {
+        ctx.save();
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
         if (strokeType === 'temporary') {
@@ -1595,7 +1622,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'draw') {
         if (drawMode === 'straight') {
           setCurrentPoints([currentPoints[0], effectiveCoords]);
-          redrawStrokes(); // Clear previous temporary guidelines first!
+          redrawStrokes(undefined, true); // Clear previous temporary guidelines first!
           const ctx = ctxRef.current;
           if (ctx) {
             ctx.save();
@@ -1624,16 +1651,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setCurrentPoints(newPoints);
         const ctx = ctxRef.current;
         if (ctx) {
-          // ルート案内中に新しい線を引くときは半透明に (進行中のルート線と区別)
-          if (autoRouteActive && strokeType !== 'temporary') ctx.globalAlpha = 0.5;
-          ctx.lineTo(coords.x, coords.y);
-          ctx.stroke();
-          ctx.globalAlpha = strokeType === 'temporary' ? 0.4 : 1;
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = strokeWidth;
+
+          if (strokeType === 'temporary') {
+            // 一時線: 最後の1セグメントだけを独立パスで描画し、重ね描きを防止
+            const prevPt = currentPoints[currentPoints.length - 1];
+            ctx.globalAlpha = 0.4;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(prevPt.x, prevPt.y);
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+          } else {
+            // 通常線: 累積パスに lineTo して stroke
+            if (strokeType === 'dashed') {
+              ctx.setLineDash([8, 6]);
+            } else {
+              ctx.setLineDash([]);
+            }
+            if (autoRouteActive) {
+              ctx.globalAlpha = 0.5;
+            } else {
+              ctx.globalAlpha = 1.0;
+            }
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+          }
+          ctx.restore();
         }
         return;
       }
       if (toolMode === 'erase') {
-        setEraseCursor({ x: coords.x, y: coords.y, visible: true });
         unifiedEraseAtPoint(coords, e.altKey);
         return;
       }
@@ -1642,7 +1692,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       if (toolMode === 'erase-wall') {
-        setEraseCursor({ x: coords.x, y: coords.y, visible: true });
         eraseWallsAtPoint(coords);
         return;
       }
@@ -1651,12 +1700,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         return;
       }
       return;
-    }
-
-    if ((toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode) {
-      setEraseCursor({ x: coords.x, y: coords.y, visible: true });
-    } else if (eraseCursor.visible) {
-      setEraseCursor(prev => ({ ...prev, visible: false }));
     }
 
     if (isPanning) {
@@ -1822,6 +1865,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDrawing) {
       setIsDrawing(false);
+      isDrawingRef.current = false;
       if (toolMode === 'toggle-vis') {
         toggledIdsRef.current.clear();
       }
@@ -1968,6 +2012,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onStrokesChange([...strokes, newStroke]);
       }
       setCurrentPoints([]);
+      const ctx = ctxRef.current;
+      if (ctx) {
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+      }
     }
   };
 
@@ -2038,9 +2087,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
   };
-
-  // 消しゴムカーソル円の半径はユーザー設定(eraseSize)に従う
-  const getEraseIndicatorRadius = (): number => eraseSize;
 
 
 
@@ -2735,16 +2781,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     cursorClass = 'edit-stroke-cursor';
   }
 
+  const eraseCursorStyle = (toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode
+    ? { cursor: eraseCursorUrl }
+    : undefined;
+
   return (
     <div 
       className={`canvas-wrapper ${cursorClass}`} 
       ref={wrapperRef}
+      style={eraseCursorStyle}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={() => {
         handleMouseUp();
-        if (eraseCursor.visible) setEraseCursor(prev => ({ ...prev, visible: false }));
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -2763,26 +2813,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
-        {/* 消しゴムカーソル: 対象範囲を示す薄い青円 */}
-        {(toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode && eraseCursor.visible && (
-          <div
-            className="erase-cursor-indicator"
-            style={{
-              position: 'absolute',
-              left: `${eraseCursor.x}px`,
-              top: `${eraseCursor.y}px`,
-              width: `${getEraseIndicatorRadius() * 2}px`,
-              height: `${getEraseIndicatorRadius() * 2}px`,
-              borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(80, 180, 255, 0.18) 0%, rgba(80, 180, 255, 0.10) 60%, rgba(80, 180, 255, 0.0) 100%)',
-              border: '1.5px dashed rgba(80, 180, 255, 0.7)',
-              boxShadow: '0 0 12px rgba(80, 180, 255, 0.35) inset',
-              transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none',
-              zIndex: 50,
-            }}
-          />
-        )}
         <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
           {customBg ? (
             <img src={customBg} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', opacity: 1, zIndex: 1 }} />

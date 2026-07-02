@@ -283,7 +283,7 @@ export function normalizeStrokes(strokes: DrawingStroke[]): DrawingStroke[] {
         originalPoints: normOriginal && normOriginal.length >= 2 ? normOriginal : undefined,
         color: typeof s.color === 'string' ? s.color : '#00ff00',
         width: typeof s.width === 'number' && s.width > 0 ? s.width : 3,
-        type: (s.type === 'dashed' ? 'dashed' : 'solid') as 'solid' | 'dashed',
+        type: (s.type === 'dashed' ? 'dashed' : s.type === 'temporary' ? 'temporary' : 'solid') as 'solid' | 'dashed' | 'temporary',
       };
     })
     .filter(s => s.points.length >= 2);
