@@ -997,11 +997,22 @@ export interface SkillCdPreset {
 // スポーン記録 (アイテム出現位置 & 発見頻度解析)
 // ---------------------------------------------------------------------------
 
-export type SpawnItemType = 'image' | 'text' | 'textcolor_green' | 'textcolor_blue' | 'textcolor_purple' | 'textcolor_yellow' | 'fans' | 'coin';
+export type SpawnItemType = 'image' | 'text' | 'textcolor' | 'fans' | 'coin';
+
+export const TEXTCOLOR_DETAILS = ['green', 'blue', 'purple', 'yellow'] as const;
+export type TextColorDetail = typeof TEXTCOLOR_DETAILS[number];
+
+export const TEXTCOLOR_DETAIL_META: { [key in TextColorDetail]: { label: string; color: string } } = {
+  green: { label: '緑', color: '#39ff14' },
+  blue: { label: '青', color: '#00bfff' },
+  purple: { label: '紫', color: '#b388ff' },
+  yellow: { label: '黄', color: '#ffd700' },
+};
 
 export interface SpawnRecord {
   id: string;
   item: SpawnItemType;
+  detail?: string; // 文字色の場合: 'green'|'blue'|'purple'|'yellow'
   x: number;
   y: number;
   floor: FloorType;
@@ -1012,15 +1023,12 @@ export interface SpawnRecord {
 export const SPAWN_ITEM_META: { [key in SpawnItemType]: { label: string; color: string; emoji: string } } = {
   image: { label: '画像', color: '#ffffff', emoji: '🖼' },
   text: { label: '文字', color: '#00f0ff', emoji: '🔤' },
-  textcolor_green: { label: '文字色(緑)', color: '#39ff14', emoji: '🟢' },
-  textcolor_blue: { label: '文字色(青)', color: '#00bfff', emoji: '🔵' },
-  textcolor_purple: { label: '文字色(紫)', color: '#b388ff', emoji: '🟣' },
-  textcolor_yellow: { label: '文字色(黄)', color: '#ffd700', emoji: '🟡' },
+  textcolor: { label: '文字色', color: '#b388ff', emoji: '🎨' },
   fans: { label: 'ファンス', color: '#ffd700', emoji: '💛' },
   coin: { label: 'コイン', color: '#ff9500', emoji: '🪙' },
 };
 
-export const SPAWN_ITEM_ORDER: SpawnItemType[] = ['image', 'text', 'textcolor_green', 'textcolor_blue', 'textcolor_purple', 'textcolor_yellow', 'fans', 'coin'];
+export const SPAWN_ITEM_ORDER: SpawnItemType[] = ['image', 'text', 'textcolor', 'fans', 'coin'];
 
 // Marker Metadata helper for styling and emoji representation
 export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string; color: string } } = {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { type SpawnRecord } from '../utils/DataManager';
 
 const STORAGE_KEY = 'heist_global_spawns';

@@ -11,6 +11,7 @@ import {
   type SpawnItemType,
   MARKER_META,
   SPAWN_ITEM_META,
+  TEXTCOLOR_DETAIL_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
   getSkillCdColor
@@ -150,8 +151,11 @@ interface MapCanvasProps {
   spawnRecords?: SpawnRecord[];
   spawnVisibleTypes?: Set<SpawnItemType>;
   activeSpawnItem?: SpawnItemType | null;
+  spawnDetail?: string;
   onSpawnAdd?: (x: number, y: number) => void;
   onSpawnDelete?: (id: string) => void;
+  onSpawnEdit?: (id: string) => void;
+  spawnToolMode?: 'place' | 'edit' | 'erase' | 'manage';
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -240,7 +244,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   startupFocusMarkerId,
   spawnRecords = [],
   spawnVisibleTypes,
-  onSpawnAdd
+  onSpawnAdd,
+  onSpawnDelete,
+  onSpawnEdit,
+  spawnDetail = '',
+  spawnToolMode = 'place'
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -867,12 +875,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnRecords, spawnVisibleTypes]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnRecords, spawnVisibleTypes]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1265,11 +1273,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       for (const s of spawnRecords) {
         if (s.floor !== floor) continue;
         if (visibleFilter && !visibleFilter.has(s.item)) continue;
-        const meta = SPAWN_ITEM_META[s.item];
+        let color = SPAWN_ITEM_META[s.item]?.color ?? '#888';
+        if (s.item === 'textcolor' && s.detail && TEXTCOLOR_DETAIL_META[s.detail as keyof typeof TEXTCOLOR_DETAIL_META]) {
+          color = TEXTCOLOR_DETAIL_META[s.detail as keyof typeof TEXTCOLOR_DETAIL_META].color;
+        }
         ctx.save();
-        ctx.shadowColor = meta.color;
+        ctx.shadowColor = color;
         ctx.shadowBlur = 4;
-        ctx.fillStyle = meta.color;
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -1640,8 +1651,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (toolMode === 'add-spawn' && onSpawnAdd && isEditMode) {
-      onSpawnAdd(coords.x, coords.y);
+    if (toolMode === 'add-spawn' && isEditMode) {
+      if (spawnToolMode === 'place' && onSpawnAdd) {
+        onSpawnAdd(coords.x, coords.y);
+      } else if (spawnToolMode === 'edit' && onSpawnEdit) {
+        const HIT = 10;
+        let bestId: string | null = null;
+        let bestDist = HIT;
+        for (const s of spawnRecords) {
+          if (s.floor !== floor) continue;
+          const d = Math.hypot(s.x - coords.x, s.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = s.id; }
+        }
+        if (bestId) onSpawnEdit(bestId);
+      } else if (spawnToolMode === 'erase' && onSpawnDelete) {
+        const HIT = 10;
+        let bestId: string | null = null;
+        let bestDist = HIT;
+        for (const s of spawnRecords) {
+          if (s.floor !== floor) continue;
+          const d = Math.hypot(s.x - coords.x, s.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = s.id; }
+        }
+        if (bestId) onSpawnDelete(bestId);
+      }
       return;
     }
 

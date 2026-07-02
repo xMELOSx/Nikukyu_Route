@@ -1008,8 +1008,12 @@ export default function App() {
 
   // アクティブなスポーンアイテム種別 (add-spawn ツールで選択中)
   const [activeSpawnItem, setActiveSpawnItem] = useState<SpawnItemType | null>(null);
+  // 文字色の詳細 (緑/青/紫/黄)
+  const [spawnDetail, setSpawnDetail] = useState('');
   // 表示中のスポーン種別フィルター (null = すべて表示)
   const [visibleSpawnTypes, setVisibleSpawnTypes] = useState<Set<SpawnItemType> | null>(null);
+  // スポーンツールのサブモード
+  const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
 
   // スポーン追加ハンドラ: マップクリック時に呼ばれる
   const handleSpawnAdd = useCallback((x: number, y: number) => {
@@ -1018,14 +1022,33 @@ export default function App() {
     const record: SpawnRecord = {
       id: generateId('spawn'),
       item,
+      detail: item === 'textcolor' && spawnDetail ? spawnDetail : undefined,
       x,
       y,
       floor: currentFloor,
       discoveredAt: new Date().toISOString(),
     };
     spawnApi.addSpawn(record);
-    // アイテム選択は維持 (連続追加が容易)
-  }, [activeSpawnItem, currentFloor, spawnApi]);
+  }, [activeSpawnItem, spawnDetail, currentFloor, spawnApi]);
+
+  // スポーン編集ハンドラ
+  const handleSpawnEdit = useCallback((id: string) => {
+    const record = spawnApi.spawnRecords.find(s => s.id === id);
+    if (!record) return;
+    setActiveSpawnItem(record.item);
+    setSpawnDetail(record.detail || '');
+  }, [spawnApi.spawnRecords]);
+
+  // スポーン更新ハンドラ
+  const handleSpawnUpdate = useCallback((id: string, updates: Partial<SpawnRecord>) => {
+    setActiveSpawnItem(null);
+    setSpawnDetail('');
+    // 削除して再追加 (簡易更新)
+    const record = spawnApi.spawnRecords.find(s => s.id === id);
+    if (!record) return;
+    spawnApi.removeSpawn(id);
+    spawnApi.addSpawn({ ...record, ...updates, id: generateId('spawn') });
+  }, [spawnApi]);
 
   // Global Walls — shared across all plans AND all users. The hook loads from
   // the `/api/global-walls` endpoint (with the static `global_walls.json` as
@@ -2977,8 +3000,11 @@ export default function App() {
               spawnRecords={spawnApi.spawnRecords}
               spawnVisibleTypes={visibleSpawnTypes ?? undefined}
               activeSpawnItem={activeSpawnItem}
+              spawnDetail={spawnDetail}
               onSpawnAdd={handleSpawnAdd}
               onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
+              onSpawnEdit={handleSpawnEdit}
+              spawnToolMode={spawnToolMode}
             />
           ), [
             currentFloor,
@@ -3047,7 +3073,9 @@ export default function App() {
             globalDefaultsRef.current.startupFocusMarkerId,
             spawnApi.spawnRecords,
             activeSpawnItem,
-            visibleSpawnTypes
+            visibleSpawnTypes,
+            spawnDetail,
+            spawnToolMode
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -3106,7 +3134,7 @@ export default function App() {
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
               {isLocal && (
-                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
+                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => { setRightTab('spawn'); setToolMode('add-spawn'); }}>{t('スポーン')}</button>
               )}
             </div>
           </div>
@@ -3398,10 +3426,16 @@ export default function App() {
                 spawnRecords={spawnApi.spawnRecords}
                 activeSpawnItem={activeSpawnItem}
                 onActiveSpawnItemChange={(item) => { setActiveSpawnItem(item); if (item) setToolMode('add-spawn'); }}
+                spawnDetail={spawnDetail}
+                onSpawnDetailChange={setSpawnDetail}
                 visibleSpawnTypes={visibleSpawnTypes ?? new Set(SPAWN_ITEM_ORDER)}
                 onVisibleSpawnTypesChange={(types) => setVisibleSpawnTypes(types.size === SPAWN_ITEM_ORDER.length ? null : types)}
                 onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
+                onSpawnUpdate={handleSpawnUpdate}
                 isEditMode={isEditMode}
+                isLocal={isLocal}
+                toolMode={spawnToolMode}
+                onToolModeChange={(mode) => { setSpawnToolMode(mode); setToolMode('add-spawn'); }}
               />
             )}
             {rightTab === 'play' && (
