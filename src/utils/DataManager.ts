@@ -685,6 +685,10 @@ export interface RouteData {
  */
 export const APP_VERSION = '0.9.2';
 
+declare const __BUILD_TIME__: string;
+export const APP_BUILD_TIME: string = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'development';
+export const APP_DISPLAY_VERSION = `${APP_VERSION}_${APP_BUILD_TIME}`;
+
 /**
  * セーブデータ マイグレーション定義。
  *

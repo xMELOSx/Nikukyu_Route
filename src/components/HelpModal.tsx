@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { MARKER_META, APP_VERSION, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
+import { MARKER_META, APP_VERSION, APP_DISPLAY_VERSION, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
 import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
 import { t } from '../i18n';
 import { DictionaryEditor } from './DictionaryEditor';
@@ -564,6 +564,16 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 >
                   <HelpContentView html={currentText || `<p style="color:var(--text-muted);font-style:italic;">${t('表示する情報がありません。')}</p>`} />
                 </div>
+              </div>
+            </div>
+          ) : currentTabData.id === 'credits' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', padding: '8px 12px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '4px', flexShrink: 0 }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--cyan-neon)' }}>Nikukyu_Route</span>
+                <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>v{APP_DISPLAY_VERSION}</span>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <HelpContentView html={currentText || `<p style="color:var(--text-muted);font-style:italic;">${t('表示する情報がありません。')}</p>`} />
               </div>
             </div>
           ) : (
