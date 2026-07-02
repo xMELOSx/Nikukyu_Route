@@ -2505,24 +2505,6 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <button className="btn-cyber" style={{ width: '100%', marginTop: '6px', padding: '5px', fontSize: '10px' }} onClick={() => {
-                  if (routeApi.route.strokes[currentFloor] && routeApi.route.strokes[currentFloor].length > 0) {
-                    const lastIdx = routeApi.route.strokes[currentFloor].length - 1;
-                    const last = routeApi.route.strokes[currentFloor][lastIdx];
-                    const smoothed = smoothStrokePoints(last.points, 3, 1500);
-                    // originalPoints も「補正後」の基準値として平滑化結果に追従させる
-                    // (元の originalPoints があればそれも平滑化、なければ points を使う)
-                    const baseForOriginal = last.originalPoints && last.originalPoints.length >= 2
-                      ? last.originalPoints
-                      : last.points;
-                    const smoothedOriginal = baseForOriginal.length === smoothed.length
-                      ? smoothed
-                      : smoothStrokePoints(baseForOriginal, 3, 1500);
-                    updateStrokes([...routeApi.route.strokes[currentFloor].slice(0, lastIdx), { ...last, points: smoothed, originalPoints: smoothedOriginal }]);
-                  }
-                }}>
-                  ✨ {t('最後の線を平滑化')}
-                </button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('線の太さ: ')}{strokeWidth}px</span>
                   <input type="range" min="2" max="12" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
