@@ -720,6 +720,24 @@ export default function App() {
     localStorage.setItem('heist_show_phone_compass', String(showPhoneCompass));
   }, [showPhoneCompass]);
 
+  // 電話ボックスHUD (default: オン)
+  const [showPhoneBoxHud, setShowPhoneBoxHud] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_phone_box_hud');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_phone_box_hud', String(showPhoneBoxHud));
+  }, [showPhoneBoxHud]);
+
+  // 右下HUD (default: オン)
+  const [showBottomRightHud, setShowBottomRightHud] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_bottom_right_hud');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_bottom_right_hud', String(showBottomRightHud));
+  }, [showBottomRightHud]);
+
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
   const [markerScale, setMarkerScale] = useState<number>(() => {
@@ -998,15 +1016,6 @@ export default function App() {
     if (newStrokes.length > prevStrokes.length) {
       const addedStroke = newStrokes[newStrokes.length - 1];
 
-      // 一時線は壁迂回・補正を一切受けずそのまま保存 (undo履歴にも入れない)
-      if (addedStroke.type === 'temporary') {
-        routeApi.setRoute(prev => ({
-          ...prev,
-          strokes: { ...prev.strokes, [currentFloor]: newStrokes }
-        }));
-        return;
-      }
-
       const pts = addedStroke.points;
 
       // OFF (default) = walls ignored: the line is accepted as-is. The
@@ -1014,7 +1023,9 @@ export default function App() {
       // control of where the line goes. When bypassWallsEnabled is ON, we
       // always run the A* detour finder to calculate the mathematically shortest path.
       if (!bypassWallsEnabled) {
-        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        if (addedStroke.type !== 'temporary') {
+          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        }
         routeApi.setRoute(prev => ({
           ...prev,
           strokes: { ...prev.strokes, [currentFloor]: newStrokes }
@@ -1042,7 +1053,9 @@ export default function App() {
       }
 
       if (!intersectsAnyWall) {
-        historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        if (addedStroke.type !== 'temporary') {
+          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+        }
         routeApi.setRoute(prev => ({
           ...prev,
           strokes: { ...prev.strokes, [currentFloor]: newStrokes }
@@ -1084,6 +1097,10 @@ export default function App() {
         setTimeout(async () => {
           const { findBypassingPath } = await import('./utils/PathFinder');
           const pathfindStartTime = performance.now();
+
+          if (addedStroke.type !== 'temporary') {
+            historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
+          }
 
           let finalPath: { x: number; y: number; floor: string; isPortal?: boolean; portalName?: string; markerId?: string }[] = [];
           let finalTeleportIndices: number[] = [];
@@ -1142,8 +1159,6 @@ export default function App() {
 
             console.log('[Bypass] segments:', segments.length, 'teleports:', finalTeleportIndices.length);
 
-            historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
-            
             routeApi.setRoute(prev => {
               const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
               
@@ -1811,7 +1826,7 @@ export default function App() {
                     {t('🖱️ 表示モードでテキストピンのクリックを透過')}
                   </label>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
                     <input
                       type="checkbox"
                       checked={showPhoneCompass}
@@ -1819,6 +1834,26 @@ export default function App() {
                       style={{ accentColor: '#ff00ff', cursor: 'pointer' }}
                     />
                     {t('🧭 最寄り起動中 ReroRero電話ボックスの方向コンパス (常時起動は除外)')}
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={showPhoneBoxHud}
+                      onChange={(e) => setShowPhoneBoxHud(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('📞 電話ボックスHUDの表示')}
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none', marginTop: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={showBottomRightHud}
+                      onChange={(e) => setShowBottomRightHud(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('🔍 右下HUD (ズームコントロール) の表示')}
                   </label>
 
                   <div style={{ marginTop: '8px' }}>
@@ -2604,6 +2639,8 @@ export default function App() {
               branchLines1px={branchLines1px}
               textPinPassThrough={textPinPassThrough}
               showPhoneCompass={showPhoneCompass}
+              showPhoneBoxHud={showPhoneBoxHud}
+              showBottomRightHud={showBottomRightHud}
               eraseTarget={eraseTarget}
               eraseDefaultBehavior={eraseDefaultBehavior}
               eraseSize={eraseSize}
@@ -2683,6 +2720,8 @@ export default function App() {
             branchLines1px,
             textPinPassThrough,
             showPhoneCompass,
+            showPhoneBoxHud,
+            showBottomRightHud,
             eraseTarget,
             eraseDefaultBehavior,
             eraseSize,

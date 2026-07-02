@@ -12,7 +12,7 @@ import {
   getSkillCdIcon,
   getSkillCdColor
 } from '../utils/DataManager';
-import { ZoomIn, ZoomOut, Maximize2, Move, Trash2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Trash2 } from 'lucide-react';
 import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
@@ -70,6 +70,8 @@ interface MapCanvasProps {
   onPickyMarkerChange?: (markerId: string, picky: boolean) => void;
   textPinPassThrough?: boolean;
   showPhoneCompass?: boolean;
+  showPhoneBoxHud?: boolean;
+  showBottomRightHud?: boolean;
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
   markerScale?: number;
@@ -135,6 +137,8 @@ interface MapCanvasProps {
   skillCdPresets?: SkillCdPreset[];
   // ヘルプモーダル設定タブを開く (プリセット管理用)
   onOpenSkillCdSettings?: () => void;
+  // 起動時フッカスマーカーID（リセット時にその位置へ移動する）
+  startupFocusMarkerId?: string;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -181,6 +185,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onPickyMarkerChange,
   textPinPassThrough = true,
   showPhoneCompass = false,
+  showPhoneBoxHud = false,
+  showBottomRightHud = true,
   onMarkersDragStart,
   onMarkersDragEnd,
   markerScale = 30,
@@ -213,7 +219,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   hideBranchLines = false,
   branchLines1px = false,
   skillCdPresets = [],
-  onOpenSkillCdSettings
+  onOpenSkillCdSettings,
+  startupFocusMarkerId
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -2510,6 +2517,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const resetView = () => {
     if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+    if (startupFocusMarkerId) {
+      const marker = markersRef.current.find(m => m.id === startupFocusMarkerId);
+      if (marker) {
+        if (marker.scrollConfig) {
+          const adjusted = adjustScrollConfigForViewport(marker.scrollConfig);
+          startSmoothScroll({ x: adjusted.x, y: adjusted.y }, marker.scrollConfig.zoom);
+        } else {
+          const wrapper = wrapperRef.current;
+          if (wrapper) {
+            const W_v = wrapper.clientWidth;
+            const H_v = wrapper.clientHeight;
+            const tgtZoom = 2;
+            const tgtPan = {
+              x: W_v * 0.5 - 800 - (marker.x - 800) * tgtZoom,
+              y: H_v * 0.6 - 2275 - (marker.y - 2275) * tgtZoom
+            };
+            startSmoothScroll(tgtPan, tgtZoom);
+          }
+        }
+        return;
+      }
+    }
     startSmoothScroll({ x: 0, y: 0 }, 1);
   };
 
@@ -5311,6 +5340,93 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       )}
 
+      {/* 電話ボックス状態HUD (左下) — LG1: 上下左右 / LG3: 下右上 */}
+      {showPhoneBoxHud && (() => {
+        const phoneMarkers = markers.filter(m => m.type === 'phone');
+        const lg1Phones = phoneMarkers.filter(m => {
+          const note = (m.note || '').trim();
+          return note.startsWith('LG1');
+        }).sort((a, b) => {
+          const na = parseInt((a.note || '').match(/LG1-(\d+)/)?.[1] || '0');
+          const nb = parseInt((b.note || '').match(/LG1-(\d+)/)?.[1] || '0');
+          return na - nb;
+        });
+        const lg3Phones = phoneMarkers.filter(m => {
+          const note = (m.note || '').trim();
+          return note.startsWith('LG3');
+        }).sort((a, b) => {
+          const na = parseInt((a.note || '').match(/LG3-(\d+)/)?.[1] || '0');
+          const nb = parseInt((b.note || '').match(/LG3-(\d+)/)?.[1] || '0');
+          return na - nb;
+        });
+        const lockedPhone = phoneMarkers.find(m => m.phoneLocked);
+
+        const handleToggle = (marker: HeistMarker) => {
+          if (marker.phoneLocked) return;
+          onMarkersChange(
+            markers.map(mk => mk.id === marker.id ? { ...mk, phoneActive: !mk.phoneActive } : mk),
+            true
+          );
+        };
+
+        const PhoneCell = ({ marker, label }: { marker?: HeistMarker; label: string }) => {
+          if (!marker) return <div className="phone-hud-cell phone-hud-empty">{label}</div>;
+          const isActive = !!marker.phoneActive;
+          const isLocked = !!marker.phoneLocked;
+          return (
+            <div
+              className={`phone-hud-cell ${isActive ? 'phone-hud-active' : 'phone-hud-inactive'} ${isLocked ? 'phone-hud-locked' : ''}`}
+              onClick={() => handleToggle(marker)}
+              title={`${marker.note || '電話ボックス'} ${isLocked ? '🔒常時起動' : isActive ? '📞起動中' : '☎停止中'}\nクリックでトグル`}
+            >
+              <span className="phone-hud-emoji">{isLocked ? '🔒' : isActive ? '📞' : '☎'}</span>
+              <span className="phone-hud-label">{label}</span>
+            </div>
+          );
+        };
+
+        return (
+          <div className="phone-box-hud">
+            <div className="phone-hud-title">PHONE BOX</div>
+            <div className="phone-hud-section">
+              <div className="phone-hud-floor">LG1</div>
+              <div className="phone-hud-grid">
+                <div /> {/* top-left empty for grid alignment */}
+                <PhoneCell marker={lg1Phones[3]} label="UP" />
+                <div /> {/* top-right empty */}
+                <PhoneCell marker={lg1Phones[2]} label="LEFT" />
+                <PhoneCell marker={lg1Phones[0]} label="CENTER" />
+                <PhoneCell marker={lg1Phones[1]} label="RIGHT" />
+                <div /> {/* bottom-left empty */}
+                <PhoneCell marker={lg1Phones.find(m => {
+                  const n = parseInt((m.note || '').match(/LG1-(\d+)/)?.[1] || '0');
+                  return n === 1;
+                })} label="DOWN" />
+                <div /> {/* bottom-right empty */}
+              </div>
+            </div>
+            {lg3Phones.length > 0 && (
+              <div className="phone-hud-section">
+                <div className="phone-hud-floor">LG3</div>
+                <div className="phone-hud-grid">
+                  <div />
+                  <PhoneCell marker={lockedPhone && lg3Phones.some(m => m.id === lockedPhone.id) ? lockedPhone : lg3Phones[2]} label="UP" />
+                  <div />
+                  <div />
+                  <PhoneCell marker={lg3Phones[0]} label="CENTER" />
+                  <PhoneCell marker={lg3Phones[1]} label="RIGHT" />
+                  <div />
+                  <PhoneCell marker={lg3Phones.find(m => !m.phoneLocked && parseInt((m.note || '').match(/LG3-(\d+)/)?.[1] || '0') === 1)} label="DOWN" />
+                  <div />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* 右下HUD (ズームコントロール) */}
+      {showBottomRightHud && (
       <div className="zoom-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         {/* Zoom percentage display */}
         <div style={{
@@ -5339,16 +5455,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <button className="zoom-btn" onClick={resetView} title="Reset View (1x)">
           <Maximize2 size={18} />
         </button>
-        {isEditMode && (
-          <button
-            className={`zoom-btn ${toolMode === 'move' ? 'active' : ''}`}
-            onClick={() => {}}
-            title="Press Shift to Pan, or use Pan tool"
-          >
-            <Move size={18} />
-          </button>
-        )}
       </div>
+      )}
 
       {/* Media lightbox — click on image/video to enlarge */}
       <MediaLightbox media={zoomedMedia} onClose={() => setZoomedMedia(null)} />
