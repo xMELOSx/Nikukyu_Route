@@ -42,10 +42,23 @@ export default defineConfig({
           const isApiMatch = urlPath === apiPath || urlPath.endsWith(apiPath);
           const isWallsApiMatch = urlPath === wallsApiPath || urlPath.endsWith(wallsApiPath);
           const isPresetMatch = urlPath === presetApiPath || urlPath.endsWith(presetApiPath);
+          const spawnApiPath = '/api/global-spawns';
+          const isSpawnMatch = urlPath === spawnApiPath || urlPath.endsWith(spawnApiPath);
           const helpApiPath = '/api/global-help';
           const isHelpMatch = urlPath === helpApiPath || urlPath.endsWith(helpApiPath);
 
-          if (isHelpMatch) {
+          if (isSpawnMatch) {
+            if (req.method === 'GET') {
+              const filePath = path.resolve(__dirname, 'global_spawns.json');
+              if (fs.existsSync(filePath)) {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(fs.readFileSync(filePath, 'utf-8'));
+              } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify([]));
+              }
+            }
+          } else if (isHelpMatch) {
             if (req.method === 'GET') {
               const filePath = path.resolve(__dirname, 'public/global_help.json');
               if (fs.existsSync(filePath)) {
@@ -320,6 +333,17 @@ export default defineConfig({
           console.log('Copied presets.json to dist/ during build');
         }
 
+        const spawnsSrcPath = path.resolve(__dirname, 'global_spawns.json');
+        const spawnsDestPath = path.resolve(__dirname, 'dist/global_spawns.json');
+        if (fs.existsSync(spawnsSrcPath)) {
+          const distDir = path.dirname(spawnsDestPath);
+          if (!fs.existsSync(distDir)) {
+            fs.mkdirSync(distDir, { recursive: true });
+          }
+          fs.copyFileSync(spawnsSrcPath, spawnsDestPath);
+          console.log('Copied global_spawns.json to dist/ during build');
+        }
+
         const helpSrcPath = path.resolve(__dirname, 'public/global_help.json');
         const helpDestPath = path.resolve(__dirname, 'dist/global_help.json');
         if (fs.existsSync(helpSrcPath)) {
@@ -378,7 +402,9 @@ export default defineConfig({
         path.resolve(__dirname, 'public/global_help.json'),
         '**/public/global_help.json',
         path.resolve(__dirname, 'public/global_defaults.json'),
-        '**/public/global_defaults.json'
+        '**/public/global_defaults.json',
+        path.resolve(__dirname, 'global_spawns.json'),
+        '**/global_spawns.json'
       ]
     }
   }

@@ -2276,9 +2276,11 @@ export default function App() {
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
-                  <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => { setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn'); if (toolMode !== 'add-spawn') setRightTab('spawn'); }} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
-                    <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
-                  </button>
+                  {isLocal && (
+                    <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => { setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn'); if (toolMode !== 'add-spawn') setRightTab('spawn'); }} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
+                      <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
+                    </button>
+                  )}
                   {isLocal && (
                     <>
                       <button className={`tool-btn ${toolMode === 'draw-wall' ? 'active' : ''}`} onClick={() => setToolMode('draw-wall')} id="tool-draw-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
@@ -3103,7 +3105,9 @@ export default function App() {
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
-              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
+              {isLocal && (
+                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
+              )}
             </div>
           </div>
 
