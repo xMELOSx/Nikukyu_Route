@@ -5485,15 +5485,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <button className="zoom-btn" onClick={resetView} title="Reset View (1x)">
           <Maximize2 size={14} />
         </button>
-        {isEditMode && (
-          <button
-            className={`zoom-btn ${toolMode === 'move' ? 'active' : ''}`}
-            onClick={() => {}}
-            title="Press Shift to Pan, or use Pan tool"
-          >
-            <Move size={14} />
-          </button>
-        )}
       </div>
       )}
 

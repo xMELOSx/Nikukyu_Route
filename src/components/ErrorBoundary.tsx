@@ -28,6 +28,19 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     this.setState({ errorInfo });
     // 本番ビルドではコンソールにのみ出力。デバッグの役に立てるように詳細を残す。
     console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+    try {
+      const errInfo = {
+        message: error?.message || 'React render error',
+        stack: (error?.stack || '') + '\n\nComponent Stack:\n' + (errorInfo?.componentStack || ''),
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        time: new Date().toISOString()
+      };
+      localStorage.setItem('heist_last_crash_error', JSON.stringify(errInfo));
+      const copyText = `=== Last Crash Error ===\nURL: ${errInfo.url}\nTime: ${errInfo.time}\nMessage: ${errInfo.message}\nStack: ${errInfo.stack}\n`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(copyText).catch(() => {});
+      }
+    } catch (e) {}
   }
 
   handleCopy = async () => {
