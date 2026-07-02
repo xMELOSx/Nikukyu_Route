@@ -494,11 +494,25 @@ export default function App() {
     localStorage.setItem('heist_auto_save_interval', String(autoSaveInterval));
   }, [autoSaveInterval]);
 
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [isEditMode, setIsEditMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_is_edit_mode');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_is_edit_mode', String(isEditMode));
+  }, [isEditMode]);
+
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [helpActiveTab, setHelpActiveTab] = useState<string>('spec');
   const [isHelpPreviewMode, setIsHelpPreviewMode] = useState<boolean>(false);
-  const [showDetectionRanges, setShowDetectionRanges] = useState<boolean>(false);
+
+  const [showDetectionRanges, setShowDetectionRanges] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_detection_ranges');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_detection_ranges', String(showDetectionRanges));
+  }, [showDetectionRanges]);
   const [stopMarkerThreshold, setStopMarkerThresholdState] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('heist_threshold_stop') || '');
     return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
@@ -550,9 +564,13 @@ export default function App() {
     saveFloorNavCollapsed(floorNavCollapsed);
   }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>('move');
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>(() => {
+    const saved = localStorage.getItem('heist_tool_mode');
+    return (saved as any) || 'move';
+  });
   const prevToolModeRef = useRef(toolMode);
   useEffect(() => {
+    localStorage.setItem('heist_tool_mode', toolMode);
     const prev = prevToolModeRef.current;
     if (prev === 'draw' && toolMode !== 'draw') {
       routeApi.setRoute(prev => {
@@ -572,8 +590,23 @@ export default function App() {
     }
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
-  const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(false);
-  const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(false);
+
+  const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_hide_strokes_during_walls');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_hide_strokes_during_walls', String(hideStrokesDuringWalls));
+  }, [hideStrokesDuringWalls]);
+
+  const [hideMarkersDuringWalls, setHideMarkersDuringWalls] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_hide_markers_during_walls');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_hide_markers_during_walls', String(hideMarkersDuringWalls));
+  }, [hideMarkersDuringWalls]);
+
   const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_bypass_walls_enabled');
     return saved !== null ? saved === 'true' : false;
@@ -588,9 +621,31 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_bypass_shortest_only', String(bypassShortestOnly));
   }, [bypassShortestOnly]);
-  const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>('all');
-  const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>('normal');
-  const [eraseSize, setEraseSize] = useState<number>(16);
+
+  const [eraseTarget, setEraseTarget] = useState<'all' | 'marker' | 'route' | 'branch'>(() => {
+    const saved = localStorage.getItem('heist_erase_target');
+    return (saved as any) || 'all';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_erase_target', eraseTarget);
+  }, [eraseTarget]);
+
+  const [eraseDefaultBehavior, setEraseDefaultBehavior] = useState<'normal' | 'split'>(() => {
+    const saved = localStorage.getItem('heist_erase_default_behavior');
+    return (saved as any) || 'normal';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_erase_default_behavior', eraseDefaultBehavior);
+  }, [eraseDefaultBehavior]);
+
+  const [eraseSize, setEraseSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_erase_size') || '');
+    return !isNaN(v) ? v : 16;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_erase_size', String(eraseSize));
+  }, [eraseSize]);
+
   // 線分編集ツール (色変更 / 平滑化 / 線種 / 太さ): 選択中ストロークのインデックス
   // 単一選択 (mode に応じて「最後に選択された 1 本」を覚える) と
   // 複数選択 (Alt+クリックで累積) の両方をサポート。
@@ -602,7 +657,13 @@ export default function App() {
   // ルート線 / 線分編集 / 距離計測の各ツール使用中、
   // マーカー (ピン) へのクリックを遮断して背後の線を選択しやすくする共通トグル。
   // デフォルト ON。
-  const [blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools] = useState<boolean>(true);
+  const [blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_block_marker_clicks_during_tools');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_block_marker_clicks_during_tools', String(blockMarkerClicksDuringTools));
+  }, [blockMarkerClicksDuringTools]);
   // Alt 押下状態(消しゴムモードのメニューを視覚的にシフトさせる)
   // ref + state の二重管理。
   // キーハンドラは document (capture) に張り、要素側の stopPropagation に
@@ -687,7 +748,16 @@ export default function App() {
       window.removeEventListener('pointerup', handleInteraction);
     };
   }, []);
-  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>('cardkey');
+  const [activeMarkerType, setActiveMarkerType] = useState<MarkerType | null>(() => {
+    const saved = localStorage.getItem('heist_active_marker_type');
+    return saved !== null ? (saved as any) : 'cardkey';
+  });
+  useEffect(() => {
+    if (activeMarkerType) {
+      localStorage.setItem('heist_active_marker_type', activeMarkerType);
+    }
+  }, [activeMarkerType]);
+
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
@@ -697,13 +767,38 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const [strokeColor, setStrokeColor] = useState('#ff0055');
-  const [strokeWidth, setStrokeWidth] = useState(3);
-  const [strokeType, setStrokeType] = useState<'solid' | 'dashed' | 'temporary'>('solid');
+  const [strokeColor, setStrokeColor] = useState(() => {
+    return localStorage.getItem('heist_stroke_color') || '#ff0055';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_stroke_color', strokeColor);
+  }, [strokeColor]);
+
+  const [strokeWidth, setStrokeWidth] = useState(() => {
+    const v = parseInt(localStorage.getItem('heist_stroke_width') || '');
+    return !isNaN(v) ? v : 3;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_stroke_width', String(strokeWidth));
+  }, [strokeWidth]);
+
+  const [strokeType, setStrokeType] = useState<'solid' | 'dashed' | 'temporary'>(() => {
+    const saved = localStorage.getItem('heist_stroke_type');
+    return (saved as any) || 'solid';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_stroke_type', strokeType);
+  }, [strokeType]);
 
   const warpColor = '#ff00ff';
   const stairsColor = '#ffaa00';
-  const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>('smooth');
+  const [drawMode, setDrawMode] = useState<'free' | 'smooth' | 'straight'>(() => {
+    const saved = localStorage.getItem('heist_draw_mode');
+    return (saved as any) || 'smooth';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_draw_mode', drawMode);
+  }, [drawMode]);
   const [textPinPassThrough, setTextPinPassThrough] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_text_pin_pass_through');
     return saved !== null ? saved === 'true' : true;
