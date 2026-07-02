@@ -1023,6 +1023,11 @@ export default function App() {
   const [spawnViewPointId, setSpawnViewPointId] = useState<string | null>(null);
   const [viewerFilterPlayers, setViewerFilterPlayers] = useState<number | null>(null);
   const [spawnHighlightItemIds, setSpawnHighlightItemIds] = useState<string[] | null>(null);
+  const spawnFilterCacheRef = useRef<string[] | null>(null);
+  // 絞り込み状態をキャッシュ (タブ切替で維持)
+  useEffect(() => {
+    if (rightTab === 'spawn') spawnFilterCacheRef.current = spawnHighlightItemIds;
+  }, [spawnHighlightItemIds, rightTab]);
   const [spawnTabMode, setSpawnTabMode] = useState<'view' | 'manage'>('view');
   // サーバー設定値 (本番のスポーン表示有無)
   const [spawnServerEnabled, setSpawnServerEnabled] = useState<boolean>(() => !!globalDefaultsRef.current.spawnFeatureEnabled);
@@ -3835,7 +3840,7 @@ export default function App() {
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
               {showSpawnFeature && (
-                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
+                <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => { setSpawnHighlightItemIds(spawnFilterCacheRef.current); setRightTab('spawn'); }}>{t('スポーン')}</button>
               )}
             </div>
           </div>

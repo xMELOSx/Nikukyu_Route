@@ -24,7 +24,9 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   spawnVisible, onSpawnVisibleChange,
 }) => {
   // 全モード共通のフック
-  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(
+    () => new Set(Array.isArray(highlightItemIds) ? highlightItemIds : [])
+  );
   const [detailPointId, setDetailPointId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showRecent, setShowRecent] = useState(false);

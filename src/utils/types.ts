@@ -1,0 +1,196 @@
+export function generateId(prefix: string = ''): string {
+  const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return prefix ? `${prefix}_${uuid}` : uuid;
+}
+
+export type FloorType = 'main';
+
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd';
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface DrawingStroke {
+  points: Point[];
+  color: string;
+  width: number;
+  type: 'solid' | 'dashed' | 'temporary';
+  originalPoints?: Point[];
+}
+
+export interface ScrollConfig {
+  x: number;
+  y: number;
+  zoom: number;
+  viewWidth?: number;
+  viewHeight?: number;
+}
+
+export interface MediaItem {
+  id: string;
+  url: string;
+  type: 'image' | 'webm' | 'x-embed' | 'youtube';
+  description?: string;
+}
+
+export interface HeistMarker {
+  id: string;
+  type: MarkerType;
+  x: number;
+  y: number;
+  note: string;
+  floor: FloorType;
+  scrollConfig?: ScrollConfig;
+  linkedWarpId?: string;
+  phoneActive?: boolean;
+  phoneLocked?: boolean;
+  infoExpanded?: boolean;
+  noteExpanded?: boolean;
+  infoLabel?: string;
+  bossDrops?: string[];
+  bossDurationSeconds?: number;
+  bossExpanded?: boolean;
+  bossDescription?: string;
+  battleDurationSeconds?: number;
+  battleExpanded?: boolean;
+  popupDirection?: 'top' | 'bottom' | 'left' | 'right';
+  popupWidth?: number;
+  popupHeight?: number;
+  popupOffset?: { x: number; y: number };
+  pickingDurationSeconds?: number;
+  longPickingDurationSeconds?: number;
+  pickingPicky?: boolean;
+  pickingExpanded?: boolean;
+  ehHighRate?: boolean;
+  cardkeyHighRate?: boolean;
+  warpWaypoints?: Point[];
+  textColor?: string;
+  textSize?: number;
+  textScaleWithMap?: boolean;
+  textFixedPosition?: boolean;
+  fixedOriginX?: number;
+  fixedOriginY?: number;
+  trackSide?: 'auto' | 'left' | 'right';
+  textDescription?: string;
+  textTooltip?: boolean;
+  textGlow?: boolean;
+  mediaItems?: MediaItem[];
+  checkpointTargetTime?: number;
+  checkpointSoundOn?: boolean;
+  checkpointVoiceOn?: boolean;
+  checkpointExpanded?: boolean;
+  connectionColor?: string;
+  skillPresetId?: string;
+  skillLabel?: string;
+  skillColor?: string;
+  skillMode?: SkillCdMode;
+  skillCdSeconds?: number;
+  skillPerSecondCd?: number;
+}
+
+export interface RouteData {
+  id: string;
+  title: string;
+  description: string;
+  targetCash: string;
+  targetCoins: string;
+  targetDuration: string;
+  author: string;
+  renderCache: string;
+  strokes: { [key in FloorType]: DrawingStroke[] };
+  markers: HeistMarker[];
+  walls?: { [key in FloorType]: [Point, Point][] };
+  customBg: { [key in FloorType]: string | null };
+  createdAt: number;
+  bossCustomDurations?: { [markerId: string]: number };
+  battleCustomDurations?: { [markerId: string]: number };
+  pickingCustomDurations?: { [markerId: string]: number };
+  longPickingCustomDurations?: { [markerId: string]: number };
+  pickyMarkerIds?: { [markerId: string]: boolean };
+  mapVersion?: number;
+  markerScale?: number;
+  hiddenMarkers?: string[];
+  hiddenMarkerTypes?: string[];
+  saveDataVersion?: string;
+  presetSourceId?: string;
+}
+
+export interface SaveDataMigration {
+  fromVersion: string;
+  toVersion: string;
+  description: string;
+  migrate: (data: RouteData) => RouteData;
+}
+
+export interface MigrationResult {
+  data: RouteData;
+  applied: SaveDataMigration[];
+  finalVersion: string;
+  unknown: boolean;
+  unknownVersion?: string;
+}
+
+export type PresetVisibility = 'public' | 'unlisted' | 'private';
+
+export interface PresetData {
+  id: string;
+  name: string;
+  description: string;
+  targetCash: string;
+  targetCoins: string;
+  author: string;
+  renderCache: string;
+  updatedAt: number;
+  visibility?: PresetVisibility;
+  routeData?: RouteData;
+}
+
+export type PresetMeta = Omit<PresetData, 'routeData'>;
+
+export type SkillCdMode = 'fixed' | 'per_second';
+
+export interface SkillCdPreset {
+  id: string;
+  label: string;
+  color: string;
+  mode: SkillCdMode;
+  seconds: number;
+  perSecondCd: number;
+}
+
+export const TEXTCOLOR_OPTIONS = ['green', 'blue', 'purple', 'yellow', 'red', 'cyan'] as const;
+export type TextColorOption = typeof TEXTCOLOR_OPTIONS[number];
+
+export interface RegisteredItem {
+  id: string;
+  name: string;
+  textColor: string;
+  fans: number;
+  coins: number;
+  image?: string;
+  description?: string;
+}
+
+export interface SpawnPointItem {
+  itemId: string;
+  discoveredAt: string;
+  playerCount: number;
+}
+
+export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床', '植木鉢'] as const;
+export type SpawnCategory = typeof SPAWN_CATEGORIES[number];
+
+export interface SpawnPoint {
+  id: string;
+  x: number;
+  y: number;
+  floor: FloorType;
+  category?: SpawnCategory;
+  createdAt: string;
+  note?: string;
+  items: SpawnPointItem[];
+}
