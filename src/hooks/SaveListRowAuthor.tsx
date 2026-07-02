@@ -2,6 +2,12 @@ import React, { useMemo } from 'react';
 import { AUTHOR_DEFAULT_PLAIN, AUTHOR_UNKNOWN_MARKER, getOriginalAuthorKey } from '../utils/DataManager';
 import { useAuthorField } from './useAuthorField';
 
+const isLocal =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '::1');
+
 interface SaveListRowAuthorProps {
   authorEnc: string;
   renderCacheEnc: string;
@@ -69,7 +75,7 @@ export const SaveListRowAuthor: React.FC<SaveListRowAuthorProps> = ({
   return (
     <>
       <FieldText isDefault={isAuthorDefault} plain={authorPlain} label="作者" />
-      {(renderCacheEnc || isOriginalTampered) && !hideOriginal
+      {isLocal && (renderCacheEnc || isOriginalTampered) && !hideOriginal
         ? <FieldText isDefault={isOriginalDefault} plain={renderCache.plain || ''} label="原作者" tampered={isOriginalTampered} />
         : null}
     </>
