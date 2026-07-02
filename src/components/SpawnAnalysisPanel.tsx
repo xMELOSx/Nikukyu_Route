@@ -4,120 +4,223 @@ import { type SpawnPoint, type RegisteredItem, TEXTCOLOR_META } from '../utils/D
 interface SpawnAnalysisPanelProps {
   points: SpawnPoint[];
   items: RegisteredItem[];
-  isLocal: boolean;
+  isManage: boolean;
   onPointDelete: (id: string) => void;
+  onPointFocus?: (x: number, y: number) => void;
+  hideOther?: boolean;
+  onHideOtherChange?: (v: boolean) => void;
+  hideBg?: boolean;
+  onHideBgChange?: (v: boolean) => void;
+  highlightItemIds?: string[];
+  onHighlightItemIdsChange?: (ids: string[]) => void;
 }
 
 export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
-  points, items, isLocal, onPointDelete,
+  points, items, isManage, onPointDelete, onPointFocus,
+  hideOther, onHideOtherChange, hideBg, onHideBgChange,
+  highlightItemIds, onHighlightItemIdsChange,
 }) => {
+  // 全モード共通のフック
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [detailPointId, setDetailPointId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showRecent, setShowRecent] = useState(false);
 
+  const sortedItems = useMemo(() =>
+    [...items]
+      .map(i => ({ item: i, count: points.filter(p => p.items && p.items.some(pi => pi.itemId === i.id)).length }))
+      .sort((a, b) => b.count - a.count),
+  [items, points]);
+
+  const filteredPoints = useMemo(() => {
+    if (selectedItemIds.size === 0) return [];
+    return points.filter(p => p.items && p.items.some(pi => selectedItemIds.has(pi.itemId)));
+  }, [points, selectedItemIds]);
+
   const itemStats = useMemo(() => {
-    const stats: { [itemId: string]: { item: RegisteredItem; count: number; pts: { x: number; y: number }[] } } = {};
-    for (const item of items) stats[item.id] = { item, count: 0, pts: [] };
+    const stats: { [itemId: string]: { item: RegisteredItem; count: number } } = {};
+    for (const item of items) stats[item.id] = { item, count: 0 };
     for (const p of points) {
       if (!p.items) continue;
       for (const pi of p.items) {
-        if (stats[pi.itemId]) { stats[pi.itemId].count++; stats[pi.itemId].pts.push({ x: p.x, y: p.y }); }
+        if (stats[pi.itemId]) stats[pi.itemId].count++;
       }
     }
     return Object.values(stats).sort((a, b) => b.count - a.count);
   }, [points, items]);
 
-  const recentPoints = [...points].reverse().slice(0, 100);
+  const recentPoints = useMemo(() => [...points].reverse().slice(0, 100), [points]);
+  const detailPoint = detailPointId ? points.find(p => p.id === detailPointId) ?? null : null;
 
+  if (isManage) {
+    return (
+      <>
+        <div className="panel-section">
+          <div className="panel-title" style={{ fontSize: '13px', marginBottom: '8px' }}>スポーン解析</div>
+          <div style={{ fontSize: '14px', fontWeight: 700 }}>
+            スポーン点: <span style={{ color: 'var(--cyan-neon)', fontSize: '16px' }}>{points.length}</span>
+          </div>
+          <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '4px' }}>
+            アイテム登録: <span style={{ color: 'var(--cyan-neon)', fontSize: '16px' }}>{items.length}</span>
+          </div>
+        </div>
+
+        {itemStats.length > 0 && (
+          <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', paddingTop: '8px' }}>
+            <div className="panel-title" style={{ fontSize: '12px', marginBottom: '6px' }}>アイテム別出現数</div>
+            {itemStats.map(({ item, count }) => {
+              const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+              return (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0', fontSize: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                  <span style={{ color: tc?.color || '#fff', flex: 1, fontWeight: 600, fontSize: '13px' }}>{item.name || '(無名)'}</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '14px' }}>{count}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>点</span>
+                  {item.fans > 0 && <span style={{ color: '#ffd700', fontWeight: 600, fontSize: '12px' }}>{item.fans.toLocaleString()}F</span>}
+                  {item.coins > 0 && <span style={{ color: '#ff9500', fontWeight: 600, fontSize: '12px' }}>{item.coins.toLocaleString()}C</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', paddingTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setShowRecent(s => !s)}>
+            <div className="panel-title" style={{ fontSize: '12px', flex: 1, marginBottom: 0 }}>スポーン点一覧</div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{showRecent ? '▲' : '▼'} ({points.length})</span>
+          </div>
+          {showRecent && (
+            <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '6px' }}>
+              {recentPoints.length === 0 ? (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>記録がありません</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {recentPoints.map(p => {
+                    const dt = new Date(p.createdAt);
+                    const timeStr = isNaN(dt.getTime()) ? p.createdAt : dt.toLocaleString();
+                    return (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '5px 6px', borderLeft: '3px solid #39ff14', background: 'rgba(0,0,0,0.15)', borderRadius: '4px' }}>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, flex: 1 }}>X:{p.x} Y:{p.y}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{(p.items || []).length}アイテム</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>{timeStr}</span>
+                        {deleteConfirmId === p.id ? (
+                          <>
+                            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => { onPointDelete(p.id); setDeleteConfirmId(null); }}>削除</button>
+                            <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(null)}>×</button>
+                          </>
+                        ) : (
+                          <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => setDeleteConfirmId(p.id)}>✕</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ===== 閲覧モード =====
   return (
     <>
-      <div className="panel-section">
-        <div className="panel-title" style={{ fontSize: '13px', marginBottom: '8px' }}>スポーン解析</div>
-        <div style={{ fontSize: '14px', fontWeight: 700 }}>
-          スポーン点: <span style={{ color: 'var(--cyan-neon)', fontSize: '16px' }}>{points.length}</span>
-        </div>
-        <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '4px' }}>
-          アイテム登録: <span style={{ color: 'var(--cyan-neon)', fontSize: '16px' }}>{items.length}</span>
-        </div>
+      <div className="panel-section" style={{ paddingBottom: '4px' }}>
+        {onHideOtherChange && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginBottom: '4px' }}>
+            <input type="checkbox" checked={!!hideOther} onChange={e => onHideOtherChange(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+            マーカーと線を隠す
+          </label>
+        )}
+        {onHideBgChange && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+            <input type="checkbox" checked={!!hideBg} onChange={e => onHideBgChange(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+            背景を隠す
+          </label>
+        )}
       </div>
 
-      {itemStats.length > 0 && (
-        <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', paddingTop: '8px' }}>
-          <div className="panel-title" style={{ fontSize: '12px', marginBottom: '6px' }}>アイテム別出現数</div>
-          {itemStats.map(({ item, count }) => {
+      <div className="panel-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>アイテムで絞り込み</div>
+          {selectedItemIds.size > 0 && (
+            <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+              onClick={() => { setSelectedItemIds(new Set()); onHighlightItemIdsChange?.([]); }}>
+              選択解除 ({selectedItemIds.size})
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '200px', overflowY: 'auto' }}>
+          {sortedItems.map(({ item, count }) => {
             const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+            const isSel = selectedItemIds.has(item.id);
             return (
-              <div key={item.id} style={{
-                display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0',
-                fontSize: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)',
-              }}>
-                <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
-                <span style={{ color: tc?.color || '#fff', flex: 1, fontWeight: 600, fontSize: '13px' }}>
-                  {item.name || '(無名)'}
-                </span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '14px' }}>{count}</span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>点</span>
-                {item.fans > 0 && <span style={{ color: '#ffd700', fontWeight: 600, fontSize: '12px' }}>{item.fans.toLocaleString()}F</span>}
-                {item.coins > 0 && <span style={{ color: '#ff9500', fontWeight: 600, fontSize: '12px' }}>{item.coins.toLocaleString()}C</span>}
-              </div>
+              <button key={item.id} onClick={() => {
+                const next = new Set(selectedItemIds);
+                if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                setSelectedItemIds(next);
+                onHighlightItemIdsChange?.([...next]);
+              }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', padding: '3px 6px',
+                  border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '33'}`,
+                  background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.2)',
+                  color: tc?.color || '#fff', borderRadius: '5px', cursor: 'pointer',
+                  fontWeight: isSel ? 700 : 400,
+                }}
+              >
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
+                <span>{item.name}</span>
+                <span style={{ opacity: 0.7, fontSize: '9px', marginLeft: '1px' }}>{count}</span>
+              </button>
             );
           })}
         </div>
-      )}
+      </div>
 
-      <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', paddingTop: '8px' }}>
-        <div
-          style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-          onClick={() => setShowRecent(s => !s)}
-        >
-          <div className="panel-title" style={{ fontSize: '12px', flex: 1, marginBottom: 0 }}>
-            スポーン点一覧
+      {detailPoint && (
+        <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', background: 'rgba(0,0,0,0.25)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <span className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>点詳細 X:{detailPoint.x} Y:{detailPoint.y}</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {onPointFocus && (
+                <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 5px', clipPath: 'none' }}
+                  onClick={() => { onPointFocus(detailPoint.x, detailPoint.y); setDetailPointId(null); }}>点へ移動</button>
+              )}
+              <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 5px', clipPath: 'none' }}
+                onClick={() => setDetailPointId(null)}>✕</button>
+            </div>
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{showRecent ? '▲' : '▼'} ({points.length})</span>
-        </div>
-        {showRecent && (
-          <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '6px' }}>
-            {recentPoints.length === 0 ? (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>記録がありません</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {recentPoints.map(p => {
-                  const dt = new Date(p.createdAt);
-                  const timeStr = isNaN(dt.getTime()) ? p.createdAt : dt.toLocaleString();
+          {detailPoint.items.length === 0 ? (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>アイテム未登録</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {(() => {
+                const grouped: { [id: string]: { item: RegisteredItem | undefined; occurrences: typeof detailPoint.items } } = {};
+                for (const pi of detailPoint.items) {
+                  if (!grouped[pi.itemId]) grouped[pi.itemId] = { item: items.find(i => i.id === pi.itemId), occurrences: [] };
+                  grouped[pi.itemId].occurrences.push(pi);
+                }
+                return Object.values(grouped).map(({ item, occurrences }) => {
+                  const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                  const avgPlayers = occurrences.reduce((s, o) => s + (o.playerCount || 1), 0) / occurrences.length;
                   return (
-                    <div key={p.id} style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      fontSize: '11px', padding: '5px 6px',
-                      borderLeft: '3px solid #39ff14',
-                      background: 'rgba(0,0,0,0.15)', borderRadius: '4px',
-                    }}>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: 600, flex: 1 }}>
-                        X:{p.x} Y:{p.y}
-                      </span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                        {(p.items || []).length}アイテム
-                      </span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>{timeStr}</span>
-                      {isLocal && (
-                        deleteConfirmId === p.id ? (
-                          <>
-                            <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                              onClick={() => { onPointDelete(p.id); setDeleteConfirmId(null); }}>削除</button>
-                            <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                              onClick={() => setDeleteConfirmId(null)}>×</button>
-                          </>
-                        ) : (
-                          <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }}
-                            onClick={() => setDeleteConfirmId(p.id)}>✕</button>
-                        )
-                      )}
+                    <div key={item?.id || Math.random()} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', padding: '3px 6px', background: 'rgba(0,0,0,0.15)', borderRadius: '3px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                      <span style={{ color: tc?.color || '#fff', fontWeight: 600, flex: 1 }}>{item?.name || '(不明)'}</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{occurrences.length}回</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '9px' }}>平均{avgPlayers.toFixed(1)}人</span>
+                      {item && <span style={{ color: '#ffd700', fontSize: '9px' }}>{item.fans}F</span>}
+                      {item && <span style={{ color: '#ff9500', fontSize: '9px' }}>{item.coins}C</span>}
                     </div>
                   );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                });
+              })()}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 };

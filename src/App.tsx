@@ -25,7 +25,6 @@ import {
   type PresetData,
   type PresetVisibility,
   type SpawnPoint,
-  type RegisteredItem,
   PRESET_VISIBILITY_META,
   PRESET_MAPS_META,
   normalizePresetVisibility,
@@ -1010,10 +1009,15 @@ export default function App() {
 
   // スポーンツールのサブモード
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
+  const [spawnMoveX, setSpawnMoveX] = useState(0);
+  const [spawnMoveY, setSpawnMoveY] = useState(0);
+  const [spawnViewPointId, setSpawnViewPointId] = useState<string | null>(null);
+  const [spawnHighlightItemIds, setSpawnHighlightItemIds] = useState<string[] | null>(null);
+  const [spawnTabMode, setSpawnTabMode] = useState<'view' | 'manage'>('view');
   const [spawnHideOther, setSpawnHideOther] = useState(false);
+  const [spawnHideBg, setSpawnHideBg] = useState(false);
   const [spawnFocusTrigger, setSpawnFocusTrigger] = useState<{ x: number; y: number; ts: number } | null>(null);
   // 設置モードで選択中のアイテムID
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
   // 情報編集の対象ポイントID
   const [editPointId, setEditPointId] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -1083,7 +1087,14 @@ export default function App() {
   // スポーン点編集: マップの点をクリック時 → モーダル表示
   const handleSpawnPointEdit = useCallback((id: string) => {
     setEditPointId(id);
+    const pt = spawnApi.points.find(p => p.id === id);
+    if (pt) { setSpawnMoveX(pt.x); setSpawnMoveY(pt.y); }
     setShowEditModal(true);
+  }, [spawnApi.points]);
+
+  // スポーン点ビューワークリック → 情報モーダル表示
+  const handleSpawnPointView = useCallback((id: string) => {
+    setSpawnViewPointId(id);
   }, []);
 
   // スポーン点にアイテムを追加
@@ -2820,7 +2831,7 @@ export default function App() {
                       <button key={t.key}
                         className={`tool-btn ${spawnToolMode === t.key ? 'active' : ''}`}
                         style={{ height: 26, fontSize: '9px', padding: '2px', minWidth: 0 }}
-                        onClick={() => setSpawnToolMode(t.key)}
+                        onClick={() => { setSpawnToolMode(t.key); setToolMode('add-spawn'); }}
                       >{t.label}</button>
                     ))}
                   </div>
@@ -2898,6 +2909,12 @@ export default function App() {
                       onChange={e => setSpawnHideOther(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                     マーカーと線を隠す
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                    <input type="checkbox" checked={spawnHideBg}
+                      onChange={e => setSpawnHideBg(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                    背景を隠す
                   </label>
                 </div>
                 <div className="panel-section">
@@ -3118,16 +3135,36 @@ export default function App() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }} onClick={() => { setShowEditModal(false); setEditPointId(null); }}>
                   <div style={{
-                    background: 'var(--panel-bg, #0a0e18)', width: '480px', maxHeight: '85vh',
+                    background: 'var(--panel-bg, #0a0e18)', width: '520px', maxHeight: '85vh',
                     border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px',
                     display: 'flex', flexDirection: 'column', overflow: 'hidden',
                   }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>
-                        スポーン点編集 X:{pt.x} Y:{pt.y}
+                        スポーン点編集
                       </span>
                       <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }}
                         onClick={() => { setShowEditModal(false); setEditPointId(null); }}>✕ 閉じる</button>
+                    </div>
+                    {/* 座標移動 */}
+                    <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(79,195,247,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>座標</span>
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        X
+                        <input type="number" value={spawnMoveX}
+                          onChange={e => setSpawnMoveX(parseInt(e.target.value) || 0)}
+                          style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
+                      </label>
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        Y
+                        <input type="number" value={spawnMoveY}
+                          onChange={e => setSpawnMoveY(parseInt(e.target.value) || 0)}
+                          style={{ width: '70px', fontSize: '12px', padding: '4px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }} />
+                      </label>
+                      <button className="btn-cyber success" style={{ fontSize: '10px', padding: '4px 10px', clipPath: 'none' }}
+                        onClick={() => { pushSpawnHistory(); spawnApi.updatePoint(pt.id, { x: spawnMoveX, y: spawnMoveY }); }}>
+                        移動して保存
+                      </button>
                     </div>
                     <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                       {/* 登録アイテム一覧 */}
@@ -3205,6 +3242,69 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* スポーン点ビューワーモーダル */}
+            {spawnViewPointId && (() => {
+              const pt = spawnApi.points.find(p => p.id === spawnViewPointId);
+              if (!pt) { setTimeout(() => setSpawnViewPointId(null), 0); return null; }
+              return (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 5002, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onClick={() => setSpawnViewPointId(null)}>
+                  <div style={{ background: 'var(--panel-bg, #0a0e18)', width: '420px', maxHeight: '70vh', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                    onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>点情報 X:{pt.x} Y:{pt.y}</span>
+                      <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setSpawnViewPointId(null)}>✕ 閉じる</button>
+                    </div>
+                    <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+                      {(!pt.items || pt.items.length === 0) ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>アイテム未登録</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {(() => {
+                            const grouped: { [id: string]: { item: RegisteredItem | undefined; occurrences: typeof pt.items; dates: string[]; players: number[] } } = {};
+                            for (const pi of pt.items) {
+                              if (!grouped[pi.itemId]) grouped[pi.itemId] = { item: spawnApi.items.find(i => i.id === pi.itemId), occurrences: [], dates: [], players: [] };
+                              grouped[pi.itemId].occurrences.push(pi);
+                              try { grouped[pi.itemId].dates.push(new Date(pi.discoveredAt).toLocaleDateString()); } catch { grouped[pi.itemId].dates.push(pi.discoveredAt); }
+                              grouped[pi.itemId].players.push(pi.playerCount || 1);
+                            }
+                            return Object.values(grouped).map(({ item, occurrences, dates, players }) => {
+                              const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                              const avgPlayers = players.reduce((s, v) => s + v, 0) / players.length;
+                              return (
+                                <div key={item?.id || Math.random()} style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                                    <span style={{ color: tc?.color || '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>{item?.name || '(不明)'}</span>
+                                    <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '14px' }}>{occurrences.length}回</span>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>平均{avgPlayers.toFixed(1)}人</span>
+                                  </div>
+                                  {item && (
+                                    <div style={{ display: 'flex', gap: '8px', fontSize: '11px', marginLeft: '16px' }}>
+                                      <span style={{ color: '#ffd700' }}>F {item.fans.toLocaleString()}</span>
+                                      <span style={{ color: '#ff9500' }}>C {item.coins.toLocaleString()}</span>
+                                      {item.description && <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{item.description}</span>}
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', marginLeft: '16px' }}>
+                                    発見日: {dates.join(', ')}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      )}
+                      <button className="btn-cyber" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none', marginTop: '10px' }}
+                        onClick={() => { setSpawnFocusTrigger({ x: pt.x, y: pt.y, ts: Date.now() }); setSpawnViewPointId(null); }}>
+                        点へ移動
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -3407,7 +3507,7 @@ export default function App() {
             <MapCanvas
               floor={currentFloor}
               strokes={memoizedStrokes}
-              markers={[...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              markers={spawnHideOther ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
               customBg={routeApi.route.customBg[currentFloor] ?? null}
               toolMode={toolMode}
               activeMarkerType={activeMarkerType}
@@ -3483,7 +3583,7 @@ export default function App() {
               showDetectionRanges={showDetectionRanges}
               startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
               hiddenMarkers={routeApi.route.hiddenMarkers || []}
-              hiddenMarkerTypes={spawnHideOther ? ['goal','cardkey','eh','rare','vault','boss','phone','note','room','warp','stairs','start','p1','p2','p3','info','battle','gbattle','picking','gpicking','long_picking','glong_picking','iwarp','text','iinfo','inote','itext','checkpoint','skill_cd'] : (routeApi.route.hiddenMarkerTypes || [])}
+              hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
               onHideGlobalMarker={handleHideGlobalMarker}
               onShowGlobalMarker={handleShowGlobalMarker}
               onToggleMarkerVisibility={handleToggleMarkerVisibility}
@@ -3516,12 +3616,14 @@ export default function App() {
               }}
               spawnPoints={spawnApi.points}
               spawnItems={spawnApi.items}
-              activeItemId={activeItemId}
               onSpawnPointAdd={handleSpawnPointAdd}
               onSpawnPointDelete={(id) => { pushSpawnHistory(); spawnApi.removePoint(id); }}
               onSpawnPointEdit={handleSpawnPointEdit}
+              onSpawnPointView={handleSpawnPointView}
               spawnToolMode={spawnToolMode}
               spawnFocusTrigger={spawnFocusTrigger}
+              spawnHighlightItemIds={spawnHighlightItemIds}
+              hideMapBg={spawnHideBg}
             />
           ), [
             currentFloor,
@@ -3590,9 +3692,12 @@ export default function App() {
             globalDefaultsRef.current.startupFocusMarkerId,
             spawnApi.points,
             spawnApi.items,
-            activeItemId,
             spawnHideOther,
+            spawnHideBg,
             spawnFocusTrigger,
+            spawnHighlightItemIds,
+            spawnMoveX,
+            spawnMoveY,
             spawnToolMode,
             editPointId,
             editAddItemId,
@@ -3953,12 +4058,29 @@ export default function App() {
 
             <LangSync />
             {rightTab === 'spawn' && (
-              <SpawnAnalysisPanel
-                points={spawnApi.points}
-                items={spawnApi.items}
-                isLocal={isLocal}
-                onPointDelete={(id) => spawnApi.removePoint(id)}
-              />
+              <>
+                {isLocal && (
+                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)', marginBottom: '4px' }}>
+                    <button style={{ flex: 1, padding: '4px', fontSize: '10px', fontWeight: 700, background: spawnTabMode === 'view' ? 'rgba(57,255,20,0.15)' : 'transparent', color: spawnTabMode === 'view' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: spawnTabMode === 'view' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }}
+                      onClick={() => setSpawnTabMode('view')}>閲覧</button>
+                    <button style={{ flex: 1, padding: '4px', fontSize: '10px', fontWeight: 700, background: spawnTabMode === 'manage' ? 'rgba(255,215,0,0.15)' : 'transparent', color: spawnTabMode === 'manage' ? '#ffd700' : 'var(--text-muted)', border: 'none', borderBottom: spawnTabMode === 'manage' ? '2px solid #ffd700' : '2px solid transparent', cursor: 'pointer' }}
+                      onClick={() => setSpawnTabMode('manage')}>管理</button>
+                  </div>
+                )}
+                <SpawnAnalysisPanel
+                  points={spawnApi.points}
+                  items={spawnApi.items}
+                  isManage={spawnTabMode === 'manage'}
+                  onPointDelete={(id) => spawnApi.removePoint(id)}
+                  onPointFocus={(x, y) => setSpawnFocusTrigger({ x, y, ts: Date.now() })}
+                  hideOther={spawnHideOther}
+                  onHideOtherChange={setSpawnHideOther}
+                  hideBg={spawnHideBg}
+                  onHideBgChange={setSpawnHideBg}
+                  highlightItemIds={spawnHighlightItemIds ?? []}
+                  onHighlightItemIdsChange={(ids) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
+                />
+              </>
             )}
             {rightTab === 'play' && (
               <>

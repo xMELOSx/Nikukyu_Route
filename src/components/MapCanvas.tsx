@@ -148,11 +148,13 @@ interface MapCanvasProps {
   // スポーン記録関連
   spawnPoints?: SpawnPoint[];
   spawnItems?: RegisteredItem[];
-  activeItemId?: string | null;
   spawnFocusTrigger?: { x: number; y: number; ts: number } | null;
+  spawnHighlightItemIds?: string[] | null;
+  hideMapBg?: boolean;
   onSpawnPointAdd?: (x: number, y: number) => void;
   onSpawnPointDelete?: (id: string) => void;
   onSpawnPointEdit?: (id: string) => void;
+  onSpawnPointView?: (id: string) => void;
   spawnToolMode?: 'place' | 'edit' | 'erase' | 'manage';
 }
 
@@ -242,11 +244,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   startupFocusMarkerId,
   spawnPoints = [],
   spawnItems = [],
-  activeItemId,
   spawnFocusTrigger,
+  spawnHighlightItemIds,
+  hideMapBg = false,
   onSpawnPointAdd,
   onSpawnPointDelete,
   onSpawnPointEdit,
+  onSpawnPointView,
   spawnToolMode = 'place'
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
@@ -889,12 +893,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1058,24 +1062,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (p.floor !== floor) continue;
       let bestRank = -1;
       let color = '#888';
+      // レアリティ色とハイライト判定を別々に計算
+      const highlightSet = spawnHighlightItemIds && spawnHighlightItemIds.length > 0 ? new Set(spawnHighlightItemIds) : null;
+      let hasHighlight = false;
       if (p.items) {
         for (const pi of p.items) {
           const item = itemMap[pi.itemId];
+          if (highlightSet && highlightSet.has(pi.itemId)) hasHighlight = true;
           if (!item) continue;
           const rank = rarityRank[item.textColor] ?? -1;
           if (rank > bestRank) { bestRank = rank; color = rarityColor[item.textColor] ?? '#888'; }
         }
       }
+      // ハイライト中: 非該当はほぼ消す
+      if (highlightSet && !hasHighlight) {
+        ctx.globalAlpha = 0.06;
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#444';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      const radius = highlightSet && hasHighlight ? 9 : 5;
+      const glow = highlightSet && hasHighlight ? 14 : 4;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 4;
+      ctx.shadowBlur = glow;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, radius * 0.6, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -1708,6 +1729,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (bestId) onSpawnPointDelete(bestId);
       }
       return;
+    }
+
+    // スポーンビューワークリック (ツールモード関係なく点をクリック)
+    if (onSpawnPointView) {
+      const HIT = 12;
+      for (const p of spawnPoints) {
+        if (p.floor !== floor) continue;
+        if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
+          onSpawnPointView(p.id);
+          return;
+        }
+      }
     }
 
     if (toolMode === 'draw') {
@@ -2935,7 +2968,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
-        <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+        <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: hideMapBg ? 0 : 1, pointerEvents: hideMapBg ? 'none' : 'auto' }}>
           {customBg ? (
             <img src={customBg} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', opacity: 1, zIndex: 1 }} />
           ) : PRESET_MAPS_META[floor].path ? (
