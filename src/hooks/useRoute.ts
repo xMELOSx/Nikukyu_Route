@@ -504,15 +504,25 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       let data: RouteData | null = null;
       if (id.startsWith('__preset__')) {
         const presetId = id.replace('__preset__', '');
-        // プリセットが未ロード (=null) ならこの時点でロードする。
-        // プリセット使用時にメタ一覧をメモリに展開しないとプリセットを引けない。
+        // プリセットを presets.json (= サーバ) から直接 fetch (= シンプル)
         let current = presetsRef.current;
         if (current === null) {
-          current = normalizePresets(DataManager.loadPresetsFromLocalStorage());
-          setPresetsState(current);
-          presetsRef.current = current;
+          current = [];
         }
-        const preset = current.find(p => p.id === presetId);
+        let preset = current.find(p => p.id === presetId);
+        if (!preset) {
+          // presets.json から直接取得 (= routeData 付き)
+          try {
+            const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
+            if (res.ok) {
+              const fromServer = normalizePresets(await res.json());
+              current = fromServer;
+              preset = fromServer.find(p => p.id === presetId);
+              setPresetsState(current);
+              presetsRef.current = current;
+            }
+          } catch { /* ignore */ }
+        }
         if (!preset) return;
         // 実体は次の優先順で取得:
         //   1. プリセットメタに routeData が埋まっている (= 旧形式/サーバデータ)
