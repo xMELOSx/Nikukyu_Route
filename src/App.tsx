@@ -1024,6 +1024,26 @@ export default function App() {
   const [viewerFilterPlayers, setViewerFilterPlayers] = useState<number | null>(null);
   const [spawnHighlightItemIds, setSpawnHighlightItemIds] = useState<string[] | null>(null);
   const [spawnTabMode, setSpawnTabMode] = useState<'view' | 'manage'>('view');
+  // サーバー設定値 (本番のスポーン表示有無)
+  const [spawnServerEnabled, setSpawnServerEnabled] = useState<boolean>(() => !!globalDefaultsRef.current.spawnFeatureEnabled);
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
+  useEffect(() => {
+    if (defaultsLoaded) {
+      setSpawnServerEnabled(!!globalDefaultsRef.current.spawnFeatureEnabled);
+    }
+  }, [defaultsLoaded]);
+  // 表示制御: ローカルは常時表示、本番はサーバー設定に従う
+  const showSpawnFeature = isLocal || spawnServerEnabled;
+  // デバッグメニュートグル → サーバーの global_defaults.json を書き換え
+  const handleSpawnFeatureToggle = useCallback((enabled: boolean) => {
+    setSpawnServerEnabled(enabled);
+    globalDefaultsRef.current = { ...globalDefaultsRef.current, spawnFeatureEnabled: enabled };
+    fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...globalDefaultsRef.current, spawnFeatureEnabled: enabled })
+    }).catch(() => {});
+  }, []);
   const [spawnVisible, setSpawnVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_spawn_visible');
     return saved === null ? true : saved === 'true';
@@ -1278,6 +1298,7 @@ export default function App() {
   }, [routeApi.route.id]);
 
   const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
+    setDefaultsLoaded(true);
     routeApi.setRouteWithGlobalDefaults(prev => ({
       ...prev,
       hiddenMarkers: [...new Set([...(prev.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
@@ -1296,7 +1317,7 @@ export default function App() {
       setSkillCdThresholdState(gd.skillCdThreshold);
     }
   }, { isLocal });
-  const defaultsLoaded = globalDefaults.loaded;
+  const globalsLoaded = globalDefaults.loaded;
 
   const memoizedStrokes = useMemo(
     () => normalizeStrokes(routeApi.route.strokes[currentFloor]),
@@ -1869,7 +1890,7 @@ export default function App() {
   const startupFocusedRef = useRef(false);
   useEffect(() => {
     if (startupFocusedRef.current) return;
-    if (!defaultsLoaded) return;
+    if (!globalsLoaded) return;
     if (globalMarkersStore.globalMarkers.length === 0) return;
     const targetId = globalDefaultsRef.current.startupFocusMarkerId;
     if (!targetId) return;
@@ -1879,7 +1900,7 @@ export default function App() {
     if (!exists) return;
     startupFocusedRef.current = true;
     setTimeout(() => setFocusTrigger({ id: targetId, timestamp: Date.now() }), 300);
-  }, [globalMarkersStore.globalMarkers, routeApi.route.markers, defaultsLoaded]);
+  }, [globalMarkersStore.globalMarkers, routeApi.route.markers, globalsLoaded]);
 
   // --- DnD handlers (window-level) ---
   const fileIORef = useRef(fileIO);
@@ -2442,7 +2463,7 @@ export default function App() {
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
-                  {isLocal && (
+                  {showSpawnFeature && (
                     <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn')} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
                       <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
                     </button>
@@ -2837,7 +2858,7 @@ export default function App() {
               </div>
             )}
 
-            {toolMode === 'add-spawn' && isLocal && (
+            {toolMode === 'add-spawn' && showSpawnFeature && (
               <>
                 <div className="panel-section">
                   <div className="panel-title" style={{ fontSize: '10px' }}>スポーン</div>
@@ -3812,7 +3833,7 @@ export default function App() {
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
-              {isLocal && (
+              {showSpawnFeature && (
                 <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
               )}
             </div>
@@ -4891,6 +4912,8 @@ export default function App() {
         autoSaveInterval={autoSaveInterval}
         onSetAutoSaveInterval={setAutoSaveInterval}
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
+        spawnFeatureEnabled={spawnServerEnabled}
+        onSpawnFeatureEnabledChange={handleSpawnFeatureToggle}
         skillCdPresets={globalDefaults.skillCdPresets}
         onAddSkillCdPreset={globalDefaults.addSkillCdPreset}
         onUpdateSkillCdPreset={globalDefaults.updateSkillCdPreset}

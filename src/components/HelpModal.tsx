@@ -67,6 +67,8 @@ interface HelpModalProps {
   onRemoveSkillCdPreset?: (id: string) => void;
   storageLimitBytes?: number;
   onSetStorageLimit?: (bytes: number) => void;
+  spawnFeatureEnabled?: boolean;
+  onSpawnFeatureEnabledChange?: (v: boolean) => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({
@@ -101,7 +103,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   onUpdateSkillCdPreset,
   onRemoveSkillCdPreset,
   storageLimitBytes,
-  onSetStorageLimit
+  onSetStorageLimit,
+  spawnFeatureEnabled,
+  onSpawnFeatureEnabledChange
 }) => {
   const [globalMarkerEditorOpen, setGlobalMarkerEditorOpen] = useState(false);
   const [globalMarkerJson, setGlobalMarkerJson] = useState('');
@@ -178,6 +182,16 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px', borderColor: 'var(--magenta-neon, #ff00ff)', color: 'var(--magenta-neon, #ff00ff)' }} onClick={() => { onShowOcrDebug(); onClose(); }}>
                     ⚙️ {t('OCR調整テストベンチを開く')}
                   </button>
+                )}
+
+                {onSpawnFeatureEnabledChange !== undefined && (
+                  <div style={{ padding: '8px', background: 'rgba(57, 255, 20, 0.04)', border: '1px solid rgba(57, 255, 20, 0.2)', borderRadius: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!spawnFeatureEnabled} onChange={(e) => onSpawnFeatureEnabledChange(e.target.checked)} style={{ accentColor: '#39ff14', cursor: 'pointer' }} />
+                      {t('スポーン機能を本番公開')}
+                    </label>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{t('ON: 本番環境(GitHub Pages)でもスポーンタブ・ツールが表示されます')}</div>
+                  </div>
                 )}
 
                 <button className="btn-cyber" style={{ width: '100%', padding: '10px', fontSize: '12px', clipPath: 'none', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={async () => {

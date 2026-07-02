@@ -33,6 +33,8 @@ export interface GlobalDefaults {
   skillCdPresets?: SkillCdPreset[];
   /** localStorage の容量上限 (バイト)。ストレージ使用量バッジの判定に使用。 */
   storageLimitBytes?: number;
+  /** スポーン機能を本番環境で表示するか (デバッグメニューで制御) */
+  spawnFeatureEnabled?: boolean;
 }
 
 export interface UseGlobalDefaultsOptions {
@@ -131,7 +133,8 @@ export function useGlobalDefaults(
           warpMarkerThreshold: gd?.warpMarkerThreshold,
           skillCdThreshold: gd?.skillCdThreshold,
           skillCdPresets: presets,
-          storageLimitBytes: loadStorageLimitFromCache()
+          storageLimitBytes: loadStorageLimitFromCache(),
+          spawnFeatureEnabled: gd?.spawnFeatureEnabled ?? false
         };
         ref.current = normalized;
         setSkillCdPresetsState(presets);
