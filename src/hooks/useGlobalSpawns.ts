@@ -70,7 +70,7 @@ export function useGlobalSpawns(): UseGlobalSpawnsApi {
           } catch {}
         }
       }
-      // 静的 JSON フォールバック
+      // Static fallback for production (GitHub Pages)
       if (!data || !data.points) {
         try {
           const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);

@@ -73,13 +73,13 @@ function saveSkillCdPresetsToCache(presets: SkillCdPreset[]): void {
 
 /**
  * Owns the global-defaults ref (created externally so it can be shared with
- * useRoute) and loads `global_defaults.json` once on mount. After load, the
- * ref is updated and the supplied `onLoad` callback fires so the host can
- * push the new defaults into the route.
+ * useRoute) and loads from the API (`/api/global-defaults`) once on mount.
+ * After load, the ref is updated and the supplied `onLoad` callback fires so
+ * the host can push the new defaults into the route.
  *
  * プリセットは「常にグローバル」:
  *  1) localStorage に個人キャッシュ (heist_skill_cd_presets_v1) があれば最優先
- *  2) 無ければ global_defaults.json から読み込み
+ *  2) 無ければサーバー (config/data/global_defaults.json) から読み込み
  *  3) 追加/編集/削除時は localStorage とサーバ (あれば) 両方に書き込む
  *  個人モード (=!isLocal) では追加/編集/削除のUIを出すと無駄なので、関数は
  *  存在するが呼び出し側でガードする。
@@ -99,14 +99,14 @@ export function useGlobalDefaults(
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
+    fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
       .then(r => r.ok ? r.json() : null)
       .then((gd: GlobalDefaults | null) => {
         if (cancelled) {
           setLoaded(true);
           return;
         }
-        // 優先順位: localStorage (個人キャッシュ) > global_defaults.json
+        // 優先順位: localStorage (個人キャッシュ) > サーバー (config/data/global_defaults.json)
         const cached = loadSkillCdPresetsFromCache();
         const rawPresets = cached !== null
           ? cached

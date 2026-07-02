@@ -525,7 +525,6 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
             const res = await fetch(`${import.meta.env.BASE_URL}presets.json`);
             if (res.ok) {
               const fromServer = normalizePresets(await res.json());
-              // サーバ由来のプリセットでメモリを更新（ローカルにない新規プリセットを補完）
               const merged = presetsRef.current
                 ? [...fromServer.filter(s => !presetsRef.current!.find(l => l.id === s.id)), ...presetsRef.current]
                 : fromServer;

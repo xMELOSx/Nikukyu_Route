@@ -3,7 +3,6 @@ import { type Point } from '../utils/DataManager';
 
 export type GlobalWalls = { [key: string]: [Point, Point][] };
 
-const GLOBAL_WALLS_FILE = 'global_walls.json';
 const LOCAL_WALLS_KEY = 'heist_global_walls';
 const FLOORS = ['main', 'second', 'third', 'fourth'] as const;
 const EMPTY_WALLS: GlobalWalls = {
@@ -77,13 +76,13 @@ export interface UseGlobalWallsApi {
 /**
  * Global wall state — shared across all plans/users.
  *
- * The walls live in a single repo-tracked file (`global_walls.json`) and are
- * exposed through `/api/global-walls` (mirroring the global-markers API).
- * Every visitor sees the same wall data:
+ * The walls live in a single repo-tracked file (`config/data/global_walls.json`)
+ * and are exposed through `/api/global-walls`. Every visitor sees the same
+ * wall data:
  *
  *   1. The API (`/api/global-walls`) is the source of truth on the server.
- *   2. A static `global_walls.json` ships as a build-time fallback for static
- *      hosting (GitHub Pages etc.).
+ *   2. At build time, the file is copied to `dist/global_walls.json` for
+ *      static hosting (GitHub Pages etc.).
  *   3. `localStorage` is used as a tiny client-side cache so the first paint
  *      can show walls before the network round-trip resolves, and so the
  *      write happens to feel instant. The cache is reconciled with the API
@@ -155,10 +154,11 @@ export function useGlobalWalls({ isLocal }: UseGlobalWallsOptions): UseGlobalWal
             }
           }
         }
-      } catch { /* fall through to static file */ }
+      } catch { /* ignore */ }
 
+      // Static fallback for production (GitHub Pages)
       try {
-        const fileRes = await fetch(`${import.meta.env.BASE_URL}${GLOBAL_WALLS_FILE}`);
+        const fileRes = await fetch(`${import.meta.env.BASE_URL}global_walls.json`);
         if (fileRes.ok) {
           const data = await fileRes.json();
           if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -171,7 +171,7 @@ export function useGlobalWalls({ isLocal }: UseGlobalWallsOptions): UseGlobalWal
           }
         }
       } catch (err) {
-        console.error('Failed to load global walls from any source:', err);
+        console.error('Failed to load global walls from static file:', err);
       }
     };
 

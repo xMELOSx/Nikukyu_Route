@@ -82,8 +82,8 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load on mount. The priority is localStorage-first: once the user has
-  // markers in their browser, that is the source of truth. The API and the
-  // static `global_markers.json` file are only consulted as a *seed* for new
+  // markers in their browser, that is the source of truth. The API
+  // (`/api/global-markers` backed by `config/data/global_markers.json`) is consulted as a *seed* for new
   // visitors (localStorage empty) — and even then we MERGE incoming markers
   // into whatever exists, never blindly REPLACE. This prevents a corrupted
   // or empty file from wiping the user's data on every page load.
