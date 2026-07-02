@@ -995,40 +995,49 @@ export interface SkillCdPreset {
 
 // ---------------------------------------------------------------------------
 // スポーン記録 (アイテム出現位置 & 発見頻度解析)
+// 1点に複数アイテムを登録。アイテムは「登録アイテムマスタ」として管理。
 // ---------------------------------------------------------------------------
 
-export type SpawnItemType = 'image' | 'text' | 'textcolor' | 'fans' | 'coin';
+export const TEXTCOLOR_OPTIONS = ['green', 'blue', 'purple', 'yellow', 'red', 'cyan'] as const;
+export type TextColorOption = typeof TEXTCOLOR_OPTIONS[number];
 
-export const TEXTCOLOR_DETAILS = ['green', 'blue', 'purple', 'yellow'] as const;
-export type TextColorDetail = typeof TEXTCOLOR_DETAILS[number];
-
-export const TEXTCOLOR_DETAIL_META: { [key in TextColorDetail]: { label: string; color: string } } = {
+export const TEXTCOLOR_META: { [key in TextColorOption]: { label: string; color: string } } = {
   green: { label: '緑', color: '#39ff14' },
   blue: { label: '青', color: '#00bfff' },
   purple: { label: '紫', color: '#b388ff' },
   yellow: { label: '黄', color: '#ffd700' },
+  red: { label: 'カードキー', color: '#ff4444' },
+  cyan: { label: 'EH', color: '#00ffff' },
 };
 
-export interface SpawnRecord {
+/** 登録アイテムマスタ (ユーザーが事前に登録する) */
+export interface RegisteredItem {
   id: string;
-  item: SpawnItemType;
-  detail?: string; // 文字色の場合: 'green'|'blue'|'purple'|'yellow'
+  name: string;            // アイテム名/文字
+  textColor: string;       // 文字色キー (TEXTCOLOR_OPTIONS のいずれか)
+  fans: number;             // ファンス価値
+  coins: number;            // コイン価値
+  image?: string;           // 画像URL (省略可)
+  description?: string;     // 説明文
+}
+
+/** 1つの出現ポイントに紐づくアイテム出現記録 */
+export interface SpawnPointItem {
+  itemId: string;           // RegisteredItem.id への参照
+  discoveredAt: string;     // 発見日時 (ISO string)
+  playerCount: number;      // 発見時のプレイヤー人数 (レア確率に影響)
+}
+
+/** マップ上の出現ポイント (1点に複数アイテムを保持) */
+export interface SpawnPoint {
+  id: string;
   x: number;
   y: number;
   floor: FloorType;
-  discoveredAt: string; // ISO date string
+  createdAt: string;        // ポイント作成日時
   note?: string;
+  items: SpawnPointItem[];  // このポイントで発見されたアイテム群
 }
-
-export const SPAWN_ITEM_META: { [key in SpawnItemType]: { label: string; color: string; emoji: string } } = {
-  image: { label: '画像', color: '#ffffff', emoji: '🖼' },
-  text: { label: '文字', color: '#00f0ff', emoji: '🔤' },
-  textcolor: { label: '文字色', color: '#b388ff', emoji: '🎨' },
-  fans: { label: 'ファンス', color: '#ffd700', emoji: '💛' },
-  coin: { label: 'コイン', color: '#ff9500', emoji: '🪙' },
-};
-
-export const SPAWN_ITEM_ORDER: SpawnItemType[] = ['image', 'text', 'textcolor', 'fans', 'coin'];
 
 // Marker Metadata helper for styling and emoji representation
 export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string; color: string } } = {

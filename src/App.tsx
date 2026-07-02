@@ -24,18 +24,16 @@ import {
   type RouteData,
   type PresetData,
   type PresetVisibility,
-  type SpawnRecord,
-  type SpawnItemType,
+  type SpawnPoint,
+  type RegisteredItem,
   PRESET_VISIBILITY_META,
   PRESET_MAPS_META,
   normalizePresetVisibility,
   normalizePresets,
   getPresetVisibility,
   MARKER_META,
-  SPAWN_ITEM_META,
-  SPAWN_ITEM_ORDER,
-  TEXTCOLOR_DETAILS,
-  TEXTCOLOR_DETAIL_META,
+  TEXTCOLOR_OPTIONS,
+  TEXTCOLOR_META,
   DataManager,
   normalizeStrokes,
   smoothStrokePointsKeepEnds,
@@ -1006,61 +1004,163 @@ export default function App() {
 
   const globalMarkersStore = useGlobalMarkers({ isLocal });
 
-  // Global Spawn Records — ローカルのみ (localStorage 保存)
+  // Global Spawn Records
   const spawnApi = useGlobalSpawns();
+  const setSpawnPoints = spawnApi.setPoints;
 
-  // アクティブなスポーンアイテム種別 (add-spawn ツールで選択中)
-  const [activeSpawnItem, setActiveSpawnItem] = useState<SpawnItemType | null>(null);
-  // 文字色の詳細 (緑/青/紫/黄)
-  const [spawnDetail, setSpawnDetail] = useState('');
-  // 表示中のスポーン種別フィルター (null = すべて表示)
-  const [visibleSpawnTypes, setVisibleSpawnTypes] = useState<Set<SpawnItemType> | null>(null);
   // スポーンツールのサブモード
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
-  // 情報編集の状態
-  const [editSpawnTarget, setEditSpawnTarget] = useState<string | null>(null);
-  const [editSpawnItem, setEditSpawnItem] = useState<SpawnItemType>('image');
-  const [editSpawnDetail, setEditSpawnDetail] = useState('');
-  const [editSpawnNote, setEditSpawnNote] = useState('');
-  // リスト管理: 有効な文字色詳細
-  const [enabledTextColorDetails, setEnabledTextColorDetails] = useState<Set<string>>(new Set(TEXTCOLOR_DETAILS));
+  const [spawnHideOther, setSpawnHideOther] = useState(false);
+  const [spawnFocusTrigger, setSpawnFocusTrigger] = useState<{ x: number; y: number; ts: number } | null>(null);
+  // 設置モードで選択中のアイテムID
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  // 情報編集の対象ポイントID
+  const [editPointId, setEditPointId] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  // 情報編集で追加するアイテムID
+  const [editAddItemId, setEditAddItemId] = useState<string>('');
+  const [editAddPlayerCount, setEditAddPlayerCount] = useState(1);
+  // アイテム管理フォーム
+  const [itemFormName, setItemFormName] = useState('');
+  const [itemFormTextColor, setItemFormTextColor] = useState('green');
+  const [itemFormFans, setItemFormFans] = useState(0);
+  const [itemFormCoins, setItemFormCoins] = useState(0);
+  const [itemFormEditId, setItemFormEditId] = useState<string | null>(null);
+  const [itemFormDescription, setItemFormDescription] = useState('');
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkColor, setBulkColor] = useState('blue');
+  const [itemFormImage, setItemFormImage] = useState('');
+  const itemImageInputRef = useRef<HTMLInputElement>(null);
+  const handleItemImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setItemFormImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }, []);
+  // スポーン点履歴 (undo/redo)
+  const spawnUndoRef = useRef<SpawnPoint[][]>([]);
+  const spawnRedoRef = useRef<SpawnPoint[][]>([]);
+  const pushSpawnHistory = useCallback(() => {
+    setSpawnPoints(prev => {
+      spawnUndoRef.current.push([...prev]);
+      if (spawnUndoRef.current.length > 30) spawnUndoRef.current.shift();
+      spawnRedoRef.current = [];
+      return prev;
+    });
+  }, []);
+  const undoPoints = useCallback(() => {
+    const prev = spawnUndoRef.current.pop();
+    if (!prev) return;
+    setSpawnPoints(curr => {
+      spawnRedoRef.current.push([...curr]);
+      return prev;
+    });
+  }, []);
+  const redoPoints = useCallback(() => {
+    const next = spawnRedoRef.current.pop();
+    if (!next) return;
+    setSpawnPoints(curr => {
+      spawnUndoRef.current.push([...curr]);
+      return next;
+    });
+  }, []);
 
-  // スポーン追加ハンドラ: マップクリック時に呼ばれる
-  const handleSpawnAdd = useCallback((x: number, y: number) => {
-    const item = activeSpawnItem;
-    if (!item) return;
-    const record: SpawnRecord = {
-      id: generateId('spawn'),
-      item,
-      detail: item === 'textcolor' && spawnDetail ? spawnDetail : undefined,
-      x,
-      y,
+  // スポーン点追加: マップクリック時 (空の点)
+  const handleSpawnPointAdd = useCallback((x: number, y: number) => {
+    pushSpawnHistory();
+    const point: SpawnPoint = {
+      id: generateId('sp'),
+      x, y,
       floor: currentFloor,
-      discoveredAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      items: [],
     };
-    spawnApi.addSpawn(record);
-  }, [activeSpawnItem, spawnDetail, currentFloor, spawnApi]);
+    spawnApi.addPoint(point);
+  }, [currentFloor, spawnApi, pushSpawnHistory]);
 
-  // スポーン編集ハンドラ
-  const handleSpawnEdit = useCallback((id: string) => {
-    const record = spawnApi.spawnRecords.find(s => s.id === id);
-    if (!record) return;
-    setEditSpawnTarget(id);
-    setEditSpawnItem(record.item);
-    setEditSpawnDetail(record.detail || '');
-    setEditSpawnNote(record.note || '');
-  }, [spawnApi.spawnRecords]);
+  // スポーン点編集: マップの点をクリック時 → モーダル表示
+  const handleSpawnPointEdit = useCallback((id: string) => {
+    setEditPointId(id);
+    setShowEditModal(true);
+  }, []);
 
-  // スポーン更新ハンドラ
-  const handleSpawnUpdate = useCallback((id: string, updates: Partial<SpawnRecord>) => {
-    setActiveSpawnItem(null);
-    setSpawnDetail('');
-    // 削除して再追加 (簡易更新)
-    const record = spawnApi.spawnRecords.find(s => s.id === id);
-    if (!record) return;
-    spawnApi.removeSpawn(id);
-    spawnApi.addSpawn({ ...record, ...updates, id: generateId('spawn') });
-  }, [spawnApi]);
+  // スポーン点にアイテムを追加
+  const handlePointAddItem = useCallback((pointId: string, itemId: string, playerCount: number) => {
+    if (!itemId) return;
+    pushSpawnHistory();
+    spawnApi.updatePoint(pointId, {
+      items: [...(spawnApi.points.find(p => p.id === pointId)?.items || []), { itemId, discoveredAt: new Date().toISOString(), playerCount }],
+    });
+    setEditAddItemId('');
+    setEditAddPlayerCount(1);
+  }, [spawnApi, pushSpawnHistory]);
+
+  // スポーン点からアイテムを削除
+  const handlePointRemoveItem = useCallback((pointId: string, itemIdx: number) => {
+    const point = spawnApi.points.find(p => p.id === pointId);
+    if (!point) return;
+    pushSpawnHistory();
+    const next = point.items.filter((_, i) => i !== itemIdx);
+    spawnApi.updatePoint(pointId, { items: next });
+  }, [spawnApi, pushSpawnHistory]);
+
+  // アイテム登録/更新
+  const handleItemSave = useCallback(() => {
+    if (!itemFormName.trim()) return;
+    const data = { name: itemFormName.trim(), textColor: itemFormTextColor, fans: itemFormFans, coins: itemFormCoins, description: itemFormDescription || undefined, image: itemFormImage || undefined };
+    if (itemFormEditId) {
+      spawnApi.updateItem(itemFormEditId, data);
+    } else {
+      spawnApi.addItem({ id: generateId('ritem'), ...data });
+    }
+    setItemFormName('');
+    setItemFormDescription('');
+    setItemFormImage('');
+    setItemFormTextColor('blue');
+    setItemFormFans(0);
+    setItemFormCoins(0);
+    setItemFormEditId(null);
+  }, [itemFormName, itemFormDescription, itemFormImage, itemFormTextColor, itemFormFans, itemFormCoins, itemFormEditId, spawnApi]);
+
+  // 一括インポート (同名上書き + 3列 format 対応)
+  const handleBulkImport = useCallback(() => {
+    if (!bulkInput.trim()) return;
+    const lines = bulkInput.trim().split('\n');
+    let imported = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split('\t');
+      if (parts.length < 2) continue;
+      const name = parts[0].trim();
+      if (!name) continue;
+      const fans = parseInt(parts[1].replace(/,/g, '')) || 0;
+      let coins = 0;
+      let desc: string | undefined;
+      // 3列目以降を解釈: 数字ならコイン、文字なら説明とみなす
+      if (parts.length >= 3) {
+        const third = parts[2].trim();
+        const thirdNum = parseInt(third.replace(/,/g, ''));
+        if (!isNaN(thirdNum) && String(thirdNum) === third.replace(/,/g, '')) {
+          coins = thirdNum;
+          desc = parts.slice(3).join('\t').trim() || undefined;
+        } else {
+          desc = parts.slice(2).join('\t').trim() || undefined;
+        }
+      }
+      // 同名チェック → 上書き
+      const existing = spawnApi.items.find(i => i.name === name);
+      if (existing) {
+        spawnApi.updateItem(existing.id, { name, textColor: bulkColor, fans, coins, description: desc });
+      } else {
+        spawnApi.addItem({ id: generateId('ritem'), name, textColor: bulkColor, fans, coins, description: desc });
+      }
+      imported++;
+    }
+    if (imported > 0) setBulkInput('');
+  }, [bulkInput, bulkColor, spawnApi]);
 
   // Global Walls — shared across all plans AND all users. The hook loads from
   // the `/api/global-walls` endpoint (with the static `global_walls.json` as
@@ -2713,242 +2813,403 @@ export default function App() {
                   <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '2px' }}>
                     {([
                       { key: 'place' as const, label: '設置' },
-                      { key: 'edit' as const, label: '情報編集' },
                       { key: 'erase' as const, label: '消しゴム' },
-                      { key: 'manage' as const, label: 'リスト管理' },
+                      { key: 'edit' as const, label: '編集' },
+                      { key: 'manage' as const, label: '管理' },
                     ]).map(t => (
-                      <button
-                        key={t.key}
+                      <button key={t.key}
                         className={`tool-btn ${spawnToolMode === t.key ? 'active' : ''}`}
                         style={{ height: 26, fontSize: '9px', padding: '2px', minWidth: 0 }}
                         onClick={() => setSpawnToolMode(t.key)}
-                      >
-                        {t.label}
-                      </button>
+                      >{t.label}</button>
                     ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                    <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none', flex: 1 }}
+                      disabled={spawnUndoRef.current.length === 0}
+                      onClick={undoPoints}>↩ 元に戻す</button>
+                    <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none', flex: 1 }}
+                      disabled={spawnRedoRef.current.length === 0}
+                      onClick={redoPoints}>↪ やり直し</button>
                   </div>
                 </div>
 
+                {/* ---- 設置 ---- */}
                 {spawnToolMode === 'place' && (
-                  <>
-                    <div className="panel-section">
-                      <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
-                        アイテム選択 (マップをクリックして追加)
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: activeSpawnItem === 'textcolor' ? '4px' : 0 }}>
-                        {SPAWN_ITEM_ORDER.map(item => {
-                          const meta = SPAWN_ITEM_META[item];
-                          const isActive = activeSpawnItem === item;
-                          const cnt = spawnApi.spawnRecords.filter(s => s.item === item).length;
-                          return (
-                            <button
-                              key={item}
-                              onClick={() => setActiveSpawnItem(isActive ? null : item)}
-                              style={{
-                                fontSize: '9px', padding: '3px 6px',
-                                border: `1px solid ${meta.color}${isActive ? 'ff' : '55'}`,
-                                background: isActive ? `${meta.color}33` : 'transparent',
-                                color: meta.color, borderRadius: '4px', cursor: 'pointer',
-                                fontWeight: isActive ? 700 : 400,
-                                boxShadow: isActive ? `0 0 8px ${meta.color}66` : 'none',
-                                display: 'flex', alignItems: 'center', gap: '2px',
-                              }}
-                            >
-                              <span>{meta.emoji}</span>
-                              <span>{meta.label}</span>
-                              <span style={{ opacity: 0.6, fontSize: '8px', marginLeft: '2px' }}>({cnt})</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {activeSpawnItem === 'textcolor' && (
-                        <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
-                          {TEXTCOLOR_DETAILS.map(d => {
-                            const dm = TEXTCOLOR_DETAIL_META[d];
-                            const isSel = spawnDetail === d;
-                            return (
-                              <button
-                                key={d}
-                                onClick={() => setSpawnDetail(isSel ? '' : d)}
-                                style={{
-                                  fontSize: '8px', padding: '2px 6px',
-                                  border: `1px solid ${dm.color}${isSel ? 'ff' : '44'}`,
-                                  background: isSel ? `${dm.color}33` : 'transparent',
-                                  color: dm.color, borderRadius: '3px', cursor: 'pointer',
-                                  fontWeight: isSel ? 700 : 400,
-                                }}
-                              >
-                                {dm.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="panel-section">
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
-                        合計: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.spawnRecords.length}</span> 件
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {spawnToolMode === 'edit' && (
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>情報編集</div>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                      マップ上のスポーン点をクリックして選択 → 編集
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                      マップをクリックして点を追加
                     </div>
-                    {editSpawnTarget && (() => {
-                      const target = spawnApi.spawnRecords.find(s => s.id === editSpawnTarget);
-                      if (!target) return <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>対象が見つかりません</div>;
-                      return (
-                        <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '4px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>ID: {target.id.slice(0, 12)}… X:{target.x} Y:{target.y}</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px' }}>
-                            {SPAWN_ITEM_ORDER.map(item => {
-                              const meta = SPAWN_ITEM_META[item];
-                              const isActive = editSpawnItem === item;
-                              return (
-                                <button key={item} onClick={() => setEditSpawnItem(item)}
-                                  style={{
-                                    fontSize: '8px', padding: '2px 5px',
-                                    border: `1px solid ${meta.color}${isActive ? 'ff' : '44'}`,
-                                    background: isActive ? `${meta.color}33` : 'transparent',
-                                    color: meta.color, borderRadius: '3px', cursor: 'pointer',
-                                  }}
-                                >{meta.emoji} {meta.label}</button>
-                              );
-                            })}
-                          </div>
-                          {editSpawnItem === 'textcolor' && (
-                            <div style={{ display: 'flex', gap: '2px' }}>
-                              {TEXTCOLOR_DETAILS.map(d => {
-                                const dm = TEXTCOLOR_DETAIL_META[d];
-                                const isSel = editSpawnDetail === d;
-                                return (
-                                  <button key={d} onClick={() => setEditSpawnDetail(isSel ? '' : d)}
-                                    style={{
-                                      fontSize: '7px', padding: '1px 4px',
-                                      border: `1px solid ${dm.color}${isSel ? 'ff' : '33'}`,
-                                      background: isSel ? `${dm.color}33` : 'transparent',
-                                      color: dm.color, borderRadius: '2px', cursor: 'pointer',
-                                    }}
-                                  >{dm.label}</button>
-                                );
-                              })}
-                            </div>
-                          )}
-                          <input className="input-cyber" placeholder="メモ"
-                            value={editSpawnNote} onChange={e => setEditSpawnNote(e.target.value)}
-                            style={{ fontSize: '9px', padding: '2px 4px' }} />
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button className="btn-cyber success" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
-                              onClick={() => {
-                                handleSpawnUpdate(editSpawnTarget, {
-                                  item: editSpawnItem,
-                                  detail: editSpawnItem === 'textcolor' ? editSpawnDetail : undefined,
-                                  note: editSpawnNote || undefined,
-                                });
-                                setEditSpawnTarget(null);
-                                setEditSpawnNote('');
-                                setEditSpawnDetail('');
-                              }}
-                            >保存</button>
-                            <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
-                              onClick={() => setEditSpawnTarget(null)}>キャンセル</button>
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                      点を打った後、「編集」タブでアイテムを追加してください。
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '6px' }}>
+                      スポーン点: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.points.length}</span>
+                    </div>
                   </div>
                 )}
 
+                {/* ---- 編集 ---- */}
+                {spawnToolMode === 'edit' && (
+                  <div className="panel-section">
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>編集</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      マップ上のスポーン点をクリックして編集
+                    </div>
+                    {editPointId && (
+                      <div style={{ fontSize: '9px', color: 'var(--cyan-neon)' }}>
+                        編集中: X:{spawnApi.points.find(p => p.id === editPointId)?.x ?? '?'} Y:{spawnApi.points.find(p => p.id === editPointId)?.y ?? '?'}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ---- 消しゴム ---- */}
                 {spawnToolMode === 'erase' && (
                   <div className="panel-section">
                     <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>消しゴム</div>
                     <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                       マップ上のスポーン点をクリックして削除
                     </div>
-                    <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>
-                      削除はローカルのみ反映
-                    </div>
+                    <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>削除はローカルのみ反映</div>
                   </div>
                 )}
 
+                {/* ---- アイテム管理 ---- */}
                 {spawnToolMode === 'manage' && (
-                  <>
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>アイテムリスト管理</div>
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                      アイテム管理
+                    </div>
                     <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                      使用するアイテムの表示/非表示を設定
+                      登録アイテム数: {spawnApi.items.length}
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {SPAWN_ITEM_ORDER.map(item => {
-                        const meta = SPAWN_ITEM_META[item];
-                        const visible = visibleSpawnTypes?.has(item) ?? true;
-                        const cnt = spawnApi.spawnRecords.filter(s => s.item === item).length;
-                        return (
-                          <label key={item}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '3px',
-                              fontSize: '9px', color: visible ? meta.color : 'var(--text-muted)',
-                              cursor: 'pointer', padding: '3px 6px', borderRadius: '4px',
-                              background: visible ? `${meta.color}15` : 'transparent',
-                              border: `1px solid ${visible ? meta.color + '44' : 'transparent'}`,
-                              userSelect: 'none',
-                            }}
-                          >
-                            <input type="checkbox" checked={visible}
-                              onChange={() => {
-                                const next = new Set(visibleSpawnTypes ?? SPAWN_ITEM_ORDER);
-                                if (next.has(item)) next.delete(item); else next.add(item);
-                                setVisibleSpawnTypes(next.size === SPAWN_ITEM_ORDER.length ? null : next);
-                              }}
-                              style={{ accentColor: meta.color, width: '10px', height: '10px', cursor: 'pointer' }} />
-                            <span>{meta.emoji}</span>
-                            <span>{meta.label}</span>
-                            <span style={{ opacity: 0.6 }}>({cnt})</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
-                      <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
-                        onClick={() => setVisibleSpawnTypes(null)}>すべて表示</button>
-                      <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
-                        onClick={() => setVisibleSpawnTypes(new Set())}>すべて非表示</button>
-                    </div>
+                    <button className="btn-cyber success" style={{ width: '100%', fontSize: '10px', padding: '6px', clipPath: 'none' }}
+                      onClick={() => setShowItemModal(true)}>
+                      アイテム登録/編集を開く
+                    </button>
                   </div>
-                  <div className="panel-section">
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>文字色の詳細色:</div>
-                    <div style={{ display: 'flex', gap: '3px' }}>
-                      {TEXTCOLOR_DETAILS.map(d => {
-                        const dm = TEXTCOLOR_DETAIL_META[d];
-                        const active = enabledTextColorDetails.has(d);
-                        return (
-                          <button key={d}
-                            onClick={() => {
-                              const next = new Set(enabledTextColorDetails);
-                              if (next.has(d)) next.delete(d); else next.add(d);
-                              setEnabledTextColorDetails(next);
-                            }}
-                            style={{
-                              fontSize: '8px', padding: '2px 6px',
-                              border: `1px solid ${dm.color}${active ? 'ff' : '33'}`,
-                              background: active ? `${dm.color}33` : 'transparent',
-                              color: active ? dm.color : 'var(--text-muted)',
-                              borderRadius: '3px', cursor: 'pointer',
-                            }}
-                          >{dm.label}</button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  </>
                 )}
+
+                {/* 共通設定 (全モード) */}
+                <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={spawnHideOther}
+                      onChange={e => setSpawnHideOther(e.target.checked)}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                    マーカーと線を隠す
+                  </label>
+                </div>
+                <div className="panel-section">
+                  <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                    点を探す ({spawnApi.points.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {spawnApi.points.length === 0 ? (
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>点がありません</div>
+                    ) : (
+                      [...spawnApi.points].reverse().map(p => (
+                        <button key={p.id} onClick={() => setSpawnFocusTrigger({ x: p.x, y: p.y, ts: Date.now() })}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            fontSize: '9px', padding: '3px 6px',
+                            background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(79,195,247,0.15)',
+                            borderRadius: '3px', cursor: 'pointer', color: 'var(--text-primary)',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39ff14', display: 'inline-block', flexShrink: 0 }} />
+                          <span style={{ flex: 1 }}>X:{p.x} Y:{p.y}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '8px' }}>{(p.items || []).length}点</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               </>
             )}
+
+            {/* アイテム管理モーダル */}
+            {showItemModal && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.75)', zIndex: 5000,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }} onClick={() => setShowItemModal(false)}>
+                <div style={{
+                  background: 'var(--panel-bg, #0a0e18)', width: '520px', maxHeight: '85vh',
+                  border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px',
+                  display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                }} onClick={e => e.stopPropagation()}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>アイテム管理</span>
+                    <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setShowItemModal(false)}>✕ 閉じる</button>
+                  </div>
+                  <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+                    {/* 個別登録フォーム */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{itemFormEditId ? 'アイテム編集' : '新規アイテム登録'}</div>
+                      <input className="input-cyber" placeholder="アイテム名"
+                        value={itemFormName} onChange={e => setItemFormName(e.target.value)}
+                        style={{ fontSize: '14px', padding: '8px 12px' }} />
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {TEXTCOLOR_OPTIONS.map(c => {
+                          const tc = TEXTCOLOR_META[c];
+                          const isSel = itemFormTextColor === c;
+                          return (
+                            <button key={c} onClick={() => setItemFormTextColor(c)}
+                              style={{
+                                flex: 1, fontSize: '11px', padding: '6px 8px',
+                                border: `2px solid ${tc.color}${isSel ? 'ff' : '44'}`,
+                                background: isSel ? `${tc.color}33` : 'transparent',
+                                color: tc.color, borderRadius: '6px', cursor: 'pointer',
+                                fontWeight: isSel ? 700 : 400,
+                              }}
+                            >{tc.label}</button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <label style={{ flex: 1, fontSize: '13px', color: '#ffd700', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                          ファンス
+                          <input type="number" min="0" step="100" value={itemFormFans}
+                            onChange={e => setItemFormFans(Math.max(0, parseInt(e.target.value) || 0))}
+                            style={{ width: '120px', fontSize: '15px', fontWeight: 700, padding: '6px 10px', background: '#0a0e18', color: '#ffd700', border: '1px solid rgba(255,215,0,0.4)', borderRadius: '4px' }} />
+                        </label>
+                        <label style={{ flex: 1, fontSize: '13px', color: '#ff9500', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                          コイン
+                          <input type="number" min="0" step="10" value={itemFormCoins}
+                            onChange={e => setItemFormCoins(Math.max(0, parseInt(e.target.value) || 0))}
+                            style={{ width: '120px', fontSize: '15px', fontWeight: 700, padding: '6px 10px', background: '#0a0e18', color: '#ff9500', border: '1px solid rgba(255,149,0,0.4)', borderRadius: '4px' }} />
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input className="input-cyber" placeholder="画像URL"
+                          value={itemFormImage} onChange={e => setItemFormImage(e.target.value)}
+                          style={{ flex: 1, fontSize: '12px', padding: '6px 10px' }} />
+                        <button className="btn-cyber" style={{ fontSize: '11px', padding: '4px 10px', clipPath: 'none', flexShrink: 0 }}
+                          onClick={() => itemImageInputRef.current?.click()}>参照</button>
+                        {itemFormImage && (
+                          <button className="btn-cyber danger" style={{ fontSize: '11px', padding: '4px 10px', clipPath: 'none', flexShrink: 0 }}
+                            onClick={() => setItemFormImage('')}>✕</button>
+                        )}
+                        <input ref={itemImageInputRef} type="file" accept="image/*" onChange={handleItemImageUpload} style={{ display: 'none' }} />
+                      </div>
+                      <textarea className="textarea-cyber" placeholder="説明 (任意)"
+                        value={itemFormDescription} onChange={e => setItemFormDescription(e.target.value)}
+                        style={{ fontSize: '12px', padding: '6px 10px', minHeight: '50px', resize: 'vertical' }} />
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn-cyber success" style={{ flex: 1, fontSize: '12px', padding: '8px', clipPath: 'none' }}
+                          onClick={handleItemSave} disabled={!itemFormName.trim()}>
+                          {itemFormEditId ? '更新' : '登録'}
+                        </button>
+                        {itemFormEditId && (
+                          <button className="btn-cyber" style={{ fontSize: '12px', padding: '8px', clipPath: 'none' }}
+                            onClick={() => { setItemFormEditId(null); setItemFormName(''); setItemFormDescription(''); setItemFormTextColor('blue'); setItemFormFans(0); setItemFormCoins(0); }}>
+                            キャンセル
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 一括インポート */}
+                    <details style={{ marginBottom: '16px' }}>
+                      <summary style={{ fontSize: '12px', color: 'var(--cyan-neon)', cursor: 'pointer', fontWeight: 600, userSelect: 'none' }}>
+                        一括インポート
+                      </summary>
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          名前⇔ファンス⇔コイン⇔説明 (タブ区切り、1行1アイテム)
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                          {TEXTCOLOR_OPTIONS.map(c => {
+                            const tc = TEXTCOLOR_META[c];
+                            const isSel = bulkColor === c;
+                            return (
+                              <button key={c} onClick={() => setBulkColor(c)}
+                                style={{
+                                  flex: 1, fontSize: '9px', padding: '4px 6px',
+                                  border: `1px solid ${tc.color}${isSel ? 'ff' : '33'}`,
+                                  background: isSel ? `${tc.color}33` : 'transparent',
+                                  color: tc.color, borderRadius: '4px', cursor: 'pointer',
+                                  fontWeight: isSel ? 700 : 400,
+                                }}
+                              >{tc.label}</button>
+                            );
+                          })}
+                        </div>
+                        <textarea className="textarea-cyber"
+                          value={bulkInput} onChange={e => setBulkInput(e.target.value)}
+                          placeholder={'サンプル:\nアイテム名1\t750\t3\t説明文1\nアイテム名2\t640\t3\t説明文2'}
+                          style={{ fontSize: '11px', padding: '6px 10px', minHeight: '100px', resize: 'vertical', width: '100%' }} />
+                        <button className="btn-cyber success" style={{ width: '100%', fontSize: '12px', padding: '8px', clipPath: 'none', marginTop: '6px' }}
+                          onClick={handleBulkImport} disabled={!bulkInput.trim()}>
+                          インポート
+                        </button>
+                      </div>
+                    </details>
+
+                    {/* 登録済み一覧 */}
+                    <div style={{ borderTop: '1px solid rgba(79,195,247,0.15)', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                        登録済みアイテム ({spawnApi.items.length})
+                      </div>
+                      {spawnApi.items.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>アイテムがありません。上記フォームから登録してください。</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {spawnApi.items.map(item => {
+                            const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+                            const ptCount = spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).length;
+                            return (
+                              <div key={item.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                fontSize: '12px', padding: '8px 10px',
+                                background: 'rgba(0,0,0,0.2)', borderRadius: '6px',
+                              }}>
+                                <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ color: tc?.color || '#fff', fontWeight: 600, fontSize: '13px' }}>
+                                      {item.name}
+                                    </span>
+                                    {item.image && (
+                                      <a href={item.image} target="_blank" rel="noopener noreferrer"
+                                        style={{ fontSize: '10px', color: 'var(--cyan-neon)', textDecoration: 'none', flexShrink: 0 }}
+                                        title={item.image}>🖼</a>
+                                    )}
+                                    <span style={{ color: '#ffd700', fontSize: '12px', fontWeight: 600 }}>{item.fans.toLocaleString()}F</span>
+                                    <span style={{ color: '#ff9500', fontSize: '12px', fontWeight: 600 }}>{item.coins.toLocaleString()}C</span>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{ptCount}点</span>
+                                  </div>
+                                  {item.description && (
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {item.description}
+                                    </div>
+                                  )}
+                                </div>
+                                <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flexShrink: 0 }}
+                                  onClick={() => { setItemFormEditId(item.id); setItemFormName(item.name); setItemFormDescription(item.description || ''); setItemFormImage(item.image || ''); setItemFormTextColor(item.textColor); setItemFormFans(item.fans); setItemFormCoins(item.coins); }}>
+                                  編集
+                                </button>
+                                <button className="btn-cyber danger" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none' }}
+                                  onClick={() => spawnApi.removeItem(item.id)}>
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* スポーン点編集モーダル */}
+            {showEditModal && editPointId && (() => {
+              const pt = spawnApi.points.find(p => p.id === editPointId);
+              if (!pt) return null;
+              return (
+                <div style={{
+                  position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                  background: 'rgba(0,0,0,0.75)', zIndex: 5001,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }} onClick={() => { setShowEditModal(false); setEditPointId(null); }}>
+                  <div style={{
+                    background: 'var(--panel-bg, #0a0e18)', width: '480px', maxHeight: '85vh',
+                    border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px',
+                    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                  }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>
+                        スポーン点編集 X:{pt.x} Y:{pt.y}
+                      </span>
+                      <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }}
+                        onClick={() => { setShowEditModal(false); setEditPointId(null); }}>✕ 閉じる</button>
+                    </div>
+                    <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+                      {/* 登録アイテム一覧 */}
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                        アイテム一覧 ({(pt.items || []).length})
+                      </div>
+                      {(!pt.items || pt.items.length === 0) ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>
+                          アイテムが未登録です。下のフォームから追加してください。
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+                          {pt.items.map((pi, idx) => {
+                            const item = spawnApi.items.find(i => i.id === pi.itemId);
+                            const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                            return (
+                              <div key={idx} style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                fontSize: '12px', padding: '8px 10px',
+                                background: 'rgba(0,0,0,0.2)', borderRadius: '6px',
+                              }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                                <span style={{ color: tc?.color || '#fff', flex: 1, fontWeight: 600 }}>{item?.name || '(不明)'}</span>
+                                <span style={{ color: '#ffd700', fontWeight: 600 }}>{item?.fans.toLocaleString() || '0'}F</span>
+                                <span style={{ color: '#ff9500', fontWeight: 600 }}>{item?.coins.toLocaleString() || '0'}C</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600 }}>{pi.playerCount}P</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{new Date(pi.discoveredAt).toLocaleDateString()}</span>
+                                <button className="btn-cyber danger" style={{ fontSize: '10px', padding: '2px 6px', clipPath: 'none', flexShrink: 0 }}
+                                  onClick={() => handlePointRemoveItem(pt.id, idx)}>✕</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* アイテム追加 */}
+                      <div style={{ borderTop: '1px solid rgba(79,195,247,0.15)', paddingTop: '12px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>アイテム追加</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {/* 出現頻度順にソートしたアイテムタブ */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                            {[...spawnApi.items]
+                              .map(i => ({ item: i, count: spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === i.id)).length }))
+                              .sort((a, b) => b.count - a.count)
+                              .map(({ item }) => {
+                                const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+                                const isSel = editAddItemId === item.id;
+                                return (
+                                  <button key={item.id} onClick={() => setEditAddItemId(isSel ? '' : item.id)}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: '4px',
+                                      fontSize: '11px', padding: '5px 8px',
+                                      border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '44'}`,
+                                      background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.3)',
+                                      color: tc?.color || '#fff', borderRadius: '6px', cursor: 'pointer',
+                                      fontWeight: isSel ? 700 : 400,
+                                    }}
+                                  >
+                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
+                                    <span>{item.name}</span>
+                                  </button>
+                                );
+                              })}
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <label style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                              プレイヤー人数
+                              <input type="number" min="1" max="4" value={editAddPlayerCount}
+                                onChange={e => setEditAddPlayerCount(Math.max(1, Math.min(4, parseInt(e.target.value) || 1)))}
+                                style={{ width: '60px', fontSize: '14px', fontWeight: 700, padding: '6px 10px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '4px', textAlign: 'center' }} />
+                            </label>
+                            <button className="btn-cyber success" style={{ flex: 1, fontSize: '13px', padding: '8px 16px', clipPath: 'none' }}
+                              disabled={!editAddItemId}
+                              onClick={() => handlePointAddItem(pt.id, editAddItemId, editAddPlayerCount)}>追加</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {isEditMode && isLocal && (
               <div className="panel-section">
@@ -3193,9 +3454,9 @@ export default function App() {
               onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
               pickyMarkerIds={routeApi.route.pickyMarkerIds}
               onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
-              hideRouteLines={hideRouteLines}
+              hideRouteLines={spawnHideOther ? true : hideRouteLines}
               routeLines1px={routeLines1px}
-              hideBranchLines={hideBranchLines}
+              hideBranchLines={spawnHideOther ? true : hideBranchLines}
               branchLines1px={branchLines1px}
               textPinPassThrough={textPinPassThrough}
               showPhoneCompass={showPhoneCompass}
@@ -3222,7 +3483,7 @@ export default function App() {
               showDetectionRanges={showDetectionRanges}
               startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
               hiddenMarkers={routeApi.route.hiddenMarkers || []}
-              hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
+              hiddenMarkerTypes={spawnHideOther ? ['goal','cardkey','eh','rare','vault','boss','phone','note','room','warp','stairs','start','p1','p2','p3','info','battle','gbattle','picking','gpicking','long_picking','glong_picking','iwarp','text','iinfo','inote','itext','checkpoint','skill_cd'] : (routeApi.route.hiddenMarkerTypes || [])}
               onHideGlobalMarker={handleHideGlobalMarker}
               onShowGlobalMarker={handleShowGlobalMarker}
               onToggleMarkerVisibility={handleToggleMarkerVisibility}
@@ -3253,14 +3514,14 @@ export default function App() {
                 );
                 globalMarkersStore.replace(updated);
               }}
-              spawnRecords={spawnApi.spawnRecords}
-              spawnVisibleTypes={visibleSpawnTypes ?? undefined}
-              activeSpawnItem={activeSpawnItem}
-              spawnDetail={spawnDetail}
-              onSpawnAdd={handleSpawnAdd}
-              onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
-              onSpawnEdit={handleSpawnEdit}
+              spawnPoints={spawnApi.points}
+              spawnItems={spawnApi.items}
+              activeItemId={activeItemId}
+              onSpawnPointAdd={handleSpawnPointAdd}
+              onSpawnPointDelete={(id) => { pushSpawnHistory(); spawnApi.removePoint(id); }}
+              onSpawnPointEdit={handleSpawnPointEdit}
               spawnToolMode={spawnToolMode}
+              spawnFocusTrigger={spawnFocusTrigger}
             />
           ), [
             currentFloor,
@@ -3327,16 +3588,25 @@ export default function App() {
             autoRoute.inactiveMarkersMode,
             globalDefaults.skillCdPresets,
             globalDefaultsRef.current.startupFocusMarkerId,
-            spawnApi.spawnRecords,
-            activeSpawnItem,
-            visibleSpawnTypes,
-            spawnDetail,
+            spawnApi.points,
+            spawnApi.items,
+            activeItemId,
+            spawnHideOther,
+            spawnFocusTrigger,
             spawnToolMode,
-            editSpawnTarget,
-            editSpawnItem,
-            editSpawnDetail,
-            editSpawnNote,
-            enabledTextColorDetails
+            editPointId,
+            editAddItemId,
+            itemFormName,
+            itemFormTextColor,
+            itemFormFans,
+            itemFormCoins,
+            itemFormEditId,
+            itemFormDescription,
+            itemFormImage,
+            bulkInput,
+            bulkColor,
+            showItemModal,
+            showEditModal
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -3684,11 +3954,10 @@ export default function App() {
             <LangSync />
             {rightTab === 'spawn' && (
               <SpawnAnalysisPanel
-                spawnRecords={spawnApi.spawnRecords}
-                visibleSpawnTypes={visibleSpawnTypes ?? new Set(SPAWN_ITEM_ORDER)}
-                onVisibleSpawnTypesChange={(types) => setVisibleSpawnTypes(types.size === SPAWN_ITEM_ORDER.length ? null : types)}
+                points={spawnApi.points}
+                items={spawnApi.items}
                 isLocal={isLocal}
-                onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
+                onPointDelete={(id) => spawnApi.removePoint(id)}
               />
             )}
             {rightTab === 'play' && (
@@ -4121,7 +4390,7 @@ export default function App() {
                               {p.description && <span style={{ color: 'var(--text-muted)' }}>{t('備考:')}</span>}
                               {p.description && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{p.description}</span>}
                               {p.author && <span>{t('作者: ')}{p.author}</span>}
-                              {p.renderCache && <span style={{ color: 'var(--text-muted)' }}>{t('原作者: 設定済')}</span>}
+                              {isLocal && p.renderCache && <span style={{ color: 'var(--text-muted)' }}>{t('原作者: 設定済')}</span>}
                               {p.updatedAt && <span style={{ color: 'var(--text-muted)' }}>{t('最終更新: ')}{new Date(p.updatedAt).toLocaleString()}</span>}
                             </div>
                             <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', gap: '4px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>

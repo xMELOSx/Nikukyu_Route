@@ -7,11 +7,9 @@ import {
   type MarkerType,
   type Point,
   type SkillCdPreset,
-  type SpawnRecord,
-  type SpawnItemType,
+  type SpawnPoint,
+  type RegisteredItem,
   MARKER_META,
-  SPAWN_ITEM_META,
-  TEXTCOLOR_DETAIL_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
   getSkillCdColor
@@ -148,13 +146,13 @@ interface MapCanvasProps {
   // 起動時フッカスマーカーID（リセット時にその位置へ移動する）
   startupFocusMarkerId?: string;
   // スポーン記録関連
-  spawnRecords?: SpawnRecord[];
-  spawnVisibleTypes?: Set<SpawnItemType>;
-  activeSpawnItem?: SpawnItemType | null;
-  spawnDetail?: string;
-  onSpawnAdd?: (x: number, y: number) => void;
-  onSpawnDelete?: (id: string) => void;
-  onSpawnEdit?: (id: string) => void;
+  spawnPoints?: SpawnPoint[];
+  spawnItems?: RegisteredItem[];
+  activeItemId?: string | null;
+  spawnFocusTrigger?: { x: number; y: number; ts: number } | null;
+  onSpawnPointAdd?: (x: number, y: number) => void;
+  onSpawnPointDelete?: (id: string) => void;
+  onSpawnPointEdit?: (id: string) => void;
   spawnToolMode?: 'place' | 'edit' | 'erase' | 'manage';
 }
 
@@ -242,11 +240,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   skillCdPresets = [],
   onOpenSkillCdSettings,
   startupFocusMarkerId,
-  spawnRecords = [],
-  spawnVisibleTypes,
-  onSpawnAdd,
-  onSpawnDelete,
-  onSpawnEdit,
+  spawnPoints = [],
+  spawnItems = [],
+  activeItemId,
+  spawnFocusTrigger,
+  onSpawnPointAdd,
+  onSpawnPointDelete,
+  onSpawnPointEdit,
   spawnToolMode = 'place'
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
@@ -835,6 +835,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [focusTrigger]);
 
+  // Handle spawn point focus — scroll map to the point
+  useEffect(() => {
+    if (!spawnFocusTrigger) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const W_v = wrapper.clientWidth;
+    const H_v = wrapper.clientHeight;
+    const tgtZoom = 2;
+    const tgtPan = {
+      x: W_v * 0.5 - 800 - (spawnFocusTrigger.x - 800) * tgtZoom,
+      y: H_v * 0.6 - 2275 - (spawnFocusTrigger.y - 2275) * tgtZoom
+    };
+    startSmoothScroll(tgtPan, tgtZoom);
+  }, [spawnFocusTrigger]);
+
   // Handle "現在位置に移動" button — scroll to the current route position
   // using the same warp-scroll formula that already works correctly.
   useEffect(() => {
@@ -874,12 +889,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnRecords, spawnVisibleTypes]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnRecords, spawnVisibleTypes]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1028,8 +1043,47 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     redrawStrokesRef.current = redrawStrokes;
   });
 
+  // Draw spawn points on canvas
+  const drawSpawnPoints = () => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const sp = spawnPoints;
+    if (!sp || sp.length === 0) return;
+    const itemMap: Record<string, RegisteredItem> = {};
+    for (const item of spawnItems) itemMap[item.id] = item;
+    const rarityRank: Record<string, number> = { green: 0, blue: 1, purple: 2, yellow: 3, red: 4, cyan: 5 };
+    const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
+    ctx.save();
+    for (const p of sp) {
+      if (p.floor !== floor) continue;
+      let bestRank = -1;
+      let color = '#888';
+      if (p.items) {
+        for (const pi of p.items) {
+          const item = itemMap[pi.itemId];
+          if (!item) continue;
+          const rank = rarityRank[item.textColor] ?? -1;
+          if (rank > bestRank) { bestRank = rank; color = rarityColor[item.textColor] ?? '#888'; }
+        }
+      }
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
   // Redraw all strokes on canvas
   const redrawStrokes = (overrideElapsed?: number, forceWhileDrawing?: boolean) => {
+    try {
     const ctx = ctxRef.current;
     if (!ctx) return;
 
@@ -1039,6 +1093,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isDrawingRef.current && !forceWhileDrawing) return;
 
     let remaining = overrideElapsed !== undefined ? overrideElapsed : autoRouteElapsed;
+    if (!strokes) return;
 
     // Cache guard: If elapsed time has barely changed and stroke counts match, skip expensive redraw
     if (
@@ -1266,31 +1321,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.restore();
     }
 
-    // 4. Render spawn records as colored dots
-    if (spawnRecords.length > 0 && !isWallMode) {
-      const visibleFilter = spawnVisibleTypes;
-      for (const s of spawnRecords) {
-        if (s.floor !== floor) continue;
-        if (visibleFilter && !visibleFilter.has(s.item)) continue;
-        let color = SPAWN_ITEM_META[s.item]?.color ?? '#888';
-        if (s.item === 'textcolor' && s.detail && TEXTCOLOR_DETAIL_META[s.detail as keyof typeof TEXTCOLOR_DETAIL_META]) {
-          color = TEXTCOLOR_DETAIL_META[s.detail as keyof typeof TEXTCOLOR_DETAIL_META].color;
-        }
-        ctx.save();
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
+    // 4. Render spawn points
+    drawSpawnPoints();
+  } catch (e) { console.warn('[redrawStrokes]', e); }
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
@@ -1651,28 +1684,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'add-spawn' && isEditMode) {
-      if (spawnToolMode === 'place' && onSpawnAdd) {
-        onSpawnAdd(coords.x, coords.y);
-      } else if (spawnToolMode === 'edit' && onSpawnEdit) {
-        const HIT = 10;
+      if (spawnToolMode === 'place' && onSpawnPointAdd) {
+        onSpawnPointAdd(coords.x, coords.y);
+      } else if (spawnToolMode === 'edit' && onSpawnPointEdit) {
+        const HIT = 12;
         let bestId: string | null = null;
         let bestDist = HIT;
-        for (const s of spawnRecords) {
-          if (s.floor !== floor) continue;
-          const d = Math.hypot(s.x - coords.x, s.y - coords.y);
-          if (d < bestDist) { bestDist = d; bestId = s.id; }
+        for (const p of spawnPoints) {
+          if (p.floor !== floor) continue;
+          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = p.id; }
         }
-        if (bestId) onSpawnEdit(bestId);
-      } else if (spawnToolMode === 'erase' && onSpawnDelete) {
-        const HIT = 10;
+        if (bestId) onSpawnPointEdit(bestId);
+      } else if (spawnToolMode === 'erase' && onSpawnPointDelete) {
+        const HIT = 12;
         let bestId: string | null = null;
         let bestDist = HIT;
-        for (const s of spawnRecords) {
-          if (s.floor !== floor) continue;
-          const d = Math.hypot(s.x - coords.x, s.y - coords.y);
-          if (d < bestDist) { bestDist = d; bestId = s.id; }
+        for (const p of spawnPoints) {
+          if (p.floor !== floor) continue;
+          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = p.id; }
         }
-        if (bestId) onSpawnDelete(bestId);
+        if (bestId) onSpawnPointDelete(bestId);
       }
       return;
     }
