@@ -7,7 +7,10 @@ import {
   type MarkerType,
   type Point,
   type SkillCdPreset,
+  type SpawnRecord,
+  type SpawnItemType,
   MARKER_META,
+  SPAWN_ITEM_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
   getSkillCdColor
@@ -143,6 +146,12 @@ interface MapCanvasProps {
   onOpenSkillCdSettings?: () => void;
   // 起動時フッカスマーカーID（リセット時にその位置へ移動する）
   startupFocusMarkerId?: string;
+  // スポーン記録関連
+  spawnRecords?: SpawnRecord[];
+  spawnVisibleTypes?: Set<SpawnItemType>;
+  activeSpawnItem?: SpawnItemType | null;
+  onSpawnAdd?: (x: number, y: number) => void;
+  onSpawnDelete?: (id: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -228,7 +237,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   branchLines1px = false,
   skillCdPresets = [],
   onOpenSkillCdSettings,
-  startupFocusMarkerId
+  startupFocusMarkerId,
+  spawnRecords = [],
+  spawnVisibleTypes,
+  activeSpawnItem,
+  onSpawnAdd,
+  onSpawnDelete
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
@@ -1246,6 +1260,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.stroke();
       ctx.restore();
     }
+
+    // 4. Render spawn records as colored dots
+    if (spawnRecords.length > 0 && !isWallMode) {
+      const visibleFilter = spawnVisibleTypes;
+      for (const s of spawnRecords) {
+        if (s.floor !== floor) continue;
+        if (visibleFilter && !visibleFilter.has(s.item)) continue;
+        const meta = SPAWN_ITEM_META[s.item];
+        ctx.save();
+        ctx.shadowColor = meta.color;
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = meta.color;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
   };
 
   const handlePopupMouseDown = (e: React.MouseEvent) => {
@@ -1602,6 +1639,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setSkillCdMode('fixed');
       setSkillCdSeconds(0);
       setSkillCdPerSecondRate(0);
+      return;
+    }
+
+    if (toolMode === 'add-spawn' && onSpawnAdd && isEditMode) {
+      onSpawnAdd(coords.x, coords.y);
       return;
     }
 

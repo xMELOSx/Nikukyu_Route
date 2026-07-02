@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { flushSync } from 'react-dom';
 import { MapCanvas } from './components/MapCanvas';
 import { HistoryModal } from './components/HistoryModal';
+import { SpawnAnalysisPanel } from './components/SpawnAnalysisPanel';
 import { HelpModal } from './components/HelpModal';
 import { PlayDataPanel } from './components/PlayDataPanel';
 import { OcrDebugModal } from './components/OcrDebugModal';
@@ -23,12 +24,16 @@ import {
   type RouteData,
   type PresetData,
   type PresetVisibility,
+  type SpawnRecord,
+  type SpawnItemType,
   PRESET_VISIBILITY_META,
   PRESET_MAPS_META,
   normalizePresetVisibility,
   normalizePresets,
   getPresetVisibility,
   MARKER_META,
+  SPAWN_ITEM_META,
+  SPAWN_ITEM_ORDER,
   DataManager,
   normalizeStrokes,
   smoothStrokePointsKeepEnds,
@@ -42,6 +47,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { useGlobalDefaults, type GlobalDefaults } from './hooks/useGlobalDefaults';
 import { useGlobalMarkers } from './hooks/useGlobalMarkers';
 import { useGlobalWalls } from './hooks/useGlobalWalls';
+import { useGlobalSpawns } from './hooks/useGlobalSpawns';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
@@ -570,7 +576,7 @@ export default function App() {
     saveFloorNavCollapsed(floorNavCollapsed);
   }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall'>(() => {
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall' | 'add-spawn'>(() => {
     const saved = localStorage.getItem('heist_tool_mode');
     return (saved as any) || 'move';
   });
@@ -891,7 +897,7 @@ export default function App() {
   }, [markerVisibilityExpanded]);
 
   const [svgString, setSvgString] = useState<string>('');
-  const [rightTab, setRightTab] = useState<'route' | 'play'>('route');
+  const [rightTab, setRightTab] = useState<'route' | 'play' | 'spawn'>('route');
   const [markerScale, setMarkerScale] = useState<number>(() => {
     const saved = localStorage.getItem('heist_marker_scale');
     return saved !== null ? parseInt(saved) : 30;
@@ -997,6 +1003,30 @@ export default function App() {
   const globalDefaultsRef = useRef<GlobalDefaults>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
 
   const globalMarkersStore = useGlobalMarkers({ isLocal });
+
+  // Global Spawn Records — ローカルのみ (localStorage 保存)
+  const spawnApi = useGlobalSpawns();
+
+  // アクティブなスポーンアイテム種別 (add-spawn ツールで選択中)
+  const [activeSpawnItem, setActiveSpawnItem] = useState<SpawnItemType | null>(null);
+  // 表示中のスポーン種別フィルター (null = すべて表示)
+  const [visibleSpawnTypes, setVisibleSpawnTypes] = useState<Set<SpawnItemType> | null>(null);
+
+  // スポーン追加ハンドラ: マップクリック時に呼ばれる
+  const handleSpawnAdd = useCallback((x: number, y: number) => {
+    const item = activeSpawnItem;
+    if (!item) return;
+    const record: SpawnRecord = {
+      id: generateId('spawn'),
+      item,
+      x,
+      y,
+      floor: currentFloor,
+      discoveredAt: new Date().toISOString(),
+    };
+    spawnApi.addSpawn(record);
+    // アイテム選択は維持 (連続追加が容易)
+  }, [activeSpawnItem, currentFloor, spawnApi]);
 
   // Global Walls — shared across all plans AND all users. The hook loads from
   // the `/api/global-walls` endpoint (with the static `global_walls.json` as
@@ -2247,6 +2277,9 @@ export default function App() {
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
+                  <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => { setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn'); if (toolMode !== 'add-spawn') setRightTab('spawn'); }} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
+                    <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
+                  </button>
                   {isLocal && (
                     <>
                       <button className={`tool-btn ${toolMode === 'draw-wall' ? 'active' : ''}`} onClick={() => setToolMode('draw-wall')} id="tool-draw-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
@@ -2940,6 +2973,11 @@ export default function App() {
                 );
                 globalMarkersStore.replace(updated);
               }}
+              spawnRecords={spawnApi.spawnRecords}
+              spawnVisibleTypes={visibleSpawnTypes ?? undefined}
+              activeSpawnItem={activeSpawnItem}
+              onSpawnAdd={handleSpawnAdd}
+              onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
             />
           ), [
             currentFloor,
@@ -3005,7 +3043,10 @@ export default function App() {
             autoRoute.fuseMode,
             autoRoute.inactiveMarkersMode,
             globalDefaults.skillCdPresets,
-            globalDefaultsRef.current.startupFocusMarkerId
+            globalDefaultsRef.current.startupFocusMarkerId,
+            spawnApi.spawnRecords,
+            activeSpawnItem,
+            visibleSpawnTypes
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -3063,6 +3104,7 @@ export default function App() {
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'route' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'route' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'route' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('route')}>{t('ルート計画')}</button>
               <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'play' ? 'rgba(79,195,247,0.15)' : 'transparent', color: rightTab === 'play' ? 'var(--cyan-neon)' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'play' ? '2px solid var(--cyan-neon)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('play')}>{t('プレイデータ')}</button>
+              <button style={{ flex: 1, padding: '6px', fontSize: '11px', fontWeight: 700, background: rightTab === 'spawn' ? 'rgba(57,255,20,0.15)' : 'transparent', color: rightTab === 'spawn' ? '#39ff14' : 'var(--text-muted)', border: 'none', borderBottom: rightTab === 'spawn' ? '2px solid #39ff14' : '2px solid transparent', cursor: 'pointer' }} onClick={() => setRightTab('spawn')}>{t('スポーン')}</button>
             </div>
           </div>
 
@@ -3348,6 +3390,17 @@ export default function App() {
             </>)}
 
             <LangSync />
+            {rightTab === 'spawn' && (
+              <SpawnAnalysisPanel
+                spawnRecords={spawnApi.spawnRecords}
+                activeSpawnItem={activeSpawnItem}
+                onActiveSpawnItemChange={(item) => { setActiveSpawnItem(item); if (item) setToolMode('add-spawn'); }}
+                visibleSpawnTypes={visibleSpawnTypes ?? new Set(SPAWN_ITEM_ORDER)}
+                onVisibleSpawnTypesChange={(types) => setVisibleSpawnTypes(types.size === SPAWN_ITEM_ORDER.length ? null : types)}
+                onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
+                isEditMode={isEditMode}
+              />
+            )}
             {rightTab === 'play' && (
               <>
                 <div className="panel-section">
