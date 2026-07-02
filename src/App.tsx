@@ -1014,6 +1014,13 @@ export default function App() {
   const [visibleSpawnTypes, setVisibleSpawnTypes] = useState<Set<SpawnItemType> | null>(null);
   // スポーンツールのサブモード
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
+  // 情報編集の状態
+  const [editSpawnTarget, setEditSpawnTarget] = useState<string | null>(null);
+  const [editSpawnItem, setEditSpawnItem] = useState<SpawnItemType>('image');
+  const [editSpawnDetail, setEditSpawnDetail] = useState('');
+  const [editSpawnNote, setEditSpawnNote] = useState('');
+  // リスト管理: 有効な文字色詳細
+  const [enabledTextColorDetails, setEnabledTextColorDetails] = useState<Set<string>>(new Set(TEXTCOLOR_DETAILS));
 
   // スポーン追加ハンドラ: マップクリック時に呼ばれる
   const handleSpawnAdd = useCallback((x: number, y: number) => {
@@ -1035,8 +1042,10 @@ export default function App() {
   const handleSpawnEdit = useCallback((id: string) => {
     const record = spawnApi.spawnRecords.find(s => s.id === id);
     if (!record) return;
-    setActiveSpawnItem(record.item);
-    setSpawnDetail(record.detail || '');
+    setEditSpawnTarget(id);
+    setEditSpawnItem(record.item);
+    setEditSpawnDetail(record.detail || '');
+    setEditSpawnNote(record.note || '');
   }, [spawnApi.spawnRecords]);
 
   // スポーン更新ハンドラ
@@ -2694,6 +2703,250 @@ export default function App() {
               </div>
             )}
 
+            {toolMode === 'add-spawn' && isLocal && (
+              <>
+                <div className="panel-section">
+                  <div className="panel-title" style={{ fontSize: '10px' }}>スポーン</div>
+                  <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '2px' }}>
+                    {([
+                      { key: 'place' as const, label: '設置' },
+                      { key: 'edit' as const, label: '情報編集' },
+                      { key: 'erase' as const, label: '消しゴム' },
+                      { key: 'manage' as const, label: 'リスト管理' },
+                    ]).map(t => (
+                      <button
+                        key={t.key}
+                        className={`tool-btn ${spawnToolMode === t.key ? 'active' : ''}`}
+                        style={{ height: 26, fontSize: '9px', padding: '2px', minWidth: 0 }}
+                        onClick={() => setSpawnToolMode(t.key)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {spawnToolMode === 'place' && (
+                  <>
+                    <div className="panel-section">
+                      <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                        アイテム選択 (マップをクリックして追加)
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: activeSpawnItem === 'textcolor' ? '4px' : 0 }}>
+                        {SPAWN_ITEM_ORDER.map(item => {
+                          const meta = SPAWN_ITEM_META[item];
+                          const isActive = activeSpawnItem === item;
+                          const cnt = spawnApi.spawnRecords.filter(s => s.item === item).length;
+                          return (
+                            <button
+                              key={item}
+                              onClick={() => setActiveSpawnItem(isActive ? null : item)}
+                              style={{
+                                fontSize: '9px', padding: '3px 6px',
+                                border: `1px solid ${meta.color}${isActive ? 'ff' : '55'}`,
+                                background: isActive ? `${meta.color}33` : 'transparent',
+                                color: meta.color, borderRadius: '4px', cursor: 'pointer',
+                                fontWeight: isActive ? 700 : 400,
+                                boxShadow: isActive ? `0 0 8px ${meta.color}66` : 'none',
+                                display: 'flex', alignItems: 'center', gap: '2px',
+                              }}
+                            >
+                              <span>{meta.emoji}</span>
+                              <span>{meta.label}</span>
+                              <span style={{ opacity: 0.6, fontSize: '8px', marginLeft: '2px' }}>({cnt})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {activeSpawnItem === 'textcolor' && (
+                        <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                          {TEXTCOLOR_DETAILS.map(d => {
+                            const dm = TEXTCOLOR_DETAIL_META[d];
+                            const isSel = spawnDetail === d;
+                            return (
+                              <button
+                                key={d}
+                                onClick={() => setSpawnDetail(isSel ? '' : d)}
+                                style={{
+                                  fontSize: '8px', padding: '2px 6px',
+                                  border: `1px solid ${dm.color}${isSel ? 'ff' : '44'}`,
+                                  background: isSel ? `${dm.color}33` : 'transparent',
+                                  color: dm.color, borderRadius: '3px', cursor: 'pointer',
+                                  fontWeight: isSel ? 700 : 400,
+                                }}
+                              >
+                                {dm.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="panel-section">
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        合計: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.spawnRecords.length}</span> 件
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {spawnToolMode === 'edit' && (
+                  <div className="panel-section">
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>情報編集</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      マップ上のスポーン点をクリックして選択 → 編集
+                    </div>
+                    {editSpawnTarget && (() => {
+                      const target = spawnApi.spawnRecords.find(s => s.id === editSpawnTarget);
+                      if (!target) return <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>対象が見つかりません</div>;
+                      return (
+                        <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '4px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>ID: {target.id.slice(0, 12)}… X:{target.x} Y:{target.y}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px' }}>
+                            {SPAWN_ITEM_ORDER.map(item => {
+                              const meta = SPAWN_ITEM_META[item];
+                              const isActive = editSpawnItem === item;
+                              return (
+                                <button key={item} onClick={() => setEditSpawnItem(item)}
+                                  style={{
+                                    fontSize: '8px', padding: '2px 5px',
+                                    border: `1px solid ${meta.color}${isActive ? 'ff' : '44'}`,
+                                    background: isActive ? `${meta.color}33` : 'transparent',
+                                    color: meta.color, borderRadius: '3px', cursor: 'pointer',
+                                  }}
+                                >{meta.emoji} {meta.label}</button>
+                              );
+                            })}
+                          </div>
+                          {editSpawnItem === 'textcolor' && (
+                            <div style={{ display: 'flex', gap: '2px' }}>
+                              {TEXTCOLOR_DETAILS.map(d => {
+                                const dm = TEXTCOLOR_DETAIL_META[d];
+                                const isSel = editSpawnDetail === d;
+                                return (
+                                  <button key={d} onClick={() => setEditSpawnDetail(isSel ? '' : d)}
+                                    style={{
+                                      fontSize: '7px', padding: '1px 4px',
+                                      border: `1px solid ${dm.color}${isSel ? 'ff' : '33'}`,
+                                      background: isSel ? `${dm.color}33` : 'transparent',
+                                      color: dm.color, borderRadius: '2px', cursor: 'pointer',
+                                    }}
+                                  >{dm.label}</button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <input className="input-cyber" placeholder="メモ"
+                            value={editSpawnNote} onChange={e => setEditSpawnNote(e.target.value)}
+                            style={{ fontSize: '9px', padding: '2px 4px' }} />
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button className="btn-cyber success" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+                              onClick={() => {
+                                handleSpawnUpdate(editSpawnTarget, {
+                                  item: editSpawnItem,
+                                  detail: editSpawnItem === 'textcolor' ? editSpawnDetail : undefined,
+                                  note: editSpawnNote || undefined,
+                                });
+                                setEditSpawnTarget(null);
+                                setEditSpawnNote('');
+                                setEditSpawnDetail('');
+                              }}
+                            >保存</button>
+                            <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+                              onClick={() => setEditSpawnTarget(null)}>キャンセル</button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {spawnToolMode === 'erase' && (
+                  <div className="panel-section">
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>消しゴム</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      マップ上のスポーン点をクリックして削除
+                    </div>
+                    <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>
+                      削除はローカルのみ反映
+                    </div>
+                  </div>
+                )}
+
+                {spawnToolMode === 'manage' && (
+                  <>
+                  <div className="panel-section">
+                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>アイテムリスト管理</div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      使用するアイテムの表示/非表示を設定
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {SPAWN_ITEM_ORDER.map(item => {
+                        const meta = SPAWN_ITEM_META[item];
+                        const visible = visibleSpawnTypes?.has(item) ?? true;
+                        const cnt = spawnApi.spawnRecords.filter(s => s.item === item).length;
+                        return (
+                          <label key={item}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '3px',
+                              fontSize: '9px', color: visible ? meta.color : 'var(--text-muted)',
+                              cursor: 'pointer', padding: '3px 6px', borderRadius: '4px',
+                              background: visible ? `${meta.color}15` : 'transparent',
+                              border: `1px solid ${visible ? meta.color + '44' : 'transparent'}`,
+                              userSelect: 'none',
+                            }}
+                          >
+                            <input type="checkbox" checked={visible}
+                              onChange={() => {
+                                const next = new Set(visibleSpawnTypes ?? SPAWN_ITEM_ORDER);
+                                if (next.has(item)) next.delete(item); else next.add(item);
+                                setVisibleSpawnTypes(next.size === SPAWN_ITEM_ORDER.length ? null : next);
+                              }}
+                              style={{ accentColor: meta.color, width: '10px', height: '10px', cursor: 'pointer' }} />
+                            <span>{meta.emoji}</span>
+                            <span>{meta.label}</span>
+                            <span style={{ opacity: 0.6 }}>({cnt})</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                      <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+                        onClick={() => setVisibleSpawnTypes(null)}>すべて表示</button>
+                      <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+                        onClick={() => setVisibleSpawnTypes(new Set())}>すべて非表示</button>
+                    </div>
+                  </div>
+                  <div className="panel-section">
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>文字色の詳細色:</div>
+                    <div style={{ display: 'flex', gap: '3px' }}>
+                      {TEXTCOLOR_DETAILS.map(d => {
+                        const dm = TEXTCOLOR_DETAIL_META[d];
+                        const active = enabledTextColorDetails.has(d);
+                        return (
+                          <button key={d}
+                            onClick={() => {
+                              const next = new Set(enabledTextColorDetails);
+                              if (next.has(d)) next.delete(d); else next.add(d);
+                              setEnabledTextColorDetails(next);
+                            }}
+                            style={{
+                              fontSize: '8px', padding: '2px 6px',
+                              border: `1px solid ${dm.color}${active ? 'ff' : '33'}`,
+                              background: active ? `${dm.color}33` : 'transparent',
+                              color: active ? dm.color : 'var(--text-muted)',
+                              borderRadius: '3px', cursor: 'pointer',
+                            }}
+                          >{dm.label}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  </>
+                )}
+              </>
+            )}
+
             {isEditMode && isLocal && (
               <div className="panel-section">
                 <button
@@ -3075,7 +3328,12 @@ export default function App() {
             activeSpawnItem,
             visibleSpawnTypes,
             spawnDetail,
-            spawnToolMode
+            spawnToolMode,
+            editSpawnTarget,
+            editSpawnItem,
+            editSpawnDetail,
+            editSpawnNote,
+            enabledTextColorDetails
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
@@ -3424,18 +3682,10 @@ export default function App() {
             {rightTab === 'spawn' && (
               <SpawnAnalysisPanel
                 spawnRecords={spawnApi.spawnRecords}
-                activeSpawnItem={activeSpawnItem}
-                onActiveSpawnItemChange={(item) => { setActiveSpawnItem(item); if (item) setToolMode('add-spawn'); }}
-                spawnDetail={spawnDetail}
-                onSpawnDetailChange={setSpawnDetail}
                 visibleSpawnTypes={visibleSpawnTypes ?? new Set(SPAWN_ITEM_ORDER)}
                 onVisibleSpawnTypesChange={(types) => setVisibleSpawnTypes(types.size === SPAWN_ITEM_ORDER.length ? null : types)}
-                onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
-                onSpawnUpdate={handleSpawnUpdate}
-                isEditMode={isEditMode}
                 isLocal={isLocal}
-                toolMode={spawnToolMode}
-                onToolModeChange={(mode) => { setSpawnToolMode(mode); setToolMode('add-spawn'); }}
+                onSpawnDelete={(id) => spawnApi.removeSpawn(id)}
               />
             )}
             {rightTab === 'play' && (

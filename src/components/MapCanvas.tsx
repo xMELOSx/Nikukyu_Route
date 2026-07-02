@@ -247,7 +247,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onSpawnAdd,
   onSpawnDelete,
   onSpawnEdit,
-  spawnDetail = '',
   spawnToolMode = 'place'
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
