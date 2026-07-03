@@ -437,7 +437,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       adjusted[c] = Math.min(1, (base[c] ?? 0) * multiplier);
       totalIncrease += adjusted[c] - (base[c] ?? 0);
     }
-    adjusted.blue = Math.max(0, (base.blue ?? 0) - totalIncrease);
+    adjusted.blue = Math.max(0, (base.blue ?? 0) - totalIncrease * ((base.blue ?? 0) / Math.max(0.001, (base.blue ?? 0) + (base.green ?? 0))));
     adjusted.green = Math.max(0, 1 - mc.reduce((s, c) => s + (adjusted[c] ?? 0), 0) - (adjusted.blue ?? 0));
     return adjusted;
   };
@@ -2880,14 +2880,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     const mult = simMultipliers[n] ?? n;
                     const eff = computeEffectiveProbsFor(simProbs, mult);
                     return (
-                      <div key={n} style={{ background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)', borderRadius: '6px', padding: '8px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, minWidth: '28px' }}>{n}{t('人')}</span>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('倍率')}</span>
+                      <div key={n} style={{ background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)', borderRadius: '6px', padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '14px', color: 'var(--cyan-neon)', fontWeight: 700, minWidth: '32px' }}>{n}{t('人')}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('倍率')}</span>
                           <input
                             type="number" min="1" max="20" step="0.5"
                             className="input-cyber"
-                            style={{ width: '50px', fontSize: '11px', padding: '1px 4px', textAlign: 'right' }}
+                            style={{ width: '60px', fontSize: '13px', padding: '2px 6px', textAlign: 'right' }}
                             value={mult}
                             onChange={(e) => {
                               const raw = parseFloat(e.target.value);
@@ -2895,15 +2895,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               setSimMultipliers(prev => ({ ...prev, [n]: Math.max(0.1, Math.min(20, raw)) }));
                             }}
                           />
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>×</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>×</span>
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 8px', fontSize: '10px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: '11px' }}>
                           {(['cyan', 'yellow', 'red', 'purple', 'blue', 'green'] as const).map(col => {
                             const cd = col === 'cyan' ? '#00ffff' : col === 'yellow' ? '#ffd700' : col === 'red' ? '#ff4444' : col === 'purple' ? '#a855f7' : col === 'blue' ? '#3b82f6' : '#22c55e';
                             return (
-                              <span key={col} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: cd }} />
-                                <span style={{ color: 'var(--text-muted)' }}>{(eff[col] * 100).toFixed(1)}%</span>
+                              <span key={col} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: cd }} />
+                                <span style={{ color: 'var(--text-primary)' }}>{(eff[col] * 100).toFixed(1)}%</span>
                               </span>
                             );
                           })}
@@ -2913,8 +2913,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   })}
 
                   {simPlayerCount > 1 && (
-                    <div style={{ fontSize: '10px', color: '#ffd700', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', padding: '4px 8px' }}>
-                      {t('現在 {0}人設定: EH･金･カードキー･紫 ×{1}、青をその分減少', simPlayerCount, simMultipliers[simPlayerCount] ?? simPlayerCount)}
+                    <div style={{ fontSize: '11px', color: '#ffd700', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', padding: '6px 10px' }}>
+                      {t('現在 {0}人設定: EH･金･カードキー･紫 ×{1}、青･緑を按分減', simPlayerCount, simMultipliers[simPlayerCount] ?? simPlayerCount)}
                     </div>
                   )}
                 </>
@@ -2924,49 +2924,33 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     {t('シミュレーション結果 (試行数: {0})', simResult.trials.toLocaleString())}
                   </div>
 
-                  {/* Success rate */}
-                  <div style={{
-                    background: 'rgba(57,255,20,0.06)', border: '1px solid rgba(57,255,20,0.25)',
-                    borderRadius: '6px', padding: '10px 12px', fontSize: '12px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('達成確率')}</span>
-                      <span style={{ color: simResult.successes / simResult.trials >= 0.8 ? 'var(--green-neon)' : 'var(--yellow-neon)', fontWeight: 700, fontSize: '16px' }}>
-                        {(simResult.successes / simResult.trials * 100).toFixed(1)}%
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '4px' }}>
-                          ({simResult.successes.toLocaleString()}/{simResult.trials.toLocaleString()})
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Averages & card key stats */}
+                  {/* Averages & card key stats — 2-column */}
                   <div style={{
                     background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)',
-                    borderRadius: '6px', padding: '10px 12px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px'
+                    borderRadius: '6px', padding: '12px 14px', fontSize: '13px',
+                    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('平均取得アイテム数')}</span>
-                      <span style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{simResult.avgTotalItems.toLocaleString()}個</span>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均取得アイテム数')}</div>
+                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgTotalItems.toLocaleString()}個</div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('平均ファンス')}</span>
-                      <span style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{simResult.avgFans.toLocaleString()}f</span>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均ファンス')}</div>
+                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgFans.toLocaleString()}f</div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('平均コイン')}</span>
-                      <span style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>🪙{simResult.avgCoins.toLocaleString()}</span>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均コイン')}</div>
+                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>🪙{simResult.avgCoins.toLocaleString()}</div>
                     </div>
-                    <div style={{ borderTop: '1px solid rgba(0,240,255,0.1)', margin: '2px 0' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('カードキー平均取得数')}</span>
-                      <span style={{ color: '#ff4444', fontWeight: 700 }}>{(simResult.avgCardKeys ?? 0).toFixed(1)}個</span>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー平均取得数')}</div>
+                      <div style={{ color: '#ff4444', fontWeight: 700, fontSize: '16px' }}>{(simResult.avgCardKeys ?? 0).toFixed(1)}個</div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('カードキー取得試行率')}</span>
-                      <span style={{ color: '#ff4444', fontWeight: 700 }}>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー取得試行率')}</div>
+                      <div style={{ color: '#ff4444', fontWeight: 700, fontSize: '16px' }}>
                         {((simResult.cardKeyPickRate ?? 0) * 100).toFixed(1)}%
-                      </span>
+                      </div>
                     </div>
                   </div>
 
