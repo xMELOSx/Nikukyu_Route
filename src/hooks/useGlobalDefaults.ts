@@ -84,6 +84,47 @@ function saveSkillCdPresetsToCache(presets: SkillCdPreset[]): void {
  *  個人モード (=!isLocal) では追加/編集/削除のUIを出すと無駄なので、関数は
  *  存在するが呼び出し側でガードする。
  */
+function applyDefaults(
+  source: GlobalDefaults | null,
+  ref: React.MutableRefObject<GlobalDefaults>,
+  setSkillCdPresetsState: React.Dispatch<React.SetStateAction<SkillCdPreset[]>>,
+  setLoaded: React.Dispatch<React.SetStateAction<boolean>>,
+  onLoad: ((defaults: GlobalDefaults) => void) | null
+) {
+  const cached = loadSkillCdPresetsFromCache();
+  const serverPresets = Array.isArray(source?.skillCdPresets) ? source!.skillCdPresets : [];
+  const existingIds = new Set(serverPresets.map(p => p.id));
+  const extraPresets = cached ? cached.filter(p => !existingIds.has(p.id)) : [];
+  const rawPresets = [...serverPresets, ...extraPresets];
+  const presets: SkillCdPreset[] = rawPresets.map(p => ({
+    id: p.id,
+    label: p.label,
+    color: p.color,
+    mode: p.mode === 'per_second' ? 'per_second' : 'fixed',
+    seconds: typeof p.seconds === 'number' ? p.seconds : 0,
+    perSecondCd: typeof p.perSecondCd === 'number' ? p.perSecondCd : 0
+  }));
+  if (extraPresets.length > 0) {
+    saveSkillCdPresetsToCache(extraPresets);
+  }
+  const normalized: GlobalDefaults = {
+    hiddenMarkers: source?.hiddenMarkers || [],
+    hiddenMarkerTypes: source?.hiddenMarkerTypes || [],
+    startupFocusMarkerId: source?.startupFocusMarkerId,
+    stopMarkerThreshold: source?.stopMarkerThreshold,
+    movementMarkerThreshold: source?.movementMarkerThreshold,
+    warpMarkerThreshold: source?.warpMarkerThreshold,
+    skillCdThreshold: source?.skillCdThreshold,
+    skillCdPresets: presets,
+    storageLimitBytes: loadStorageLimitFromCache(),
+    spawnFeatureEnabled: source?.spawnFeatureEnabled ?? false
+  };
+  ref.current = normalized;
+  setSkillCdPresetsState(presets);
+  if (onLoad) onLoad(normalized);
+  setLoaded(true);
+}
+
 export function useGlobalDefaults(
   ref: React.MutableRefObject<GlobalDefaults>,
   onLoad?: (defaults: GlobalDefaults) => void,
@@ -99,94 +140,27 @@ export function useGlobalDefaults(
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${import.meta.env.BASE_URL}api/global-defaults`)
-      .then(r => r.ok ? r.json() : null)
-      .then((gd: GlobalDefaults | null) => {
-        if (cancelled) {
-          setLoaded(true);
-          return;
-        }
-        // 優先順位: サーバー (config/data/global_defaults.json) > localStorage (個人キャッシュ)
-        const cached = loadSkillCdPresetsFromCache();
-        const serverPresets = Array.isArray(gd?.skillCdPresets) ? gd!.skillCdPresets : [];
-        // ユーザーが手動で追加したプリセットをマージ (サーバーにないidのみ追加)
-        const existingIds = new Set(serverPresets.map(p => p.id));
-        const extraPresets = cached ? cached.filter(p => !existingIds.has(p.id)) : [];
-        const rawPresets = [...serverPresets, ...extraPresets];
-        const presets: SkillCdPreset[] = rawPresets.map(p => ({
-          id: p.id,
-          label: p.label,
-          color: p.color,
-          mode: p.mode === 'per_second' ? 'per_second' : 'fixed',
-          seconds: typeof p.seconds === 'number' ? p.seconds : 0,
-          perSecondCd: typeof p.perSecondCd === 'number' ? p.perSecondCd : 0
-        }));
-        // マージした結果をキャッシュに保存 (追加プリセットのみ保持)
-        if (extraPresets.length > 0) {
-          saveSkillCdPresetsToCache(extraPresets);
-        }
-        const normalized: GlobalDefaults = {
-          hiddenMarkers: gd?.hiddenMarkers || [],
-          hiddenMarkerTypes: gd?.hiddenMarkerTypes || [],
-          startupFocusMarkerId: gd?.startupFocusMarkerId,
-          stopMarkerThreshold: gd?.stopMarkerThreshold,
-          movementMarkerThreshold: gd?.movementMarkerThreshold,
-          warpMarkerThreshold: gd?.warpMarkerThreshold,
-          skillCdThreshold: gd?.skillCdThreshold,
-          skillCdPresets: presets,
-          storageLimitBytes: loadStorageLimitFromCache(),
-          spawnFeatureEnabled: gd?.spawnFeatureEnabled ?? false
-        };
-        ref.current = normalized;
-        setSkillCdPresetsState(presets);
-        if (onLoadRef.current) onLoadRef.current(normalized);
-        setLoaded(true);
-      })
-      .catch(err => {
-        console.error('Failed to load global defaults:', err);
-        if (!cancelled) {
-          // API 失敗時は静的ファイルをフォールバック
-          fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
-            .then(r => r.ok ? r.json() : null)
-            .then((fileGd: GlobalDefaults | null) => {
-              const serverPresets = Array.isArray(fileGd?.skillCdPresets) ? fileGd!.skillCdPresets : [];
-              const cached = loadSkillCdPresetsFromCache() || [];
-              const existingIds = new Set(serverPresets.map(p => p.id));
-              const extraPresets = cached.filter(p => !existingIds.has(p.id));
-              if (extraPresets.length > 0) saveSkillCdPresetsToCache(extraPresets);
-              const staticDefaults: GlobalDefaults = {
-                hiddenMarkers: fileGd?.hiddenMarkers || [],
-                hiddenMarkerTypes: fileGd?.hiddenMarkerTypes || [],
-                startupFocusMarkerId: fileGd?.startupFocusMarkerId,
-                stopMarkerThreshold: fileGd?.stopMarkerThreshold,
-                movementMarkerThreshold: fileGd?.movementMarkerThreshold,
-                warpMarkerThreshold: fileGd?.warpMarkerThreshold,
-                skillCdThreshold: fileGd?.skillCdThreshold,
-                skillCdPresets: [...serverPresets, ...extraPresets],
-                storageLimitBytes: loadStorageLimitFromCache(),
-                spawnFeatureEnabled: fileGd?.spawnFeatureEnabled ?? false
-              };
-              ref.current = staticDefaults;
-              setSkillCdPresetsState([...serverPresets, ...extraPresets]);
-              if (onLoadRef.current) onLoadRef.current(staticDefaults);
-              setLoaded(true);
-            })
-            .catch(() => {
-              const cached = loadSkillCdPresetsFromCache() || [];
-              const fallback: GlobalDefaults = {
-                hiddenMarkers: [],
-                hiddenMarkerTypes: [],
-                skillCdPresets: cached,
-                storageLimitBytes: loadStorageLimitFromCache(),
-                spawnFeatureEnabled: false
-              };
-              ref.current = fallback;
-              setSkillCdPresetsState(cached);
-              if (onLoadRef.current) onLoadRef.current(fallback);
-              setLoaded(true);
-            });
-        }
-      });
+    (async () => {
+      let source: GlobalDefaults | null = null;
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}api/global-defaults`);
+        if (res.ok) source = await res.json();
+      } catch {
+        console.error('API global-defaults failed, trying static fallback');
+      }
+      if (cancelled) { setLoaded(true); return; }
+      if (source) {
+        applyDefaults(source, ref, setSkillCdPresetsState, setLoaded, onLoadRef.current);
+        return;
+      }
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}global_defaults.json`);
+        if (res.ok) source = await res.json();
+      } catch {
+        console.error('Static global_defaults.json fallback failed');
+      }
+      if (!cancelled) applyDefaults(source, ref, setSkillCdPresetsState, setLoaded, onLoadRef.current);
+    })();
     return () => { cancelled = true; };
   }, [ref]);
 
