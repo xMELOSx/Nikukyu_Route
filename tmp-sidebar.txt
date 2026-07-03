@@ -1,193 +1,4 @@
-// @ts-nocheck
-import React, { useMemo } from 'react';
-import { t } from '../i18n';
-import { LanguageSwitcher } from './LanguageSwitcher';
-import { EraserSubMenu } from './EraserSubMenu';
-import { MeasureSubMenu } from './MeasureSubMenu';
-import { MapCanvas } from './MapCanvas';
-import {
-  Undo, Redo, Move, Ruler, Paintbrush, Eraser, EyeOff, Star, Wand2, Fence, RotateCcw, ChevronLeft, ChevronRight
-} from 'lucide-react';
-import {
-  MARKER_META, TEXTCOLOR_OPTIONS, TEXTCOLOR_META, SPAWN_CATEGORIES, PRESET_MAPS_META,
-  smoothStrokePointsKeepEnds,
-} from '../utils/DataManager';
-import type {
-  FloorType, MarkerType, DrawingStroke, HeistMarker, RouteData,
-  SpawnPoint, RegisteredItem,
-} from '../utils/DataManager';
-import type { UseGlobalMarkersApi } from '../hooks/useGlobalMarkers';
-import type { GlobalWalls } from '../hooks/useGlobalWalls';
-import type { UseGlobalSpawnsApi } from '../hooks/useGlobalSpawns';
-import type { UseHistoryApi } from '../hooks/useHistory';
-
-export interface LeftSidebarProps {
-  routeApi: any;
-  globalMarkersStore: UseGlobalMarkersApi;
-  historyApi: UseHistoryApi;
-  spawnApi: UseGlobalSpawnsApi;
-  globalWalls: GlobalWalls;
-  notification: { show: (msg: string, ms?: number) => void };
-  canvasRef: any;
-  isEditMode: boolean; setIsEditMode: (v: boolean) => void;
-  toolMode: string; setToolMode: React.Dispatch<React.SetStateAction<any>>;
-  isLocal: boolean; currentFloor: FloorType; showSpawnFeature: boolean;
-  showSettingsExpanded: boolean; setShowSettingsExpanded: (v: boolean) => void;
-  markerVisibilityExpanded: boolean; setMarkerVisibilityExpanded: (v: boolean) => void;
-  floorNavCollapsed: boolean; setFloorNavCollapsed: (v: any) => void;
-  showMarkerLabels: boolean; setShowMarkerLabels: (v: boolean) => void;
-  markerScale: number; setMarkerScale: (v: number) => void;
-  textPinPassThrough: boolean; setTextPinPassThrough: (v: boolean) => void;
-  showPhoneCompass: boolean; setShowPhoneCompass: (v: boolean) => void;
-  showPhoneBoxHud: boolean; setShowPhoneBoxHud: (v: boolean) => void;
-  phoneBoxHudSize: number; setPhoneBoxHudSize: (v: number) => void;
-  showBottomRightHud: boolean; setShowBottomRightHud: (v: boolean) => void;
-  zoomHudSize: number; setZoomHudSize: (v: number) => void;
-  editStrokeIdxs: Set<number>; setEditStrokeIdxs: (v: Set<number>) => void;
-  editSmoothIterations: number; setEditSmoothIterations: (v: number) => void;
-  blockMarkerClicksDuringTools: boolean; setBlockMarkerClicksDuringTools: (v: boolean) => void;
-  isAltPressed: boolean;
-  measureSelectedStrokeIdxs: Set<number>; setMeasureSelectedStrokeIdxs: (v: Set<number>) => void;
-  eraseTarget: string; setEraseTarget: React.Dispatch<React.SetStateAction<any>>;
-  eraseSize: number; setEraseSize: (v: number) => void;
-  eraseDefaultBehavior: string; setEraseDefaultBehavior: React.Dispatch<React.SetStateAction<any>>;
-  hideStrokesDuringWalls: boolean; setHideStrokesDuringWalls: (v: boolean) => void;
-  hideMarkersDuringWalls: boolean; setHideMarkersDuringWalls: (v: boolean) => void;
-  bypassWallsEnabled: boolean; setBypassWallsEnabled: (v: boolean) => void;
-  bypassShortestOnly: boolean; setBypassShortestOnly: (v: boolean) => void;
-  strokeColor: string; setStrokeColor: React.Dispatch<React.SetStateAction<any>>;
-  strokeWidth: number; setStrokeWidth: (v: number) => void;
-  strokeType: string; setStrokeType: React.Dispatch<React.SetStateAction<any>>;
-  drawMode: string; setDrawMode: React.Dispatch<React.SetStateAction<any>>;
-  setCurrentPosTrigger: (v: number) => void;
-  setFocusTrigger: (v: any) => void;
-  resetTarget: string | null; setResetTarget: (v: any) => void;
-  spawnToolMode: string; setSpawnToolMode: React.Dispatch<React.SetStateAction<any>>;
-  spawnMoveX: number; setSpawnMoveX: (v: number) => void;
-  spawnMoveY: number; setSpawnMoveY: (v: number) => void;
-  spawnMovingPointId: string | null; setSpawnMovingPointId: (v: string | null) => void;
-  spawnViewPointId: string | null; setSpawnViewPointId: (v: string | null) => void;
-  viewerFilterPlayers: number | null; setViewerFilterPlayers: (v: number | null) => void;
-  spawnHideOther: boolean; setSpawnHideOther: (v: boolean) => void;
-  spawnHideBg: boolean; setSpawnHideBg: (v: boolean) => void;
-  spawnFocusTrigger: any; setSpawnFocusTrigger: (v: any) => void;
-  editPointId: string | null; setEditPointId: (v: string | null) => void;
-  showEditModal: boolean; setShowEditModal: (v: boolean) => void;
-  editAddItemId: string; setEditAddItemId: React.Dispatch<React.SetStateAction<any>>;
-  editAddPlayerCount: number; setEditAddPlayerCount: (v: number) => void;
-  itemFormName: string; setItemFormName: React.Dispatch<React.SetStateAction<any>>;
-  itemFormTextColor: string; setItemFormTextColor: React.Dispatch<React.SetStateAction<any>>;
-  itemFormFans: number; setItemFormFans: (v: number) => void;
-  itemFormCoins: number; setItemFormCoins: (v: number) => void;
-  itemFormEditId: string | null; setItemFormEditId: (v: string | null) => void;
-  itemFormDescription: string; setItemFormDescription: React.Dispatch<React.SetStateAction<any>>;
-  showItemModal: boolean; setShowItemModal: (v: boolean) => void;
-  bulkInput: string; setBulkInput: React.Dispatch<React.SetStateAction<any>>;
-  bulkColor: string; setBulkColor: React.Dispatch<React.SetStateAction<any>>;
-  itemFormImage: string; setItemFormImage: React.Dispatch<React.SetStateAction<any>>;
-  globalMarkerListExpanded: boolean; setGlobalMarkerListExpanded: (v: boolean) => void;
-  localMarkerListExpanded: boolean; setLocalMarkerListExpanded: (v: boolean) => void;
-  hideRouteLines: boolean; setHideRouteLines: (v: boolean) => void;
-  routeLines1px: boolean; setRouteLines1px: (v: boolean) => void;
-  hideBranchLines: boolean; setHideBranchLines: (v: boolean) => void;
-  branchLines1px: boolean; setBranchLines1px: (v: boolean) => void;
-  showHelpModal: boolean; setShowHelpModal: (v: boolean) => void;
-  showOcrDebugModal: boolean; rightTab: string;
-  handleHideGlobalMarker: (id: string) => void;
-  handleShowGlobalMarker: (id: string) => void;
-  handleHideGlobalMarkerType: (type: MarkerType) => void;
-  handleShowGlobalMarkerType: (type: MarkerType) => void;
-  handleToggleMarkerVisibility: (id: string) => void;
-  updateStrokes: (strokes: DrawingStroke[]) => void;
-  updateGlobalWalls: (walls: any) => void;
-  postGlobalDefaults: (hiddenMarkers: string[], hiddenMarkerTypes: string[]) => void;
-  openSubWindow: () => void;
-  pushSpawnHistory: () => void;
-  undoPoints: () => void;
-  redoPoints: () => void;
-  handleSpawnPointAdd: (x: number, y: number) => void;
-  handleSpawnPointEdit: (id: string) => void;
-  handleSpawnPointView: (id: string) => void;
-  handleSpawnMoveComplete: (id: string, x: number, y: number) => void;
-  handlePointAddItem: (pointId: string, itemId: string, playerCount: number) => void;
-  handlePointRemoveItem: (pointId: string, itemIdx: number) => void;
-  handleItemSave: () => void;
-  handleBulkImport: () => void;
-  handleItemImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  warpColor: string; stairsColor: string;
-  memoizedStrokes: DrawingStroke[];
-  leftSidebarCollapsed: boolean; isMobile: boolean;
-  [key: string]: any;
-}
-
-const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
-  const {
-    routeApi, globalMarkersStore, historyApi, spawnApi, globalWalls, notification,
-    canvasRef, isEditMode, setIsEditMode, toolMode, setToolMode,
-    isLocal, currentFloor, showSpawnFeature,
-    showSettingsExpanded, setShowSettingsExpanded,
-    markerVisibilityExpanded, setMarkerVisibilityExpanded,
-    floorNavCollapsed, setFloorNavCollapsed,
-    showMarkerLabels, setShowMarkerLabels,
-    markerScale, setMarkerScale,
-    textPinPassThrough, setTextPinPassThrough,
-    showPhoneCompass, setShowPhoneCompass,
-    showPhoneBoxHud, setShowPhoneBoxHud,
-    phoneBoxHudSize, setPhoneBoxHudSize,
-    showBottomRightHud, setShowBottomRightHud,
-    zoomHudSize, setZoomHudSize,
-    editStrokeIdxs, setEditStrokeIdxs,
-    editSmoothIterations, setEditSmoothIterations,
-    blockMarkerClicksDuringTools, setBlockMarkerClicksDuringTools,
-    isAltPressed,
-    measureSelectedStrokeIdxs, setMeasureSelectedStrokeIdxs,
-    eraseTarget, setEraseTarget,
-    eraseSize, setEraseSize,
-    eraseDefaultBehavior, setEraseDefaultBehavior,
-    hideStrokesDuringWalls, setHideStrokesDuringWalls,
-    hideMarkersDuringWalls, setHideMarkersDuringWalls,
-    bypassWallsEnabled, setBypassWallsEnabled,
-    bypassShortestOnly, setBypassShortestOnly,
-    strokeColor, setStrokeColor,
-    strokeWidth, setStrokeWidth,
-    strokeType, setStrokeType,
-    drawMode, setDrawMode,
-    setCurrentPosTrigger, setFocusTrigger,
-    resetTarget, setResetTarget,
-    spawnToolMode, setSpawnToolMode,
-    spawnMoveX, setSpawnMoveX, spawnMoveY, setSpawnMoveY,
-    spawnMovingPointId, setSpawnMovingPointId,
-    spawnViewPointId, setSpawnViewPointId,
-    viewerFilterPlayers, setViewerFilterPlayers,
-    spawnHideOther, setSpawnHideOther,
-    spawnHideBg, setSpawnHideBg,
-    spawnFocusTrigger, setSpawnFocusTrigger,
-    editPointId, setEditPointId, showEditModal, setShowEditModal,
-    editAddItemId, setEditAddItemId, editAddPlayerCount, setEditAddPlayerCount,
-    itemFormName, setItemFormName, itemFormTextColor, setItemFormTextColor,
-    itemFormFans, setItemFormFans, itemFormCoins, setItemFormCoins,
-    itemFormEditId, setItemFormEditId, itemFormDescription, setItemFormDescription,
-    showItemModal, setShowItemModal,
-    bulkInput, setBulkInput, bulkColor, setBulkColor,
-    itemFormImage, setItemFormImage,
-    globalMarkerListExpanded, setGlobalMarkerListExpanded,
-    localMarkerListExpanded, setLocalMarkerListExpanded,
-    hideRouteLines, setHideRouteLines, routeLines1px, setRouteLines1px,
-    hideBranchLines, setHideBranchLines, branchLines1px, setBranchLines1px,
-    showHelpModal, setShowHelpModal, showOcrDebugModal, rightTab,
-    handleHideGlobalMarker, handleShowGlobalMarker,
-    handleHideGlobalMarkerType, handleShowGlobalMarkerType,
-    handleToggleMarkerVisibility,
-    updateStrokes, updateGlobalWalls, postGlobalDefaults, openSubWindow,
-    pushSpawnHistory, undoPoints, redoPoints,
-    handleSpawnPointAdd, handleSpawnPointEdit, handleSpawnPointView,
-    handleSpawnMoveComplete, handlePointAddItem, handlePointRemoveItem,
-    handleItemSave, handleBulkImport, handleItemImageUpload,
-    warpColor, stairsColor, memoizedStrokes,
-    leftSidebarCollapsed, isMobile,
-  } = props;
-
-  return (
+return (
         <section
           className="sidebar glass-panel"
           data-collapsed={leftSidebarCollapsed}
@@ -839,7 +650,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       return;
                     }
                     notification.show(t('壁の自動検出を実行中...'));
-                    const { detectWallsFromImage } = await import('../utils/WallDetector');
+                    const { detectWallsFromImage } = await import('./utils/WallDetector');
                     const detected = await detectWallsFromImage(path as string);
                     if (detected.length > 0) {
                       const prevWalls = JSON.parse(JSON.stringify(globalWalls));
@@ -1666,7 +1477,257 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             })()}
           </div>
         </section>
-  );
-};
 
-export default LeftSidebar;
+        {/* Map area */}
+        <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
+          {useMemo(() => (
+            <MapCanvas
+              floor={currentFloor}
+              strokes={memoizedStrokes}
+              markers={(rightTab === 'spawn' && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              customBg={routeApi.route.customBg[currentFloor] ?? null}
+              toolMode={toolMode}
+              activeMarkerType={activeMarkerType}
+              strokeColor={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeType={strokeType}
+              drawMode={drawMode}
+              onStrokesChange={updateStrokes}
+              onMarkersChange={updateMarkers}
+              hideStrokesDuringWalls={hideStrokesDuringWalls}
+              hideMarkersDuringWalls={hideMarkersDuringWalls}
+              walls={globalWalls[currentFloor] || []}
+              onWallsChange={(newWalls) => {
+                const prevWalls = JSON.parse(JSON.stringify(globalWalls));
+                const nextWalls = {
+                  ...globalWalls,
+                  [currentFloor]: newWalls
+                };
+                historyApi.pushHistory(
+                  routeRef.current.strokes,
+                  routeRef.current.markers,
+                  globalMarkersStore.globalMarkers,
+                  prevWalls
+                );
+                updateGlobalWalls(nextWalls);
+              }}
+              onSvgStringReady={setSvgString}
+              canvasRef={canvasRef}
+              focusTrigger={focusTrigger}
+              onClearFocusTrigger={() => setFocusTrigger(null)}
+              currentPosTrigger={currentPosTrigger}
+              isEditMode={isEditMode}
+              showMarkerLabels={showMarkerLabels}
+              markerScale={markerScale}
+              leftSidebarCollapsed={leftSidebarCollapsed}
+              rightSidebarCollapsed={rightSidebarCollapsed}
+              bossCustomDurations={routeApi.route.bossCustomDurations}
+              onBossCustomDurationChange={(id, dur) => routeApi.setBossCustomDuration(id, dur)}
+              battleCustomDurations={routeApi.route.battleCustomDurations}
+              onBattleCustomDurationChange={(id, dur) => routeApi.setBattleCustomDuration(id, dur)}
+              pickingCustomDurations={routeApi.route.pickingCustomDurations}
+              onPickingCustomDurationChange={(id, dur) => routeApi.setPickingCustomDuration(id, dur)}
+              longPickingCustomDurations={routeApi.route.longPickingCustomDurations}
+              onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
+              pickyMarkerIds={routeApi.route.pickyMarkerIds}
+              onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
+              hideRouteLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideRouteLines}
+              routeLines1px={routeLines1px}
+              hideBranchLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideBranchLines}
+              branchLines1px={branchLines1px}
+              textPinPassThrough={textPinPassThrough}
+              showPhoneCompass={showPhoneCompass}
+              showPhoneBoxHud={showPhoneBoxHud}
+              phoneBoxHudOpen={phoneBoxHudOpen}
+              onPhoneBoxHudOpenChange={setPhoneBoxHudOpen}
+              phoneBoxHudSize={phoneBoxHudSize}
+              showBottomRightHud={showBottomRightHud}
+              zoomHudSize={zoomHudSize}
+              eraseTarget={eraseTarget}
+              eraseDefaultBehavior={eraseDefaultBehavior}
+              eraseSize={eraseSize}
+              editStrokeIdxs={editStrokeIdxs}
+              onEditStrokeIdxsChange={setEditStrokeIdxs}
+              measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
+              onMeasureSelectedStrokeIdxsChange={setMeasureSelectedStrokeIdxs}
+              blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
+              onMarkersDragStart={historyApi.startDragSnapshot}
+              onMarkersDragEnd={historyApi.commitDragSnapshot}
+              stopMarkerThreshold={stopMarkerThreshold}
+              movementMarkerThreshold={movementMarkerThreshold}
+              warpMarkerThreshold={warpMarkerThreshold}
+              skillCdThreshold={skillCdThreshold}
+              showDetectionRanges={showDetectionRanges}
+              startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
+              hiddenMarkers={routeApi.route.hiddenMarkers || []}
+              hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
+              onHideGlobalMarker={handleHideGlobalMarker}
+              onShowGlobalMarker={handleShowGlobalMarker}
+              onToggleMarkerVisibility={handleToggleMarkerVisibility}
+              onAutoRouteStatusChange={autoRoute.setStatus}
+              autoRouteCommand={autoRoute.command}
+              autoRouteSettings={{
+                waitEnabled: autoRoute.waitEnabled,
+                waitSeconds: autoRoute.waitSeconds,
+                startStopSeconds: autoRoute.startStopSeconds,
+                speedMode: autoRoute.speedMode,
+                manualSpeed: autoRoute.manualSpeed,
+                speedMultiplier: autoRoute.speedMultiplier,
+                followCamera: autoRoute.followCamera
+              }}
+              followCamera={autoRoute.followCamera}
+              targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
+              autoStartMarker={autoStartMarker}
+              onAutoStartMarkerChange={setAutoStartMarker}
+              warpColor={warpColor}
+              stairsColor={stairsColor}
+              fuseMode={autoRoute.fuseMode}
+              inactiveMarkersMode={autoRoute.inactiveMarkersMode}
+              skillCdPresets={globalDefaults.skillCdPresets}
+              onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
+              onAutoRouteStart={() => {
+                const updated = globalMarkersStore.globalMarkers.map(m =>
+                  m.type === 'phone' && !m.phoneLocked ? { ...m, phoneActive: false } : m
+                );
+                globalMarkersStore.replace(updated);
+              }}
+              spawnPoints={spawnApi.points}
+              spawnItems={spawnApi.items}
+              onSpawnPointAdd={handleSpawnPointAdd}
+              onSpawnPointDelete={(id) => { pushSpawnHistory(); spawnApi.removePoint(id); }}
+              onSpawnPointEdit={handleSpawnPointEdit}
+              onSpawnPointView={handleSpawnPointView}
+              spawnToolMode={spawnToolMode}
+              spawnFocusTrigger={spawnFocusTrigger}
+              spawnHighlightItemIds={spawnHighlightItemIds}
+              spawnMovingPointId={spawnMovingPointId}
+              onSpawnMoveComplete={handleSpawnMoveComplete}
+              spawnVisible={spawnVisible}
+              hideMapBg={(rightTab === 'spawn' && spawnHideBg) ? true : false}
+            />
+          ), [
+            currentFloor,
+            memoizedStrokes,
+            globalMarkersStore.globalMarkers,
+            routeApi.route.markers,
+            routeApi.route.customBg,
+            toolMode,
+            activeMarkerType,
+            strokeColor,
+            strokeWidth,
+            strokeType,
+            drawMode,
+            updateStrokes,
+            globalWalls,
+            focusTrigger,
+            currentPosTrigger,
+            isEditMode,
+            showMarkerLabels,
+            markerScale,
+            leftSidebarCollapsed,
+            rightSidebarCollapsed,
+            routeApi.route.bossCustomDurations,
+            routeApi.route.battleCustomDurations,
+            routeApi.route.pickingCustomDurations,
+            routeApi.route.longPickingCustomDurations,
+            routeApi.route.pickyMarkerIds,
+            hideRouteLines,
+            routeLines1px,
+            hideBranchLines,
+            branchLines1px,
+            textPinPassThrough,
+            showPhoneCompass,
+            showPhoneBoxHud,
+            phoneBoxHudOpen,
+            phoneBoxHudSize,
+            showBottomRightHud,
+            zoomHudSize,
+            eraseTarget,
+            eraseDefaultBehavior,
+            eraseSize,
+            editStrokeIdxs,
+            measureSelectedStrokeIdxs,
+            blockMarkerClicksDuringTools,
+            stopMarkerThreshold,
+            movementMarkerThreshold,
+            warpMarkerThreshold,
+            skillCdThreshold,
+            showDetectionRanges,
+            routeApi.route.hiddenMarkers,
+            routeApi.route.hiddenMarkerTypes,
+            autoRoute.command,
+            autoRoute.waitEnabled,
+            autoRoute.waitSeconds,
+            autoRoute.startStopSeconds,
+            autoRoute.speedMode,
+            autoRoute.manualSpeed,
+            autoRoute.speedMultiplier,
+            autoRoute.followCamera,
+            routeApi.route.targetDuration,
+            autoStartMarker,
+            warpColor,
+            stairsColor,
+            autoRoute.fuseMode,
+            autoRoute.inactiveMarkersMode,
+            globalDefaults.skillCdPresets,
+            globalDefaultsRef.current.startupFocusMarkerId,
+            spawnApi.points,
+            spawnApi.items,
+            spawnHideOther,
+            spawnHideBg,
+            spawnVisible,
+            spawnFocusTrigger,
+            spawnHighlightItemIds,
+            spawnMovingPointId,
+            spawnMoveX,
+            spawnMoveY,
+            spawnToolMode,
+            editPointId,
+            editAddItemId,
+            itemFormName,
+            itemFormTextColor,
+            itemFormFans,
+            itemFormCoins,
+            itemFormEditId,
+            itemFormDescription,
+            itemFormImage,
+            bulkInput,
+            bulkColor,
+            showItemModal,
+            showEditModal,
+            rightTab
+          ])}
+          {/* Sidebar collapse buttons — zIndex 300 keeps them above the
+              mobile overlay panes (zIndex 200) so users can always reach
+              a close button, even when a pane is open. */}
+          <button
+            onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
+            style={{
+              position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+              zIndex: 300, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
+              borderLeft: 'none', color: 'var(--cyan-neon)', padding: '12px 4px', borderRadius: '0 8px 8px 0',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '2px 0 10px rgba(0, 240, 255, 0.2)'
+            }}
+            title={leftSidebarCollapsed ? "Show Left Panel (Shortcut: [)" : "Hide Left Panel (Shortcut: [)"}
+          >
+            {leftSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+          <button
+            onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
+            style={{
+              position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+              zIndex: 300, background: 'rgba(10, 15, 28, 0.9)', border: '1px solid var(--border-color)',
+              borderRight: 'none', color: 'var(--cyan-neon)', padding: '12px 4px', borderRadius: '8px 0 0 8px',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '-2px 0 10px rgba(0, 240, 255, 0.2)'
+            }}
+            title={rightSidebarCollapsed ? "Show Right Panel (Shortcut: ])" : "Hide Right Panel (Shortcut: ])"}
+          >
+            {rightSidebarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {showOcrDebugModal && (
+            <OcrDebugModal
+              show={showOcrDebugModal}
+              onClose={() => setShowOcrDebugModal(false)}
+            />
+          )}
+  );
