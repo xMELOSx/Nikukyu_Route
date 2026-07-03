@@ -241,7 +241,7 @@ export function apiMiddleware(): Plugin {
     closeBundle() {
       const copyToDist = (srcName: string) => {
         const srcPath = resolveData(srcName)
-        const destPath = path.resolve(__dirname, 'dist', srcName)
+        const destPath = path.resolve(__dirname, '..', 'dist', srcName)
         if (fs.existsSync(srcPath)) {
           const distDir = path.dirname(destPath)
           if (!fs.existsSync(distDir)) fs.mkdirSync(distDir, { recursive: true })
@@ -258,8 +258,8 @@ export function apiMiddleware(): Plugin {
       copyToDist('global_defaults.json')
 
       // public/uploads/ → dist/uploads/
-      const uploadsSrcDir = path.resolve(__dirname, 'public/uploads')
-      const uploadsDestDir = path.resolve(__dirname, 'dist/uploads')
+      const uploadsSrcDir = path.resolve(__dirname, '..', 'public', 'uploads')
+      const uploadsDestDir = path.resolve(__dirname, '..', 'dist', 'uploads')
       if (fs.existsSync(uploadsSrcDir)) {
         if (!fs.existsSync(uploadsDestDir)) fs.mkdirSync(uploadsDestDir, { recursive: true })
         for (const entry of fs.readdirSync(uploadsSrcDir, { withFileTypes: true })) {
