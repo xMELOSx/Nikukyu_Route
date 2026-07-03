@@ -185,9 +185,17 @@ const SpawnSidebar: React.FC<any> = (p) => {
         {/* Place sub-panel */}
         {p.spawnToolMode === 'place' && (
           <div className="panel-section">
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('\u30de\u30c3\u30d7\u3092\u30af\u30ea\u30c3\u30af\u3057\u3066\u70b9\u3092\u8ffd\u52a0')}</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>{t('\u70b9\u3092\u6253\u3063\u305f\u5f8c\u3001\u300c\u7de8\u96c6\u300d\u30bf\u30d6\u3067\u30a2\u30a4\u30c6\u30e0\u3092\u8ffd\u52a0\u3057\u3066\u304f\u3060\u3055\u3044\u3002')}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '6px' }}>{t('\u30b9\u30dd\u30fc\u30f3\u70b9: ')}<span style={{ color: 'var(--cyan-neon)' }}>{p.spawnApi.points.length}</span></div>
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{t('マップをクリックして点を追加')}</div>
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>{t('点を打った後、「編集」タブでアイテムを追加してください。')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{t('種別')}</span>
+              <select value={p.spawnPlaceCategory || ''} onChange={e => p.setSpawnPlaceCategory(e.target.value)}
+                style={{ flex: 1, fontSize: '12px', padding: '4px 8px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }}>
+                <option value="">-</option>
+                {SPAWN_CATEGORIES.map((c:string) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '4px' }}>{t('スポーン点: ')}<span style={{ color: 'var(--cyan-neon)' }}>{p.spawnApi.points.length}</span></div>
           </div>
         )}
 

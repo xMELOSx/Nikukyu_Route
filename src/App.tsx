@@ -643,12 +643,14 @@ export default function App() {
 
   // スポーンツールのサブモード
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
+  const [spawnPlaceCategory, setSpawnPlaceCategory] = useState<string>('');
   const [spawnMoveX, setSpawnMoveX] = useState(0);
   const [spawnMoveY, setSpawnMoveY] = useState(0);
   const [spawnMovingPointId, setSpawnMovingPointId] = useState<string | null>(null);
   const [spawnViewPointId, setSpawnViewPointId] = useState<string | null>(null);
   const [viewerFilterPlayers, setViewerFilterPlayers] = useState<number | null>(null);
   const [spawnHighlightItemIds, setSpawnHighlightItemIds] = useState<string[] | null>(null);
+  const [spawnHighlightCategories, setSpawnHighlightCategories] = useState<string[] | null>(null);
   const spawnFilterCacheRef = useRef<string[] | null>(null);
   // 絞り込み状態をキャッシュ (タブ切替で維持)
   useEffect(() => {
@@ -749,11 +751,12 @@ export default function App() {
       id: generateId('sp'),
       x, y,
       floor: currentFloor,
+      category: (spawnPlaceCategory || undefined) as any,
       createdAt: new Date().toISOString(),
       items: [],
     };
     spawnApi.addPoint(point);
-  }, [currentFloor, spawnApi, pushSpawnHistory]);
+  }, [currentFloor, spawnApi, pushSpawnHistory, spawnPlaceCategory]);
 
   // スポーン点編集: マップの点をクリック時 → モーダル表示
   const handleSpawnPointEdit = useCallback((id: string) => {
@@ -1803,6 +1806,8 @@ export default function App() {
           setResetTarget={setResetTarget}
           spawnToolMode={spawnToolMode}
           setSpawnToolMode={setSpawnToolMode}
+          spawnPlaceCategory={spawnPlaceCategory}
+          setSpawnPlaceCategory={setSpawnPlaceCategory}
           spawnMoveX={spawnMoveX}
           setSpawnMoveX={setSpawnMoveX}
           spawnMoveY={spawnMoveY}
@@ -1899,7 +1904,7 @@ export default function App() {
             <MapCanvas
               floor={currentFloor}
               strokes={memoizedStrokes}
-              markers={(rightTab === 'spawn' && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              markers={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
               customBg={routeApi.route.customBg[currentFloor] ?? null}
               bgOffset={routeApi.route.bgOffset ?? { x: 0, y: 0 }}
               bgScale={routeApi.route.bgScale ?? { x: 1, y: 1 }}
@@ -1948,9 +1953,9 @@ export default function App() {
               onLongPickingCustomDurationChange={(id, dur) => routeApi.setLongPickingCustomDuration(id, dur)}
               pickyMarkerIds={routeApi.route.pickyMarkerIds}
               onPickyMarkerChange={(id, val) => routeApi.setPickyMarker(id, val)}
-              hideRouteLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideRouteLines}
+              hideRouteLines={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther) ? true : hideRouteLines}
               routeLines1px={routeLines1px}
-              hideBranchLines={(rightTab === 'spawn' && spawnHideOther) ? true : hideBranchLines}
+              hideBranchLines={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther) ? true : hideBranchLines}
               branchLines1px={branchLines1px}
               textPinPassThrough={textPinPassThrough}
               showPhoneCompass={showPhoneCompass}
@@ -2017,10 +2022,11 @@ export default function App() {
               spawnToolMode={spawnToolMode}
               spawnFocusTrigger={spawnFocusTrigger}
               spawnHighlightItemIds={spawnHighlightItemIds}
+              spawnHighlightCategories={spawnHighlightCategories}
               spawnMovingPointId={spawnMovingPointId}
               onSpawnMoveComplete={handleSpawnMoveComplete}
               spawnVisible={spawnVisible}
-              hideMapBg={(rightTab === 'spawn' && spawnHideBg) ? true : false}
+              hideMapBg={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideBg) ? true : false}
             />
           ), [
             currentFloor,
@@ -2523,6 +2529,8 @@ export default function App() {
                   onHideBgChange={setSpawnHideBg}
                   highlightItemIds={spawnHighlightItemIds ?? []}
                   onHighlightItemIdsChange={(ids) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
+                  highlightCategories={spawnHighlightCategories ?? []}
+                  onHighlightCategoriesChange={(cats) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
                 />
               </>
             )}

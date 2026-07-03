@@ -152,6 +152,7 @@ interface MapCanvasProps {
   spawnItems?: RegisteredItem[];
   spawnFocusTrigger?: { x: number; y: number; ts: number } | null;
   spawnHighlightItemIds?: string[] | null;
+  spawnHighlightCategories?: string[] | null;
   spawnMovingPointId?: string | null;
   onSpawnMoveComplete?: (id: string, x: number, y: number) => void;
   spawnVisible?: boolean;
@@ -253,6 +254,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   spawnItems = [],
   spawnFocusTrigger,
   spawnHighlightItemIds,
+  spawnHighlightCategories,
   spawnMovingPointId,
   onSpawnMoveComplete,
   spawnVisible = true,
@@ -903,12 +905,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnMovingPointId, spawnVisible]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnMovingPointId, spawnVisible]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1062,32 +1064,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const ctx = ctxRef.current;
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
-    if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0)) return;
+    if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
     const sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
     if (sp.length === 0) return;
     const itemMap: Record<string, RegisteredItem> = {};
     for (const item of spawnItems) itemMap[item.id] = item;
     const rarityRank: Record<string, number> = { green: 0, blue: 1, purple: 2, yellow: 3, red: 4, cyan: 5 };
     const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
+    const highlightItemSet = spawnHighlightItemIds && spawnHighlightItemIds.length > 0 ? new Set(spawnHighlightItemIds) : null;
+    const highlightCatSet = spawnHighlightCategories && spawnHighlightCategories.length > 0 ? new Set(spawnHighlightCategories) : null;
+    const filtering = highlightItemSet || highlightCatSet;
     ctx.save();
     for (const p of sp) {
       if (p.floor !== floor) continue;
       let bestRank = -1;
       let color = '#888';
-      // レアリティ色とハイライト判定を別々に計算
-      const highlightSet = spawnHighlightItemIds && spawnHighlightItemIds.length > 0 ? new Set(spawnHighlightItemIds) : null;
-      let hasHighlight = false;
+      let hasItemMatch = false;
       if (p.items) {
         for (const pi of p.items) {
           const item = itemMap[pi.itemId];
-          if (highlightSet && highlightSet.has(pi.itemId)) hasHighlight = true;
+          if (highlightItemSet && highlightItemSet.has(pi.itemId)) hasItemMatch = true;
           if (!item) continue;
           const rank = rarityRank[item.textColor] ?? -1;
           if (rank > bestRank) { bestRank = rank; color = rarityColor[item.textColor] ?? '#888'; }
         }
       }
-      // ハイライト中: 非該当はほぼ消す
-      if (highlightSet && !hasHighlight) {
+      const hasCatMatch = highlightCatSet ? (p.category ? highlightCatSet.has(p.category) : false) : true;
+      const isHighlighted = filtering ? (highlightItemSet ? hasItemMatch : true) && (highlightCatSet ? hasCatMatch : true) : true;
+      if (filtering && !isHighlighted) {
         ctx.globalAlpha = 0.06;
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#444';
@@ -1097,8 +1101,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.globalAlpha = 1;
         continue;
       }
-      const radius = highlightSet && hasHighlight ? 6 : 3;
-      const glow = highlightSet && hasHighlight ? 10 : 2.5;
+      const radius = filtering && isHighlighted ? 6 : 3;
+      const glow = filtering && isHighlighted ? 10 : 2.5;
       ctx.shadowColor = color;
       ctx.shadowBlur = glow;
       ctx.fillStyle = color;

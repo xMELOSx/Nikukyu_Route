@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { type SpawnPoint, type RegisteredItem, TEXTCOLOR_META } from '../utils/DataManager';
+import { type SpawnPoint, type RegisteredItem, TEXTCOLOR_META, SPAWN_CATEGORIES } from '../utils/DataManager';
 
 interface SpawnAnalysisPanelProps {
   points: SpawnPoint[];
@@ -15,17 +15,23 @@ interface SpawnAnalysisPanelProps {
   onHideBgChange?: (v: boolean) => void;
   highlightItemIds?: string[];
   onHighlightItemIdsChange?: (ids: string[]) => void;
+  highlightCategories?: string[];
+  onHighlightCategoriesChange?: (cats: string[]) => void;
 }
 
 export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   points, items, isManage, onPointDelete, onPointFocus,
   hideOther, onHideOtherChange, hideBg, onHideBgChange,
   highlightItemIds, onHighlightItemIdsChange,
+  highlightCategories, onHighlightCategoriesChange,
   spawnVisible, onSpawnVisibleChange,
 }) => {
   // 全モード共通のフック
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(
     () => new Set(Array.isArray(highlightItemIds) ? highlightItemIds : [])
+  );
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
+    () => new Set(Array.isArray(highlightCategories) ? highlightCategories : [])
   );
   const [detailPointId, setDetailPointId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -38,9 +44,13 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   [items, points]);
 
   const filteredPoints = useMemo(() => {
-    if (selectedItemIds.size === 0) return [];
-    return points.filter(p => p.items && p.items.some(pi => selectedItemIds.has(pi.itemId)));
-  }, [points, selectedItemIds]);
+    if (selectedItemIds.size === 0 && selectedCategories.size === 0) return [];
+    return points.filter(p => {
+      const matchItem = selectedItemIds.size === 0 || (p.items && p.items.some(pi => selectedItemIds.has(pi.itemId)));
+      const matchCat = selectedCategories.size === 0 || (p.category && selectedCategories.has(p.category));
+      return matchItem && matchCat;
+    });
+  }, [points, selectedItemIds, selectedCategories]);
 
   const itemStats = useMemo(() => {
     const stats: { [itemId: string]: { item: RegisteredItem; count: number } } = {};
@@ -154,6 +164,43 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
 
       <div className="panel-section">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>種別で絞り込み</div>
+          {selectedCategories.size > 0 && (
+            <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
+              onClick={() => { setSelectedCategories(new Set()); onHighlightCategoriesChange?.([]); }}>
+              選択解除 ({selectedCategories.size})
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '8px' }}>
+          {SPAWN_CATEGORIES.map(cat => {
+            const isSel = selectedCategories.has(cat);
+            const catCount = points.filter(p => p.category === cat).length;
+            return (
+              <button key={cat} onClick={() => {
+                const next = new Set(selectedCategories);
+                if (next.has(cat)) next.delete(cat); else next.add(cat);
+                setSelectedCategories(next);
+                onHighlightCategoriesChange?.([...next]);
+              }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', padding: '3px 6px',
+                  border: `2px solid ${isSel ? '#39ff14' : 'rgba(255,255,255,0.15)'}`,
+                  background: isSel ? 'rgba(57,255,20,0.15)' : 'transparent',
+                  color: isSel ? '#39ff14' : 'var(--text-muted)', borderRadius: '5px', cursor: 'pointer',
+                  fontWeight: isSel ? 700 : 400,
+                }}
+              >
+                <span>{cat}</span>
+                <span style={{ opacity: 0.7, fontSize: '9px', marginLeft: '1px' }}>{catCount}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="panel-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
           <div className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>アイテムで絞り込み</div>
           {selectedItemIds.size > 0 && (
             <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none' }}
@@ -163,7 +210,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
           )}
         </div>
         <div className="panel-title" style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-          {selectedItemIds.size > 0 ? `${filteredPoints.length} 点に含有` : ''}
+          {(selectedItemIds.size > 0 || selectedCategories.size > 0) ? `${filteredPoints.length} 点に含有` : ''}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '70vh', overflowY: 'auto' }}>
           {sortedItems.map(({ item, count }) => {

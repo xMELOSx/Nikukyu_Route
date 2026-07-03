@@ -155,6 +155,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     setCurrentPosTrigger, setFocusTrigger,
     resetTarget, setResetTarget,
     spawnToolMode, setSpawnToolMode,
+    spawnPlaceCategory, setSpawnPlaceCategory,
     spawnMoveX, setSpawnMoveX, spawnMoveY, setSpawnMoveY,
     spawnMovingPointId, setSpawnMovingPointId,
     spawnViewPointId, setSpawnViewPointId,
@@ -1167,7 +1168,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       点を打った後、「編集」タブでアイテムを追加してください。
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>種別</span>
+                      <select value={spawnPlaceCategory} onChange={e => setSpawnPlaceCategory(e.target.value)}
+                        style={{ flex: 1, fontSize: '12px', padding: '4px 8px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }}>
+                        <option value="">-</option>
+                        {SPAWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '4px' }}>
                       スポーン点: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.points.length}</span>
                     </div>
                   </div>
