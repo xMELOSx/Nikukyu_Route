@@ -89,7 +89,7 @@ function applyDefaults(
   ref: React.MutableRefObject<GlobalDefaults>,
   setSkillCdPresetsState: React.Dispatch<React.SetStateAction<SkillCdPreset[]>>,
   setLoaded: React.Dispatch<React.SetStateAction<boolean>>,
-  onLoad: ((defaults: GlobalDefaults) => void) | null
+  onLoad: ((defaults: GlobalDefaults) => void) | null | undefined
 ) {
   const cached = loadSkillCdPresetsFromCache();
   const serverPresets = Array.isArray(source?.skillCdPresets) ? source!.skillCdPresets : [];
