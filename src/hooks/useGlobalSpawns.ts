@@ -27,15 +27,23 @@ export function useGlobalSpawns(): UseGlobalSpawnsApi {
   const [items, setItems] = useState<RegisteredItem[]>([]);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // マウント時にサーバーから読み込み
+  // マウント時にスポーンデータ読み込み (静的ファイル優先, API はフォールバック)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       let data: { points?: any[]; items?: any[] } | null = null;
+      // 静的ファイルを優先 (GitHub Pages最適化)
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}api/global-spawns`);
+        const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
         if (res.ok) data = await res.json();
       } catch { /* fall through */ }
+      // API フォールバック (開発サーバーで最新データを取得)
+      if (!data || !data.points) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}api/global-spawns`);
+          if (res.ok) data = await res.json();
+        } catch { /* fall through */ }
+      }
       // サーバーが空なら localStorage から移行
       if (!data || !data.points || data.points.length === 0) {
         const ls = localStorage.getItem('heist_global_spawns');
@@ -43,39 +51,10 @@ export function useGlobalSpawns(): UseGlobalSpawnsApi {
           try {
             const parsed = JSON.parse(ls);
             if (Array.isArray(parsed)) {
-              data = { points: parsed, items: [] };
-              // 即座にサーバーに書き戻す
-              fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ points: parsed, items: [] })
-              }).catch(() => {});
+              data = { points: parsed, items: data?.items || [] };
             }
           } catch {}
         }
-      }
-      // items がサーバーにない場合 localStorage から
-      if (data && (!data.items || data.items.length === 0)) {
-        const ls = localStorage.getItem('heist_spawn_items');
-        if (ls) {
-          try {
-            const parsed = JSON.parse(ls);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              data.items = parsed;
-              // サーバーに書き戻す
-              fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-              }).catch(() => {});
-            }
-          } catch {}
-        }
-      }
-      // Static fallback for production (GitHub Pages)
-      if (!data || !data.points) {
-        try {
-          const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
-          if (res.ok) data = await res.json();
-        } catch { /* fall through */ }
       }
       if (!cancelled && data) {
         if (Array.isArray(data.points)) setPoints(data.points.filter((s: any) => s && typeof s.id === 'string').map(normalizePoint));

@@ -300,7 +300,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
   const DEFAULT_MULTIPLIERS: Record<number, number> = { 2: 2, 3: 3, 4: 4 };
 
-  // On init: read local (auto-save) → server defaults → hardcoded
+  // On init: read local (auto-save) → server defaults (persistent) → hardcoded
   const initState = (() => {
     try {
       const localRaw = localStorage.getItem(SIM_LOCAL_KEY);
@@ -384,29 +384,37 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
   const loadSimItems = useCallback(async () => {
     setSimLoading(true);
-    try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/global-spawns`);
-      if (!res.ok) throw new Error('fetch failed');
-      const data = await res.json();
-      const items: RegisteredItem[] = Array.isArray(data.items) ? data.items : [];
-      const groupMap = new Map<string, SimItemGroup>();
-      const flatList: SimFlatItem[] = [];
-      for (const it of items) {
-        const key = `${it.fans},${it.coins}`;
-        flatList.push({ id: it.id, name: it.name, fans: it.fans, coins: it.coins, color: it.textColor, groupKey: key });
-        if (groupMap.has(key)) {
-          groupMap.get(key)!.names.push(it.name);
-          groupMap.get(key)!.itemIds.push(it.id);
-        } else {
-          groupMap.set(key, { key, fans: it.fans, coins: it.coins, names: [it.name], itemIds: [it.id], color: it.textColor });
+    const tryFetch = async (url: string): Promise<{ items: RegisteredItem[]; groups: SimItemGroup[] } | null> => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const rawItems: RegisteredItem[] = Array.isArray(data.items) ? data.items : [];
+        const groupMap = new Map<string, SimItemGroup>();
+        for (const it of rawItems) {
+          const key = `${it.fans},${it.coins}`;
+          if (groupMap.has(key)) {
+            groupMap.get(key)!.names.push(it.name);
+            groupMap.get(key)!.itemIds.push(it.id);
+          } else {
+            groupMap.set(key, { key, fans: it.fans, coins: it.coins, names: [it.name], itemIds: [it.id], color: it.textColor });
+          }
         }
-      }
-      const groups = Array.from(groupMap.values());
-      groups.sort((a, b) => (b.fans * 1000 + b.coins) - (a.fans * 1000 + a.coins));
+        const groups = Array.from(groupMap.values());
+        groups.sort((a, b) => (b.fans * 1000 + b.coins) - (a.fans * 1000 + a.coins));
+        return { items: rawItems, groups };
+      } catch { return null; }
+    };
+    const flatList: SimFlatItem[] = [];
+    const pushFlat = (it: RegisteredItem) => { flatList.push({ id: it.id, name: it.name, fans: it.fans, coins: it.coins, color: it.textColor, groupKey: `${it.fans},${it.coins}` }); };
+    let result = await tryFetch(`${import.meta.env.BASE_URL}global_spawns.json`);
+    if (!result) result = await tryFetch(`${import.meta.env.BASE_URL}api/global-spawns`);
+    if (result) {
+      for (const it of result.items) pushFlat(it);
       setSimItems(flatList);
       setSimLimits(prev => {
         const next = { ...prev };
-        for (const g of groups) {
+        for (const g of result!.groups) {
           if (g.color === 'cyan' && !(g.key in prev)) {
             for (const id of g.itemIds) next[id] = 1;
           }
@@ -417,38 +425,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         }
         return next;
       });
-    } catch {
-      try {
-        const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
-        if (!res.ok) throw new Error('fallback failed');
-        const data = await res.json();
-        const items: RegisteredItem[] = Array.isArray(data.items) ? data.items : [];
-        const groupMap = new Map<string, SimItemGroup>();
-        const flatList: SimFlatItem[] = [];
-        for (const it of items) {
-          const key = `${it.fans},${it.coins}`;
-          flatList.push({ id: it.id, name: it.name, fans: it.fans, coins: it.coins, color: it.textColor, groupKey: key });
-          if (groupMap.has(key)) {
-            groupMap.get(key)!.names.push(it.name);
-            groupMap.get(key)!.itemIds.push(it.id);
-          } else {
-            groupMap.set(key, { key, fans: it.fans, coins: it.coins, names: [it.name], itemIds: [it.id], color: it.textColor });
-          }
-        }
-        const groups = Array.from(groupMap.values());
-        groups.sort((a, b) => (b.fans * 1000 + b.coins) - (a.fans * 1000 + a.coins));
-        setSimItems(flatList);
-        setSimLimits(prev => {
-          const next = { ...prev };
-          for (const g of groups) {
-            for (let i = 0; i < g.names.length; i++) {
-              if (g.names[i].includes('深紅のルビー') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
-              if (g.names[i].includes('混沌の核') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
-            }
-          }
-          return next;
-        });
-      } catch {}
     }
     setSimLoading(false);
   }, []);
@@ -2990,24 +2966,26 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     </div>
                   )}
 
-                  {/* Save/reset local defaults */}
+                  {/* Save/reset local defaults — セーブボタンは開発時のみ表示 */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <button
-                       className="btn-cyber"
-                      style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
-                      onClick={() => {
-                        const saveData = {
-                          probs: simProbs, probOverrides: simProbOverrides,
-                          multipliers: simMultipliers, playerCount: simPlayerCount,
-                        };
-                        localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(saveData));
-                        setSimServerOverrides(simProbOverrides);
-                        window.alert(t('現在の設定をサーバー値として保存しました'));
-                      }}
-                    >{t('現在の設定をサーバー値として保存')}</button>
+                    {import.meta.env.DEV && (
+                      <button
+                         className="btn-cyber"
+                        style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
+                        onClick={() => {
+                          const saveData = {
+                            probs: simProbs, probOverrides: simProbOverrides,
+                            multipliers: simMultipliers, playerCount: simPlayerCount,
+                          };
+                          localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(saveData));
+                          setSimServerOverrides(simProbOverrides);
+                          window.alert(t('現在の設定をサーバー値として保存しました'));
+                        }}
+                      >{t('現在の設定をサーバー値として保存')}</button>
+                    )}
                     <button
                       className="btn-cyber danger"
-                      style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
+                      style={{ padding: '5px 12px', fontSize: '11px', flex: import.meta.env.DEV ? 1 : 'none' }}
                       onClick={() => {
                         try { localStorage.removeItem(SIM_LOCAL_KEY); } catch {}
                         const serverRaw = localStorage.getItem(SIM_SERVER_KEY);
