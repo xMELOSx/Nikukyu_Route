@@ -1897,6 +1897,8 @@ export default function App() {
           itemImageInputRef={itemImageInputRef}
           spawnUndoRef={spawnUndoRef}
           spawnRedoRef={spawnRedoRef}
+          onHighlightCategoriesChange={(cats: string[]) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
+          onHighlightItemIdsChange={(ids: string[]) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>

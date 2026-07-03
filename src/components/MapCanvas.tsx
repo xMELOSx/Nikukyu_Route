@@ -1089,7 +1089,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           if (rank > bestRank) { bestRank = rank; color = rarityColor[item.textColor] ?? '#888'; }
         }
       }
-      const hasCatMatch = highlightCatSet ? (p.category ? highlightCatSet.has(p.category) : false) : true;
+      const hasCatMatch = highlightCatSet ? ((highlightCatSet.has('__unset__') && !p.category) || (p.category && highlightCatSet.has(p.category))) : true;
       const isHighlighted = filtering ? (highlightItemSet ? hasItemMatch : true) && (highlightCatSet ? hasCatMatch : true) : true;
       if (filtering && !isHighlighted) {
         ctx.globalAlpha = 0.06;

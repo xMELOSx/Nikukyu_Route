@@ -207,6 +207,18 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const itemFormScrollRef = useRef<HTMLDivElement>(null);
   const [itemListTab, setItemListTab] = useState('all');
   const [spawnItemTab, setSpawnItemTab] = useState('all');
+  // 編集タブ 絞り込み状態
+  const [editFilterMode, setEditFilterMode] = useState<'type' | 'item' | 'both'>('type');
+  const [editFilterCategories, setEditFilterCategories] = useState<Set<string>>(new Set());
+  const [editFilterItemIds, setEditFilterItemIds] = useState<Set<string>>(new Set());
+
+  // 編集タブの絞り込みをキャンバスに同期
+  useEffect(() => {
+    const cats = editFilterMode === 'type' || editFilterMode === 'both' ? [...editFilterCategories] : [];
+    const items = editFilterMode === 'item' || editFilterMode === 'both' ? [...editFilterItemIds] : [];
+    props.onHighlightCategoriesChange?.(cats);
+    props.onHighlightItemIdsChange?.(items);
+  }, [editFilterMode, editFilterCategories, editFilterItemIds]);
 
   // Live crop preview (only while dragging / adjusting)
   useEffect(() => {
@@ -1184,17 +1196,96 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
 
                 {/* ---- 編集 ---- */}
                 {spawnToolMode === 'edit' && (
-                  <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>編集</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                      マップ上のスポーン点をクリックして編集
-                    </div>
-                    {editPointId && (
-                      <div style={{ fontSize: '11px', color: 'var(--cyan-neon)' }}>
-                        編集中: X:{spawnApi.points.find(p => p.id === editPointId)?.x ?? '?'} Y:{spawnApi.points.find(p => p.id === editPointId)?.y ?? '?'}
+                  <>
+                    <div className="panel-section">
+                      <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>編集</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                        マップ上のスポーン点をクリックして編集
                       </div>
-                    )}
-                  </div>
+                      {editPointId && (
+                        <div style={{ fontSize: '11px', color: 'var(--cyan-neon)' }}>
+                          編集中: X:{spawnApi.points.find(p => p.id === editPointId)?.x ?? '?'} Y:{spawnApi.points.find(p => p.id === editPointId)?.y ?? '?'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)' }}>
+                      <div style={{ display: 'flex', gap: '3px', marginBottom: '6px' }}>
+                        {[
+                          { key: 'type', label: '種別だけ' },
+                          { key: 'item', label: 'アイテムだけ' },
+                          { key: 'both', label: '種別とアイテム' },
+                        ].map(m => (
+                          <button key={m.key} onClick={() => setEditFilterMode(m.key as any)}
+                            style={{
+                              flex: 1, fontSize: '9px', padding: '3px 4px', borderRadius: '4px',
+                              border: `1px solid ${editFilterMode === m.key ? '#39ff14' : 'rgba(255,255,255,0.2)'}`,
+                              background: editFilterMode === m.key ? 'rgba(57,255,20,0.15)' : 'transparent',
+                              color: editFilterMode === m.key ? '#39ff14' : 'var(--text-muted)',
+                              fontWeight: editFilterMode === m.key ? 700 : 400, cursor: 'pointer'
+                            }}>
+                            {m.label}
+                          </button>
+                        ))}
+                        {(editFilterCategories.size > 0 || editFilterItemIds.size > 0) && (
+                          <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 5px', clipPath: 'none' }}
+                            onClick={() => { setEditFilterCategories(new Set()); setEditFilterItemIds(new Set()); }}>
+                            解除
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '6px' }}>
+                        {[...SPAWN_CATEGORIES, '__unset__'].map(cat => {
+                          const isSel = editFilterCategories.has(cat);
+                          const isUnset = cat === '__unset__';
+                          const label = isUnset ? '未設定' : cat;
+                          return (
+                            <button key={cat} onClick={() => {
+                              const next = new Set(editFilterCategories);
+                              if (next.has(cat)) next.delete(cat); else next.add(cat);
+                              setEditFilterCategories(next);
+                            }}
+                              style={{
+                                fontSize: '9px', padding: '2px 5px',
+                                border: `1px solid ${isSel ? '#39ff14' : 'rgba(255,255,255,0.2)'}`,
+                                background: isSel ? 'rgba(57,255,20,0.15)' : 'transparent',
+                                color: isSel ? '#39ff14' : 'var(--text-muted)', borderRadius: '4px',
+                                cursor: 'pointer', fontWeight: isSel ? 700 : 400
+                              }}>
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '6px', maxHeight: '100px', overflowY: 'auto' }}>
+                        {spawnApi.items.length === 0 ? (
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>アイテム未登録</div>
+                        ) : spawnApi.items.map((item: any) => {
+                          const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+                          const isSel = editFilterItemIds.has(item.id);
+                          return (
+                            <button key={item.id} onClick={() => {
+                              const next = new Set(editFilterItemIds);
+                              if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                              setEditFilterItemIds(next);
+                            }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '2px', fontSize: '9px', padding: '2px 5px',
+                                border: `1px solid ${tc?.color || '#888'}${isSel ? 'ff' : '33'}`,
+                                background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.2)',
+                                color: tc?.color || '#fff', borderRadius: '4px',
+                                cursor: 'pointer', fontWeight: isSel ? 700 : 400
+                              }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
+                              <span>{item.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {/* ---- 消しゴム ---- */}

@@ -47,7 +47,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
     if (selectedItemIds.size === 0 && selectedCategories.size === 0) return [];
     return points.filter(p => {
       const matchItem = selectedItemIds.size === 0 || (p.items && p.items.some(pi => selectedItemIds.has(pi.itemId)));
-      const matchCat = selectedCategories.size === 0 || (p.category && selectedCategories.has(p.category));
+      const matchCat = selectedCategories.size === 0 || (selectedCategories.has('__unset__') && !p.category) || (p.category && selectedCategories.has(p.category));
       return matchItem && matchCat;
     });
   }, [points, selectedItemIds, selectedCategories]);
@@ -173,9 +173,8 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
           )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '8px' }}>
-          {SPAWN_CATEGORIES.map(cat => {
+          {[...SPAWN_CATEGORIES].map(cat => {
             const isSel = selectedCategories.has(cat);
-            const catCount = points.filter(p => p.category === cat).length;
             return (
               <button key={cat} onClick={() => {
                 const next = new Set(selectedCategories);
@@ -184,15 +183,14 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
                 onHighlightCategoriesChange?.([...next]);
               }}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', padding: '3px 6px',
+                  fontSize: '10px', padding: '3px 6px',
                   border: `2px solid ${isSel ? '#39ff14' : 'rgba(255,255,255,0.15)'}`,
                   background: isSel ? 'rgba(57,255,20,0.15)' : 'transparent',
                   color: isSel ? '#39ff14' : 'var(--text-muted)', borderRadius: '5px', cursor: 'pointer',
                   fontWeight: isSel ? 700 : 400,
                 }}
               >
-                <span>{cat}</span>
-                <span style={{ opacity: 0.7, fontSize: '9px', marginLeft: '1px' }}>{catCount}</span>
+                {cat}
               </button>
             );
           })}
@@ -210,7 +208,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
           )}
         </div>
         <div className="panel-title" style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-          {(selectedItemIds.size > 0 || selectedCategories.size > 0) ? `${filteredPoints.length} 点に含有` : ''}
+          該当: {filteredPoints.length} 点
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '70vh', overflowY: 'auto' }}>
           {sortedItems.map(({ item, count }) => {
