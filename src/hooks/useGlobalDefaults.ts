@@ -106,11 +106,13 @@ export function useGlobalDefaults(
           setLoaded(true);
           return;
         }
-        // 優先順位: localStorage (個人キャッシュ) > サーバー (config/data/global_defaults.json)
+        // 優先順位: サーバー (config/data/global_defaults.json) > localStorage (個人キャッシュ)
         const cached = loadSkillCdPresetsFromCache();
-        const rawPresets = cached !== null
-          ? cached
-          : (Array.isArray(gd?.skillCdPresets) ? gd!.skillCdPresets : []);
+        const serverPresets = Array.isArray(gd?.skillCdPresets) ? gd!.skillCdPresets : [];
+        // ユーザーが手動で追加したプリセットをマージ (サーバーにないidのみ追加)
+        const existingIds = new Set(serverPresets.map(p => p.id));
+        const extraPresets = cached ? cached.filter(p => !existingIds.has(p.id)) : [];
+        const rawPresets = [...serverPresets, ...extraPresets];
         const presets: SkillCdPreset[] = rawPresets.map(p => ({
           id: p.id,
           label: p.label,
@@ -119,10 +121,9 @@ export function useGlobalDefaults(
           seconds: typeof p.seconds === 'number' ? p.seconds : 0,
           perSecondCd: typeof p.perSecondCd === 'number' ? p.perSecondCd : 0
         }));
-        // キャッシュから読み込んだ場合はファイル側に書き戻さない (上書き防止)
-        // キャッシュが無くてファイルにあった場合はキャッシュに保存 (次回以降キャッシュ使用)
-        if (cached === null && presets.length > 0) {
-          saveSkillCdPresetsToCache(presets);
+        // マージした結果をキャッシュに保存 (追加プリセットのみ保持)
+        if (extraPresets.length > 0) {
+          saveSkillCdPresetsToCache(extraPresets);
         }
         const normalized: GlobalDefaults = {
           hiddenMarkers: gd?.hiddenMarkers || [],
@@ -148,27 +149,40 @@ export function useGlobalDefaults(
           fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
             .then(r => r.ok ? r.json() : null)
             .then((fileGd: GlobalDefaults | null) => {
+              const serverPresets = Array.isArray(fileGd?.skillCdPresets) ? fileGd!.skillCdPresets : [];
               const cached = loadSkillCdPresetsFromCache() || [];
-              ref.current = {
+              const existingIds = new Set(serverPresets.map(p => p.id));
+              const extraPresets = cached.filter(p => !existingIds.has(p.id));
+              if (extraPresets.length > 0) saveSkillCdPresetsToCache(extraPresets);
+              const staticDefaults: GlobalDefaults = {
                 hiddenMarkers: fileGd?.hiddenMarkers || [],
                 hiddenMarkerTypes: fileGd?.hiddenMarkerTypes || [],
-                skillCdPresets: cached,
+                startupFocusMarkerId: fileGd?.startupFocusMarkerId,
+                stopMarkerThreshold: fileGd?.stopMarkerThreshold,
+                movementMarkerThreshold: fileGd?.movementMarkerThreshold,
+                warpMarkerThreshold: fileGd?.warpMarkerThreshold,
+                skillCdThreshold: fileGd?.skillCdThreshold,
+                skillCdPresets: [...serverPresets, ...extraPresets],
                 storageLimitBytes: loadStorageLimitFromCache(),
                 spawnFeatureEnabled: fileGd?.spawnFeatureEnabled ?? false
               };
-              setSkillCdPresetsState(cached);
+              ref.current = staticDefaults;
+              setSkillCdPresetsState([...serverPresets, ...extraPresets]);
+              if (onLoadRef.current) onLoadRef.current(staticDefaults);
               setLoaded(true);
             })
             .catch(() => {
               const cached = loadSkillCdPresetsFromCache() || [];
-              ref.current = {
+              const fallback: GlobalDefaults = {
                 hiddenMarkers: [],
                 hiddenMarkerTypes: [],
                 skillCdPresets: cached,
                 storageLimitBytes: loadStorageLimitFromCache(),
                 spawnFeatureEnabled: false
               };
+              ref.current = fallback;
               setSkillCdPresetsState(cached);
+              if (onLoadRef.current) onLoadRef.current(fallback);
               setLoaded(true);
             });
         }
