@@ -203,6 +203,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const [cropPreviewUrl, setCropPreviewUrl] = useState<string>('');
   const [confirmedCropMeta, setConfirmedCropMeta] = useState<{url:string;w:number;h:number}|null>(null);
   const [cropHoverEdge, setCropHoverEdge] = useState<string | null>(null);
+  const itemFormScrollRef = useRef<HTMLDivElement>(null);
+  const [itemListTab, setItemListTab] = useState('all');
+  const [spawnItemTab, setSpawnItemTab] = useState('all');
 
   // Live crop preview (only while dragging / adjusting)
   useEffect(() => {
@@ -241,6 +244,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     };
     window.addEventListener('paste', handlePaste);
     return () => { window.removeEventListener('paste', handlePaste); setShowCrop(false); setCropSource(null); setCropPreviewUrl(''); setConfirmedCropMeta(null); };
+  }, [showItemModal]);
+
+  // Load last rarity from localStorage when modal opens for new item
+  useEffect(() => {
+    if (!showItemModal || itemFormEditId) return;
+    try { const v = localStorage.getItem('heist_item_last_rarity'); if (v && TEXTCOLOR_OPTIONS.includes(v)) setItemFormTextColor(v); } catch {}
   }, [showItemModal]);
 
   const handleFileForCrop = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1134,16 +1143,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     ]).map(t => (
                       <button key={t.key}
                         className={`tool-btn ${spawnToolMode === t.key ? 'active' : ''}`}
-                        style={{ height: 26, fontSize: '9px', padding: '2px', minWidth: 0 }}
+                        style={{ height: 28, fontSize: '11px', padding: '2px', minWidth: 0 }}
                         onClick={() => { setSpawnToolMode(t.key); setToolMode('add-spawn'); }}
                       >{t.label}</button>
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                    <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none', flex: 1 }}
+                    <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flex: 1 }}
                       disabled={spawnUndoRef.current.length === 0}
                       onClick={undoPoints}>↩ 元に戻す</button>
-                    <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 6px', clipPath: 'none', flex: 1 }}
+                    <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flex: 1 }}
                       disabled={spawnRedoRef.current.length === 0}
                       onClick={redoPoints}>↪ やり直し</button>
                   </div>
@@ -1152,13 +1161,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 {/* ---- 設置 ---- */}
                 {spawnToolMode === 'place' && (
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                    <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>
                       マップをクリックして点を追加
                     </div>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       点を打った後、「編集」タブでアイテムを追加してください。
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '6px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 600, marginTop: '6px' }}>
                       スポーン点: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.points.length}</span>
                     </div>
                   </div>
@@ -1167,12 +1176,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 {/* ---- 編集 ---- */}
                 {spawnToolMode === 'edit' && (
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>編集</div>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>編集</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                       マップ上のスポーン点をクリックして編集
                     </div>
                     {editPointId && (
-                      <div style={{ fontSize: '9px', color: 'var(--cyan-neon)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--cyan-neon)' }}>
                         編集中: X:{spawnApi.points.find(p => p.id === editPointId)?.x ?? '?'} Y:{spawnApi.points.find(p => p.id === editPointId)?.y ?? '?'}
                       </div>
                     )}
@@ -1182,12 +1191,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 {/* ---- 消しゴム ---- */}
                 {spawnToolMode === 'erase' && (
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>消しゴム</div>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>消しゴム</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                       マップ上のスポーン点をクリックして削除
                     </div>
-                    <div style={{ fontSize: '9px', color: 'var(--red-neon)' }}>削除はローカルのみ反映</div>
-                    <button className="btn-cyber danger" style={{ width: '100%', fontSize: '9px', padding: '4px', clipPath: 'none', marginTop: '6px' }}
+                    <div style={{ fontSize: '11px', color: 'var(--red-neon)' }}>削除はローカルのみ反映</div>
+                    <button className="btn-cyber danger" style={{ width: '100%', fontSize: '10px', padding: '4px', clipPath: 'none', marginTop: '6px' }}
                       onClick={() => { const empty = spawnApi.points.filter(p => !p.items || p.items.length === 0); if (empty.length === 0) return; pushSpawnHistory(); empty.forEach(p => spawnApi.removePoint(p.id)); }}>
                       未設定の点を一括除去 ({spawnApi.points.filter(p => !p.items || p.items.length === 0).length})
                     </button>
@@ -1197,13 +1206,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 {/* ---- アイテム管理 ---- */}
                 {spawnToolMode === 'manage' && (
                   <div className="panel-section">
-                    <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
+                    <div className="panel-title" style={{ fontSize: '12px', marginBottom: '4px' }}>
                       アイテム管理
                     </div>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                       登録アイテム数: {spawnApi.items.length}
                     </div>
-                    <button className="btn-cyber success" style={{ width: '100%', fontSize: '10px', padding: '6px', clipPath: 'none' }}
+                    <button className="btn-cyber success" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none' }}
                       onClick={() => setShowItemModal(true)}>
                       アイテム登録/編集を開く
                     </button>
@@ -1212,44 +1221,18 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
 
                 {/* 共通設定 (全モード) */}
                 <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
                     <input type="checkbox" checked={spawnHideOther}
                       onChange={e => setSpawnHideOther(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                     マーカーと線を隠す
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
                     <input type="checkbox" checked={spawnHideBg}
                       onChange={e => setSpawnHideBg(e.target.checked)}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                     背景を隠す
                   </label>
-                </div>
-                <div className="panel-section">
-                  <div className="panel-title" style={{ fontSize: '10px', marginBottom: '4px' }}>
-                    点を探す ({spawnApi.points.length})
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '150px', overflowY: 'auto' }}>
-                    {spawnApi.points.length === 0 ? (
-                      <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>点がありません</div>
-                    ) : (
-                      [...spawnApi.points].reverse().map(p => (
-                        <button key={p.id} onClick={() => setSpawnFocusTrigger({ x: p.x, y: p.y, ts: Date.now() })}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                            fontSize: '9px', padding: '3px 6px',
-                            background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(79,195,247,0.15)',
-                            borderRadius: '3px', cursor: 'pointer', color: 'var(--text-primary)',
-                            textAlign: 'left',
-                          }}
-                        >
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39ff14', display: 'inline-block', flexShrink: 0 }} />
-                          <span style={{ flex: 1 }}>X:{p.x} Y:{p.y}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: '8px' }}>{(p.items || []).length}点</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
                 </div>
               </>
             )}
@@ -1270,7 +1253,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>アイテム管理</span>
                     <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setShowItemModal(false)}>✕ 閉じる</button>
                   </div>
-                  <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+                  <div ref={itemFormScrollRef} style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                     {/* 個別登録フォーム */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{itemFormEditId ? 'アイテム編集' : '新規アイテム登録'}</div>
@@ -1282,7 +1265,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           const tc = TEXTCOLOR_META[c];
                           const isSel = itemFormTextColor === c;
                           return (
-                            <button key={c} onClick={() => setItemFormTextColor(c)}
+                             <button key={c} onClick={() => { setItemFormTextColor(c); try { localStorage.setItem('heist_item_last_rarity', c); } catch {} }}
                               style={{
                                 flex: 1, fontSize: '11px', padding: '6px 8px',
                                 border: `2px solid ${tc.color}${isSel ? 'ff' : '44'}`,
@@ -1320,11 +1303,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         )}
                         <input ref={itemImageInputRef} type="file" accept="image/*" onChange={handleFileForCrop} style={{ display: 'none' }} />
                       </div>
+                      {!showCrop && itemFormImage && !confirmedCropMeta && (
+                        <div style={{marginTop:'4px',border:'1px solid rgba(79,195,247,0.2)',borderRadius:'4px',padding:'6px',display:'flex',alignItems:'center',gap:'10px',background:'rgba(0,0,0,0.2)'}}>
+                          <img src={itemFormImage} style={{width:'60px',height:'60px',objectFit:'contain',borderRadius:'4px',border:'1px solid rgba(79,195,247,0.3)',background:'#000'}} />
+                          <span style={{fontSize:'11px',color:'var(--text-muted)'}}>画像設定済み</span>
+                        </div>
+                      )}
                       {showCrop && cropSource && (
                         <div style={{border:'1px solid rgba(79,195,247,0.3)',borderRadius:'6px',background:'#000',overflow:'hidden',userSelect:'none',marginTop:'4px'}}>
                           <div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'8px',gap:'8px'}}>
                             <div onMouseDown={handleCropMouseDown} onMouseMove={handleCropMouseMove} onMouseUp={handleCropMouseUp} onMouseLeave={()=>{handleCropMouseUp();setCropHoverEdge(null);}} style={{position:'relative',cursor:cursorForEdge(cropHoverEdge),display:'inline-block',maxWidth:'100%'}}>
-                              <img ref={cropImgRef} src={cropSource} onLoad={(e)=>{const img=e.currentTarget;const nw=img.naturalWidth,nh=img.naturalHeight;setCropImgSize({w:nw,h:nh});setCropRect(p=>{const fromLs=p.x!==10||p.y!==10||p.w!==200||p.h!==60;if(fromLs)return{x:Math.min(p.x,nw-20),y:Math.min(p.y,nh-20),w:Math.min(p.w,nw),h:Math.min(p.h,nh)};else{const iw=Math.round(nw*0.7),ih=Math.round(nh*0.7);return{x:Math.round((nw-iw)/2),y:Math.round((nh-ih)/2),w:Math.max(20,iw),h:Math.max(20,ih)}};});}} style={{display:'block',maxWidth:'100%',maxHeight:'55vh',objectFit:'contain',pointerEvents:'none'}} />
+                              <img ref={cropImgRef} src={cropSource} onLoad={(e)=>{const img=e.currentTarget;const nw=img.naturalWidth,nh=img.naturalHeight;setCropImgSize({w:nw,h:nh});setCropRect(p=>{const fromLs=p.x!==10||p.y!==10||p.w!==200||p.h!==60;if(fromLs)return{x:Math.min(p.x,nw-20),y:Math.min(p.y,nh-20),w:Math.min(p.w,nw),h:Math.min(p.h,nh)};else{const iw=Math.round(Math.min(nw,1920)*0.7),ih=Math.round(Math.min(nw,1920)/nw*nh*0.7);return{x:Math.round((nw-iw)/2),y:Math.round((nh-ih)/2),w:Math.max(20,iw),h:Math.max(20,ih)}};});}} style={{display:'block',maxWidth:'100%',maxHeight:'55vh',objectFit:'contain',pointerEvents:'none'}} />
                               {cropImgSize.w>0&&cropImgRef.current&&(()=>{
                                 const img=cropImgRef.current!;
                                 const rw=img.clientWidth/cropImgSize.w,rh=img.clientHeight/cropImgSize.h;
@@ -1343,15 +1332,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                             </div>
                             <div style={{display:'flex',gap:'12px',alignItems:'center',width:'100%'}}>
                               <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',flexShrink:0}}>
-                                <div style={{fontSize:'10px',color:'var(--cyan-neon)',fontWeight:600}}>切り取り結果</div>
-                                <div style={{border:'2px solid rgba(57,255,20,0.5)',borderRadius:'4px',background:'#0a0e18',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',width:'120px',height:'80px'}}>
+                                <div style={{fontSize:'11px',color:'var(--cyan-neon)',fontWeight:600}}>切り取り結果 ({cropRect.w}×{cropRect.h})</div>
+                                <div style={{border:'2px solid rgba(57,255,20,0.5)',borderRadius:'4px',background:'#0a0e18',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',width:'180px',height:'120px'}}>
                                   {cropPreviewUrl ? <img src={cropPreviewUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',imageRendering:'pixelated'}} /> : <span style={{fontSize:'10px',color:'var(--text-muted)'}}>-</span>}
                                 </div>
-                              </div>
-                              <div style={{flex:1,fontSize:'11px',color:'var(--text-muted)',display:'flex',flexDirection:'column',gap:'2px'}}>
-                                <span>X:{cropRect.x} Y:{cropRect.y}</span>
-                                <span>{cropRect.w} × {cropRect.h} px</span>
-                                <span style={{color:'rgba(57,255,20,0.6)',fontSize:'10px'}}>縁ドラッグ=リサイズ / 中ドラッグ=移動</span>
                               </div>
                             </div>
                           </div>
@@ -1374,13 +1358,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         style={{ fontSize: '12px', padding: '6px 10px', minHeight: '50px', resize: 'vertical' }} />
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="btn-cyber success" style={{ flex: 1, fontSize: '12px', padding: '8px', clipPath: 'none' }}
-                          onClick={handleItemSave} disabled={!itemFormName.trim()}>
+                          onClick={() => { setConfirmedCropMeta(null); setCropPreviewUrl(''); handleItemSave(); const lr = (() => { try { const v = localStorage.getItem('heist_item_last_rarity'); return v && TEXTCOLOR_OPTIONS.includes(v) ? v : 'blue'; } catch { return 'blue'; } })(); setItemFormTextColor(lr); }} disabled={!itemFormName.trim()}>
                           {itemFormEditId ? '更新' : '登録'}
                         </button>
                         {itemFormEditId && (
                           <button className="btn-cyber" style={{ fontSize: '12px', padding: '8px', clipPath: 'none' }}
-                            onClick={() => { setItemFormEditId(null); setItemFormName(''); setItemFormDescription(''); setItemFormTextColor('blue'); setItemFormFans(0); setItemFormCoins(0); }}>
-                            キャンセル
+                             onClick={() => { const lr = (() => { try { const v = localStorage.getItem('heist_item_last_rarity'); return v && TEXTCOLOR_OPTIONS.includes(v) ? v : 'blue'; } catch { return 'blue'; } })(); setItemFormEditId(null); setItemFormName(''); setItemFormDescription(''); setItemFormTextColor(lr); setItemFormFans(0); setItemFormCoins(0); }}>
+                             キャンセル
                           </button>
                         )}
                       </div>
@@ -1423,58 +1407,54 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       </div>
                     </details>
 
-                    {/* 登録済み一覧 */}
+                    {/* 登録済み一覧 (レアリティ別タブ) */}
                     <div style={{ borderTop: '1px solid rgba(79,195,247,0.15)', paddingTop: '12px' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
-                        登録済みアイテム ({spawnApi.items.length})
-                      </div>
                       {spawnApi.items.length === 0 ? (
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>アイテムがありません。上記フォームから登録してください。</div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {spawnApi.items.map(item => {
-                            const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
-                            const ptCount = spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).length;
-                            return (
-                              <div key={item.id} style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                fontSize: '12px', padding: '8px 10px',
-                                background: 'rgba(0,0,0,0.2)', borderRadius: '6px',
-                              }}>
-                                <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ color: tc?.color || '#fff', fontWeight: 600, fontSize: '13px' }}>
-                                      {item.name}
-                                    </span>
-                                    {item.image && (
-                                      <a href={item.image} target="_blank" rel="noopener noreferrer"
-                                        style={{ fontSize: '10px', color: 'var(--cyan-neon)', textDecoration: 'none', flexShrink: 0 }}
-                                        title={item.image}>🖼</a>
-                                    )}
-                                    <span style={{ color: '#ffd700', fontSize: '12px', fontWeight: 600 }}>{item.fans.toLocaleString()}F</span>
-                                    <span style={{ color: '#ff9500', fontSize: '12px', fontWeight: 600 }}>{item.coins.toLocaleString()}C</span>
-                                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{ptCount}点</span>
-                                  </div>
-                                  {item.description && (
-                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {item.description}
+                      ) : (() => {
+                        const groups: Record<string, any[]> = {};
+                        TEXTCOLOR_OPTIONS.forEach(c => { groups[c] = []; });
+                        spawnApi.items.forEach(item => { const k = item.textColor || 'blue'; if (groups[k]) groups[k].push(item); else groups['blue'].push(item); });
+                        const tabs = [{ k: 'all', l: `すべて(${spawnApi.items.length})`, c: '#888' }, ...TEXTCOLOR_OPTIONS.map(c => ({ k: c, l: `${TEXTCOLOR_META[c].label}(${groups[c].length})`, c: TEXTCOLOR_META[c].color }))];
+                        const filtered = itemListTab === 'all' ? spawnApi.items : (groups[itemListTab] || []);
+                        return (<>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>登録済みアイテム ({spawnApi.items.length})</div>
+                          <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                            {tabs.map(t => (
+                              <button key={t.k} onClick={() => setItemListTab(t.k)}
+                                style={{ fontSize: '10px', padding: '3px 8px', border: `1px solid ${itemListTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: itemListTab === t.k ? `${t.c}22` : 'transparent', color: itemListTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: itemListTab === t.k ? 700 : 400 }}>
+                                {t.l}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '300px', overflowY: 'auto' }}>
+                            {filtered.map(item => {
+                              const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
+                              const ptCount = spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).length;
+                              return (
+                                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '6px 8px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: tc?.color || '#fff', fontWeight: 600, fontSize: '12px' }}>{item.name}</span>
+                                      {item.image && <div style={{width:'28px',height:'28px',borderRadius:'4px',overflow:'hidden',flexShrink:0,border:'1px solid rgba(79,195,247,0.3)',background:'#000'}}><img src={item.image} style={{width:'100%',height:'100%',objectFit:'contain'}} /></div>}
+                                      <span style={{ color: '#ffd700', fontSize: '11px', fontWeight: 600 }}>{item.fans.toLocaleString()}F</span>
+                                      <span style={{ color: '#ff9500', fontSize: '11px', fontWeight: 600 }}>{item.coins.toLocaleString()}C</span>
+                                      <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{ptCount}点</span>
                                     </div>
-                                  )}
+                                    {item.description && <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
+                                  </div>
+                                  <button className="btn-cyber" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none', flexShrink: 0 }}
+                                    onClick={() => { setConfirmedCropMeta(null); setCropPreviewUrl(''); setItemFormEditId(item.id); setItemFormName(item.name); setItemFormDescription(item.description || ''); setItemFormImage(item.image || ''); setItemFormTextColor(item.textColor); setItemFormFans(item.fans); setItemFormCoins(item.coins); itemFormScrollRef.current?.scrollTo(0,0); }}>
+                                    編集
+                                  </button>
+                                  <button className="btn-cyber danger" style={{ fontSize: '9px', padding: '2px 6px', clipPath: 'none' }} onClick={() => spawnApi.removeItem(item.id)}>✕</button>
                                 </div>
-                                <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flexShrink: 0 }}
-                                  onClick={() => { setItemFormEditId(item.id); setItemFormName(item.name); setItemFormDescription(item.description || ''); setItemFormImage(item.image || ''); setItemFormTextColor(item.textColor); setItemFormFans(item.fans); setItemFormCoins(item.coins); }}>
-                                  編集
-                                </button>
-                                <button className="btn-cyber danger" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none' }}
-                                  onClick={() => spawnApi.removeItem(item.id)}>
-                                  ✕
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                              );
+                            })}
+                          </div>
+                        </>);
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1571,46 +1551,50 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         </div>
                       )}
 
-                      {/* アイテム追加 */}
+                      {/* アイテム追加 (レアリティ別タブ) */}
                       <div style={{ borderTop: '1px solid rgba(79,195,247,0.15)', paddingTop: '12px' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>アイテム追加</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {/* 出現頻度順にソートしたアイテムタブ */}
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
-                            {[...spawnApi.items]
-                              .map(i => ({ item: i, count: spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === i.id)).length }))
-                              .sort((a, b) => b.count - a.count)
-                              .map(({ item }) => {
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>アイテム追加</div>
+                        {(() => {
+                          const groups: Record<string, any[]> = {};
+                          TEXTCOLOR_OPTIONS.forEach(c => { groups[c] = []; });
+                          spawnApi.items.forEach(item => { const k = item.textColor || 'blue'; if (groups[k]) groups[k].push(item); else groups['blue'].push(item); });
+                          const tabs = [{ k: 'all', l: `すべて(${spawnApi.items.length})`, c: '#888' }, ...TEXTCOLOR_OPTIONS.map(c => ({ k: c, l: `${TEXTCOLOR_META[c].label}(${groups[c].length})`, c: TEXTCOLOR_META[c].color }))];
+                          const filtered = spawnItemTab === 'all' ? [...spawnApi.items].sort((a, b) => a.name.localeCompare(b.name)) : (groups[spawnItemTab] || []).sort((a, b) => a.name.localeCompare(b.name));
+                          return (<>
+                            <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                              {tabs.map(t => (
+                                <button key={t.k} onClick={() => setSpawnItemTab(t.k)}
+                                  style={{ fontSize: '9px', padding: '2px 6px', border: `1px solid ${spawnItemTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: spawnItemTab === t.k ? `${t.c}22` : 'transparent', color: spawnItemTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: spawnItemTab === t.k ? 700 : 400 }}>
+                                  {t.l}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                              {filtered.map(item => {
                                 const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
                                 const isSel = editAddItemId === item.id;
+                                const count = spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).length;
                                 return (
                                   <button key={item.id} onClick={() => setEditAddItemId(isSel ? '' : item.id)}
-                                    style={{
-                                      display: 'flex', alignItems: 'center', gap: '4px',
-                                      fontSize: '11px', padding: '5px 8px',
-                                      border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '44'}`,
-                                      background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.3)',
-                                      color: tc?.color || '#fff', borderRadius: '6px', cursor: 'pointer',
-                                      fontWeight: isSel ? 700 : 400,
-                                    }}
-                                  >
+                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '5px 8px', border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '44'}`, background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.3)', color: tc?.color || '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: isSel ? 700 : 400 }}>
                                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
                                     <span>{item.name}</span>
+                                    <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '2px' }}>({count})</span>
                                   </button>
                                 );
                               })}
-                          </div>
-                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                            <label style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                              プレイヤー人数
-                              <input type="number" min="1" max="4" value={editAddPlayerCount}
-                                onChange={e => setEditAddPlayerCount(Math.max(1, Math.min(4, parseInt(e.target.value) || 1)))}
-                                style={{ width: '60px', fontSize: '14px', fontWeight: 700, padding: '6px 10px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '4px', textAlign: 'center' }} />
-                            </label>
-                            <button className="btn-cyber success" style={{ flex: 1, fontSize: '13px', padding: '8px 16px', clipPath: 'none' }}
-                              disabled={!editAddItemId}
-                              onClick={() => handlePointAddItem(pt.id, editAddItemId, editAddPlayerCount)}>追加</button>
-                          </div>
+                            </div>
+                          </>);
+                        })()}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>人数</span>
+                          {[1,2,3,4].map(n => (
+                            <button key={n} onClick={() => setEditAddPlayerCount(n)}
+                              style={{ width: '32px', height: '32px', fontSize: '14px', fontWeight: 700, border: `2px solid ${editAddPlayerCount===n?'#39ff14':'rgba(255,255,255,0.2)'}`, background: editAddPlayerCount===n?'rgba(57,255,20,0.15)':'rgba(0,0,0,0.3)', color: editAddPlayerCount===n?'#39ff14':'var(--text-muted)', borderRadius: '6px', cursor: 'pointer' }}>{n}</button>
+                          ))}
+                          <button className="btn-cyber success" style={{ flex: 1, fontSize: '12px', padding: '8px 12px', clipPath: 'none' }}
+                            disabled={!editAddItemId}
+                            onClick={() => handlePointAddItem(pt.id, editAddItemId, editAddPlayerCount)}>追加</button>
                         </div>
                       </div>
                     </div>
