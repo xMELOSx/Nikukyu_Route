@@ -19,8 +19,9 @@ import {
   BIWEEKLY_FANS_CAP,
   BIWEEKLY_COINS_CAP
 } from '../utils/PlayDataManager';
-import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat } from 'lucide-react';
+import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Calculator, RefreshCw } from 'lucide-react';
 import { t } from '../i18n';
+import type { RegisteredItem } from '../utils/types';
 
 declare global {
   interface Window {
@@ -231,6 +232,250 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [textGoalParsed, setTextGoalParsed] = useState<{ name: string; target: string; reward: string }[]>([]);
   // Two-step confirmation for 全削除
   const [confirmClearGoals, setConfirmClearGoals] = useState(false);
+
+  // --- Item acquisition simulator state ---
+  interface SimItemGroup {
+    key: string;
+    fans: number;
+    coins: number;
+    names: string[];
+    color: string;
+  }
+  interface SimTrialResult {
+    success: boolean;
+    totalItems: number;
+    totalFans: number;
+    totalCoins: number;
+    counts: Record<string, number>;
+  }
+  interface SimResultSummary {
+    trials: number;
+    successes: number;
+    avgTotalItems: number;
+    p25TotalItems: number;
+    p50TotalItems: number;
+    p75TotalItems: number;
+    p95TotalItems: number;
+    avgFans: number;
+    avgCoins: number;
+    itemStats: Record<string, { picked: number; avgCount: number }>;
+  }
+  interface SimHistoryEntry {
+    id: string;
+    timestamp: number;
+    targetFans: number;
+    targetCoins: number;
+    summary: SimResultSummary;
+  }
+  const SIM_HISTORY_KEY = 'heist_sim_history_v1';
+  const SIM_PROB_KEY = 'heist_sim_prob_v1';
+
+  const COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
+  const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
+
+  const [showSimulator, setShowSimulator] = useState(false);
+  const [simCatalog, setSimCatalog] = useState<SimItemGroup[]>([]);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simSimulating, setSimSimulating] = useState(false);
+  const [simTargetFans, setSimTargetFans] = useState(0);
+  const [simTargetCoins, setSimTargetCoins] = useState(0);
+  const [simExcluded, setSimExcluded] = useState<Set<string>>(new Set());
+  const [simLimits, setSimLimits] = useState<Record<string, number>>({});
+  const [simResult, setSimResult] = useState<SimResultSummary | null>(null);
+  const [simHistory, setSimHistory] = useState<SimHistoryEntry[]>(() => {
+    try {
+      const raw = localStorage.getItem(SIM_HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+  const [simActiveTab, setSimActiveTab] = useState<'input' | 'result' | 'history'>('input');
+  const [simProbs, setSimProbs] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(SIM_PROB_KEY);
+      return raw ? JSON.parse(raw) : { ...COLOR_DEFAULT_PROBS };
+    } catch { return { ...COLOR_DEFAULT_PROBS }; }
+  });
+  const [simColorFilter, setSimColorFilter] = useState<Record<string, boolean>>(() => ({
+    cyan: true, yellow: true, red: true, purple: true, blue: true, green: true
+  }));
+
+  useEffect(() => { try { localStorage.setItem(SIM_PROB_KEY, JSON.stringify(simProbs)); } catch {} }, [simProbs]);
+
+  const loadSimItems = useCallback(async () => {
+    setSimLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/global-spawns`);
+      if (!res.ok) throw new Error('fetch failed');
+      const data = await res.json();
+      const items: RegisteredItem[] = Array.isArray(data.items) ? data.items : [];
+      const groupMap = new Map<string, SimItemGroup>();
+      for (const it of items) {
+        const key = `${it.fans},${it.coins}`;
+        if (groupMap.has(key)) {
+          groupMap.get(key)!.names.push(it.name);
+        } else {
+          groupMap.set(key, { key, fans: it.fans, coins: it.coins, names: [it.name], color: it.textColor });
+        }
+      }
+      const groups = Array.from(groupMap.values());
+      groups.sort((a, b) => (b.fans * 1000 + b.coins) - (a.fans * 1000 + a.coins));
+      setSimCatalog(groups);
+      setSimLimits(prev => {
+        const next = { ...prev };
+        for (const g of groups) {
+          if (g.color === 'cyan' && !(g.key in prev)) next[g.key] = 1;
+        }
+        return next;
+      });
+    } catch {
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}global_spawns.json`);
+        if (!res.ok) throw new Error('fallback failed');
+        const data = await res.json();
+        const items: RegisteredItem[] = Array.isArray(data.items) ? data.items : [];
+        const groupMap = new Map<string, SimItemGroup>();
+        for (const it of items) {
+          const key = `${it.fans},${it.coins}`;
+          if (groupMap.has(key)) {
+            groupMap.get(key)!.names.push(it.name);
+          } else {
+            groupMap.set(key, { key, fans: it.fans, coins: it.coins, names: [it.name], color: it.textColor });
+          }
+        }
+        const groups = Array.from(groupMap.values());
+        groups.sort((a, b) => (b.fans * 1000 + b.coins) - (a.fans * 1000 + a.coins));
+        setSimCatalog(groups);
+      } catch {}
+    }
+    setSimLoading(false);
+  }, []);
+
+  useEffect(() => { try { localStorage.setItem(SIM_HISTORY_KEY, JSON.stringify(simHistory)); } catch {} }, [simHistory]);
+
+  const getGreenProb = useCallback(() => {
+    const others = ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] || 0), 0);
+    return Math.max(0, 1 - others);
+  }, [simProbs]);
+
+  const getGroupProb = useCallback((g: SimItemGroup) => {
+    if (g.color === 'green') return getGreenProb();
+    return simProbs[g.color] ?? 0;
+  }, [simProbs, getGreenProb]);
+
+  const runSimulation = useCallback(async () => {
+    const tf = simTargetFans;
+    const tc = simTargetCoins;
+    if (tf <= 0 && tc <= 0) return;
+    setSimSimulating(true);
+
+    // Build weighted pool
+    const pool: { group: SimItemGroup; prob: number; limit: number }[] = [];
+    for (const g of simCatalog) {
+      if (simExcluded.has(g.key)) continue;
+      if (g.fans === 0 && g.coins === 0) continue;
+      const limit = simLimits[g.key] ?? -1;
+      if (limit === 0) continue;
+      const prob = getGroupProb(g);
+      if (prob <= 0) continue;
+      pool.push({ group: g, prob, limit });
+    }
+
+    const TRIALS = 2000;
+    const MAX_DRAWS = 100000;
+    const stats: SimTrialResult[] = [];
+
+    const totalProb = pool.reduce((s, p) => s + p.prob, 0);
+    if (totalProb <= 0) { setSimSimulating(false); return; }
+    const cdf: { group: SimItemGroup; prob: number; limit: number; cumProb: number }[] = [];
+    let cum = 0;
+    for (const p of pool) {
+      cum += p.prob / totalProb;
+      cdf.push({ ...p, cumProb: cum });
+    }
+
+    // Roll once (skip if limit reached)
+    const rollItem = (counts: Record<string, number>): SimItemGroup | null => {
+      const r = Math.random();
+      for (const entry of cdf) {
+        if (r <= entry.cumProb) {
+          const current = counts[entry.group.key] || 0;
+          if (entry.limit > 0 && current >= entry.limit) return null;
+          return entry.group;
+        }
+      }
+      return null;
+    };
+
+    for (let t = 0; t < TRIALS; t++) {
+      const counts: Record<string, number> = {};
+      let totalFans = 0;
+      let totalCoins = 0;
+
+      for (let d = 0; d < MAX_DRAWS; d++) {
+        const picked = rollItem(counts);
+        if (!picked) continue;
+        counts[picked.key] = (counts[picked.key] || 0) + 1;
+        totalFans += picked.fans;
+        totalCoins += picked.coins;
+        if (totalFans >= tf && totalCoins >= tc) break;
+      }
+
+      stats.push({
+        success: totalFans >= tf && totalCoins >= tc,
+        totalItems: Object.values(counts).reduce((a, b) => a + b, 0),
+        totalFans,
+        totalCoins,
+        counts,
+      });
+    }
+
+    const successes = stats.filter(s => s.success);
+    const successCount = successes.length;
+    const itemsList = successes.map(s => s.totalItems).sort((a, b) => a - b);
+    const avgTotalItems = itemsList.length > 0 ? Math.round(itemsList.reduce((a, b) => a + b, 0) / itemsList.length) : 0;
+    const pct = (arr: number[], p: number) => arr.length > 0 ? arr[Math.min(Math.floor(arr.length * p), arr.length - 1)] : 0;
+    const avgFans = stats.reduce((s, t) => s + t.totalFans, 0) / stats.length;
+    const avgCoins = stats.reduce((s, t) => s + t.totalCoins, 0) / stats.length;
+
+    // Per-item stats
+    const itemStats: Record<string, { picked: number; avgCount: number }> = {};
+    for (const g of simCatalog) {
+      let picked = 0;
+      let totalCount = 0;
+      for (const s of stats) {
+        const cnt = s.counts[g.key] || 0;
+        if (cnt > 0) picked++;
+        totalCount += cnt;
+      }
+      itemStats[g.key] = { picked, avgCount: stats.length > 0 ? totalCount / stats.length : 0 };
+    }
+
+    const summary: SimResultSummary = {
+      trials: TRIALS,
+      successes: successCount,
+      avgTotalItems,
+      p25TotalItems: pct(itemsList, 0.25),
+      p50TotalItems: pct(itemsList, 0.5),
+      p75TotalItems: pct(itemsList, 0.75),
+      p95TotalItems: pct(itemsList, 0.95),
+      avgFans: Math.round(avgFans),
+      avgCoins: Math.round(avgCoins),
+      itemStats,
+    };
+
+    setSimResult(summary);
+    setSimActiveTab('result');
+
+    const entry: SimHistoryEntry = {
+      id: `sim_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      targetFans: tf,
+      targetCoins: tc,
+      summary,
+    };
+    setSimHistory(prev => [entry, ...prev].slice(0, 100));
+    setSimSimulating(false);
+  }, [simTargetFans, simTargetCoins, simCatalog, simExcluded, simLimits, getGroupProb]);
 
   // Direct OCR paste integration state
   const [ocrImg1, setOcrImg1] = useState<string | null>(null);
@@ -1676,6 +1921,28 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       </div>
 
       {/* ====================================================== */}
+      {/* アイテム取得シミュレーター                                 */}
+      {/* ====================================================== */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Calculator size={14} color="var(--cyan-neon)" />
+          <span style={{ ...labelBaseStyle, marginBottom: 0, fontSize: '13px' }}>{t('アイテム取得シミュレーター')}</span>
+          <button
+            className="btn-cyber"
+            style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: '11px' }}
+            onClick={() => {
+              loadSimItems();
+              setSimActiveTab('input');
+              setSimResult(null);
+              setShowSimulator(true);
+            }}
+          >
+            <Calculator size={12} /> {t('シミュレート')}
+          </button>
+        </div>
+      </div>
+
+      {/* ====================================================== */}
       {/* サウンドプレイヤー (YouTube Playlist)                     */}
       {/* ====================================================== */}
       <div style={sectionStyle}>
@@ -2212,6 +2479,411 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               >
                 <AlertTriangle size={11} /> {t('全リセット')}
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ====================================================== */}
+      {/* アイテム取得シミュレーションモーダル                      */}
+      {/* ====================================================== */}
+      {showSimulator && createPortal(
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowSimulator(false)}
+        >
+          <div
+            style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: '12px', width: '720px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid rgba(0,240,255,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calculator size={18} color="var(--cyan-neon)" />
+                <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('アイテム取得シミュレーター')}</span>
+              </div>
+              <button className="btn-cyber" style={{ padding: '5px 14px', fontSize: '12px' }} onClick={() => setShowSimulator(false)}>
+                ✕ {t('閉じる')}
+              </button>
+            </div>
+
+            {/* Tab bar */}
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,240,255,0.15)' }}>
+              {(['input', 'result', 'history'] as const).map(tab => (
+                <button
+                  key={tab}
+                  className="btn-cyber"
+                  style={{
+                    flex: 1, padding: '8px', fontSize: '12px', borderRadius: 0,
+                    border: 'none', borderBottom: simActiveTab === tab ? '2px solid var(--cyan-neon)' : '2px solid transparent',
+                    color: simActiveTab === tab ? 'var(--cyan-neon)' : 'var(--text-muted)',
+                    fontWeight: simActiveTab === tab ? 700 : 400,
+                    background: simActiveTab === tab ? 'rgba(0,240,255,0.08)' : 'transparent'
+                  }}
+                  onClick={() => setSimActiveTab(tab)}
+                >
+                  {tab === 'input' ? t('設定') : tab === 'result' ? t('結果') : t('履歴')}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div style={{ height: '440px', overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {simLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '14px' }}>
+                  {t('アイテムデータを読み込み中...')}
+                </div>
+              ) : simActiveTab === 'input' ? (
+                <>
+                  {/* Target & Probability settings side by side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('目標 ファンス')}</div>
+                      <input
+                        type="number" min="0" step="1000"
+                        className="input-cyber"
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '15px', padding: '6px 8px' }}
+                        value={simTargetFans || ''}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setSimTargetFans(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('目標 コイン')}</div>
+                      <input
+                        type="number" min="0" step="100"
+                        className="input-cyber"
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '15px', padding: '6px 8px' }}
+                        value={simTargetCoins || ''}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setSimTargetCoins(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Drop probability settings */}
+                  <div style={{ background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--yellow-neon)', fontWeight: 700, marginBottom: '6px' }}>{t('ドロップ確率設定')}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                      {['cyan', 'yellow', 'red', 'purple', 'blue', 'green'].map(col => {
+                        const val = col === 'green' ? getGreenProb() : (simProbs[col] ?? 0);
+                        const pct = (val * 100).toFixed(val < 0.01 ? 1 : 1);
+                        return (
+                          <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{
+                              display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+                              background: col === 'cyan' ? '#00ffff' : col === 'yellow' ? '#ffd700' : col === 'red' ? '#ff4444' : col === 'purple' ? '#a855f7' : col === 'blue' ? '#3b82f6' : '#22c55e',
+                              flexShrink: 0
+                            }} />
+                            <span style={{ fontSize: '11px', color: 'var(--text-primary)', minWidth: '50px' }}>{COLOR_LABELS[col]}</span>
+                            <input
+                              type="number" min="0" max="100" step={col === 'cyan' ? '0.1' : '0.1'}
+                              className="input-cyber"
+                              style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                              value={col === 'green' ? pct : ((simProbs[col] ?? 0) * 100).toFixed(1)}
+                              disabled={col === 'green'}
+                              onChange={(e) => {
+                                const raw = parseFloat(e.target.value);
+                                if (isNaN(raw) || raw < 0) return;
+                                setSimProbs(prev => ({ ...prev, [col]: Math.min(100, raw) / 100 }));
+                              }}
+                            />
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Color filter tabs */}
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    <button
+                      className="btn-cyber"
+                      style={{
+                        padding: '3px 10px', fontSize: '11px', borderRadius: '4px',
+                        background: Object.values(simColorFilter).every(Boolean) ? 'rgba(0,240,255,0.15)' : 'transparent',
+                        border: `1px solid ${Object.values(simColorFilter).every(Boolean) ? 'var(--cyan-neon)' : 'rgba(0,240,255,0.2)'}`,
+                        color: Object.values(simColorFilter).every(Boolean) ? 'var(--cyan-neon)' : 'var(--text-muted)',
+                      }}
+                      onClick={() => setSimColorFilter({ cyan: true, yellow: true, red: true, purple: true, blue: true, green: true })}
+                    >{t('全部')}</button>
+                    {(['cyan', 'yellow', 'red', 'purple', 'blue', 'green'] as const).map(col => {
+                      const colorDot = col === 'cyan' ? '#00ffff' : col === 'yellow' ? '#ffd700' : col === 'red' ? '#ff4444' : col === 'purple' ? '#a855f7' : col === 'blue' ? '#3b82f6' : '#22c55e';
+                      const active = simColorFilter[col] !== false && !Object.entries(simColorFilter).some(([k, v]) => k !== col && v !== false);
+                      return (
+                        <button
+                          key={col}
+                          className="btn-cyber"
+                          style={{
+                            padding: '3px 10px', fontSize: '11px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px',
+                            background: active ? `${colorDot}22` : 'transparent',
+                            border: `1px solid ${active ? colorDot : 'rgba(0,240,255,0.15)'}`,
+                            color: active ? colorDot : 'var(--text-muted)',
+                          }}
+                          onClick={() => setSimColorFilter({ cyan: false, yellow: false, red: false, purple: false, blue: false, green: false, [col]: true })}
+                        >
+                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: colorDot }} />
+                          {COLOR_LABELS[col]}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Item list */}
+                  <div style={{ fontSize: '13px', color: 'var(--cyan-neon)', fontWeight: 700 }}>
+                    {t('アイテム一覧 ({0}グループ)', simCatalog.length)}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '300px', overflowY: 'auto' }}>
+                    {simCatalog.filter(g => simColorFilter[g.color] !== false).map(g => {
+                      const excluded = simExcluded.has(g.key);
+                      const limit = simLimits[g.key] ?? -1;
+                      const multi = g.names.length > 1;
+                      const prob = getGroupProb(g);
+                      const colorDot = g.color === 'cyan' ? '#00ffff' : g.color === 'yellow' ? '#ffd700' : g.color === 'red' ? '#ff4444' : g.color === 'purple' ? '#a855f7' : g.color === 'blue' ? '#3b82f6' : '#22c55e';
+                      return (
+                        <div
+                          key={g.key}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            padding: '5px 8px', fontSize: '12px',
+                            background: excluded ? 'rgba(100,100,100,0.08)' : 'rgba(0,240,255,0.03)',
+                            border: `1px solid ${excluded ? 'rgba(100,100,100,0.2)' : 'rgba(0,240,255,0.12)'}`,
+                            borderRadius: '4px', opacity: excluded ? 0.5 : 1
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!excluded}
+                            onChange={() => {
+                              setSimExcluded(prev => {
+                                const next = new Set(prev);
+                                if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+                                return next;
+                              });
+                            }}
+                            title={t('計算に含める/除外')}
+                            style={{ cursor: 'pointer', accentColor: 'var(--cyan-neon)', width: '16px', height: '16px' }}
+                          />
+                          <span style={{
+                            display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+                            background: colorDot, flexShrink: 0
+                          }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)', fontWeight: 500 }}>
+                            {g.names[0]}
+                            {multi && (
+                              <span
+                                style={{ color: 'var(--text-muted)', fontSize: '10px', cursor: 'help', marginLeft: '4px' }}
+                                title={g.names.join('\n')}
+                              >
+                                {t(' 他{0}', g.names.length - 1)}
+                              </span>
+                            )}
+                          </span>
+                          <span style={{ color: 'var(--yellow-neon)', fontWeight: 600, whiteSpace: 'nowrap', fontSize: '11px' }}>
+                            {g.fans > 0 ? `${g.fans.toLocaleString()}f` : ''}
+                            {g.fans > 0 && g.coins > 0 ? ' / ' : ''}
+                            {g.coins > 0 ? `🪙${g.coins.toLocaleString()}` : ''}
+                            {g.fans === 0 && g.coins === 0 ? `(${COLOR_LABELS[g.color] || g.color})` : ''}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {(prob * 100).toFixed(prob < 0.01 ? 2 : 1)}%
+                          </span>
+                          <input
+                            type="number" min="0" step="1"
+                            style={{
+                              width: '50px', fontSize: '11px', padding: '2px 4px',
+                              background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.2)',
+                              borderRadius: '3px', color: 'var(--text-primary)', textAlign: 'right'
+                            }}
+                            value={limit >= 0 ? limit : ''}
+                            placeholder={t('無制限')}
+                            title={t('最大取得数を制限 (空欄=無制限)')}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setSimLimits(prev => {
+                                const next = { ...prev };
+                                if (raw === '') delete next[g.key];
+                                else next[g.key] = Math.max(0, parseInt(raw) || 0);
+                                return next;
+                              });
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Simulate button */}
+                  <button
+                    className="btn-cyber success"
+                    style={{ width: '100%', padding: '10px', fontSize: '14px', fontWeight: 700, marginTop: '6px' }}
+                    onClick={runSimulation}
+                    disabled={(simTargetFans <= 0 && simTargetCoins <= 0) || simSimulating}
+                  >
+                    {simSimulating ? <RefreshCw size={14} className="spin" /> : <Calculator size={14} />} {simSimulating ? t('シミュレーション中...') : t('モンテカルロシミュレーション実行')}
+                  </button>
+                </>
+              ) : simActiveTab === 'result' && simResult ? (
+                <>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--green-neon)', marginBottom: '6px' }}>
+                    {t('シミュレーション結果 (試行数: {0})', simResult.trials.toLocaleString())}
+                  </div>
+
+                  {/* Success rate + items stats */}
+                  <div style={{
+                    background: 'rgba(57,255,20,0.06)', border: '1px solid rgba(57,255,20,0.25)',
+                    borderRadius: '6px', padding: '10px 12px', fontSize: '12px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{t('達成確率')}</span>
+                      <span style={{ color: simResult.successes / simResult.trials >= 0.8 ? 'var(--green-neon)' : 'var(--yellow-neon)', fontWeight: 700, fontSize: '16px' }}>
+                        {(simResult.successes / simResult.trials * 100).toFixed(1)}%
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '4px' }}>
+                          ({simResult.successes.toLocaleString()}/{simResult.trials.toLocaleString()})
+                        </span>
+                      </span>
+                    </div>
+                    {simResult.successes > 0 && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '3px', paddingTop: '6px' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('達成時 平均取得アイテム数')}</span>
+                          <span style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{simResult.avgTotalItems.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '3px 0', fontSize: '11px' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('p25')}</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{simResult.p25TotalItems.toLocaleString()}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('中央値')}</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{simResult.p50TotalItems.toLocaleString()}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('p75')}</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{simResult.p75TotalItems.toLocaleString()}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('p95')}</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{simResult.p95TotalItems.toLocaleString()}</span>
+                        </div>
+                      </>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '3px', paddingTop: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{t('平均獲得')}</span>
+                      <span style={{ color: 'var(--yellow-neon)', fontWeight: 600 }}>{simResult.avgFans.toLocaleString()}f / 🪙{simResult.avgCoins.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Item pick rate — most important output */}
+                  <div style={{ marginTop: '6px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700, marginBottom: '4px' }}>
+                      {t('ピックアイテム (全試行)')}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {simCatalog.map(g => {
+                        const stat = simResult.itemStats[g.key];
+                        if (!stat) return null;
+                        const rate = stat.picked / simResult.trials;
+                        const colorDot = g.color === 'cyan' ? '#00ffff' : g.color === 'yellow' ? '#ffd700' : g.color === 'red' ? '#ff4444' : g.color === 'purple' ? '#a855f7' : g.color === 'blue' ? '#3b82f6' : '#22c55e';
+                        return (
+                          <div key={g.key} style={{
+                            display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 6px',
+                            background: 'rgba(0,240,255,0.03)', border: '1px solid rgba(0,240,255,0.1)', borderRadius: '3px', fontSize: '11px'
+                          }}>
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: colorDot, flexShrink: 0 }} />
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
+                              {g.names[0]}
+                              {g.names.length > 1 && <span style={{ color: 'var(--text-muted)', fontSize: '9px', marginLeft: '2px' }}>+{g.names.length - 1}</span>}
+                            </span>
+                            <span style={{ color: rate > 0.5 ? 'var(--green-neon)' : 'var(--text-muted)', fontWeight: 600, minWidth: '40px', textAlign: 'right' }}>
+                              {(rate * 100).toFixed(1)}%
+                            </span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '10px', minWidth: '30px', textAlign: 'right' }}>
+                              ~{stat.avgCount.toFixed(2)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn-cyber"
+                    style={{ width: '100%', padding: '8px', fontSize: '12px', marginTop: '4px' }}
+                    onClick={() => setSimActiveTab('input')}
+                  >
+                    {t('設定を変更して再シミュレーション')}
+                  </button>
+                </>
+              ) : simActiveTab === 'result' && !simResult ? (
+                <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  {t('目標値を入力してシミュレーションを実行してください')}
+                </div>
+              ) : simActiveTab === 'history' ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cyan-neon)' }}>
+                      {t('算出履歴 ({0}件)', simHistory.length)}
+                    </span>
+                    {simHistory.length > 0 && (
+                      <button
+                        className="btn-cyber danger"
+                        style={{ padding: '4px 10px', fontSize: '10px' }}
+                        onClick={() => {
+                          if (window.confirm(t('全ての履歴を削除しますか？'))) setSimHistory([]);
+                        }}
+                      >
+                        <Trash2 size={10} /> {t('全削除')}
+                      </button>
+                    )}
+                  </div>
+                  {simHistory.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                      {t('履歴がありません')}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '360px', overflowY: 'auto' }}>
+                      {simHistory.map(entry => (
+                        <div
+                          key={entry.id}
+                          style={{
+                            background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)',
+                            borderRadius: '5px', padding: '7px 10px', fontSize: '11px', cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            setSimTargetFans(entry.targetFans);
+                            setSimTargetCoins(entry.targetCoins);
+                            setSimResult(entry.summary);
+                            setSimActiveTab('result');
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            <span>{new Date(entry.timestamp).toLocaleString('ja-JP')}</span>
+                            <span style={{ color: 'var(--cyan-neon)', fontWeight: 600 }}>
+                              {t('目標: {0}f / 🪙{1}', entry.targetFans.toLocaleString(), entry.targetCoins.toLocaleString())}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--green-neon)', fontWeight: 600 }}>
+                              {(entry.summary.successes / entry.summary.trials * 100).toFixed(1)}% ({entry.summary.successes}/{entry.summary.trials})
+                            </span>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {entry.summary.avgTotalItems > 0 && (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                                  ~{entry.summary.avgTotalItems.toLocaleString()} items
+                                </span>
+                              )}
+                              <span style={{ color: entry.summary.successes / entry.summary.trials >= 0.8 ? 'var(--green-neon)' : 'var(--yellow-neon)' }}>
+                                {t('平均 {0}f / 🪙{1}', entry.summary.avgFans.toLocaleString(), entry.summary.avgCoins.toLocaleString())}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
         </div>,
