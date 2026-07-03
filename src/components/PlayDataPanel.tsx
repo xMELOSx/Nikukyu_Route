@@ -250,6 +250,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     counts: Record<string, number>;
     cardKeys: number;
     pickedCardKey: boolean;
+    nonEHItems: number;
+    nonEHFans: number;
+    nonEHCoins: number;
   }
   interface SimFlatItem {
     id: string;
@@ -275,6 +278,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     cardKeyPickRate: number;
     itemStats: Record<string, { picked: number; avgCount: number }>;
     sampleTrial: Record<string, number> | null;
+    minSampleTrial: Record<string, number> | null;
+    maxSampleTrial: Record<string, number> | null;
   }
   interface SimHistoryEntry {
     id: string;
@@ -329,6 +334,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   }));
   const [resultSubTab, setResultSubTab] = useState<'sample' | 'draws'>('sample');
   const [drawViewMode, setDrawViewMode] = useState<'count' | 'rate'>('count');
+  const [sampleMode, setSampleMode] = useState<'min' | 'median' | 'max'>('median');
   const [simPlayerCount, setSimPlayerCount] = useState(initState?.playerCount ?? 1);
   const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
 
@@ -483,8 +489,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       if (limit === 0) continue;
       const colorProb = effProbs[it.color] ?? 0;
       const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
-      let effectiveProb = hasOverride ? simProbOverrides[it.id]! : colorProb;
-      if (hasOverride && simPlayerCount > 1) effectiveProb *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
+      const serverVal = simServerOverrides[it.id];
+      const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+      let effectiveProb = overrideVal !== null ? overrideVal : colorProb;
+      if (overrideVal !== null && simPlayerCount > 1) effectiveProb *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
       if (effectiveProb <= 0) continue;
       pool.push({ item: it, prob: effectiveProb, limit });
     }
@@ -520,12 +528,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       let totalCoins = 0;
       let cardKeys = 0;
       let pickedCardKey = false;
+      let nonEHItems = 0, nonEHFans = 0, nonEHCoins = 0;
 
       for (let d = 0; d < MAX_DRAWS; d++) {
         const picked = rollItem(itemCounts);
         if (!picked) continue;
         itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
         if (picked.color === 'red') { cardKeys++; pickedCardKey = true; }
+        if (picked.color !== 'cyan') { nonEHItems++; nonEHFans += picked.fans; nonEHCoins += picked.coins; }
         totalFans += picked.fans;
         totalCoins += picked.coins;
         if (totalFans >= tf && totalCoins >= tc) break;
@@ -539,12 +549,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         counts: itemCounts,
         cardKeys,
         pickedCardKey,
+        nonEHItems,
+        nonEHFans,
+        nonEHCoins,
       });
     }
 
     const successes = stats.filter(s => s.success);
     const successCount = successes.length;
-    const itemsList = successes.map(s => s.totalItems).sort((a, b) => a - b);
+    const itemsList = successes.map(s => s.nonEHItems).sort((a, b) => a - b);
     const avgTotalItems = itemsList.length > 0 ? Math.round(itemsList.reduce((a, b) => a + b, 0) / itemsList.length) : 0;
 
     // Per-item stats across all items
@@ -561,28 +574,34 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     }
 
     let sampleTrial: Record<string, number> | null = null;
+    let minSampleTrial: Record<string, number> | null = null;
+    let maxSampleTrial: Record<string, number> | null = null;
     if (successCount > 0) {
       const sorted = successes.slice().sort((a, b) => a.totalItems - b.totalItems);
       const median = sorted[Math.floor(sorted.length / 2)];
       sampleTrial = median.counts;
+      minSampleTrial = sorted[0].counts;
+      maxSampleTrial = sorted[sorted.length - 1].counts;
     }
 
     const summary: SimResultSummary = {
       trials: TRIALS,
       successes: successCount,
       avgTotalItems,
-      minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.totalItems)) : 0,
+      minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.nonEHItems)) : 0,
       maxTotalItems: stats.length > 0 ? Math.max(...stats.map(s => s.totalItems)) : 0,
-      avgFans: Math.round(successes.reduce((a, s) => a + s.totalFans, 0) / (successCount || 1)),
+      avgFans: Math.round(successes.reduce((a, s) => a + s.nonEHFans, 0) / (successCount || 1)),
       minFans: stats.length > 0 ? Math.min(...stats.map(s => s.totalFans)) : 0,
       maxFans: stats.length > 0 ? Math.max(...stats.map(s => s.totalFans)) : 0,
-      avgCoins: Math.round(successes.reduce((a, s) => a + s.totalCoins, 0) / (successCount || 1)),
+      avgCoins: Math.round(successes.reduce((a, s) => a + s.nonEHCoins, 0) / (successCount || 1)),
       minCoins: stats.length > 0 ? Math.min(...stats.map(s => s.totalCoins)) : 0,
       maxCoins: stats.length > 0 ? Math.max(...stats.map(s => s.totalCoins)) : 0,
       avgCardKeys: stats.reduce((s, t) => s + t.cardKeys, 0) / stats.length,
       cardKeyPickRate: stats.filter(t => t.pickedCardKey).length / stats.length,
       itemStats: perItemStats,
       sampleTrial,
+      minSampleTrial,
+      maxSampleTrial,
     };
 
     setSimResult(summary);
@@ -597,7 +616,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     };
     setSimHistory(prev => [entry, ...prev].slice(0, 100));
     setSimSimulating(false);
-  }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbOverrides, simTrialCount, getEffectiveProbs]);
+  }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbOverrides, simServerOverrides, simTrialCount, getEffectiveProbs]);
 
   // Direct OCR paste integration state
   const [ocrImg1, setOcrImg1] = useState<string | null>(null);
@@ -2998,36 +3017,29 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     {t('シミュレーション結果 (試行数: {0})', simResult.trials.toLocaleString())}
                   </div>
 
-                  {/* Averages & card key stats — 2-column */}
+                  {/* Averages & card key stats */}
                   <div style={{
                     background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)',
                     borderRadius: '6px', padding: '12px 14px', fontSize: '13px',
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px'
+                    display: 'flex', flexDirection: 'column', gap: '6px'
                   }}>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均取得アイテム数')}</div>
-                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgTotalItems.toLocaleString()}個</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 {(simResult.minTotalItems ?? 0).toLocaleString()} / 最大 {(simResult.maxTotalItems ?? 0).toLocaleString()}</div>
+                    <div style={{ color: 'var(--yellow-neon)', fontWeight: 700, fontSize: '12px' }}>{t('平均 (EH除外)')}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('アイテム数')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '15px' }}>{simResult.avgTotalItems.toLocaleString()}個</div></div>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('ファンス')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '15px' }}>{simResult.avgFans.toLocaleString()}f</div></div>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('コイン')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '15px' }}>🪙{simResult.avgCoins.toLocaleString()}</div></div>
                     </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均ファンス')}</div>
-                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgFans.toLocaleString()}f</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 {(simResult.minFans ?? 0).toLocaleString()} / 最大 {(simResult.maxFans ?? 0).toLocaleString()}</div>
+                    <div style={{ borderTop: '1px solid rgba(0,240,255,0.1)' }} />
+                    <div style={{ color: 'var(--yellow-neon)', fontWeight: 700, fontSize: '12px' }}>{t('最小 / 最大')}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('アイテム数')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 600, fontSize: '13px' }}>{(simResult.minTotalItems ?? 0).toLocaleString()} / {(simResult.maxTotalItems ?? 0).toLocaleString()}個</div></div>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('ファンス')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 600, fontSize: '13px' }}>{(simResult.minFans ?? 0).toLocaleString()} / {(simResult.maxFans ?? 0).toLocaleString()}f</div></div>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('コイン')}</div><div style={{ color: 'var(--cyan-neon)', fontWeight: 600, fontSize: '13px' }}>🪙{(simResult.minCoins ?? 0).toLocaleString()} / 🪙{(simResult.maxCoins ?? 0).toLocaleString()}</div></div>
                     </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均コイン')}</div>
-                      <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>🪙{simResult.avgCoins.toLocaleString()}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 🪙{(simResult.minCoins ?? 0).toLocaleString()} / 最大 🪙{(simResult.maxCoins ?? 0).toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー平均取得数')}</div>
-                      <div style={{ color: '#ff4444', fontWeight: 700, fontSize: '16px' }}>{(simResult.avgCardKeys ?? 0).toFixed(1)}個</div>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー取得試行率')}</div>
-                      <div style={{ color: '#ff4444', fontWeight: 700, fontSize: '16px' }}>
-                        {((simResult.cardKeyPickRate ?? 0) * 100).toFixed(1)}%
-                      </div>
+                    <div style={{ borderTop: '1px solid rgba(0,240,255,0.1)' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('カードキー平均取得数')}</div><div style={{ color: '#ff4444', fontWeight: 700, fontSize: '15px' }}>{(simResult.avgCardKeys ?? 0).toFixed(1)}個</div></div>
+                      <div><div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{t('カードキー取得試行率')}</div><div style={{ color: '#ff4444', fontWeight: 700, fontSize: '15px' }}>{((simResult.cardKeyPickRate ?? 0) * 100).toFixed(1)}%</div></div>
                     </div>
                   </div>
 
@@ -3050,10 +3062,11 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
                   {/* Content: sample trial or draw counts */}
                   {resultSubTab === 'sample' ? (() => {
-                    if (!simResult.sampleTrial) return null;
+                    const trialData = sampleMode === 'min' ? simResult.minSampleTrial : sampleMode === 'max' ? simResult.maxSampleTrial : simResult.sampleTrial;
+                    if (!trialData) return null;
                     const gMap = new Map<string, { key: string; fans: number; coins: number; color: string; entries: { id: string; name: string; count: number; rate: number }[] }>();
-                    for (const id of Object.keys(simResult.sampleTrial)) {
-                      const count = simResult.sampleTrial[id];
+                    for (const id of Object.keys(trialData)) {
+                      const count = trialData[id];
                       if (count <= 0) continue;
                       const it = simItems.find(x => x.id === id);
                       if (!it) continue;
@@ -3070,8 +3083,23 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     for (const g of groups) g.entries.sort((a, b) => b.count - a.count);
                     return (
                       <div>
-                        <div style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700, marginBottom: '4px', marginTop: '6px' }}>
-                          サンプルパターン (成功例の中央値)
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '6px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700 }}>
+                            サンプルパターン ({sampleMode === 'min' ? '最小' : sampleMode === 'max' ? '最大' : '中央値'})
+                          </span>
+                          {(['min', 'median', 'max'] as const).map(m => (
+                            <button
+                              key={m}
+                              className="btn-cyber"
+                              style={{
+                                padding: '2px 8px', fontSize: '10px', borderRadius: '3px',
+                                background: sampleMode === m ? 'rgba(255,215,0,0.15)' : 'transparent',
+                                border: `1px solid ${sampleMode === m ? '#ffd700' : 'rgba(255,215,0,0.2)'}`,
+                                color: sampleMode === m ? '#ffd700' : 'var(--text-muted)',
+                              }}
+                              onClick={() => setSampleMode(m)}
+                            >{m === 'min' ? '最小' : m === 'median' ? '中央値' : '最大'}</button>
+                          ))}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {groups.map(g => {
