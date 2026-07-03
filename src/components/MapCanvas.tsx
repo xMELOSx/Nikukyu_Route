@@ -1097,8 +1097,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.globalAlpha = 1;
         continue;
       }
-      const radius = highlightSet && hasHighlight ? 9 : 5;
-      const glow = highlightSet && hasHighlight ? 14 : 4;
+      const radius = highlightSet && hasHighlight ? 6 : 3;
+      const glow = highlightSet && hasHighlight ? 10 : 2.5;
       ctx.shadowColor = color;
       ctx.shadowBlur = glow;
       ctx.fillStyle = color;
@@ -1514,13 +1514,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // スポーンビューワークリック: スポーンツール以外では最優先 (パンより先)
     if (onSpawnPointView && toolMode !== 'add-spawn') {
       const c = getCanvasCoords(e);
+      let bestId: string | null = null;
+      let bestDist = 8;
       for (const p of (spawnPoints || [])) {
         if (p.floor !== floor) continue;
-        if (Math.hypot(p.x - c.x, p.y - c.y) <= 12) {
-          onSpawnPointView(p.id);
-          return;
-        }
+        const d = Math.hypot(p.x - c.x, p.y - c.y);
+        if (d < bestDist) { bestDist = d; bestId = p.id; }
       }
+      if (bestId) { onSpawnPointView(bestId); return; }
     }
 
     // 点の配置し直し: マップクリックで移動先を決定
@@ -1741,21 +1742,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onSpawnPointAdd(coords.x, coords.y);
         handled = true;
       } else if (spawnToolMode === 'edit' && onSpawnPointEdit) {
-        const HIT = 12;
+        const HIT = 8;
+        let bestId: string | null = null;
+        let bestDist = HIT;
         for (const p of spawnPoints) {
           if (p.floor !== floor) continue;
-          if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
-            onSpawnPointEdit(p.id); handled = true; break;
-          }
+          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = p.id; }
         }
+        if (bestId) { onSpawnPointEdit(bestId); handled = true; }
       } else if (spawnToolMode === 'erase' && onSpawnPointDelete) {
-        const HIT = 12;
+        const HIT = 8;
+        let bestId: string | null = null;
+        let bestDist = HIT;
         for (const p of spawnPoints) {
           if (p.floor !== floor) continue;
-          if (Math.hypot(p.x - coords.x, p.y - coords.y) < HIT) {
-            onSpawnPointDelete(p.id); handled = true; break;
-          }
+          const d = Math.hypot(p.x - coords.x, p.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestId = p.id; }
         }
+        if (bestId) { onSpawnPointDelete(bestId); handled = true; }
       }
       if (handled) return;
       // fall through to viewer check if nothing handled
