@@ -263,8 +263,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     trials: number;
     successes: number;
     avgTotalItems: number;
+    minTotalItems: number;
+    maxTotalItems: number;
     avgFans: number;
+    minFans: number;
+    maxFans: number;
     avgCoins: number;
+    minCoins: number;
+    maxCoins: number;
     avgCardKeys: number;
     cardKeyPickRate: number;
     itemStats: Record<string, { picked: number; avgCount: number }>;
@@ -535,8 +541,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       trials: TRIALS,
       successes: successCount,
       avgTotalItems,
+      minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.totalItems)) : 0,
+      maxTotalItems: stats.length > 0 ? Math.max(...stats.map(s => s.totalItems)) : 0,
       avgFans: Math.round(successes.reduce((a, s) => a + s.totalFans, 0) / (successCount || 1)),
+      minFans: stats.length > 0 ? Math.min(...stats.map(s => s.totalFans)) : 0,
+      maxFans: stats.length > 0 ? Math.max(...stats.map(s => s.totalFans)) : 0,
       avgCoins: Math.round(successes.reduce((a, s) => a + s.totalCoins, 0) / (successCount || 1)),
+      minCoins: stats.length > 0 ? Math.min(...stats.map(s => s.totalCoins)) : 0,
+      maxCoins: stats.length > 0 ? Math.max(...stats.map(s => s.totalCoins)) : 0,
       avgCardKeys: stats.reduce((s, t) => s + t.cardKeys, 0) / stats.length,
       cardKeyPickRate: stats.filter(t => t.pickedCardKey).length / stats.length,
       itemStats: perItemStats,
@@ -2915,16 +2927,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   {/* Save/reset local defaults */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button
-                      className="btn-cyber"
+                       className="btn-cyber"
                       style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
                       onClick={() => {
-                        try {
-                          localStorage.setItem(SIM_SERVER_KEY, JSON.stringify({
-                            probs: simProbs, probOverrides: simProbOverrides,
-                            multipliers: simMultipliers, playerCount: simPlayerCount,
-                          }));
-                          window.alert(t('現在の設定をサーバー値として保存しました'));
-                        } catch {}
+                        localStorage.setItem(SIM_SERVER_KEY, JSON.stringify({
+                          probs: simProbs, probOverrides: simProbOverrides,
+                          multipliers: simMultipliers, playerCount: simPlayerCount,
+                        }));
+                        window.alert(t('現在の設定をサーバー値として保存しました'));
                       }}
                     >{t('現在の設定をサーバー値として保存')}</button>
                     <button
@@ -2966,14 +2976,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均取得アイテム数')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgTotalItems.toLocaleString()}個</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 {(simResult.minTotalItems ?? 0).toLocaleString()} / 最大 {(simResult.maxTotalItems ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均ファンス')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgFans.toLocaleString()}f</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 {(simResult.minFans ?? 0).toLocaleString()} / 最大 {(simResult.maxFans ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均コイン')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>🪙{simResult.avgCoins.toLocaleString()}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 🪙{(simResult.minCoins ?? 0).toLocaleString()} / 最大 🪙{(simResult.maxCoins ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー平均取得数')}</div>
