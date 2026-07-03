@@ -52,38 +52,7 @@ import { useGlobalSpawns } from './hooks/useGlobalSpawns';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
-// === HMRや自動リロード時にエラー情報をクリップボードやlocalStorageに退避するグローバルハンドラ ===
-if (typeof window !== 'undefined') {
-  const saveCrashError = (msg: string, stack: string) => {
-    try {
-      const errInfo = {
-        message: msg,
-        stack: stack || 'no stack available',
-        url: window.location.href,
-        time: new Date().toISOString()
-      };
-      localStorage.setItem('heist_last_crash_error', JSON.stringify(errInfo));
-      
-      const copyText = `=== Last Crash Error ===\nURL: ${errInfo.url}\nTime: ${errInfo.time}\nMessage: ${msg}\nStack: ${stack || 'no stack'}\n`;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(copyText).catch(() => {});
-      }
-    } catch (e) {
-      console.error('[GlobalErrorHandler] failed to save/copy:', e);
-    }
-  };
-
-  window.addEventListener('error', (e) => {
-    saveCrashError(e.message, e.error?.stack || '');
-  });
-
-  window.addEventListener('unhandledrejection', (e) => {
-    const msg = String(e.reason?.message || e.reason);
-    const stack = String(e.reason?.stack || '');
-    saveCrashError(msg, stack);
-  });
-}
-
+import './utils/crashErrorHandler';
 import { SaveListRowAuthor } from './hooks/SaveListRowAuthor';
 import { useAutoRoute } from './hooks/useAutoRoute';
 import { PLAY_DATA_KEY, loadFloorNavCollapsed, saveFloorNavCollapsed } from './utils/PlayDataManager';
@@ -114,6 +83,8 @@ import {
 import { formatTime } from './utils/format';
 import { StorageUsageBadge } from './components/StorageUsageBadge';
 import { QuickPresetButton } from './components/QuickPresetButton';
+import { CrashInfoModal } from './components/CrashInfoModal';
+import { UrlLoadConfirmModal } from './components/UrlLoadConfirmModal';
 import { EraserSubMenu } from './components/EraserSubMenu';
 import { MeasureSubMenu } from './components/MeasureSubMenu';
 
@@ -1511,15 +1482,32 @@ export default function App() {
       return;
     }
 
-    if (presetId && routeApi.presets.length > 0) {
-      // 公開レベル (visibility) によるゲート:
-      //  - private はローカルモードのみ許可。本番ビルド (dist 配信) では拒否。
-      //  - unlisted はURLを知っていれば常に許可 (一覧に出ないだけ)。
-      //  - public は無条件。
-      const access = routeApi.checkPresetUrlAccess(presetId);
+    if (!presetId) return;
+
+    // プリセットがメモリにない場合、先にensurePresetsLoadedでロードする
+    let presets = routeApi.ensurePresetsLoaded();
+    if (presets.length === 0) {
+      // localStorageにもなければサーバから取得
+      fetch(`${import.meta.env.BASE_URL}presets.json`)
+        .then(r => r.ok ? r.json() : [])
+        .then((fromServer: PresetData[]) => {
+          const normalized = normalizePresets(fromServer);
+          if (normalized.length > 0) {
+            routeApi.setPresets(normalized, { fromServer: true });
+            presets = normalized;
+            showConfirmForPreset(presetId, normalized);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+    showConfirmForPreset(presetId, presets);
+
+    function showConfirmForPreset(id: string, list: PresetData[]) {
+      const access = routeApi.checkPresetUrlAccess(id);
       if (!access.allowed) {
         if (access.reason === 'not_found') {
-          notification.show(`${t('プリセットが見つかりません: ')}${presetId}`, 3000);
+          notification.show(`${t('プリセットが見つかりません: ')}${id}`, 3000);
         } else if (access.reason === 'private_prod') {
           notification.show(t('このプリセットは非公開です。ローカルモード (npm run dev) でのみ開けます。'), 4000);
         } else {
@@ -1528,17 +1516,17 @@ export default function App() {
         window.history.replaceState({}, '', window.location.pathname);
         return;
       }
-      const preset = routeApi.presets.find(p => p.id === presetId);
+      const preset = list.find(p => p.id === id);
       if (!preset) {
-        notification.show(`${t('プリセットが見つかりません: ')}${presetId}`, 3000);
+        notification.show(`${t('プリセットが見つかりません: ')}${id}`, 3000);
         window.history.replaceState({}, '', window.location.pathname);
         return;
       }
       urlParamsHandledRef.current = true;
-      setUrlLoadConfirm({ type: 'preset', id: presetId, name: preset.name });
+      setUrlLoadConfirm({ type: 'preset', id, name: preset.name });
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [routeApi.presets, routeApi.checkPresetUrlAccess]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync target duration slider DOM value with state when the user is NOT
   // actively interacting with the slider. The slider is uncontrolled
@@ -4479,68 +4467,37 @@ export default function App() {
         </div>
       )}
 
-      {urlLoadConfirm && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 6000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setUrlLoadConfirm(null)}>
-          <div style={{ background: 'var(--panel-bg, #0a0e18)', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px', width: '420px', padding: '20px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)', marginBottom: '12px' }}>
-              {urlLoadConfirm.type === 'preset' ? t('プリセット') : t('セーブデータ')}{t('を読み込みますか？')}
-            </div>
-            <div style={{ fontSize: '13px', color: '#b0b0b0', marginBottom: '16px' }}>
-              「<span style={{ color: urlLoadConfirm.type === 'preset' ? '#ffd700' : 'var(--cyan-neon)', fontWeight: 700 }}>{urlLoadConfirm.name}</span>」{t('を読み込みます。')}<br />
-              {t('現在の編集内容は破棄されます。')}
-              {urlLoadConfirm.type === 'preset' && (() => {
-                const p = routeApi.presets.find(x => x.id === urlLoadConfirm.id);
-                if (!p) return null;
-                const v = getPresetVisibility(p);
-                if (v === 'public') return null;
-                const vMeta = PRESET_VISIBILITY_META[v];
-                return (
-                  <div style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', background: `${vMeta.color}22`, border: `1px solid ${vMeta.color}66`, borderRadius: '4px' }}>
-                    <span>{vMeta.emoji}</span>
-                    <span style={{ color: vMeta.color, fontWeight: 700, fontSize: '11px' }}>{vMeta.label}</span>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}> — {vMeta.description}</span>
-                  </div>
-                );
-              })()}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-              <button className="btn-cyber success" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => {
-                stopAutoRouteIfActive();
-                if (urlLoadConfirm.type === 'preset') {
-                  routeApi.loadFromLocal(`__preset__${urlLoadConfirm.id}`);
-                } else {
-                  const data = DataManager.loadFromLocalStorage(urlLoadConfirm.id);
-                  if (data) {
-                    const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(data);
-                    if (legacyMigrated || result.applied.length > 0) {
-                      DataManager.saveToLocalStorage(migrated);
-                    }
-                    if (result.unknown) {
-                      notification.show(
-                        `⚠️ 未登録バージョンのセーブデータです (v${result.unknownVersion})。そのまま読み込みます。`,
-                        5000
-                      );
-                    } else if (result.applied.length > 0) {
-                      notification.show(
-                        `セーブデータを ${result.applied.length} 件マイグレーションしました (→ v${result.finalVersion})`,
-                        3000
-                      );
-                    }
-                    routeApi.setRouteWithGlobalDefaults(migrated);
-                    if (migrated.markerScale !== undefined) {
-                      setMarkerScale(migrated.markerScale);
-                      localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
-                    }
-                  }
-                }
-                notification.show(`${t('読み込み完了: ')}${urlLoadConfirm.name}`);
-                setUrlLoadConfirm(null);
-              }}>{t('読み込む')}</button>
-              <button className="btn-cyber" style={{ padding: '6px 20px', fontSize: '12px' }} onClick={() => setUrlLoadConfirm(null)}>{t('キャンセル')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UrlLoadConfirmModal
+        target={urlLoadConfirm}
+        presets={routeApi.presets}
+        onClose={() => setUrlLoadConfirm(null)}
+        onConfirm={(target) => {
+          stopAutoRouteIfActive();
+          if (target.type === 'preset') {
+            routeApi.loadFromLocal(`__preset__${target.id}`);
+          } else {
+            const data = DataManager.loadFromLocalStorage(target.id);
+            if (data) {
+              const { data: migrated, result, legacyMigrated } = migrateLoadedRoute(data);
+              if (legacyMigrated || result.applied.length > 0) {
+                DataManager.saveToLocalStorage(migrated);
+              }
+              if (result.unknown) {
+                notification.show(`⚠️ 未登録バージョンのセーブデータです (v${result.unknownVersion})。そのまま読み込みます。`, 5000);
+              } else if (result.applied.length > 0) {
+                notification.show(`セーブデータを ${result.applied.length} 件マイグレーションしました (→ v${result.finalVersion})`, 3000);
+              }
+              routeApi.setRouteWithGlobalDefaults(migrated);
+              if (migrated.markerScale !== undefined) {
+                setMarkerScale(migrated.markerScale);
+                localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
+              }
+            }
+          }
+          notification.show(`${t('読み込み完了: ')}${target.name}`);
+          setUrlLoadConfirm(null);
+        }}
+      />
 
       <HelpModal
         show={showHelpModal}
@@ -4615,39 +4572,11 @@ export default function App() {
         globalMarkers={isLocal ? globalMarkersStore.globalMarkers : []}
       />
 
-      {lastCrashInfo && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setLastCrashInfo(null)}>
-          <div style={{ background: '#0a0e18', border: '2px solid #ff4444', borderRadius: '12px', width: '550px', padding: '20px', display: 'flex', flexDirection: 'column', maxHeight: '80vh', boxShadow: '0 0 20px rgba(255, 68, 68, 0.4)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 68, 68, 0.3)', paddingBottom: '10px', marginBottom: '12px' }}>
-              <div style={{ fontSize: '16px', fontWeight: 700, color: '#ff6666', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>⚠️</span> {t('前回のセッションでのクラッシュエラー情報')}
-              </div>
-              <button className="btn-cyber danger" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setLastCrashInfo(null)}>✕ {t('閉じる')}</button>
-            </div>
-            <div style={{ fontSize: '12px', color: '#bbb', marginBottom: '8px' }}>
-              {t('自動リロードされる前にクリップボードにエラー内容がコピーされていますが、ここから手動で再度コピーも可能です。')}
-            </div>
-            <pre style={{
-              flex: 1, minHeight: '150px',
-              margin: 0, padding: '12px',
-              background: '#05070a', border: '1px solid rgba(255, 68, 68, 0.2)',
-              borderRadius: '6px', overflow: 'auto',
-              fontSize: '11px', lineHeight: 1.4, color: '#ffaaaa',
-              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-            }}>
-              {`Time: ${lastCrashInfo.time}\nURL: ${lastCrashInfo.url}\nMessage: ${lastCrashInfo.message}\n\nStack:\n${lastCrashInfo.stack}`}
-            </pre>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
-              <button className="btn-cyber" style={{ padding: '6px 16px', fontSize: '11px', clipPath: 'none', borderColor: '#ff4444', color: '#ff4444' }} onClick={async () => {
-                const text = `=== Last Crash Error ===\nURL: ${lastCrashInfo.url}\nTime: ${lastCrashInfo.time}\nMessage: ${lastCrashInfo.message}\nStack: ${lastCrashInfo.stack}\n`;
-                await navigator.clipboard.writeText(text);
-                notification.show(t('エラーログをクリップボードにコピーしました'));
-              }}>{t('📋 ログをコピー')}</button>
-              <button className="btn-cyber" style={{ padding: '6px 16px', fontSize: '11px', clipPath: 'none' }} onClick={() => setLastCrashInfo(null)}>{t('閉じる')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CrashInfoModal
+        info={lastCrashInfo}
+        onClose={() => setLastCrashInfo(null)}
+        onCopy={(msg) => notification.show(msg)}
+      />
     </div>
   );
 }
