@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { t } from '../i18n';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { EraserSubMenu } from './EraserSubMenu';
@@ -185,7 +185,162 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     handleItemSave, handleBulkImport, handleItemImageUpload,
     warpColor, stairsColor, memoizedStrokes,
     leftSidebarCollapsed, isMobile,
+    spawnUndoRef, spawnRedoRef,
   } = props;
+  const itemImageInputRef = useRef<HTMLInputElement>(null);
+
+  // Item image crop state
+  const [cropSource, setCropSource] = useState<string | null>(null);
+  const [showCrop, setShowCrop] = useState(false);
+  const [cropRect, setCropRect] = useState<{x:number;y:number;w:number;h:number}>(() => {
+    try { const s = localStorage.getItem('heist_item_crop_rect'); if(s) return JSON.parse(s); } catch {}
+    return {x:10,y:10,w:200,h:60};
+  });
+  const [cropImgSize, setCropImgSize] = useState({w:0,h:0});
+  const cropImgRef = useRef<HTMLImageElement>(null);
+  const cropDragRef = useRef<{isDragging:boolean;type:string;startX:number;startY:number;initialX:number;initialY:number;initialW:number;initialH:number}|null>(null);
+  const cropPreviewRef = useRef<HTMLCanvasElement>(null);
+  const [cropPreviewUrl, setCropPreviewUrl] = useState<string>('');
+  const [confirmedCropMeta, setConfirmedCropMeta] = useState<{url:string;w:number;h:number}|null>(null);
+  const [cropHoverEdge, setCropHoverEdge] = useState<string | null>(null);
+
+  // Live crop preview (only while dragging / adjusting)
+  useEffect(() => {
+    if (!cropSource || !showCrop || !cropImgRef.current || !cropPreviewRef.current) return;
+    const canvas = cropPreviewRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    canvas.width = Math.max(1, cropRect.w);
+    canvas.height = Math.max(1, cropRect.h);
+    ctx.drawImage(cropImgRef.current, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
+    setCropPreviewUrl(canvas.toDataURL());
+  }, [cropRect, cropSource, showCrop]);
+
+  useEffect(() => {
+    if (!showItemModal) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            setConfirmedCropMeta(null);
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              if (ev.target?.result) {
+                setCropSource(ev.target.result as string);
+                setShowCrop(true);
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => { window.removeEventListener('paste', handlePaste); setShowCrop(false); setCropSource(null); setCropPreviewUrl(''); setConfirmedCropMeta(null); };
+  }, [showItemModal]);
+
+  const handleFileForCrop = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setConfirmedCropMeta(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setCropSource(ev.target.result as string);
+        setShowCrop(true);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const confirmCrop = () => {
+    if (!cropSource || !cropImgRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = cropRect.w;
+    canvas.height = cropRect.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(cropImgRef.current, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
+    const dataUrl = canvas.toDataURL();
+    setItemFormImage(dataUrl);
+    setConfirmedCropMeta({url:dataUrl,w:cropRect.w,h:cropRect.h});
+    localStorage.setItem('heist_item_crop_rect', JSON.stringify({x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}));
+    setShowCrop(false);
+    setCropSource(null);
+  };
+
+  const cancelCrop = () => { setShowCrop(false); setCropSource(null); setCropPreviewUrl(''); setConfirmedCropMeta(null); };
+
+  // Edge detection in screen-space pixels (independent of image resolution)
+  const getEdgeScreen = (sx: number, sy: number, r: typeof cropRect, scaleX: number, scaleY: number): string | null => {
+    const g = 10; // grab distance in screen pixels
+    const rsx = r.x / scaleX, rsy = r.y / scaleY, rsw = r.w / scaleX, rsh = r.h / scaleY;
+    const onLeft = Math.abs(sx - rsx) <= g;
+    const onRight = Math.abs(sx - (rsx + rsw)) <= g;
+    const onTop = Math.abs(sy - rsy) <= g;
+    const onBottom = Math.abs(sy - (rsy + rsh)) <= g;
+    if (onTop && onLeft) return 'nw'; if (onTop && onRight) return 'ne';
+    if (onBottom && onLeft) return 'sw'; if (onBottom && onRight) return 'se';
+    if (onTop) return 'n'; if (onBottom) return 's'; if (onLeft) return 'w'; if (onRight) return 'e';
+    return null;
+  };
+
+  const handleCropMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cropImgRef.current || !cropSource) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scaleX = cropImgSize.w / rect.width;
+    const scaleY = cropImgSize.h / rect.height;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const mx = sx * scaleX, my = sy * scaleY;
+    let type = getEdgeScreen(sx, sy, cropRect, scaleX, scaleY);
+    if (!type && mx >= cropRect.x && mx <= cropRect.x + cropRect.w && my >= cropRect.y && my <= cropRect.y + cropRect.h) type = 'move';
+    if (type) {
+      cropDragRef.current = {isDragging:true,type,startX:mx,startY:my,initialX:cropRect.x,initialY:cropRect.y,initialW:cropRect.w,initialH:cropRect.h};
+    }
+  };
+
+  const handleCropMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cropSource) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scaleX = cropImgSize.w / rect.width;
+    const scaleY = cropImgSize.h / rect.height;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const mx = Math.max(0, Math.min(cropImgSize.w, sx * scaleX));
+    const my = Math.max(0, Math.min(cropImgSize.h, sy * scaleY));
+    if (!cropDragRef.current) { setCropHoverEdge(getEdgeScreen(sx, sy, cropRect, scaleX, scaleY)); return; }
+    const dx = mx - cropDragRef.current.startX;
+    const dy = my - cropDragRef.current.startY;
+    let nx = cropDragRef.current.initialX, ny = cropDragRef.current.initialY, nw = cropDragRef.current.initialW, nh = cropDragRef.current.initialH;
+    const minSize = 12;
+    if (cropDragRef.current.type === 'move') {
+      nx = Math.max(0, Math.min(cropImgSize.w - cropDragRef.current.initialW, cropDragRef.current.initialX + dx));
+      ny = Math.max(0, Math.min(cropImgSize.h - cropDragRef.current.initialH, cropDragRef.current.initialY + dy));
+    } else {
+      if (cropDragRef.current.type.includes('w')) { nx = Math.min(cropDragRef.current.initialX + cropDragRef.current.initialW - minSize, cropDragRef.current.initialX + dx); nw = cropDragRef.current.initialW + (cropDragRef.current.initialX - nx); }
+      if (cropDragRef.current.type.includes('e')) { nw = Math.max(minSize, cropDragRef.current.initialW + dx); }
+      if (cropDragRef.current.type.includes('n')) { ny = Math.min(cropDragRef.current.initialY + cropDragRef.current.initialH - minSize, cropDragRef.current.initialY + dy); nh = cropDragRef.current.initialH + (cropDragRef.current.initialY - ny); }
+      if (cropDragRef.current.type.includes('s')) { nh = Math.max(minSize, cropDragRef.current.initialH + dy); }
+    }
+    setCropRect({x:Math.round(nx),y:Math.round(ny),w:Math.round(nw),h:Math.round(nh)});
+  };
+
+  const handleCropMouseUp = () => { cropDragRef.current = null; };
+
+  const cursorForEdge = (e: string | null): string => {
+    if (!e) return 'grab';
+    if (e === 'n' || e === 's') return 'ns-resize';
+    if (e === 'e' || e === 'w') return 'ew-resize';
+    if (e === 'nw' || e === 'se') return 'nwse-resize';
+    if (e === 'ne' || e === 'sw') return 'nesw-resize';
+    return 'grab';
+  };
 
   return (
         <section
@@ -1163,8 +1318,57 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           <button className="btn-cyber danger" style={{ fontSize: '11px', padding: '4px 10px', clipPath: 'none', flexShrink: 0 }}
                             onClick={() => setItemFormImage('')}>✕</button>
                         )}
-                        <input ref={itemImageInputRef} type="file" accept="image/*" onChange={handleItemImageUpload} style={{ display: 'none' }} />
+                        <input ref={itemImageInputRef} type="file" accept="image/*" onChange={handleFileForCrop} style={{ display: 'none' }} />
                       </div>
+                      {showCrop && cropSource && (
+                        <div style={{border:'1px solid rgba(79,195,247,0.3)',borderRadius:'6px',background:'#000',overflow:'hidden',userSelect:'none',marginTop:'4px'}}>
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'8px',gap:'8px'}}>
+                            <div onMouseDown={handleCropMouseDown} onMouseMove={handleCropMouseMove} onMouseUp={handleCropMouseUp} onMouseLeave={()=>{handleCropMouseUp();setCropHoverEdge(null);}} style={{position:'relative',cursor:cursorForEdge(cropHoverEdge),display:'inline-block',maxWidth:'100%'}}>
+                              <img ref={cropImgRef} src={cropSource} onLoad={(e)=>{const img=e.currentTarget;const nw=img.naturalWidth,nh=img.naturalHeight;setCropImgSize({w:nw,h:nh});setCropRect(p=>{const fromLs=p.x!==10||p.y!==10||p.w!==200||p.h!==60;if(fromLs)return{x:Math.min(p.x,nw-20),y:Math.min(p.y,nh-20),w:Math.min(p.w,nw),h:Math.min(p.h,nh)};else{const iw=Math.round(nw*0.7),ih=Math.round(nh*0.7);return{x:Math.round((nw-iw)/2),y:Math.round((nh-ih)/2),w:Math.max(20,iw),h:Math.max(20,ih)}};});}} style={{display:'block',maxWidth:'100%',maxHeight:'55vh',objectFit:'contain',pointerEvents:'none'}} />
+                              {cropImgSize.w>0&&cropImgRef.current&&(()=>{
+                                const img=cropImgRef.current!;
+                                const rw=img.clientWidth/cropImgSize.w,rh=img.clientHeight/cropImgSize.h;
+                                const l=cropRect.x*rw,t=cropRect.y*rh,w=cropRect.w*rw,h=cropRect.h*rh;
+                                return(<><div style={{position:'absolute',left:`${l}px`,top:`${t}px`,width:`${w}px`,height:`${h}px`,border:'3px solid #39ff14',boxShadow:'0 0 12px #39ff14,inset 0 0 6px #39ff14',background:'rgba(57,255,20,0.05)',pointerEvents:'none'}} />
+                                  <div style={{position:'absolute',left:`${l-8}px`,top:`${t-8}px`,width:'16px',height:'16px',background:'#39ff14',borderRadius:'50%',border:'2px solid #000',pointerEvents:'none',opacity:0.9}} />
+                                  <div style={{position:'absolute',left:`${l+w-8}px`,top:`${t-8}px`,width:'16px',height:'16px',background:'#39ff14',borderRadius:'50%',border:'2px solid #000',pointerEvents:'none',opacity:0.9}} />
+                                  <div style={{position:'absolute',left:`${l-8}px`,top:`${t+h-8}px`,width:'16px',height:'16px',background:'#39ff14',borderRadius:'50%',border:'2px solid #000',pointerEvents:'none',opacity:0.9}} />
+                                  <div style={{position:'absolute',left:`${l+w-8}px`,top:`${t+h-8}px`,width:'16px',height:'16px',background:'#39ff14',borderRadius:'50%',border:'2px solid #000',pointerEvents:'none',opacity:0.9}} />
+                                  <div style={{position:'absolute',left:`${l+w/2-5}px`,top:`${t-5}px`,width:'10px',height:'10px',background:'#39ff14',borderRadius:'2px',border:'1px solid #000',pointerEvents:'none',opacity:0.6}} />
+                                  <div style={{position:'absolute',left:`${l+w/2-5}px`,top:`${t+h-5}px`,width:'10px',height:'10px',background:'#39ff14',borderRadius:'2px',border:'1px solid #000',pointerEvents:'none',opacity:0.6}} />
+                                  <div style={{position:'absolute',left:`${l-5}px`,top:`${t+h/2-5}px`,width:'10px',height:'10px',background:'#39ff14',borderRadius:'2px',border:'1px solid #000',pointerEvents:'none',opacity:0.6}} />
+                                  <div style={{position:'absolute',left:`${l+w-5}px`,top:`${t+h/2-5}px`,width:'10px',height:'10px',background:'#39ff14',borderRadius:'2px',border:'1px solid #000',pointerEvents:'none',opacity:0.6}} />
+                                </>);
+                              })()}
+                            </div>
+                            <div style={{display:'flex',gap:'12px',alignItems:'center',width:'100%'}}>
+                              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',flexShrink:0}}>
+                                <div style={{fontSize:'10px',color:'var(--cyan-neon)',fontWeight:600}}>切り取り結果</div>
+                                <div style={{border:'2px solid rgba(57,255,20,0.5)',borderRadius:'4px',background:'#0a0e18',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',width:'120px',height:'80px'}}>
+                                  {cropPreviewUrl ? <img src={cropPreviewUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',imageRendering:'pixelated'}} /> : <span style={{fontSize:'10px',color:'var(--text-muted)'}}>-</span>}
+                                </div>
+                              </div>
+                              <div style={{flex:1,fontSize:'11px',color:'var(--text-muted)',display:'flex',flexDirection:'column',gap:'2px'}}>
+                                <span>X:{cropRect.x} Y:{cropRect.y}</span>
+                                <span>{cropRect.w} × {cropRect.h} px</span>
+                                <span style={{color:'rgba(57,255,20,0.6)',fontSize:'10px'}}>縁ドラッグ=リサイズ / 中ドラッグ=移動</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:'6px',padding:'8px',borderTop:'1px solid rgba(79,195,247,0.2)'}}>
+                            <button className="btn-cyber" style={{flex:1,fontSize:'10px',padding:'6px',clipPath:'none'}} onClick={cancelCrop}>キャンセル</button>
+                            <button className="btn-cyber success" style={{flex:1,fontSize:'10px',padding:'6px',clipPath:'none'}} onClick={confirmCrop}>この部分を使用</button>
+                          </div>
+                        </div>
+                      )}
+                      {!showCrop && confirmedCropMeta && (
+                        <div style={{marginTop:'4px',border:'1px solid rgba(79,195,247,0.2)',borderRadius:'4px',padding:'6px',display:'flex',alignItems:'center',gap:'10px',background:'rgba(0,0,0,0.2)'}}>
+                          <img src={confirmedCropMeta.url} style={{width:'80px',height:'80px',objectFit:'contain',borderRadius:'4px',border:'1px solid rgba(79,195,247,0.3)',background:'#000',imageRendering:'pixelated'}} />
+                          <span style={{fontSize:'11px',color:'var(--text-muted)'}}>{confirmedCropMeta.w}×{confirmedCropMeta.h} px に切り取り済み</span>
+                          <button className="btn-cyber danger" style={{fontSize:'9px',padding:'2px 6px',clipPath:'none',flexShrink:0}} onClick={()=>{setConfirmedCropMeta(null);setItemFormImage('');}}>✕</button>
+                        </div>
+                      )}
+                      {!showCrop && !itemFormImage && (<div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'-4px',marginBottom:'4px'}}>画像をペースト(Ctrl+V)またはファイルから読み込むと、切り取り編集ができます</div>)}
                       <textarea className="textarea-cyber" placeholder="説明 (任意)"
                         value={itemFormDescription} onChange={e => setItemFormDescription(e.target.value)}
                         style={{ fontSize: '12px', padding: '6px 10px', minHeight: '50px', resize: 'vertical' }} />

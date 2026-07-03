@@ -1889,6 +1889,8 @@ export default function App() {
           leftSidebarCollapsed={leftSidebarCollapsed}
           isMobile={isMobile}
           itemImageInputRef={itemImageInputRef}
+          spawnUndoRef={spawnUndoRef}
+          spawnRedoRef={spawnRedoRef}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
