@@ -183,7 +183,7 @@ export interface SpawnPointItem {
   playerCount: number;
 }
 
-export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床', '植木鉢', '棚'] as const;
+export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床', '植木鉢', '棚', '絵画', 'ドロップ'] as const;
 export type SpawnCategory = typeof SPAWN_CATEGORIES[number];
 
 export interface SpawnPoint {

@@ -1206,6 +1206,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           編集中: X:{spawnApi.points.find(p => p.id === editPointId)?.x ?? '?'} Y:{spawnApi.points.find(p => p.id === editPointId)?.y ?? '?'}
                         </div>
                       )}
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        スポーン点: <span style={{ color: 'var(--cyan-neon)' }}>{spawnApi.points.length}</span>
+                        {' | '}未設定: <span style={{ color: '#ff6b6b' }}>{spawnApi.points.filter(p => !p.category).length}</span>
+                      </div>
                     </div>
 
                     <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)' }}>
