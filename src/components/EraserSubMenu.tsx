@@ -22,15 +22,15 @@ export const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
     : eraseDefaultBehavior;
   return (
     <div className="panel-section">
-      <div className="panel-title">{t('eraser_settings')}</div>
+      <div className="panel-title">{t('消しゴム設定')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>{t('target:')}</div>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginTop: '2px' }}>{t('対象')}</div>
         <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
           {([
-            { v: 'all' as const, label: t('all') },
-            { v: 'marker' as const, label: t('marker') },
-            { v: 'route' as const, label: t('route') },
-            { v: 'branch' as const, label: t('branch') }
+            { v: 'all' as const, label: t('全て') },
+            { v: 'marker' as const, label: t('マーカー') },
+            { v: 'route' as const, label: t('ルート') },
+            { v: 'branch' as const, label: t('分岐') }
           ]).map(opt => (
             <button
               key={opt.v}
@@ -44,7 +44,7 @@ export const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
-            <span>{t('marker_size')}</span>
+            <span>{t('太さ')}</span>
             <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{eraseSize}px</span>
           </div>
           <input
@@ -56,15 +56,11 @@ export const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
             onChange={(e) => setEraseSize(parseInt(e.target.value))}
             style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
-            <span>{t('min_5px')}</span>
-            <span>{t('max_30px')}</span>
-          </div>
         </div>
 
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 4px' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{t('alt_shift_behavior')}</div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{t('モード')}</div>
           <span
             style={{
               fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '3px',
@@ -80,8 +76,8 @@ export const EraserSubMenu: React.FC<EraserSubMenuProps> = ({
         </div>
         <div className="tool-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
           {([
-            { v: 'normal' as const, label: t('normal') },
-            { v: 'split' as const, label: t('split') }
+            { v: 'normal' as const, label: t('通常') },
+            { v: 'split' as const, label: t('部分') }
           ]).map(opt => {
             const isActiveNow = effectiveEraseBehavior === opt.v;
             const isDefault = eraseDefaultBehavior === opt.v;
