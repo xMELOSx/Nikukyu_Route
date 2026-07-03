@@ -1422,7 +1422,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
                             {tabs.map(t => (
                               <button key={t.k} onClick={() => setItemListTab(t.k)}
-                                style={{ fontSize: '10px', padding: '3px 8px', border: `1px solid ${itemListTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: itemListTab === t.k ? `${t.c}22` : 'transparent', color: itemListTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: itemListTab === t.k ? 700 : 400 }}>
+                                style={{ fontSize: '11px', padding: '4px 10px', border: `1px solid ${itemListTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: itemListTab === t.k ? `${t.c}22` : 'transparent', color: itemListTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: itemListTab === t.k ? 700 : 400 }}>
                                 {t.l}
                               </button>
                             ))}
@@ -1564,7 +1564,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                             <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
                               {tabs.map(t => (
                                 <button key={t.k} onClick={() => setSpawnItemTab(t.k)}
-                                  style={{ fontSize: '9px', padding: '2px 6px', border: `1px solid ${spawnItemTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: spawnItemTab === t.k ? `${t.c}22` : 'transparent', color: spawnItemTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: spawnItemTab === t.k ? 700 : 400 }}>
+                                  style={{ fontSize: '11px', padding: '4px 10px', border: `1px solid ${spawnItemTab === t.k ? t.c : 'rgba(255,255,255,0.15)'}`, background: spawnItemTab === t.k ? `${t.c}22` : 'transparent', color: spawnItemTab === t.k ? t.c : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', fontWeight: spawnItemTab === t.k ? 700 : 400 }}>
                                   {t.l}
                                 </button>
                               ))}
@@ -1576,10 +1576,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                                 const count = spawnApi.points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).length;
                                 return (
                                   <button key={item.id} onClick={() => setEditAddItemId(isSel ? '' : item.id)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '5px 8px', border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '44'}`, background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.3)', color: tc?.color || '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: isSel ? 700 : 400 }}>
-                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', border: `2px solid ${tc?.color || '#888'}${isSel ? 'ff' : '44'}`, background: isSel ? `${tc?.color}33` : 'rgba(0,0,0,0.3)', color: tc?.color || '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: isSel ? 700 : 400 }}>
+                                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block' }} />
                                     <span>{item.name}</span>
-                                    <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '2px' }}>({count})</span>
+                                    <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>({count})</span>
                                   </button>
                                 );
                               })}
