@@ -340,11 +340,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.enabled ?? false; } } catch {}
     return false;
   });
+  const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(() => {
+    try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.multipliers ?? { 2: 2, 3: 3, 4: 4 }; } } catch {}
+    return { 2: 2, 3: 3, 4: 4 };
+  });
 
   useEffect(() => { try { localStorage.setItem(SIM_PROB_KEY, JSON.stringify(simProbs)); } catch {} }, [simProbs]);
   useEffect(() => { try { localStorage.setItem(SIM_PROB_OVERRIDE_KEY, JSON.stringify(simProbOverrides)); } catch {} }, [simProbOverrides]);
   useEffect(() => { try { localStorage.setItem(SIM_LIMITS_KEY, JSON.stringify(simLimits)); } catch {} }, [simLimits]);
-  useEffect(() => { try { localStorage.setItem(SIM_CORRECTION_KEY, JSON.stringify({ count: simPlayerCount, enabled: simApplyCorrection })); } catch {} }, [simPlayerCount, simApplyCorrection]);
+  useEffect(() => { try { localStorage.setItem(SIM_CORRECTION_KEY, JSON.stringify({ count: simPlayerCount, enabled: simApplyCorrection, multipliers: simMultipliers })); } catch {} }, [simPlayerCount, simApplyCorrection, simMultipliers]);
 
   const loadSimItems = useCallback(async () => {
     setSimLoading(true);
@@ -423,16 +427,20 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     const base = { ...simProbs };
     if (simApplyCorrection && simPlayerCount > 1) {
       const mc = ['cyan', 'yellow', 'red', 'purple'] as const;
-      const increase = mc.reduce((s, c) => s + (base[c] ?? 0) * (simPlayerCount - 1), 0);
+      const mult = simMultipliers[simPlayerCount] ?? simPlayerCount;
+      let totalIncrease = 0;
       const adjusted: Record<string, number> = {};
-      for (const c of mc) adjusted[c] = Math.min(1, (base[c] ?? 0) * simPlayerCount);
-      adjusted.blue = Math.max(0, (base.blue ?? 0) - increase);
+      for (const c of mc) {
+        adjusted[c] = Math.min(1, (base[c] ?? 0) * mult);
+        totalIncrease += adjusted[c] - (base[c] ?? 0);
+      }
+      adjusted.blue = Math.max(0, (base.blue ?? 0) - totalIncrease);
       adjusted.green = Math.max(0, 1 - mc.reduce((s, c) => s + (adjusted[c] ?? 0), 0) - (adjusted.blue ?? 0));
       return adjusted;
     }
     const green = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (base[c] || 0), 0));
     return { ...base, green };
-  }, [simProbs, simApplyCorrection, simPlayerCount]);
+  }, [simProbs, simApplyCorrection, simPlayerCount, simMultipliers]);
 
   const runSimulation = useCallback(async () => {
     const tf = simTargetFans;
@@ -2656,6 +2664,29 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       onChange={(e) => setSimTrialCount(Math.max(100, parseInt(e.target.value) || 100))}
                     />
                   </div>
+                  {(simTrialCount >= 10000 || simTargetFans >= 1000000) && (
+                    <div style={{ fontSize: '10px', color: '#ff9500', background: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)', borderRadius: '4px', padding: '4px 8px' }}>
+                      ⚠ {t('試行数が多い、または目標ファンスが大きいため処理に時間がかかる場合があります')}
+                    </div>
+                  )}
+
+                  {/* Player count buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginRight: '4px' }}>{t('プレイヤー人数')}</span>
+                    {[1, 2, 3, 4].map(n => (
+                      <button
+                        key={n}
+                        className="btn-cyber"
+                        style={{
+                          padding: '4px 12px', fontSize: '12px', minWidth: '36px',
+                          background: simPlayerCount === n ? 'rgba(0,240,255,0.15)' : 'transparent',
+                          border: `1px solid ${simPlayerCount === n ? 'var(--cyan-neon)' : 'rgba(0,240,255,0.2)'}`,
+                          color: simPlayerCount === n ? 'var(--cyan-neon)' : 'var(--text-muted)',
+                        }}
+                        onClick={() => setSimPlayerCount(n)}
+                      >{n}{t('人')}</button>
+                    ))}
+                  </div>
 
                   {/* Color filter tabs */}
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
@@ -2699,7 +2730,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     <button
                       className="btn-cyber"
                       style={{
-                        padding: '2px 8px', fontSize: '10px',
+                        padding: '3px 8px', fontSize: '11px',
                         opacity: Object.keys(simProbOverrides).length > 0 ? 1 : 0.4
                       }}
                       onClick={() => setSimProbOverrides({})}
@@ -2806,7 +2837,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     onClick={runSimulation}
                     disabled={(simTargetFans <= 0 && simTargetCoins <= 0) || simSimulating}
                   >
-                    {simSimulating ? <RefreshCw size={14} className="spin" /> : <Calculator size={14} />} {simSimulating ? t('シミュレーション中...') : t('モンテカルロシミュレーション実行')}
+                    {simSimulating ? <RefreshCw size={14} className="spin" /> : <Calculator size={14} />} {simSimulating ? t('シミュレーション中...') : t('シミュレーション実行')}
                   </button>
                 </>
               ) : simActiveTab === 'prob' ? (
@@ -2818,7 +2849,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                         const eff = getEffectiveProbs();
                         const baseVal = simProbs[col] ?? 0;
                         const effVal = eff[col] ?? 0;
-                        const isGreen = col === 'green';
+                        const disabled = col === 'green' || col === 'blue';
                         return (
                           <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{
@@ -2831,8 +2862,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               type="number" min="0" max="100" step="0.1"
                               className="input-cyber"
                               style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
-                              value={isGreen ? (baseVal * 100).toFixed(1) : (baseVal * 100).toFixed(1)}
-                              disabled={isGreen}
+                              value={(baseVal * 100).toFixed(1)}
+                              disabled={disabled}
                               onChange={(e) => {
                                 const raw = parseFloat(e.target.value);
                                 if (isNaN(raw) || raw < 0) return;
@@ -2850,9 +2881,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     </div>
                   </div>
 
-                  {/* Correction controls */}
+                  {/* Correction controls: checkbox + multipliers per player count */}
                   <div style={{ background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                       <input
                         type="checkbox"
                         checked={simApplyCorrection}
@@ -2861,19 +2892,27 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       />
                       <span style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('人数補正を有効にする')}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('プレイヤー人数')}</span>
-                      <input
-                        type="number" min="1" max="8" step="1"
-                        className="input-cyber"
-                        style={{ width: '60px', fontSize: '12px', padding: '3px 6px', textAlign: 'right' }}
-                        value={simPlayerCount}
-                        onChange={(e) => setSimPlayerCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      />
-                    </div>
-                    {simApplyCorrection && simPlayerCount > 1 && (
+                    {[2, 3, 4].map(n => (
+                      <div key={n} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: n < 4 ? '4px' : 0 }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '32px' }}>{n}{t('人')}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('倍率')}</span>
+                        <input
+                          type="number" min="1" max="20" step="0.5"
+                          className="input-cyber"
+                          style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                          value={simMultipliers[n] ?? n}
+                          onChange={(e) => {
+                            const raw = parseFloat(e.target.value);
+                            if (isNaN(raw) || raw < 0) return;
+                            setSimMultipliers(prev => ({ ...prev, [n]: Math.max(0.1, Math.min(20, raw)) }));
+                          }}
+                        />
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>×</span>
+                      </div>
+                    ))}
+                    {simApplyCorrection && (
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                        EH・金・カードキー・紫 ×{simPlayerCount}、青をその分減少
+                        EH･金･カードキー･紫 に倍率を適用、青をその分減少
                       </div>
                     )}
                   </div>
@@ -2959,18 +2998,20 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             const cd = g.color === 'cyan' ? '#00ffff' : g.color === 'yellow' ? '#ffd700' : g.color === 'red' ? '#ff4444' : g.color === 'purple' ? '#a855f7' : g.color === 'blue' ? '#3b82f6' : '#22c55e';
                             return (
                               <div key={g.key} style={{ border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', background: 'rgba(255,215,0,0.04)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderBottom: '1px solid rgba(255,215,0,0.1)', fontSize: '10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderBottom: '1px solid rgba(255,215,0,0.1)', fontSize: '11px' }}>
                                   <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: cd }} />
                                   <span style={{ color: '#00ffff', fontWeight: 700 }}>{g.fans.toLocaleString()}f / 🪙{g.coins.toLocaleString()}</span>
                                   <span style={{ color: '#888', marginLeft: 'auto' }}>計 {g.entries.reduce((s, e) => s + e.count, 0).toLocaleString()}個</span>
                                 </div>
-                                {g.entries.map(e => (
-                                  <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 20px', fontSize: '10px' }}>
-                                    <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
-                                    <span style={{ color: '#00ffff', fontWeight: 600 }}>x{e.count}</span>
-                                    <span style={{ color: '#888', minWidth: '40px', textAlign: 'right' }}>{e.rate.toFixed(1)}%</span>
-                                  </div>
-                                ))}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px 8px', padding: '2px 0' }}>
+                                  {g.entries.map(e => (
+                                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '11px', minWidth: 0 }}>
+                                      <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
+                                      <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0 }}>x{e.count}</span>
+                                      <span style={{ color: '#888', minWidth: '36px', textAlign: 'right', flexShrink: 0 }}>{e.rate.toFixed(1)}%</span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             );
                           })}
