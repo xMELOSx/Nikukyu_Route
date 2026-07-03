@@ -140,9 +140,9 @@ export default function App() {
         setLastCrashInfo(parsed);
         const copyText = `=== Last Crash Error ===\nURL: ${parsed.url}\nTime: ${parsed.time}\nMessage: ${parsed.message}\nStack: ${parsed.stack || 'no stack'}\n`;
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(copyText).catch(() => {});
+          navigator.clipboard.writeText(copyText).catch(() => { });
         }
-      } catch (e) {}
+      } catch (e) { }
       localStorage.removeItem('heist_last_crash_error');
     }
   }, []);
@@ -688,7 +688,7 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...globalDefaultsRef.current, spawnFeatureEnabled: enabled })
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
   const [spawnVisible, setSpawnVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_spawn_visible');
@@ -1068,7 +1068,7 @@ export default function App() {
       const allWalls = globalWallsRef.current as any;
       const floorWalls = allWalls[currentFloor] || [];
       let intersectsAnyWall = false;
-      
+
       const { isIntersecting } = await import('./utils/PathFinder');
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = pts[i];
@@ -1092,143 +1092,143 @@ export default function App() {
       }
       const startNode = { x: pts[0].x, y: pts[0].y, floor: currentFloor };
       const endNode = { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, floor: currentFloor };
-        
-        // Filter out hidden markers (ID-based and Type-based) so they are ignored by the pathfinder,
-        // EXCEPT for 'goal' markers and any hidden portal markers that are targets of links from visible portals.
-        const hiddenIds = new Set(routeRef.current.hiddenMarkers || []);
-        const hiddenTypes = new Set(routeRef.current.hiddenMarkerTypes || []);
-        
+
+      // Filter out hidden markers (ID-based and Type-based) so they are ignored by the pathfinder,
+      // EXCEPT for 'goal' markers and any hidden portal markers that are targets of links from visible portals.
+      const hiddenIds = new Set(routeRef.current.hiddenMarkers || []);
+      const hiddenTypes = new Set(routeRef.current.hiddenMarkerTypes || []);
 
 
-        const rawMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
-        // Collect IDs of destinations of portals that are NOT hidden
-        const activeDestinations = new Set<string>();
-        rawMarkers.forEach(m => {
-          const isHidden = hiddenIds.has(m.id) || hiddenTypes.has(m.type);
-          if (!isHidden && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
-            activeDestinations.add(m.linkedWarpId);
-          }
-        });
 
-        const allMarkers = rawMarkers.filter(m => {
-          if (m.type === 'goal') return true; // Always allow exit (goal) markers
-          if (activeDestinations.has(m.id)) return true; // Keep destination portal even if hidden
-          if (hiddenIds.has(m.id)) return false;
-          if (hiddenTypes.has(m.type)) return false;
-          return true;
-        });
-        
-        // Show loading notification first
-        notification.show(t('壁を迂回するルートを計算中...'));
-        
-        // Yield thread using setTimeout to ensure the loading notification is rendered on screen
-        setTimeout(async () => {
-          const { findBypassingPath } = await import('./utils/PathFinder');
-          const pathfindStartTime = performance.now();
+      const rawMarkers = [...globalMarkersStore.globalMarkers, ...routeRef.current.markers];
+      // Collect IDs of destinations of portals that are NOT hidden
+      const activeDestinations = new Set<string>();
+      rawMarkers.forEach(m => {
+        const isHidden = hiddenIds.has(m.id) || hiddenTypes.has(m.type);
+        if (!isHidden && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && m.linkedWarpId) {
+          activeDestinations.add(m.linkedWarpId);
+        }
+      });
 
-          historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
+      const allMarkers = rawMarkers.filter(m => {
+        if (m.type === 'goal') return true; // Always allow exit (goal) markers
+        if (activeDestinations.has(m.id)) return true; // Keep destination portal even if hidden
+        if (hiddenIds.has(m.id)) return false;
+        if (hiddenTypes.has(m.type)) return false;
+        return true;
+      });
 
-          let finalPath: { x: number; y: number; floor: string; isPortal?: boolean; portalName?: string; markerId?: string }[] = [];
-          let finalTeleportIndices: number[] = [];
-          let pathfindSuccess = true;
-          let statsToReturn: any = { details: [] };
+      // Show loading notification first
+      notification.show(t('壁を迂回するルートを計算中...'));
 
-          if (bypassShortestOnly) {
-            // 1. Shortest Search mode (original behavior)
-            const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes);
-            statsToReturn = portalStats;
-            if (path && path.length >= 2) {
-              finalPath = path;
-              finalTeleportIndices = teleportIndices;
-            } else {
-              pathfindSuccess = false;
-            }
+      // Yield thread using setTimeout to ensure the loading notification is rendered on screen
+      setTimeout(async () => {
+        const { findBypassingPath } = await import('./utils/PathFinder');
+        const pathfindStartTime = performance.now();
+
+        historyApi.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers);
+
+        let finalPath: { x: number; y: number; floor: string; isPortal?: boolean; portalName?: string; markerId?: string }[] = [];
+        let finalTeleportIndices: number[] = [];
+        let pathfindSuccess = true;
+        let statsToReturn: any = { details: [] };
+
+        if (bypassShortestOnly) {
+          // 1. Shortest Search mode (original behavior)
+          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes);
+          statsToReturn = portalStats;
+          if (path && path.length >= 2) {
+            finalPath = path;
+            finalTeleportIndices = teleportIndices;
           } else {
-            // 2. Maintain Path mode (Guide-following Global Search):
-            // Instead of isolating segments, we perform a single global Dijkstra detour search from start to end,
-            // passing the entire user stroke (pts) as guidePoints. The pathfinder will tightly cling to this line
-            // wherever possible but detour through warps or doors when blocked, solving all room-crossing issues cleanly.
-            const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes, pts);
-            statsToReturn = portalStats;
-            if (path && path.length >= 2) {
-              finalPath = path;
-              finalTeleportIndices = teleportIndices;
-            } else {
-              pathfindSuccess = false;
-            }
+            pathfindSuccess = false;
           }
+        } else {
+          // 2. Maintain Path mode (Guide-following Global Search):
+          // Instead of isolating segments, we perform a single global Dijkstra detour search from start to end,
+          // passing the entire user stroke (pts) as guidePoints. The pathfinder will tightly cling to this line
+          // wherever possible but detour through warps or doors when blocked, solving all room-crossing issues cleanly.
+          const { path, teleportIndices, portalStats } = findBypassingPath(startNode, endNode, allWalls, allMarkers, hiddenIds, hiddenTypes, pts);
+          statsToReturn = portalStats;
+          if (path && path.length >= 2) {
+            finalPath = path;
+            finalTeleportIndices = teleportIndices;
+          } else {
+            pathfindSuccess = false;
+          }
+        }
 
-          const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
-          
-          if (pathfindSuccess && finalPath.length >= 2) {
-            // Use teleportIndices to split path into segments.
-            const teleportSet = new Set(finalTeleportIndices);
-            const segments: { floor: string; points: { x: number; y: number }[] }[] = [];
-            let seg: { x: number; y: number }[] = [];
-            let segFloor = finalPath[0].floor;
+        const pathfindElapsed = Math.round(performance.now() - pathfindStartTime);
 
-            for (let i = 0; i < finalPath.length; i++) {
-              seg.push({ x: finalPath[i].x, y: finalPath[i].y });
+        if (pathfindSuccess && finalPath.length >= 2) {
+          // Use teleportIndices to split path into segments.
+          const teleportSet = new Set(finalTeleportIndices);
+          const segments: { floor: string; points: { x: number; y: number }[] }[] = [];
+          let seg: { x: number; y: number }[] = [];
+          let segFloor = finalPath[0].floor;
 
-              if (teleportSet.has(i)) {
-                // teleport. End segment here.
-                if (seg.length >= 2) {
-                  segments.push({ floor: segFloor, points: seg });
-                }
-                seg = []; // next iteration will start fresh segment
-                if (i + 1 < finalPath.length) segFloor = finalPath[i + 1].floor;
+          for (let i = 0; i < finalPath.length; i++) {
+            seg.push({ x: finalPath[i].x, y: finalPath[i].y });
+
+            if (teleportSet.has(i)) {
+              // teleport. End segment here.
+              if (seg.length >= 2) {
+                segments.push({ floor: segFloor, points: seg });
               }
+              seg = []; // next iteration will start fresh segment
+              if (i + 1 < finalPath.length) segFloor = finalPath[i + 1].floor;
             }
-            if (seg.length >= 2) {
-              segments.push({ floor: segFloor, points: seg });
-            }
-
-            console.log('[Bypass] segments:', segments.length, 'teleports:', finalTeleportIndices.length);
-
-            routeApi.setRoute(prev => {
-              const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
-              
-              segments.forEach((s, si) => {
-                const fl = s.floor;
-                const base = si === 0 && fl === currentFloor
-                  ? newStrokes.slice(0, -1)
-                  : (nextStrokes[fl] || []);
-
-                nextStrokes[fl] = [
-                  ...(si === 0 ? base : (nextStrokes[fl] || [])),
-                  {
-                    ...addedStroke,
-                    points: s.points,
-                    originalPoints: s.points
-                  }
-                ];
-              });
-              return { ...prev, strokes: nextStrokes as any };
-            });
-            
-            notification.show(t('壁を迂回するルートを自動生成しました ({0}ms)', String(pathfindElapsed)) + t(' / 最大 500ms'));
-          } else {
-            const isolated = statsToReturn.details.filter((p: any) => p.edges === 0).map((p: any) => p.name);
-            let errorMsg = t('壁を越えて迂回する経路が見つかりません ({0}ms)。操作をキャンセルしました。', String(pathfindElapsed));
-            if (isolated.length > 0) {
-              errorMsg += t(' 🚫接続口がブロックされています: ') + isolated.slice(0, 3).join(', ');
-            }
-            notification.show(errorMsg);
-            
-            // Force redraw of canvas by changing strokes reference so MapCanvas's
-            // strokes useEffect (which clears and redraws the canvas) fires.
-            routeApi.setRoute(prev => ({ ...prev, strokes: { ...prev.strokes } }));
           }
-        }, 50);
-        return;
-      }
+          if (seg.length >= 2) {
+            segments.push({ floor: segFloor, points: seg });
+          }
 
-      historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
-      routeApi.setRoute(prev => ({
-        ...prev,
-        strokes: { ...prev.strokes, [currentFloor]: newStrokes }
-      }));
-    }, [bypassWallsEnabled, bypassShortestOnly]);
+          console.log('[Bypass] segments:', segments.length, 'teleports:', finalTeleportIndices.length);
+
+          routeApi.setRoute(prev => {
+            const nextStrokes = { ...prev.strokes } as Record<string, DrawingStroke[]>;
+
+            segments.forEach((s, si) => {
+              const fl = s.floor;
+              const base = si === 0 && fl === currentFloor
+                ? newStrokes.slice(0, -1)
+                : (nextStrokes[fl] || []);
+
+              nextStrokes[fl] = [
+                ...(si === 0 ? base : (nextStrokes[fl] || [])),
+                {
+                  ...addedStroke,
+                  points: s.points,
+                  originalPoints: s.points
+                }
+              ];
+            });
+            return { ...prev, strokes: nextStrokes as any };
+          });
+
+          notification.show(t('壁を迂回するルートを自動生成しました ({0}ms)', String(pathfindElapsed)) + t(' / 最大 500ms'));
+        } else {
+          const isolated = statsToReturn.details.filter((p: any) => p.edges === 0).map((p: any) => p.name);
+          let errorMsg = t('壁を越えて迂回する経路が見つかりません ({0}ms)。操作をキャンセルしました。', String(pathfindElapsed));
+          if (isolated.length > 0) {
+            errorMsg += t(' 🚫接続口がブロックされています: ') + isolated.slice(0, 3).join(', ');
+          }
+          notification.show(errorMsg);
+
+          // Force redraw of canvas by changing strokes reference so MapCanvas's
+          // strokes useEffect (which clears and redraws the canvas) fires.
+          routeApi.setRoute(prev => ({ ...prev, strokes: { ...prev.strokes } }));
+        }
+      }, 50);
+      return;
+    }
+
+    historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+    routeApi.setRoute(prev => ({
+      ...prev,
+      strokes: { ...prev.strokes, [currentFloor]: newStrokes }
+    }));
+  }, [bypassWallsEnabled, bypassShortestOnly]);
 
   const updateMarkers = (newMarkers: HeistMarker[], shouldPushHistory = false, options: { isDelete?: boolean } = {}) => {
     if (shouldPushHistory) {
@@ -1498,7 +1498,7 @@ export default function App() {
             showConfirmForPreset(presetId, normalized);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
       return;
     }
     showConfirmForPreset(presetId, presets);
@@ -1870,7 +1870,7 @@ export default function App() {
                     {t('🖱️ 表示モードでテキストピンのクリックを透過')}
                   </label>
 
-                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
                       checked={showPhoneCompass}
@@ -1989,61 +1989,61 @@ export default function App() {
                         }}>ALL OFF</button>
                     </div>
                   </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                      {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
-                        const meta = MARKER_META[t];
-                        const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
-                        return (
-                          <button key={t} className="btn-cyber"
-                            style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none', opacity: isTypeHidden ? 0.4 : 1, borderColor: isTypeHidden ? '#555' : meta.color, color: isTypeHidden ? '#555' : meta.color }}
-                            onClick={() => { isTypeHidden ? handleShowGlobalMarkerType(t) : handleHideGlobalMarkerType(t); }}>
-                            {meta.emoji} {meta.label.split(' ')[0]}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                      const meta = MARKER_META[t];
+                      const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
+                      return (
+                        <button key={t} className="btn-cyber"
+                          style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none', opacity: isTypeHidden ? 0.4 : 1, borderColor: isTypeHidden ? '#555' : meta.color, color: isTypeHidden ? '#555' : meta.color }}
+                          onClick={() => { isTypeHidden ? handleShowGlobalMarkerType(t) : handleHideGlobalMarkerType(t); }}>
+                          {meta.emoji} {meta.label.split(' ')[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 8px' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '12px', color: '#ff6b9d', fontWeight: 'bold' }}>INDIVIDUAL:</div>
-                      <div style={{ display: 'flex', gap: '3px' }}>
-                        <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
-                          onClick={() => {
-                            const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
-                            const next = current.filter(t => !targetTypes.includes(t as string));
-                            if (next.length === current.length) return;
-                            const nextHidden = routeApi.route.hiddenMarkers || [];
-                            postGlobalDefaults(nextHidden, next);
-                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
-                          }}>ALL ON</button>
-                        <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
-                          onClick={() => {
-                            const current = routeApi.route.hiddenMarkerTypes || [];
-                            const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
-                            const additions = targetTypes.filter(t => !current.includes(t));
-                            if (additions.length === 0) return;
-                            const next = Array.from(new Set([...current, ...additions]));
-                            const nextHidden = routeApi.route.hiddenMarkers || [];
-                            postGlobalDefaults(nextHidden, next);
-                            routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
-                          }}>ALL OFF</button>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
-                        const meta = MARKER_META[t];
-                        const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
-                        return (
-                          <button key={t} className="btn-cyber"
-                            style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none', opacity: isTypeHidden ? 0.4 : 1, borderColor: isTypeHidden ? '#555' : meta.color, color: isTypeHidden ? '#555' : meta.color }}
-                            onClick={() => { isTypeHidden ? handleShowGlobalMarkerType(t) : handleHideGlobalMarkerType(t); }}>
-                            {meta.emoji} {meta.label.split(' ')[0]}
-                          </button>
-                        );
-                      })}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 8px' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '12px', color: '#ff6b9d', fontWeight: 'bold' }}>INDIVIDUAL:</div>
+                    <div style={{ display: 'flex', gap: '3px' }}>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
+                        onClick={() => {
+                          const current = routeApi.route.hiddenMarkerTypes || [];
+                          const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
+                          const next = current.filter(t => !targetTypes.includes(t as string));
+                          if (next.length === current.length) return;
+                          const nextHidden = routeApi.route.hiddenMarkers || [];
+                          postGlobalDefaults(nextHidden, next);
+                          routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                        }}>ALL ON</button>
+                      <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
+                        onClick={() => {
+                          const current = routeApi.route.hiddenMarkerTypes || [];
+                          const targetTypes = ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint'];
+                          const additions = targetTypes.filter(t => !current.includes(t));
+                          if (additions.length === 0) return;
+                          const next = Array.from(new Set([...current, ...additions]));
+                          const nextHidden = routeApi.route.hiddenMarkers || [];
+                          postGlobalDefaults(nextHidden, next);
+                          routeApi.setRoute(prev => ({ ...prev, hiddenMarkerTypes: next }));
+                        }}>ALL OFF</button>
                     </div>
                   </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3'] as MarkerType[]).map(t => {
+                      const meta = MARKER_META[t];
+                      const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
+                      return (
+                        <button key={t} className="btn-cyber"
+                          style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none', opacity: isTypeHidden ? 0.4 : 1, borderColor: isTypeHidden ? '#555' : meta.color, color: isTypeHidden ? '#555' : meta.color }}
+                          onClick={() => { isTypeHidden ? handleShowGlobalMarkerType(t) : handleHideGlobalMarkerType(t); }}>
+                          {meta.emoji} {meta.label.split(' ')[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -2172,7 +2172,17 @@ export default function App() {
 
             {toolMode === 'edit-stroke' && (
               <div className="panel-section">
-                <div className="panel-title">{t('線分編集')}</div>
+                <div className="panel-title">{t('線分編集設定')}</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={blockMarkerClicksDuringTools}
+                    onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)}
+                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                  />
+                  {t('マーカーを遮断')}
+                </label>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '4px' }}>
                   <span>{t('選択中の線:')}</span>
                   <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{editStrokeIdxs.size}{t('本')}</span>
@@ -2197,15 +2207,7 @@ export default function App() {
                   }}>{t('選択を削除')}</button>
                 </div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '6px', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={blockMarkerClicksDuringTools}
-                    onChange={(e) => setBlockMarkerClicksDuringTools(e.target.checked)}
-                    style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
-                  />
-                  {t('マーカーを遮断')}
-                </label>
+
 
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0 6px' }} />
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{t('色 (クリックで選択線に適用):')}</div>
