@@ -278,13 +278,23 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     summary: SimResultSummary;
   }
   const SIM_HISTORY_KEY = 'heist_sim_history_v1';
-  const SIM_PROB_KEY = 'heist_sim_prob_v1';
-  const SIM_PROB_OVERRIDE_KEY = 'heist_sim_prob_override_v1';
-  const SIM_LIMITS_KEY = 'heist_sim_limits_v1';
-  const SIM_CORRECTION_KEY = 'heist_sim_correction_v1';
+  const SIM_LOCAL_KEY = 'heist_sim_local_v1';
+  const SIM_SERVER_KEY = 'heist_sim_server_v1';
 
   const COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
+  const DEFAULT_MULTIPLIERS: Record<number, number> = { 2: 2, 3: 3, 4: 4 };
+
+  // On init: read local (auto-save) → server defaults → hardcoded
+  const initState = (() => {
+    try {
+      const localRaw = localStorage.getItem(SIM_LOCAL_KEY);
+      if (localRaw) return JSON.parse(localRaw);
+      const serverRaw = localStorage.getItem(SIM_SERVER_KEY);
+      if (serverRaw) return JSON.parse(serverRaw);
+    } catch {}
+    return null;
+  })();
 
   const [showSimulator, setShowSimulator] = useState(false);
   const [simItems, setSimItems] = useState<SimFlatItem[]>([]);
@@ -293,17 +303,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simTargetFans, setSimTargetFans] = useState(0);
   const [simTargetCoins, setSimTargetCoins] = useState(0);
   const [simExcluded, setSimExcluded] = useState<Set<string>>(new Set());
-  const [simLimits, setSimLimits] = useState<Record<string, number>>(() => {
-    try {
-      const raw = localStorage.getItem(SIM_LIMITS_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      // migration: if too many limit-0 entries (old bug), discard all
-      const zeroEntries = Object.values(parsed).filter(v => v === 0).length;
-      if (zeroEntries > 10) return {};
-      return parsed;
-    } catch { return {}; }
-  });
+  const [simLimits, setSimLimits] = useState<Record<string, number>>({});
   const [simResult, setSimResult] = useState<SimResultSummary | null>(null);
   const [simHistory, setSimHistory] = useState<SimHistoryEntry[]>(() => {
     try {
@@ -311,40 +311,30 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      // discard old-format entries (had `result` directly, no `summary`)
       return parsed.filter((e: any) => e && e.summary && typeof e.summary.successes === 'number');
     } catch { return []; }
   });
   const [simActiveTab, setSimActiveTab] = useState<'input' | 'prob' | 'result' | 'history'>('input');
-  const [simProbs, setSimProbs] = useState<Record<string, number>>(() => {
-    try {
-      const raw = localStorage.getItem(SIM_PROB_KEY);
-      return raw ? JSON.parse(raw) : { ...COLOR_DEFAULT_PROBS };
-    } catch { return { ...COLOR_DEFAULT_PROBS }; }
-  });
-  const [simProbOverrides, setSimProbOverrides] = useState<Record<string, number | null>>(() => {
-    try {
-      const raw = localStorage.getItem(SIM_PROB_OVERRIDE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  });
+  const [simProbs, setSimProbs] = useState<Record<string, number>>(initState?.probs ?? { ...COLOR_DEFAULT_PROBS });
+  const [simProbOverrides, setSimProbOverrides] = useState<Record<string, number | null>>(initState?.probOverrides ?? {});
   const [simTrialCount, setSimTrialCount] = useState(2000);
   const [simColorFilter, setSimColorFilter] = useState<Record<string, boolean>>(() => ({
     cyan: true, yellow: true, red: true, purple: true, blue: true, green: true
   }));
-  const [simPlayerCount, setSimPlayerCount] = useState(() => {
-    try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.count ?? 1; } } catch {}
-    return 1;
-  });
-  const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(() => {
-    try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.multipliers ?? { 2: 2, 3: 3, 4: 4 }; } } catch {}
-    return { 2: 2, 3: 3, 4: 4 };
-  });
+  const [resultSubTab, setResultSubTab] = useState<'sample' | 'draws'>('sample');
+  const [drawViewMode, setDrawViewMode] = useState<'count' | 'rate'>('count');
+  const [simPlayerCount, setSimPlayerCount] = useState(initState?.playerCount ?? 1);
+  const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
 
-  useEffect(() => { try { localStorage.setItem(SIM_PROB_KEY, JSON.stringify(simProbs)); } catch {} }, [simProbs]);
-  useEffect(() => { try { localStorage.setItem(SIM_PROB_OVERRIDE_KEY, JSON.stringify(simProbOverrides)); } catch {} }, [simProbOverrides]);
-  useEffect(() => { try { localStorage.setItem(SIM_LIMITS_KEY, JSON.stringify(simLimits)); } catch {} }, [simLimits]);
-  useEffect(() => { try { localStorage.setItem(SIM_CORRECTION_KEY, JSON.stringify({ count: simPlayerCount, multipliers: simMultipliers })); } catch {} }, [simPlayerCount, simMultipliers]);
+  // Auto-save during use
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIM_LOCAL_KEY, JSON.stringify({
+        probs: simProbs, probOverrides: simProbOverrides,
+        multipliers: simMultipliers, playerCount: simPlayerCount,
+      }));
+    } catch {}
+  }, [simProbs, simProbOverrides, simMultipliers, simPlayerCount]);
 
   const loadSimItems = useCallback(async () => {
     setSimLoading(true);
@@ -2624,13 +2614,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               ) : simActiveTab === 'input' ? (
                 <>
                   {/* Target & Probability settings side by side */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                     <div>
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('目標 ファンス')}</div>
                       <input
                         type="number" min="0" step="1000"
                         className="input-cyber"
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '15px', padding: '6px 8px' }}
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '18px', padding: '8px 10px' }}
                         value={simTargetFans || ''}
                         placeholder="0"
                         onChange={(e) => {
@@ -2644,7 +2634,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       <input
                         type="number" min="0" step="100"
                         className="input-cyber"
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '15px', padding: '6px 8px' }}
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '18px', padding: '8px 10px' }}
                         value={simTargetCoins || ''}
                         placeholder="0"
                         onChange={(e) => {
@@ -2656,12 +2646,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   </div>
 
                   {/* Trial count */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>{t('シミュレーション回数')}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>{t('シミュレーション回数')}</span>
                     <input
                       type="number" min="100" max="50000" step="100"
                       className="input-cyber"
-                      style={{ width: '80px', fontSize: '12px', padding: '3px 6px', textAlign: 'right' }}
+                      style={{ width: '100px', fontSize: '14px', padding: '5px 8px', textAlign: 'right' }}
                       value={simTrialCount}
                       onChange={(e) => setSimTrialCount(Math.max(100, parseInt(e.target.value) || 100))}
                     />
@@ -2784,15 +2774,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             {it.fans === 0 && it.coins === 0 ? `(${COLOR_LABELS[it.color] || it.color})` : ''}
                           </span>
                           <input
-                            type="number" min="0" max="100" step="0.1"
+                            type="number" min="0" max="100" step="0.01"
                             style={{
-                              width: '52px', fontSize: '10px', padding: '1px 3px',
+                              width: '65px', fontSize: '12px', padding: '2px 5px',
                               background: it.id in simProbOverrides && simProbOverrides[it.id] !== null ? 'rgba(255,215,0,0.15)' : 'rgba(0,0,0,0.3)',
                               border: `1px solid ${it.id in simProbOverrides && simProbOverrides[it.id] !== null ? 'rgba(255,215,0,0.4)' : 'rgba(0,240,255,0.15)'}`,
                               borderRadius: '3px', color: 'var(--text-primary)', textAlign: 'right'
                             }}
-                            value={((simProbOverrides[it.id] ?? colorProb) * 100).toFixed(colorProb < 0.01 ? 2 : 1)}
-                            placeholder={(colorProb * 100).toFixed(colorProb < 0.01 ? 2 : 1)}
+                            value={it.id in simProbOverrides && simProbOverrides[it.id] !== null ? (simProbOverrides[it.id]! * 100) : ''}
+                            placeholder={(colorProb * 100).toFixed(2)}
                             title={t('個別確率 (空欄=色デフォルト)')}
                             onChange={(e) => {
                               const raw = e.target.value;
@@ -2810,7 +2800,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           <input
                             type="number" min="0" step="1"
                             style={{
-                              width: '50px', fontSize: '11px', padding: '2px 4px',
+                              width: '60px', fontSize: '12px', padding: '3px 6px',
                               background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.2)',
                               borderRadius: '3px', color: 'var(--text-primary)', textAlign: 'right'
                             }}
@@ -2848,7 +2838,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     <div style={{ fontSize: '12px', color: 'var(--yellow-neon)', fontWeight: 700, marginBottom: '6px' }}>{t('基本ドロップ率')}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
                       {['cyan', 'yellow', 'red', 'purple', 'blue', 'green'].map(col => {
-                        const baseVal = simProbs[col] ?? 0;
+                        const isGreen = col === 'green';
+                        const computedGreen = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] ?? 0), 0));
+                        const baseVal = isGreen ? computedGreen : (simProbs[col] ?? 0);
                         const disabled = col === 'green' || col === 'blue';
                         return (
                           <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2859,10 +2851,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             }} />
                             <span style={{ fontSize: '11px', color: 'var(--text-primary)', minWidth: '50px' }}>{COLOR_LABELS[col]}</span>
                             <input
-                              type="number" min="0" max="100" step="0.1"
+                              type="number" min="0" max="100" step="0.01"
                               className="input-cyber"
-                              style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
-                              value={(baseVal * 100).toFixed(1)}
+                      style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
+                      value={baseVal * 100}
                               disabled={disabled}
                               onChange={(e) => {
                                 const raw = parseFloat(e.target.value);
@@ -2905,7 +2897,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             return (
                               <span key={col} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                                 <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: cd }} />
-                                <span style={{ color: 'var(--text-primary)' }}>{(eff[col] * 100).toFixed(1)}%</span>
+                                <span style={{ color: 'var(--text-primary)' }}>{(eff[col] * 100).toFixed(2)}%</span>
                               </span>
                             );
                           })}
@@ -2919,6 +2911,45 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       {t('現在 {0}人設定: EH･金･カードキー･紫 ×{1}、青･緑を按分減', simPlayerCount, simMultipliers[simPlayerCount] ?? simPlayerCount)}
                     </div>
                   )}
+
+                  {/* Save/reset local defaults */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn-cyber"
+                      style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
+                      onClick={() => {
+                        try {
+                          localStorage.setItem(SIM_SERVER_KEY, JSON.stringify({
+                            probs: simProbs, probOverrides: simProbOverrides,
+                            multipliers: simMultipliers, playerCount: simPlayerCount,
+                          }));
+                          window.alert(t('現在の設定をサーバー値として保存しました'));
+                        } catch {}
+                      }}
+                    >{t('現在の設定をサーバー値として保存')}</button>
+                    <button
+                      className="btn-cyber danger"
+                      style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
+                      onClick={() => {
+                        try { localStorage.removeItem(SIM_LOCAL_KEY); } catch {}
+                        const serverRaw = localStorage.getItem(SIM_SERVER_KEY);
+                        if (serverRaw) {
+                          try {
+                            const s = JSON.parse(serverRaw);
+                            setSimProbs(s.probs ?? { ...COLOR_DEFAULT_PROBS });
+                            setSimProbOverrides(s.probOverrides ?? {});
+                            setSimMultipliers(s.multipliers ?? { ...DEFAULT_MULTIPLIERS });
+                            setSimPlayerCount(s.playerCount ?? 1);
+                          } catch {}
+                        } else {
+                          setSimProbs({ ...COLOR_DEFAULT_PROBS });
+                          setSimProbOverrides({});
+                          setSimMultipliers({ ...DEFAULT_MULTIPLIERS });
+                          setSimPlayerCount(1);
+                        }
+                      }}
+                    >{t('サーバーデフォルトにリセット')}</button>
+                  </div>
                 </>
               ) : simActiveTab === 'result' && simResult ? (
                 <>
@@ -2956,11 +2987,29 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     </div>
                   </div>
 
-                  {/* Sample trial — grouped by value, per-item rate (no nested scroll) */}
-                  {simResult.sampleTrial && (() => {
+                  {/* Result sub-tabs */}
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                    {(['sample', 'draws'] as const).map(st => (
+                      <button
+                        key={st}
+                        className="btn-cyber"
+                        style={{
+                          padding: '4px 12px', fontSize: '11px', borderRadius: '4px',
+                          background: resultSubTab === st ? 'rgba(255,215,0,0.15)' : 'transparent',
+                          border: `1px solid ${resultSubTab === st ? '#ffd700' : 'rgba(255,215,0,0.2)'}`,
+                          color: resultSubTab === st ? '#ffd700' : 'var(--text-muted)',
+                        }}
+                        onClick={() => setResultSubTab(st)}
+                      >{st === 'sample' ? 'サンプル' : '抽選数一覧'}</button>
+                    ))}
+                  </div>
+
+                  {/* Content: sample trial or draw counts */}
+                  {resultSubTab === 'sample' ? (() => {
+                    if (!simResult.sampleTrial) return null;
                     const gMap = new Map<string, { key: string; fans: number; coins: number; color: string; entries: { id: string; name: string; count: number; rate: number }[] }>();
                     for (const id of Object.keys(simResult.sampleTrial)) {
-                      const count = simResult.sampleTrial![id];
+                      const count = simResult.sampleTrial[id];
                       if (count <= 0) continue;
                       const it = simItems.find(x => x.id === id);
                       if (!it) continue;
@@ -3005,7 +3054,43 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                         </div>
                       </div>
                     );
-                  })()}
+                  })() : (
+                    /* Draw counts list */
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700 }}>アイテム別抽選数</span>
+                        <button
+                          className="btn-cyber"
+                          style={{ padding: '2px 8px', fontSize: '10px', borderRadius: '3px' }}
+                          onClick={() => setDrawViewMode(drawViewMode === 'count' ? 'rate' : 'count')}
+                        >{drawViewMode === 'count' ? '割合表示' : '回数表示'}</button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '3px 8px', maxHeight: '360px', overflowY: 'auto' }}>
+                        {simItems
+                          .map(it => {
+                            const st = simResult.itemStats?.[it.id];
+                            const totalDraws = st ? Math.round(st.avgCount * simResult.trials) : 0;
+                            return { ...it, totalDraws, picked: st?.picked ?? 0 };
+                          })
+                          .filter(it => it.totalDraws > 0)
+                          .sort((a, b) => drawViewMode === 'rate' ? (b.picked - a.picked) : (b.totalDraws - a.totalDraws))
+                          .map(it => {
+                            const cd = it.color === 'cyan' ? '#00ffff' : it.color === 'yellow' ? '#ffd700' : it.color === 'red' ? '#ff4444' : it.color === 'purple' ? '#a855f7' : it.color === 'blue' ? '#3b82f6' : '#22c55e';
+                            return (
+                              <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 6px', fontSize: '11px', background: 'rgba(0,240,255,0.02)', border: '1px solid rgba(0,240,255,0.08)', borderRadius: '4px', minWidth: 0 }}>
+                                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: cd, flexShrink: 0 }} />
+                                <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>{it.name}</span>
+                                {drawViewMode === 'count' ? (
+                                  <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0, fontSize: '10px' }}>{it.totalDraws.toLocaleString()}回</span>
+                                ) : (
+                                  <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0, fontSize: '10px' }}>{(it.picked / simResult.trials * 100).toFixed(1)}%</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
 
                   <button
                     className="btn-cyber"
