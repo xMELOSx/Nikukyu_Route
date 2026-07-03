@@ -456,7 +456,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       const limit = simLimits[it.id] ?? -1;
       if (limit === 0) continue;
       const colorProb = effProbs[it.color] ?? 0;
-      const effectiveProb = it.id in simProbOverrides && simProbOverrides[it.id] !== null ? simProbOverrides[it.id]! : colorProb;
+      const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
+      let effectiveProb = hasOverride ? simProbOverrides[it.id]! : colorProb;
+      if (hasOverride && simPlayerCount > 1) effectiveProb *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
       if (effectiveProb <= 0) continue;
       pool.push({ item: it, prob: effectiveProb, limit });
     }
