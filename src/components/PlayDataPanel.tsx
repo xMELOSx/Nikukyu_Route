@@ -281,6 +281,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const SIM_PROB_KEY = 'heist_sim_prob_v1';
   const SIM_PROB_OVERRIDE_KEY = 'heist_sim_prob_override_v1';
   const SIM_LIMITS_KEY = 'heist_sim_limits_v1';
+  const SIM_CORRECTION_KEY = 'heist_sim_correction_v1';
 
   const COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
@@ -295,7 +296,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simLimits, setSimLimits] = useState<Record<string, number>>(() => {
     try {
       const raw = localStorage.getItem(SIM_LIMITS_KEY);
-      return raw ? JSON.parse(raw) : {};
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      // migration: if too many limit-0 entries (old bug), discard all
+      const zeroEntries = Object.values(parsed).filter(v => v === 0).length;
+      if (zeroEntries > 10) return {};
+      return parsed;
     } catch { return {}; }
   });
   const [simResult, setSimResult] = useState<SimResultSummary | null>(null);
@@ -326,10 +332,19 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simColorFilter, setSimColorFilter] = useState<Record<string, boolean>>(() => ({
     cyan: true, yellow: true, red: true, purple: true, blue: true, green: true
   }));
+  const [simPlayerCount, setSimPlayerCount] = useState(() => {
+    try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.count ?? 1; } } catch {}
+    return 1;
+  });
+  const [simApplyCorrection, setSimApplyCorrection] = useState(() => {
+    try { const raw = localStorage.getItem(SIM_CORRECTION_KEY); if (raw) { const p = JSON.parse(raw); return p.enabled ?? false; } } catch {}
+    return false;
+  });
 
   useEffect(() => { try { localStorage.setItem(SIM_PROB_KEY, JSON.stringify(simProbs)); } catch {} }, [simProbs]);
   useEffect(() => { try { localStorage.setItem(SIM_PROB_OVERRIDE_KEY, JSON.stringify(simProbOverrides)); } catch {} }, [simProbOverrides]);
   useEffect(() => { try { localStorage.setItem(SIM_LIMITS_KEY, JSON.stringify(simLimits)); } catch {} }, [simLimits]);
+  useEffect(() => { try { localStorage.setItem(SIM_CORRECTION_KEY, JSON.stringify({ count: simPlayerCount, enabled: simApplyCorrection })); } catch {} }, [simPlayerCount, simApplyCorrection]);
 
   const loadSimItems = useCallback(async () => {
     setSimLoading(true);
@@ -359,9 +374,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
           if (g.color === 'cyan' && !(g.key in prev)) {
             for (const id of g.itemIds) next[id] = 1;
           }
-          for (const n of g.names) {
-            if (n.includes('深紅のルビー')) for (const id of g.itemIds) { if (!(id in prev)) next[id] = 0; }
-            if (n.includes('混沌の核')) for (const id of g.itemIds) { if (!(id in prev)) next[id] = 0; }
+          for (let i = 0; i < g.names.length; i++) {
+            if (g.names[i].includes('深紅のルビー') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
+            if (g.names[i].includes('混沌の核') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
           }
         }
         return next;
@@ -390,9 +405,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         setSimLimits(prev => {
           const next = { ...prev };
           for (const g of groups) {
-            for (const n of g.names) {
-              if (n.includes('深紅のルビー')) for (const id of g.itemIds) { if (!(id in prev)) next[id] = 0; }
-              if (n.includes('混沌の核')) for (const id of g.itemIds) { if (!(id in prev)) next[id] = 0; }
+            for (let i = 0; i < g.names.length; i++) {
+              if (g.names[i].includes('深紅のルビー') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
+              if (g.names[i].includes('混沌の核') && !(g.itemIds[i] in prev)) next[g.itemIds[i]] = 0;
             }
           }
           return next;
@@ -404,10 +419,20 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
   useEffect(() => { try { localStorage.setItem(SIM_HISTORY_KEY, JSON.stringify(simHistory)); } catch {} }, [simHistory]);
 
-  const getGreenProb = useCallback(() => {
-    const others = ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] || 0), 0);
-    return Math.max(0, 1 - others);
-  }, [simProbs]);
+  const getEffectiveProbs = useCallback(() => {
+    const base = { ...simProbs };
+    if (simApplyCorrection && simPlayerCount > 1) {
+      const mc = ['cyan', 'yellow', 'red', 'purple'] as const;
+      const increase = mc.reduce((s, c) => s + (base[c] ?? 0) * (simPlayerCount - 1), 0);
+      const adjusted: Record<string, number> = {};
+      for (const c of mc) adjusted[c] = Math.min(1, (base[c] ?? 0) * simPlayerCount);
+      adjusted.blue = Math.max(0, (base.blue ?? 0) - increase);
+      adjusted.green = Math.max(0, 1 - mc.reduce((s, c) => s + (adjusted[c] ?? 0), 0) - (adjusted.blue ?? 0));
+      return adjusted;
+    }
+    const green = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (base[c] || 0), 0));
+    return { ...base, green };
+  }, [simProbs, simApplyCorrection, simPlayerCount]);
 
   const runSimulation = useCallback(async () => {
     const tf = simTargetFans;
@@ -416,12 +441,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     setSimSimulating(true);
 
     // Build weighted pool from individual items
+    const effProbs = getEffectiveProbs();
     const pool: { item: SimFlatItem; prob: number; limit: number }[] = [];
     for (const it of simItems) {
       if (simExcluded.has(it.id)) continue;
       const limit = simLimits[it.id] ?? -1;
       if (limit === 0) continue;
-      const colorProb = it.color === 'green' ? getGreenProb() : (simProbs[it.color] ?? 0);
+      const colorProb = effProbs[it.color] ?? 0;
       const effectiveProb = it.id in simProbOverrides && simProbOverrides[it.id] !== null ? simProbOverrides[it.id]! : colorProb;
       if (effectiveProb <= 0) continue;
       pool.push({ item: it, prob: effectiveProb, limit });
@@ -529,7 +555,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     };
     setSimHistory(prev => [entry, ...prev].slice(0, 100));
     setSimSimulating(false);
-  }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbs, getGreenProb, simProbOverrides, simTrialCount]);
+  }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbOverrides, simTrialCount, getEffectiveProbs]);
 
   // Direct OCR paste integration state
   const [ocrImg1, setOcrImg1] = useState<string | null>(null);
@@ -2684,7 +2710,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     {simItems.filter(it => simColorFilter[it.color] !== false).map(it => {
                       const excluded = simExcluded.has(it.id);
                       const limit = simLimits[it.id] ?? -1;
-                      const colorProb = it.color === 'green' ? getGreenProb() : (simProbs[it.color] ?? 0);
+                      const effProbs = getEffectiveProbs();
+                      const colorProb = effProbs[it.color] ?? 0;
                       const colorDot = it.color === 'cyan' ? '#00ffff' : it.color === 'yellow' ? '#ffd700' : it.color === 'red' ? '#ff4444' : it.color === 'purple' ? '#a855f7' : it.color === 'blue' ? '#3b82f6' : '#22c55e';
                       return (
                         <div
@@ -2788,8 +2815,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     <div style={{ fontSize: '12px', color: 'var(--yellow-neon)', fontWeight: 700, marginBottom: '6px' }}>{t('ドロップ確率設定')}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
                       {['cyan', 'yellow', 'red', 'purple', 'blue', 'green'].map(col => {
-                        const val = col === 'green' ? getGreenProb() : (simProbs[col] ?? 0);
-                        const pct = (val * 100).toFixed(val < 0.01 ? 1 : 1);
+                        const eff = getEffectiveProbs();
+                        const baseVal = simProbs[col] ?? 0;
+                        const effVal = eff[col] ?? 0;
+                        const isGreen = col === 'green';
                         return (
                           <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{
@@ -2802,19 +2831,51 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               type="number" min="0" max="100" step="0.1"
                               className="input-cyber"
                               style={{ width: '60px', fontSize: '11px', padding: '2px 4px', textAlign: 'right' }}
-                              value={col === 'green' ? pct : ((simProbs[col] ?? 0) * 100).toFixed(1)}
-                              disabled={col === 'green'}
+                              value={isGreen ? (baseVal * 100).toFixed(1) : (baseVal * 100).toFixed(1)}
+                              disabled={isGreen}
                               onChange={(e) => {
                                 const raw = parseFloat(e.target.value);
                                 if (isNaN(raw) || raw < 0) return;
                                 setSimProbs(prev => ({ ...prev, [col]: Math.min(100, raw) / 100 }));
                               }}
                             />
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>%</span>
+                            {simApplyCorrection && simPlayerCount > 1 && (
+                              <span style={{ fontSize: '10px', color: '#ffd700', minWidth: '38px', textAlign: 'right' }}>
+                                →{(effVal * 100).toFixed(1)}%
+                              </span>
+                            )}
                           </div>
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Correction controls */}
+                  <div style={{ background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <input
+                        type="checkbox"
+                        checked={simApplyCorrection}
+                        onChange={(e) => setSimApplyCorrection(e.target.checked)}
+                        style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'var(--cyan-neon)', fontWeight: 700 }}>{t('人数補正を有効にする')}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('プレイヤー人数')}</span>
+                      <input
+                        type="number" min="1" max="8" step="1"
+                        className="input-cyber"
+                        style={{ width: '60px', fontSize: '12px', padding: '3px 6px', textAlign: 'right' }}
+                        value={simPlayerCount}
+                        onChange={(e) => setSimPlayerCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      />
+                    </div>
+                    {simApplyCorrection && simPlayerCount > 1 && (
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                        EH・金・カードキー・紫 ×{simPlayerCount}、青をその分減少
+                      </div>
+                    )}
                   </div>
                 </>
               ) : simActiveTab === 'result' && simResult ? (
