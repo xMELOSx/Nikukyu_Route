@@ -64,7 +64,8 @@ import {
   Play,
   Pause,
   Square,
-  Star
+  Star,
+  Move
 } from 'lucide-react';
 import { formatTime } from './utils/format';
 import { StorageUsageBadge } from './components/StorageUsageBadge';
@@ -1900,6 +1901,8 @@ export default function App() {
               strokes={memoizedStrokes}
               markers={(rightTab === 'spawn' && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
               customBg={routeApi.route.customBg[currentFloor] ?? null}
+              bgOffset={routeApi.route.bgOffset ?? { x: 0, y: 0 }}
+              bgScale={routeApi.route.bgScale ?? { x: 1, y: 1 }}
               toolMode={toolMode}
               activeMarkerType={activeMarkerType}
               strokeColor={strokeColor}
@@ -2025,6 +2028,8 @@ export default function App() {
             globalMarkersStore.globalMarkers,
             routeApi.route.markers,
             routeApi.route.customBg,
+            routeApi.route.bgOffset,
+            routeApi.route.bgScale,
             toolMode,
             activeMarkerType,
             strokeColor,
@@ -2391,16 +2396,55 @@ export default function App() {
                       )}
                     </div>
                     {routeApi.route.customBg[currentFloor] && isEditMode && (
-                      <button className="btn-cyber danger" style={{ padding: '4px', fontSize: '10px', marginTop: '4px' }} onClick={() => {
-                        const id = routeApi.route.id;
-                        routeApi.setRoute(prev => ({ ...prev, customBg: { main: null } }));
-                        DataManager.deleteCustomBg(id);
-                        // ロードモーダル用のセーブ一覧メタも更新する
-                        DataManager.setSaveMetaBg(id, false);
-                        routeApi.refreshSavesList();
-                      }}>
-                        Reset to Default Background
-                      </button>
+                      <>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
+                          <Move size={12} style={{ color: 'var(--cyan-neon)', flexShrink: 0 }} />
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '10px', color: '#888' }}>X</label>
+                            <input type="range" min={-500} max={500} value={routeApi.route.bgOffset?.x ?? 0}
+                              onChange={e => routeApi.setRoute(prev => ({ ...prev, bgOffset: { ...(prev.bgOffset || { x: 0, y: 0 }), x: Number(e.target.value) } }))}
+                              style={{ width: '100%', height: '4px', accentColor: 'var(--cyan-neon)' }} />
+                            <span style={{ fontSize: '9px', color: '#aaa' }}>{routeApi.route.bgOffset?.x ?? 0}px</span>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '10px', color: '#888' }}>Y</label>
+                            <input type="range" min={-500} max={500} value={routeApi.route.bgOffset?.y ?? 0}
+                              onChange={e => routeApi.setRoute(prev => ({ ...prev, bgOffset: { ...(prev.bgOffset || { x: 0, y: 0 }), y: Number(e.target.value) } }))}
+                              style={{ width: '100%', height: '4px', accentColor: 'var(--cyan-neon)' }} />
+                            <span style={{ fontSize: '9px', color: '#aaa' }}>{routeApi.route.bgOffset?.y ?? 0}px</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                          <span style={{ fontSize: '10px', color: '#888', width: '14px' }}>W</span>
+                          <input type="range" min={0.1} max={3} step={0.01} value={routeApi.route.bgScale?.x ?? 1}
+                            onChange={e => routeApi.setRoute(prev => ({ ...prev, bgScale: { ...(prev.bgScale || { x: 1, y: 1 }), x: Number(e.target.value) } }))}
+                            style={{ flex: 1, height: '4px', accentColor: 'var(--cyan-neon)' }} />
+                          <span style={{ fontSize: '9px', color: '#aaa', minWidth: '30px', textAlign: 'right' }}>{((routeApi.route.bgScale?.x ?? 1) * 100).toFixed(0) + '%'}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                          <span style={{ fontSize: '10px', color: '#888', width: '14px' }}>H</span>
+                          <input type="range" min={0.1} max={3} step={0.01} value={routeApi.route.bgScale?.y ?? 1}
+                            onChange={e => routeApi.setRoute(prev => ({ ...prev, bgScale: { ...(prev.bgScale || { x: 1, y: 1 }), y: Number(e.target.value) } }))}
+                            style={{ flex: 1, height: '4px', accentColor: 'var(--cyan-neon)' }} />
+                          <span style={{ fontSize: '9px', color: '#aaa', minWidth: '30px', textAlign: 'right' }}>{((routeApi.route.bgScale?.y ?? 1) * 100).toFixed(0) + '%'}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
+                          <button className="btn-cyber danger" style={{ padding: '4px', fontSize: '10px', flex: 1 }} onClick={() => {
+                            const id = routeApi.route.id;
+                            routeApi.setRoute(prev => ({ ...prev, customBg: { main: null }, bgOffset: { x: 0, y: 0 }, bgScale: { x: 1, y: 1 } }));
+                            DataManager.deleteCustomBg(id);
+                            DataManager.setSaveMetaBg(id, false);
+                            routeApi.refreshSavesList();
+                          }}>
+                            Reset BG
+                          </button>
+                          <button className="btn-cyber" style={{ padding: '4px', fontSize: '10px', flex: 1 }} onClick={() => {
+                            routeApi.setRoute(prev => ({ ...prev, bgOffset: { x: 0, y: 0 }, bgScale: { x: 1, y: 1 } }));
+                          }}>
+                            Reset Offset/Scale
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
 

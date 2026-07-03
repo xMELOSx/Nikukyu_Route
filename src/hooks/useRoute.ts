@@ -596,6 +596,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       data.strokes.main = normalizeStrokes(data.strokes.main);
 
       if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
+      if (!data.bgOffset) data.bgOffset = { x: 0, y: 0 };
+      if (!data.bgScale) data.bgScale = { x: 1, y: 1 };
       data.bossCustomDurations = data.bossCustomDurations || {};
       data.battleCustomDurations = data.battleCustomDurations || {};
       data.pickingCustomDurations = data.pickingCustomDurations || {};

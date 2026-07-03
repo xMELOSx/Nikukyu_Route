@@ -103,6 +103,8 @@ export async function saveRoute(route: RouteData): Promise<boolean> {
     ...route,
     renderCache: encoded,
     customBg: { main: null },
+    bgOffset: route.bgOffset,
+    bgScale: route.bgScale,
     markerScale: route.markerScale,
     saveDataVersion: APP_VERSION,
   };
@@ -209,6 +211,8 @@ export async function importJSON(text: string): Promise<ImportResult | null> {
 
     data.markers = indivMarkers;
     if (!data.customBg || !data.customBg.main) data.customBg = { main: null };
+    if (!data.bgOffset) data.bgOffset = { x: 0, y: 0 };
+    if (!data.bgScale) data.bgScale = { x: 1, y: 1 };
     data.bossCustomDurations = data.bossCustomDurations || {};
     data.battleCustomDurations = data.battleCustomDurations || {};
     data.pickingCustomDurations = data.pickingCustomDurations || {};

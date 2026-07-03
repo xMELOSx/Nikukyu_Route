@@ -105,6 +105,8 @@ export interface RouteData {
   markers: HeistMarker[];
   walls?: { [key in FloorType]: [Point, Point][] };
   customBg: { [key in FloorType]: string | null };
+  bgOffset?: { x: number; y: number };
+  bgScale?: { x: number; y: number };
   createdAt: number;
   bossCustomDurations?: { [markerId: string]: number };
   battleCustomDurations?: { [markerId: string]: number };

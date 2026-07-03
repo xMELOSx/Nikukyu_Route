@@ -27,6 +27,8 @@ interface MapCanvasProps {
   strokes: DrawingStroke[];
   markers: HeistMarker[];
   customBg: string | null;
+  bgOffset?: { x: number; y: number };
+  bgScale?: { x: number; y: number };
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall' | 'add-spawn';
   walls?: [Point, Point][];
   onWallsChange?: (walls: [Point, Point][]) => void;
@@ -166,6 +168,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   strokes,
   markers,
   customBg,
+  bgOffset = { x: 0, y: 0 },
+  bgScale = { x: 1, y: 1 },
   toolMode,
   activeMarkerType,
   walls = [],
@@ -2987,7 +2991,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       >
         <div ref={svgWrapperRef} className="map-bg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: hideMapBg ? 0 : 1, pointerEvents: hideMapBg ? 'none' : 'auto' }}>
           {customBg ? (
-            <img src={customBg} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', opacity: 1, zIndex: 1 }} />
+            <img src={customBg} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', transform: `translate(${bgOffset.x}px, ${bgOffset.y}px) scale(${bgScale.x}, ${bgScale.y})`, opacity: 1, zIndex: 1 }} />
           ) : PRESET_MAPS_META[floor].path ? (
             <img src={PRESET_MAPS_META[floor].path as string} alt="Reference blueprint" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', opacity: 1, zIndex: 1 }} />
           ) : null}
