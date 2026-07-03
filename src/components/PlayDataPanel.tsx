@@ -332,6 +332,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simPlayerCount, setSimPlayerCount] = useState(initState?.playerCount ?? 1);
   const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
 
+  // Server-side overrides (loaded from server key, NOT cleared by reset — used for placeholder)
+  const [simServerOverrides, setSimServerOverrides] = useState<Record<string, number | null>>(() => {
+    try {
+      const raw = localStorage.getItem(SIM_SERVER_KEY);
+      if (raw) { const p = JSON.parse(raw); return p.probOverrides ?? {}; }
+    } catch {}
+    return {};
+  });
+
   // Auto-save during use
   useEffect(() => {
     try {
@@ -341,6 +350,27 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       }));
     } catch {}
   }, [simProbs, simProbOverrides, simMultipliers, simPlayerCount]);
+
+  // Auto-discard overrides that match base probability
+  useEffect(() => {
+    const baseGreen = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] ?? 0), 0));
+    setSimProbOverrides(prev => {
+      let changed = false;
+      const next: Record<string, number | null> = {};
+      for (const [id, val] of Object.entries(prev)) {
+        if (val === null) continue;
+        const item = simItems.find(x => x.id === id);
+        if (!item) { next[id] = val; continue; }
+        const baseProb = item.color === 'green' ? baseGreen : (simProbs[item.color] ?? 0);
+        if (Math.abs(val - baseProb) > 0.000001) {
+          next[id] = val;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [simProbs, simItems]);
 
   const loadSimItems = useCallback(async () => {
     setSimLoading(true);
@@ -2794,7 +2824,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               borderRadius: '3px', color: 'var(--text-primary)', textAlign: 'right'
                             }}
                             value={it.id in simProbOverrides && simProbOverrides[it.id] !== null ? (simProbOverrides[it.id]! * 100) : ''}
-                            placeholder={(colorProb * 100).toFixed(2)}
+                            placeholder={((simServerOverrides[it.id] ?? simProbOverrides[it.id] ?? colorProb) * 100).toFixed(2)}
                             title={t('個別確率 (空欄=色デフォルト)')}
                             onChange={(e) => {
                               const raw = e.target.value;
@@ -2930,10 +2960,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                        className="btn-cyber"
                       style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
                       onClick={() => {
-                        localStorage.setItem(SIM_SERVER_KEY, JSON.stringify({
+                        const saveData = {
                           probs: simProbs, probOverrides: simProbOverrides,
                           multipliers: simMultipliers, playerCount: simPlayerCount,
-                        }));
+                        };
+                        localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(saveData));
+                        setSimServerOverrides(simProbOverrides);
                         window.alert(t('現在の設定をサーバー値として保存しました'));
                       }}
                     >{t('現在の設定をサーバー値として保存')}</button>
@@ -2947,16 +2979,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                           try {
                             const s = JSON.parse(serverRaw);
                             setSimProbs(s.probs ?? { ...COLOR_DEFAULT_PROBS });
-                            setSimProbOverrides(s.probOverrides ?? {});
                             setSimMultipliers(s.multipliers ?? { ...DEFAULT_MULTIPLIERS });
                             setSimPlayerCount(s.playerCount ?? 1);
                           } catch {}
                         } else {
                           setSimProbs({ ...COLOR_DEFAULT_PROBS });
-                          setSimProbOverrides({});
                           setSimMultipliers({ ...DEFAULT_MULTIPLIERS });
                           setSimPlayerCount(1);
                         }
+                        setSimProbOverrides({});
                       }}
                     >{t('サーバーデフォルトにリセット')}</button>
                   </div>
@@ -2976,17 +3007,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均取得アイテム数')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgTotalItems.toLocaleString()}個</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 {(simResult.minTotalItems ?? 0).toLocaleString()} / 最大 {(simResult.maxTotalItems ?? 0).toLocaleString()}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 {(simResult.minTotalItems ?? 0).toLocaleString()} / 最大 {(simResult.maxTotalItems ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均ファンス')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>{simResult.avgFans.toLocaleString()}f</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 {(simResult.minFans ?? 0).toLocaleString()} / 最大 {(simResult.maxFans ?? 0).toLocaleString()}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 {(simResult.minFans ?? 0).toLocaleString()} / 最大 {(simResult.maxFans ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('平均コイン')}</div>
                       <div style={{ color: 'var(--cyan-neon)', fontWeight: 700, fontSize: '16px' }}>🪙{simResult.avgCoins.toLocaleString()}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>最小 🪙{(simResult.minCoins ?? 0).toLocaleString()} / 最大 🪙{(simResult.maxCoins ?? 0).toLocaleString()}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>最小 🪙{(simResult.minCoins ?? 0).toLocaleString()} / 最大 🪙{(simResult.maxCoins ?? 0).toLocaleString()}</div>
                     </div>
                     <div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t('カードキー平均取得数')}</div>
