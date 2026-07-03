@@ -144,16 +144,33 @@ export function useGlobalDefaults(
       .catch(err => {
         console.error('Failed to load global defaults:', err);
         if (!cancelled) {
-          // 取得失敗時は localStorage だけ参照
-          const cached = loadSkillCdPresetsFromCache() || [];
-          ref.current = {
-            hiddenMarkers: [],
-            hiddenMarkerTypes: [],
-            skillCdPresets: cached,
-            storageLimitBytes: loadStorageLimitFromCache()
-          };
-          setSkillCdPresetsState(cached);
-          setLoaded(true);
+          // API 失敗時は静的ファイルをフォールバック
+          fetch(`${import.meta.env.BASE_URL}global_defaults.json`)
+            .then(r => r.ok ? r.json() : null)
+            .then((fileGd: GlobalDefaults | null) => {
+              const cached = loadSkillCdPresetsFromCache() || [];
+              ref.current = {
+                hiddenMarkers: fileGd?.hiddenMarkers || [],
+                hiddenMarkerTypes: fileGd?.hiddenMarkerTypes || [],
+                skillCdPresets: cached,
+                storageLimitBytes: loadStorageLimitFromCache(),
+                spawnFeatureEnabled: fileGd?.spawnFeatureEnabled ?? false
+              };
+              setSkillCdPresetsState(cached);
+              setLoaded(true);
+            })
+            .catch(() => {
+              const cached = loadSkillCdPresetsFromCache() || [];
+              ref.current = {
+                hiddenMarkers: [],
+                hiddenMarkerTypes: [],
+                skillCdPresets: cached,
+                storageLimitBytes: loadStorageLimitFromCache(),
+                spawnFeatureEnabled: false
+              };
+              setSkillCdPresetsState(cached);
+              setLoaded(true);
+            });
         }
       });
     return () => { cancelled = true; };

@@ -2105,6 +2105,7 @@ export default function App() {
             spawnVisible,
             spawnFocusTrigger,
             spawnHighlightItemIds,
+            spawnHighlightCategories,
             spawnMovingPointId,
             spawnMoveX,
             spawnMoveY,

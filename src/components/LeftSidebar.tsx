@@ -207,18 +207,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const itemFormScrollRef = useRef<HTMLDivElement>(null);
   const [itemListTab, setItemListTab] = useState('all');
   const [spawnItemTab, setSpawnItemTab] = useState('all');
-  // 編集タブ 絞り込み状態
-  const [editFilterMode, setEditFilterMode] = useState<'type' | 'item' | 'both'>('type');
+  // 編集タブ 絞り込み状態（選択状況で自動判別）
   const [editFilterCategories, setEditFilterCategories] = useState<Set<string>>(new Set());
   const [editFilterItemIds, setEditFilterItemIds] = useState<Set<string>>(new Set());
 
   // 編集タブの絞り込みをキャンバスに同期
   useEffect(() => {
-    const cats = editFilterMode === 'type' || editFilterMode === 'both' ? [...editFilterCategories] : [];
-    const items = editFilterMode === 'item' || editFilterMode === 'both' ? [...editFilterItemIds] : [];
+    const cats = [...editFilterCategories];
+    const items = [...editFilterItemIds];
     props.onHighlightCategoriesChange?.(cats);
     props.onHighlightItemIdsChange?.(items);
-  }, [editFilterMode, editFilterCategories, editFilterItemIds]);
+  }, [editFilterCategories, editFilterItemIds]);
 
   // Live crop preview (only while dragging / adjusting)
   useEffect(() => {
@@ -1210,23 +1209,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     </div>
 
                     <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)' }}>
-                      <div style={{ display: 'flex', gap: '3px', marginBottom: '6px' }}>
-                        {[
-                          { key: 'type', label: '種別だけ' },
-                          { key: 'item', label: 'アイテムだけ' },
-                          { key: 'both', label: '種別とアイテム' },
-                        ].map(m => (
-                          <button key={m.key} onClick={() => setEditFilterMode(m.key as any)}
-                            style={{
-                              flex: 1, fontSize: '9px', padding: '3px 4px', borderRadius: '4px',
-                              border: `1px solid ${editFilterMode === m.key ? '#39ff14' : 'rgba(255,255,255,0.2)'}`,
-                              background: editFilterMode === m.key ? 'rgba(57,255,20,0.15)' : 'transparent',
-                              color: editFilterMode === m.key ? '#39ff14' : 'var(--text-muted)',
-                              fontWeight: editFilterMode === m.key ? 700 : 400, cursor: 'pointer'
-                            }}>
-                            {m.label}
-                          </button>
-                        ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>絞り込み</span>
                         {(editFilterCategories.size > 0 || editFilterItemIds.size > 0) && (
                           <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 5px', clipPath: 'none' }}
                             onClick={() => { setEditFilterCategories(new Set()); setEditFilterItemIds(new Set()); }}>
