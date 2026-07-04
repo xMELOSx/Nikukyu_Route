@@ -300,13 +300,34 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
   const DEFAULT_MULTIPLIERS: Record<number, number> = { 2: 2, 3: 3, 4: 4 };
 
-  // On init: read local (auto-save) → server defaults (persistent) → hardcoded
+  // On init: read local (auto-save) → server defaults (persistent) → migrate old keys → hardcoded
   const initState = (() => {
     try {
       const localRaw = localStorage.getItem(SIM_LOCAL_KEY);
       if (localRaw) return JSON.parse(localRaw);
       const serverRaw = localStorage.getItem(SIM_SERVER_KEY);
       if (serverRaw) return JSON.parse(serverRaw);
+      // 旧キーからの移行
+      const OLD_PROB_KEY = 'heist_sim_prob_v1';
+      const OLD_PROB_OVERRIDE_KEY = 'heist_sim_prob_override_v1';
+      const OLD_CORRECTION_KEY = 'heist_sim_correction_v1';
+      const oldProbs = localStorage.getItem(OLD_PROB_KEY);
+      if (oldProbs) {
+        const oldOverrideRaw = localStorage.getItem(OLD_PROB_OVERRIDE_KEY);
+        let oldMultipliers = { ...DEFAULT_MULTIPLIERS };
+        let oldCount = 1;
+        try {
+          const c = JSON.parse(localStorage.getItem(OLD_CORRECTION_KEY) || '{}');
+          if (c.count) oldCount = c.count;
+          if (c.multipliers) oldMultipliers = { ...DEFAULT_MULTIPLIERS, ...c.multipliers };
+        } catch {}
+        return {
+          probs: JSON.parse(oldProbs),
+          probOverrides: oldOverrideRaw ? JSON.parse(oldOverrideRaw) : {},
+          multipliers: oldMultipliers,
+          playerCount: oldCount,
+        };
+      }
     } catch {}
     return null;
   })();
@@ -2968,7 +2989,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
                   {/* Save/reset local defaults — セーブボタンは開発時のみ表示 */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {import.meta.env.DEV && (
+                    {(typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) && (
                       <button
                          className="btn-cyber"
                         style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
