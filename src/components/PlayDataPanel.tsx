@@ -718,7 +718,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
       const fans: number[] = [];
       const coins: number[] = [];
-      const items: number[] = [];
+      const itemTotals: number[] = [];
       for (let t = 0; t < TRIALS; t++) {
         const itemCounts: Record<string, number> = {};
         let totalFans = 0, totalCoins = 0;
@@ -740,12 +740,12 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         }
         fans.push(totalFans);
         coins.push(totalCoins);
-        items.push(Object.values(itemCounts).reduce((a, b) => a + b, 0));
+        itemTotals.push(Object.values(itemCounts).reduce((a, b) => a + b, 0));
       }
 
       const sFans = [...fans].sort((a, b) => a - b);
       const sCoins = [...coins].sort((a, b) => a - b);
-      const sItems = [...items].sort((a, b) => a - b);
+      const sItems = [...itemTotals].sort((a, b) => a - b);
       const mFans = sFans[Math.floor(sFans.length / 2)];
       const mCoins = sCoins[Math.floor(sCoins.length / 2)];
       const mItems = sItems[Math.floor(sItems.length / 2)];
@@ -3367,12 +3367,16 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                         <div style={{ borderTop: '1px solid rgba(255,215,0,0.1)', marginBottom: '8px' }} />
                         {simResultItemsOnly ? (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 12px', padding: '2px 0' }}>
-                            {groups.flatMap(g => g.entries).sort((a, b) => b.count - a.count).map(e => (
+                            {groups.flatMap(g => g.entries.map(e => ({ ...e, color: g.color }))).sort((a, b) => b.count - a.count).map(e => {
+                              const cd = e.color === 'cyan' ? '#00ffff' : e.color === 'yellow' ? '#ffd700' : e.color === 'red' ? '#ff4444' : e.color === 'purple' ? '#a855f7' : e.color === 'blue' ? '#3b82f6' : '#22c55e';
+                              return (
                               <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', fontSize: '11px', minWidth: 0 }}>
+                                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: cd, flexShrink: 0 }} />
                                 <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
                                 <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0 }}>x{e.count}</span>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
