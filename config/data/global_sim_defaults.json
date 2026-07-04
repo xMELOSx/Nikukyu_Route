@@ -1,1 +1,1 @@
-{"probs":{"cyan":0.0001,"yellow":0.003979187165234335,"red":0.003979187165234335,"purple":0.16565192627026598,"blue":0.4822889826623509,"green":0.629},"probOverrides":{},"multipliers":{"2":2,"3":3,"4":4},"playerCount":4}
+{"probs":{"cyan":0.0002,"yellow":0.002,"purple":0.01050692983001345,"blue":0.07475036132041461,"red":0.002,"green":0.9105427088495719},"probOverrides":{"ritem_fedf8a85-9ddd-48b9-a651-c59488980381":0.04,"ritem_f038a34c-de4c-42b9-aa5d-0701c77b27c9":0.04},"multipliers":{"2":2,"3":3,"4":4},"playerCount":4}

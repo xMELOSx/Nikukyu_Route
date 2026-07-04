@@ -410,7 +410,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
   const [simOptimizing, setSimOptimizing] = useState(false);
   const [simOptimProgress, setSimOptimProgress] = useState<{ iter: number; total: number; bestScore: number } | null>(null);
-  const [simOptimResult, setSimOptimResult] = useState<{ probs: Record<string, number>; avgFans: number; avgCoins: number; avgItems: number } | null>(null);
+  type OptimResult = { probs: Record<string, number>; avgFans: number; avgCoins: number; avgItems: number };
+  const [simOptimResult, setSimOptimResult] = useState<OptimResult | null>(null);
+  const [simOptimResult2, setSimOptimResult2] = useState<OptimResult | null>(null);
+  const [simOptimSamples, setSimOptimSamples] = useState<{ name: string; color: string; fans: number; coins: number; avgCount: number }[][] | null>(null);
   const OPTIM_SETTINGS_KEY = 'heist_sim_optim_settings_v1';
   const [simOptimColorMax, setSimOptimColorMax] = useState<Record<string, number>>(() => {
     try { const raw = localStorage.getItem(OPTIM_SETTINGS_KEY); if (raw) { const d = JSON.parse(raw); if (d.colorMax) return d.colorMax; } } catch {}
@@ -661,13 +664,21 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     for (const pid of POOL_IDS) {
       const cfg = simPools[pid];
       if (!cfg.count || cfg.count <= 0) continue;
+      const poolColorCounts: Record<string, number> = {};
+      for (const it of simItems) {
+        if (!cfg.itemIds.includes(it.id)) continue;
+        if (simExcluded.has(it.id)) continue;
+        const limit = simLimits[it.id] ?? -1;
+        if (limit === 0) continue;
+        poolColorCounts[it.color] = (poolColorCounts[it.color] || 0) + 1;
+      }
       const poolItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
       for (const it of simItems) {
         if (!cfg.itemIds.includes(it.id)) continue;
         if (simExcluded.has(it.id)) continue;
         const limit = simLimits[it.id] ?? -1;
         if (limit === 0) continue;
-        const colorProb = effProbs[it.color] ?? 0;
+        const colorProb = (effProbs[it.color] ?? 0) / (poolColorCounts[it.color] || 1);
         const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
         const serverVal = simServerOverrides[it.id];
         const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
@@ -685,12 +696,19 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
 
     // Fallback: no pools configured → single pool with all items
     if (poolCdfs.length === 0) {
+      const fbColorCounts: Record<string, number> = {};
+      for (const it of simItems) {
+        if (simExcluded.has(it.id)) continue;
+        const limit = simLimits[it.id] ?? -1;
+        if (limit === 0) continue;
+        fbColorCounts[it.color] = (fbColorCounts[it.color] || 0) + 1;
+      }
       const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
       for (const it of simItems) {
         if (simExcluded.has(it.id)) continue;
         const limit = simLimits[it.id] ?? -1;
         if (limit === 0) continue;
-        const colorProb = effProbs[it.color] ?? 0;
+        const colorProb = (effProbs[it.color] ?? 0) / (fbColorCounts[it.color] || 1);
         const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
         const serverVal = simServerOverrides[it.id];
         const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
@@ -709,13 +727,22 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     // Build fallback pool: items NOT assigned to any specific pool (overflow when a pool is exhausted)
     const poolAssignedIds = new Set<string>();
     for (const pid of POOL_IDS) { for (const id of simPools[pid].itemIds) poolAssignedIds.add(id); }
+    // Count non-excluded, non-pool-assigned items per color
+    const fbColorCounts: Record<string, number> = {};
+    for (const it of simItems) {
+      if (simExcluded.has(it.id)) continue;
+      if (poolAssignedIds.has(it.id)) continue;
+      const limit = simLimits[it.id] ?? -1;
+      if (limit === 0) continue;
+      fbColorCounts[it.color] = (fbColorCounts[it.color] || 0) + 1;
+    }
     const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
     for (const it of simItems) {
       if (simExcluded.has(it.id)) continue;
       if (poolAssignedIds.has(it.id)) continue; // skip items already in a specific pool
       const limit = simLimits[it.id] ?? -1;
       if (limit === 0) continue;
-      const colorProb = effProbs[it.color] ?? 0;
+      const colorProb = (effProbs[it.color] ?? 0) / (fbColorCounts[it.color] || 1);
       const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
       const serverVal = simServerOverrides[it.id];
       const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
@@ -906,19 +933,46 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     let bestProbs = { ...simProbs };
     let bestScore = Infinity;
     let bestStats = { avgFans: 0, avgCoins: 0, avgItems: 0 };
+    let secondBestProbs = { ...simProbs };
+    let secondBestScore = Infinity;
+    let secondBestStats = { avgFans: 0, avgCoins: 0, avgItems: 0 };
+    // Branch candidate: an alternative line of search that persists across iterations
+    let branchProbs: Record<string, number> | null = null;
+    let branchScore = Infinity;
+    let branchStats = { avgFans: 0, avgCoins: 0, avgItems: 0 };
+    let branchAge = 0;
     const colors = ['cyan', 'yellow', 'purple', 'blue']; // red excluded: optimized as red = yellow
+    const branchRenewInterval = 8; // renew branch every N iterations
+    const branchExploreIters = 5; // explore each branch for N iterations
 
     for (let iter = 0; iter < ITERS; iter++) {
-      const candidate = { ...bestProbs };
-      const nMutate = 2 + Math.floor(Math.random() * 2); // mutate 2-3 colors per iteration
-      const shuffled = [...colors].sort(() => Math.random() - 0.5).slice(0, nMutate);
+      // Periodically spawn a branch from a random point
+      const renewBranch = iter % branchRenewInterval === 0 && iter > 0;
+      if (renewBranch) {
+        const pattern = Math.floor(Math.random() * 3);
+        if (pattern === 1) {
+          branchProbs = { cyan: 0.0001, yellow: 0.0005 + Math.random() * 0.001, purple: 0.03 + Math.random() * 0.07, blue: 0.05 + Math.random() * 0.1 };
+        } else if (pattern === 2) {
+          branchProbs = { cyan: 0.0001, yellow: 0.001 + Math.random() * 0.003, purple: 0.01 + Math.random() * 0.05, blue: 0.05 + Math.random() * 0.15 };
+        } else {
+          branchProbs = { cyan: Math.random() * 0.002, yellow: Math.random() * 0.05, purple: Math.random() * colorMax.purple, blue: Math.random() * colorMax.blue };
+        }
+        branchScore = Infinity;
+        branchAge = 0;
+      }
+      // Mutate from either the best or the branch (alternate)
+      const useBranch = branchProbs && branchAge < branchExploreIters;
+      const candidate: Record<string, number> = useBranch ? { ...branchProbs } : { ...bestProbs };
       const temp = 1 - iter / ITERS;
-      const maxDelta = 0.08 + temp * 0.2;
+      const nMutate = 2 + Math.floor(Math.random() * 2);
+      const shuffled = useBranch ? [...colors] : [...colors].sort(() => Math.random() - 0.5).slice(0, nMutate);
+      const maxDelta = useBranch ? 0.15 + temp * 0.2 : 0.08 + temp * 0.2;
       for (const c of shuffled) {
         const delta = (Math.random() * 2 - 1) * maxDelta;
         candidate[c] = Math.max(0.0001, Math.min(colorMax[c] ?? 0.5, (candidate[c] ?? 0) + delta));
       }
       candidate.red = candidate.yellow; // red = yellow (cardkey tied to gold)
+      candidate.green = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, col) => s + (candidate[col] || 0), 0));
 
       // Apply player multiplier for effective probs (supports multi-player optimization)
       const playerMult = simPlayerCount > 1 ? (simMultipliers[simPlayerCount] ?? simPlayerCount) : 1;
@@ -939,17 +993,26 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       for (const pid of POOL_IDS) {
         const cfg = simPools[pid];
         if (!cfg.count || cfg.count <= 0) continue;
+        const poolColorCounts: Record<string, number> = {};
+        for (const it of items) {
+          if (!cfg.itemIds.includes(it.id)) continue;
+          if (excluded.has(it.id)) continue;
+          const limit = limits[it.id] ?? -1;
+          if (limit === 0) continue;
+          poolColorCounts[it.color] = (poolColorCounts[it.color] || 0) + 1;
+        }
         const poolItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
         for (const it of items) {
           if (!cfg.itemIds.includes(it.id)) continue;
           if (excluded.has(it.id)) continue;
           const limit = limits[it.id] ?? -1;
           if (limit === 0) continue;
-          const colorProb = eff[it.color] ?? 0;
+          const colorProb = (eff[it.color] ?? 0) / (poolColorCounts[it.color] || 1);
           const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
           const serverVal = serverOverrides[it.id];
           const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
           let prob = overrideVal !== null ? overrideVal : (pid === 'deskRare' ? ((simBluePlusProbs[it.color] ?? 0) / bpProbSum) : colorProb);
+          if (overrideVal !== null && playerMult > 1) prob *= playerMult;
           if (prob > 0) poolItems.push({ item: it, prob, limit });
         }
         const total = poolItems.reduce((s, p) => s + p.prob, 0);
@@ -961,16 +1024,24 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       }
       // Fallback: no pools → single pool with all items
       if (poolCdfs.length === 0) {
+        const fbColorCounts: Record<string, number> = {};
+        for (const it of items) {
+          if (excluded.has(it.id)) continue;
+          const limit = limits[it.id] ?? -1;
+          if (limit === 0) continue;
+          fbColorCounts[it.color] = (fbColorCounts[it.color] || 0) + 1;
+        }
         const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
         for (const it of items) {
           if (excluded.has(it.id)) continue;
           const limit = limits[it.id] ?? -1;
           if (limit === 0) continue;
-          const colorProb = eff[it.color] ?? 0;
+          const colorProb = (eff[it.color] ?? 0) / (fbColorCounts[it.color] || 1);
           const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
           const serverVal = serverOverrides[it.id];
           const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
           let prob = overrideVal !== null ? overrideVal : colorProb;
+          if (overrideVal !== null && playerMult > 1) prob *= playerMult;
           if (prob > 0) fallbackItems.push({ item: it, prob, limit });
         }
         const total = fallbackItems.reduce((s, p) => s + p.prob, 0);
@@ -987,7 +1058,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       const itemTotals: number[] = [];
       for (let t = 0; t < TRIALS; t++) {
         const itemCounts: Record<string, number> = {};
-        let totalFans = 0, totalCoins = 0;
+        let totalFans = 0, totalCoins = 0, totalItems = 0;
+        const maxItems = targetItems > 0 ? Math.round(targetItems * 1.3) : 0;
         for (let d = 0; d < 100000; d++) {
           let rw = Math.random() * totalWeight;
           let picked: SimFlatItem | null = null;
@@ -1008,11 +1080,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
           itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
           totalFans += picked.fans;
           totalCoins += picked.coins;
+          totalItems++;
           if (totalFans >= tf && totalCoins >= tc) break;
+          if (maxItems > 0 && totalItems >= maxItems && totalFans >= tf * 0.8 && totalCoins >= tc * 0.8) break;
         }
         fans.push(totalFans);
         coins.push(totalCoins);
-        itemTotals.push(Object.values(itemCounts).reduce((a, b) => a + b, 0));
+        itemTotals.push(totalItems);
       }
 
       const sFans = [...fans].sort((a, b) => a - b);
@@ -1021,15 +1095,36 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       const mFans = sFans[Math.floor(sFans.length / 2)];
       const mCoins = sCoins[Math.floor(sCoins.length / 2)];
       const mItems = sItems[Math.floor(sItems.length / 2)];
-      const itemsPenalty = targetItems > 0 ? Math.abs(mItems - targetItems) / targetItems : 0;
+      const itemsPenalty = targetItems > 0 ? ((mItems - targetItems) / Math.max(1, targetItems)) ** 2 : 0;
       const coinsPenalty = mCoins > tc ? (mCoins - tc) / Math.max(1, tc) * 3 : (tc - mCoins) / Math.max(1, tc);
-      const score = Math.abs(mFans - tf) / Math.max(1, tf) + coinsPenalty + itemsPenalty;
+      const fansPenalty = Math.abs(mFans - tf) / Math.max(1, tf);
+      const score = fansPenalty + coinsPenalty + itemsPenalty;
 
-      if (score < bestScore) {
-        bestScore = score;
-        bestProbs = candidate;
-        bestStats = { avgFans: Math.round(mFans), avgCoins: Math.round(mCoins), avgItems: Math.round(mItems) };
-        setSimOptimProgress({ iter: iter + 1, total: ITERS, bestScore });
+      if (useBranch) {
+        // Track branch's own best
+        if (score < branchScore) {
+          branchScore = score;
+          branchProbs = candidate;
+          branchStats = { avgFans: Math.round(mFans), avgCoins: Math.round(mCoins), avgItems: Math.round(mItems) };
+        }
+        branchAge++;
+        // If branch beats global best, adopt it
+        if (branchScore < bestScore) {
+          secondBestScore = bestScore; secondBestProbs = bestProbs; secondBestStats = bestStats;
+          bestScore = branchScore;
+          bestProbs = branchProbs!;
+          bestStats = branchStats;
+        }
+      } else {
+        if (score < bestScore) {
+          secondBestScore = bestScore; secondBestProbs = bestProbs; secondBestStats = bestStats;
+          bestScore = score;
+          bestProbs = candidate;
+          bestStats = { avgFans: Math.round(mFans), avgCoins: Math.round(mCoins), avgItems: Math.round(mItems) };
+          setSimOptimProgress({ iter: iter + 1, total: ITERS, bestScore });
+        } else if (score < secondBestScore) {
+          secondBestScore = score; secondBestProbs = candidate; secondBestStats = { avgFans: Math.round(mFans), avgCoins: Math.round(mCoins), avgItems: Math.round(mItems) };
+        }
       }
 
       if (iter % 10 === 0) {
@@ -1038,7 +1133,50 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       }
     }
 
+    // Compute per-item sample data for best candidate
+    const sampleData: { name: string; color: string; fans: number; coins: number; avgCount: number }[][] = [];
+    for (const p of [bestProbs, secondBestProbs].filter(p => p !== bestProbs || true).slice(0, secondBestScore < Infinity ? 2 : 1)) {
+      const candidateProbs: Record<string, number> = p === bestProbs ? bestProbs : secondBestProbs;
+      const sampleEff: Record<string, number> = { ...candidateProbs, green: Math.max(0, 1 - ['cyan','yellow','red','purple','blue'].reduce((s,c) => s+(candidateProbs[c]||0),0)) };
+      const pm = simPlayerCount > 1 ? (simMultipliers[simPlayerCount] ?? simPlayerCount) : 1;
+      if (pm > 1) { for (const c of ['cyan','yellow','red','purple']) sampleEff[c] = Math.min(1, (sampleEff[c]??0)*pm); }
+      // Build CDF same as optimization
+      const colorCnts: Record<string,number> = {};
+      for (const it of items) { if (!excluded.has(it.id)) colorCnts[it.color] = (colorCnts[it.color]||0)+1; }
+      let tw = 0; const cdf: {item: SimFlatItem; prob: number; cumProb: number}[] = [];
+      for (const it of items) {
+        if (excluded.has(it.id)) continue;
+        const limit = limits[it.id] ?? -1; if (limit === 0) continue;
+        const ho = it.id in probOverrides && probOverrides[it.id] !== null;
+        const sv = serverOverrides[it.id]; const ov = ho ? probOverrides[it.id]! : (sv !== undefined ? sv : null);
+        let prob = ov !== null ? ov : (sampleEff[it.color] ?? 0) / (colorCnts[it.color] || 1);
+        if (ov !== null && pm > 1) prob *= pm;
+        if (prob <= 0) continue;
+        tw += prob;
+        cdf.push({ item: it, prob, cumProb: 0 });
+      }
+      let cum = 0; for (const ci of cdf) { cum += ci.prob / tw; ci.cumProb = cum; }
+      // Run trials to get per-item averages
+      const trialCounts: Record<string, number> = {};
+      for (let t = 0; t < 500; t++) {
+        const tcnt: Record<string, number> = {}; let f = 0, c = 0;
+        for (let d = 0; d < 5000; d++) {
+          const r = Math.random();
+          for (const ci of cdf) { if (r <= ci.cumProb) {
+            tcnt[ci.item.id] = (tcnt[ci.item.id]||0)+1; f += ci.item.fans; c += ci.item.coins; break;
+          }}
+          if (f >= tf && c >= tc) break;
+        }
+        for (const [id, cnt] of Object.entries(tcnt)) trialCounts[id] = (trialCounts[id]||0) + cnt;
+      }
+      const samples = Object.entries(trialCounts).map(([id, total]) => {
+        const it = items.find(x => x.id === id); return { name: it?.name||id, color: it?.color||'', fans: it?.fans||0, coins: it?.coins||0, avgCount: total / 500 };
+      }).filter(s => s.avgCount > 0.01).sort((a,b) => b.avgCount - a.avgCount).slice(0, 20);
+      sampleData.push(samples);
+    }
+    setSimOptimSamples(sampleData);
     setSimOptimResult({ probs: bestProbs, ...bestStats });
+    setSimOptimResult2(secondBestScore < Infinity ? { probs: secondBestProbs, ...secondBestStats } : null);
     setSimOptimizing(false);
     setSimOptimProgress(null);
   };
@@ -3143,7 +3281,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                         }}
                       />
                       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '4px' }}>
-                        <input type="checkbox" checked={simSaveTargets} onChange={e => { setSimSaveTargets(e.target.checked); if (e.target.checked) localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); }} />
+                          <input type="checkbox" checked={simSaveTargets} onChange={e => { setSimSaveTargets(e.target.checked); try { localStorage.setItem('heist_sim_save_targets', e.target.checked ? 'true' : 'false'); } catch {} if (e.target.checked) localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); }} />
                         {t('目標値を保存')}
                       </label>
                     </div>
@@ -3481,47 +3619,68 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                         </span>
                       </div>
                     )}
-                    {simOptimResult && (
-                      <div style={{ marginTop: '8px', padding: '10px', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.25)', borderRadius: '6px' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow-neon)', marginBottom: '6px' }}>{t('最適化結果')}</div>
+                    {[simOptimResult, simOptimResult2].filter(Boolean).map((res, i) => { const r = res!; return (
+                      <div key={i} style={{ marginTop: '8px', padding: '10px', background: i === 0 ? 'rgba(255,215,0,0.06)' : 'rgba(0,240,255,0.04)', border: `1px solid ${i === 0 ? 'rgba(255,215,0,0.25)' : 'rgba(0,240,255,0.15)'}`, borderRadius: '6px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: i === 0 ? 'var(--yellow-neon)' : 'var(--cyan-neon)', marginBottom: '4px' }}>{i === 0 ? t('第1位') : t('第2位')}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 8px', fontSize: '10px', marginBottom: '6px' }}>
                           <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(0,240,255,0.06)', borderRadius: '4px' }}>
-                            <div style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{simOptimResult.avgFans.toLocaleString()}</div>
+                            <div style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{r.avgFans.toLocaleString()}</div>
                             <div style={{ color: 'var(--text-muted)' }}>{t('平均ファンス')}</div>
                           </div>
                           <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(255,215,0,0.06)', borderRadius: '4px' }}>
-                            <div style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{simOptimResult.avgCoins.toLocaleString()}</div>
+                            <div style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{r.avgCoins.toLocaleString()}</div>
                             <div style={{ color: 'var(--text-muted)' }}>{t('平均コイン')}</div>
                           </div>
                           <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(57,255,20,0.06)', borderRadius: '4px' }}>
-                            <div style={{ color: '#39ff14', fontWeight: 700 }}>{simOptimResult.avgItems.toLocaleString()}</div>
+                            <div style={{ color: '#39ff14', fontWeight: 700 }}>{r.avgItems.toLocaleString()}</div>
                             <div style={{ color: 'var(--text-muted)' }}>{t('平均アイテム数')}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '11px', marginBottom: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '11px', marginBottom: '6px' }}>
                           {COLOR_ORDER.filter(c => c !== 'red').map(c => (
                             <div key={c} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ color: COLOR_HEX[c] }}>{COLOR_LABELS[c]}</span>
-                              <span style={{ color: '#fff', fontWeight: 600 }}>{((simOptimResult.probs[c] ?? 0) * 100).toFixed(1)}%</span>
+                              <span style={{ color: '#fff', fontWeight: 600 }}>{((r.probs[c] ?? 0) * 100).toFixed(2)}%</span>
                             </div>
                           ))}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ color: COLOR_HEX.red }}>カードキー</span>
-                            <span style={{ color: '#fff', fontWeight: 600 }}>{((simOptimResult.probs.yellow ?? 0) * 100).toFixed(1)}%</span>
+                            <span style={{ color: '#fff', fontWeight: 600 }}>{((r.probs.yellow ?? 0) * 100).toFixed(2)}%</span>
                           </div>
                         </div>
+                        {simOptimSamples && simOptimSamples[i] && (
+                        <div style={{ fontSize: '9px', marginBottom: '6px', maxHeight: '100px', overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
+                          <div style={{ color: 'var(--text-muted)', marginBottom: '2px', fontSize: '8px' }}>{t('アイテム別抽選数(上位)')}</div>
+                          {simOptimSamples[i].map(s => (
+                            <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 0' }}>
+                              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: COLOR_HEX[s.color] || '#888', flexShrink: 0 }} />
+                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#bbb' }}>{s.name}</span>
+                              <span style={{ color: s.coins > 0 ? '#ffd700' : '#00ffff', flexShrink: 0 }}>{s.avgCount.toFixed(1)}回</span>
+                            </div>
+                          ))}
+                        </div>
+                        )}
                         <div style={{ display: 'flex', gap: '6px' }}>
+                          {i === 0 ? (
+                            <>
                           <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px', clipPath: 'none' }}
-                            onClick={() => { setSimProbs({ ...simOptimResult.probs, red: simOptimResult.probs.yellow }); setSimOptimResult(null); }}>
+                            onClick={() => { setSimProbs({ ...r.probs, red: r.probs.yellow }); setSimOptimResult(null); setSimOptimResult2(null); }}>
                             {t('適用')}
                           </button>
                           <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px', clipPath: 'none' }}
-                            onClick={() => setSimOptimResult(null)}>
+                            onClick={() => { setSimOptimResult(null); setSimOptimResult2(null); }}>
                             {t('キャンセル')}
                           </button>
+                          </>
+                          ) : (
+                          <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px', clipPath: 'none' }}
+                            onClick={() => { setSimProbs({ ...r.probs, red: r.probs.yellow }); setSimOptimResult(null); setSimOptimResult2(null); }}>
+                            {t('第2位を適用')}
+                          </button>
+                          )}
                         </div>
                       </div>
-                    )}
+                    );})}
                   </div>
                   </div>
 
