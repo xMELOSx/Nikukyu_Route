@@ -1,9 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { type SpawnPoint, type RegisteredItem } from '../utils/DataManager';
+import { type SpawnPoint, type RegisteredItem, type AppearanceRate } from '../utils/DataManager';
 
 function normalizePoint(p: any): SpawnPoint {
   const items = Array.isArray(p.items) ? p.items.map((pi: any) => ({ ...pi, playerCount: pi.playerCount ?? 0 })) : [];
-  return { ...p, items };
+  const category = p.category;
+  const defaultRate: AppearanceRate = (category === '小金庫' || category === '中金庫') ? '中' : category === '絵画' ? '低' : '高';
+  return {
+    ...p,
+    items,
+    appearanceRate: p.appearanceRate ?? defaultRate,
+  };
 }
 
 function normalizeItem(i: any): RegisteredItem {
@@ -20,6 +26,7 @@ export interface UseGlobalSpawnsApi {
   addItem: (item: RegisteredItem) => void;
   updateItem: (id: string, updates: Partial<RegisteredItem>) => void;
   removeItem: (id: string) => void;
+  moveItem: (id: string, direction: -1 | 1) => void;
 }
 
 export function useGlobalSpawns(): UseGlobalSpawnsApi {
@@ -92,6 +99,17 @@ export function useGlobalSpawns(): UseGlobalSpawnsApi {
   const removeItem = useCallback((id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
   }, []);
+  const moveItem = useCallback((id: string, direction: -1 | 1) => {
+    setItems(prev => {
+      const idx = prev.findIndex(i => i.id === id);
+      if (idx < 0) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+  }, []);
 
-  return { points, setPoints, addPoint, updatePoint, removePoint, items, addItem, updateItem, removeItem };
+  return { points, setPoints, addPoint, updatePoint, removePoint, items, addItem, updateItem, removeItem, moveItem };
 }

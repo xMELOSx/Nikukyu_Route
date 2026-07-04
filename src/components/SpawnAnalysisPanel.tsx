@@ -241,7 +241,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
       {detailPoint && (
         <div className="panel-section" style={{ borderTop: '1px solid rgba(79,195,247,0.12)', background: 'rgba(0,0,0,0.25)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>点詳細 X:{detailPoint.x} Y:{detailPoint.y}</span>
+            <span className="panel-title" style={{ fontSize: '11px', marginBottom: 0 }}>{detailPoint.category || ''}{detailPoint.category ? '　' : ''}出現率：<span style={{ color: (detailPoint.appearanceRate||'高') === '低' ? '#ff4444' : (detailPoint.appearanceRate||'高') === '中' ? '#ffd700' : '#39ff14' }}>{(detailPoint.appearanceRate||'高')}</span></span>
             <div style={{ display: 'flex', gap: '4px' }}>
               {onPointFocus && (
                 <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 5px', clipPath: 'none' }}
@@ -255,27 +255,19 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
             <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>アイテム未登録</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              {(() => {
-                const grouped: { [id: string]: { item: RegisteredItem | undefined; occurrences: typeof detailPoint.items } } = {};
-                for (const pi of detailPoint.items) {
-                  if (!grouped[pi.itemId]) grouped[pi.itemId] = { item: items.find(i => i.id === pi.itemId), occurrences: [] };
-                  grouped[pi.itemId].occurrences.push(pi);
-                }
-                return Object.values(grouped).map(({ item, occurrences }) => {
-                  const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
-                  const avgPlayers = occurrences.reduce((s, o) => s + (o.playerCount || 1), 0) / occurrences.length;
-                  return (
-                    <div key={item?.id || Math.random()} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', padding: '3px 6px', background: 'rgba(0,0,0,0.15)', borderRadius: '3px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
-                      <span style={{ color: tc?.color || '#fff', fontWeight: 600, flex: 1 }}>{item?.name || '(不明)'}</span>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{occurrences.length}回</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '9px' }}>平均{avgPlayers.toFixed(1)}人</span>
-                      {item && <span style={{ color: '#ffd700', fontSize: '9px' }}>{item.fans}F</span>}
-                      {item && <span style={{ color: '#ff9500', fontSize: '9px' }}>{item.coins}C</span>}
-                    </div>
-                  );
-                });
-              })()}
+              {detailPoint.items.map((pi, idx) => {
+                const item = items.find(i => i.id === pi.itemId);
+                const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                return (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', padding: '3px 6px', background: 'rgba(0,0,0,0.15)', borderRadius: '3px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tc?.color || '#888', display: 'inline-block', flexShrink: 0 }} />
+                    <span style={{ color: tc?.color || '#fff', fontWeight: 600, flex: 1 }}>{item?.name || '(不明)'}</span>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{pi.playerCount}P</span>
+                    {item && <span style={{ color: '#ffd700', fontSize: '9px' }}>{item.fans}F</span>}
+                    {item && <span style={{ color: '#ff9500', fontSize: '9px' }}>{item.coins}C</span>}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

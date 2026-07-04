@@ -86,6 +86,13 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/global-sim-pools
+        if (isPathMatch(urlPath, '/api/global-sim-pools')) {
+          if (req.method === 'GET') return handleGet(req, res, 'global_sim_pools.json', JSON.stringify({ pools: {}, bluePlusProbs: {} }))
+          if (req.method === 'POST') return handlePost(req, res, 'global_sim_pools.json')
+          return next()
+        }
+
         // /api/default-preset
         if (isPathMatch(urlPath, '/api/default-preset')) {
           if (req.method === 'GET') {
@@ -264,6 +271,7 @@ export function apiMiddleware(): Plugin {
       copyToDist('global_help.json')
       copyToDist('global_defaults.json')
       copyToDist('global_sim_defaults.json')
+      copyToDist('global_sim_pools.json')
 
       // public/uploads/ → dist/uploads/
       const uploadsSrcDir = path.resolve(__dirname, '..', 'public', 'uploads')

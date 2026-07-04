@@ -13,9 +13,9 @@
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
   <script>
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register('/Nikukyu_Route/sw.js')
           .then(reg => console.log('[SW] Registered:', reg.scope))
           .catch(err => console.error('[SW] Registration failed:', err));
       });

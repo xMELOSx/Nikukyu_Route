@@ -701,7 +701,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       const prevZoom = animZoomRef.current;
       const prevPan = animPanRef.current;
-      const newZoom = Math.max(0.1, Math.min(4, prevZoom * factor));
+      const newZoom = Math.max(0.1, Math.min(10, prevZoom * factor));
       if (!isFinite(newZoom) || prevZoom === newZoom) return;
 
       const wRect = wrapper.getBoundingClientRect();
@@ -1465,7 +1465,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (ts.dist < 1 || !isFinite(dist / ts.dist)) return;
       const scale = dist / ts.dist;
-      const newZoom = Math.max(0.1, Math.min(5, ts.zoom * scale));
+      const newZoom = Math.max(0.1, Math.min(10, ts.zoom * scale));
       if (newZoom === ts.zoom) return;
       // アンカーは 2 本指の中点（wrapper 左上からの相対座標）。
       // ホイールと同じく transform-origin 定数 (800, 2275) を反映した二段階数式を使う。
@@ -5572,6 +5572,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   title="閉じる"
                 >
                   ×
+                </button>
+                <button
+                  className="phone-hud-activate-nearest"
+                  onClick={() => {
+                    if (!currentPosition) return;
+                    let closest: HeistMarker | null = null;
+                    let minDist = Infinity;
+                    for (const m of markers) {
+                      if (m.type !== 'phone' || m.floor !== floor || m.phoneLocked) continue;
+                      const d = Math.hypot(m.x - currentPosition.x, m.y - currentPosition.y);
+                      if (d < minDist) { minDist = d; closest = m; }
+                    }
+                    if (!closest || closest.phoneActive) return;
+                    onMarkersChange(
+                      markers.map(mk => mk.id === closest!.id ? { ...mk, phoneActive: true } : mk),
+                      true
+                    );
+                  }}
+                  title="最寄りの電話ボックスを起動（起動中なら何もしない）"
+                >
+                  ▶
                 </button>
                 <div className="phone-hud-rows">
                   {/* LG1: UP=4, DOWN=1, LEFT=3, RIGHT=2 */}

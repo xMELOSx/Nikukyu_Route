@@ -183,8 +183,23 @@ export interface SpawnPointItem {
   playerCount: number;
 }
 
-export const SPAWN_CATEGORIES = ['机上', '引出', '金庫', '展示台', '床', '植木鉢', '棚', '絵画', 'ドロップ'] as const;
+export const SPAWN_CATEGORIES = ['机上', '机上(レア)', '引出', '小金庫', '中金庫', '展示台', '宝石置き', '床', '植木鉢', '棚', '絵画', 'ドロップ', 'ファンス'] as const;
 export type SpawnCategory = typeof SPAWN_CATEGORIES[number];
+
+export const CATEGORY_TO_POOL: Record<string, string> = {
+  '机上': 'desk', '机上(レア)': 'deskRare', '引出': 'drawer', '小金庫': 'smallSafe',
+  '中金庫': 'midSafe', '展示台': 'display', '宝石置き': 'jewelStand', '床': 'floor',
+  '植木鉢': 'flowerPot', '棚': 'shelf', '絵画': 'painting', 'ドロップ': 'drop', 'ファンス': 'fans'
+};
+
+export const POOL_LABELS: Record<string, string> = {
+  desk: '机上', deskRare: '机上(レア)', drawer: '引出', smallSafe: '小金庫',
+  midSafe: '中金庫', display: '展示台', jewelStand: '宝石置き', floor: '床',
+  flowerPot: '植木鉢', shelf: '棚', painting: '絵画', drop: 'ドロップ', fans: 'ファンス'
+};
+
+export const APPEARANCE_RATES = ['高', '中', '低'] as const;
+export type AppearanceRate = typeof APPEARANCE_RATES[number];
 
 export interface SpawnPoint {
   id: string;
@@ -194,5 +209,6 @@ export interface SpawnPoint {
   category?: SpawnCategory;
   createdAt: string;
   note?: string;
+  appearanceRate?: AppearanceRate;
   items: SpawnPointItem[];
 }

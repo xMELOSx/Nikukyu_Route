@@ -34,6 +34,7 @@ interface PlayDataPanelProps {
   onNotify?: (msg: string) => void;
   routeTitle?: string;
   refreshKey?: number;
+  isLocal?: boolean;
 }
 
 type CumulativeField = 'recordedFans' | 'recordedCoins' | 'recordedNikukyuu';
@@ -217,7 +218,7 @@ function parseGoalsFromInput(text: string): { name: string; target: number; rewa
   return deduplicated;
 }
 
-export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDataPanelProps) {
+export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }: PlayDataPanelProps) {
   const [state, setState] = useState<PlayDataState>(() => checkAutoReset(loadPlayData()));
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingLocation, setEditingLocation] = useState<string>('');
@@ -295,6 +296,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const SIM_HISTORY_KEY = 'heist_sim_history_v1';
   const SIM_LOCAL_KEY = 'heist_sim_local_v1';
   const SIM_SERVER_KEY = 'heist_sim_server_v1';
+  const SIM_POOLS_LOCAL_KEY = 'heist_sim_pools_v1';
 
   const COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
@@ -338,6 +340,29 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simSimulating, setSimSimulating] = useState(false);
   const [simTargetFans, setSimTargetFans] = useState(0);
   const [simTargetCoins, setSimTargetCoins] = useState(0);
+  const [simTargetItems, setSimTargetItems] = useState(0);
+  const POOL_IDS = ['desk', 'deskRare', 'drawer', 'smallSafe', 'midSafe', 'display', 'jewelStand', 'floor', 'flowerPot', 'shelf', 'painting', 'drop', 'fans'] as const;
+  type PoolId = typeof POOL_IDS[number];
+  const POOL_LABELS: Record<PoolId, string> = { desk: '机上', deskRare: '机上(レア)', drawer: '引出', smallSafe: '小金庫', midSafe: '中金庫', display: '展示台', jewelStand: '宝石置き', floor: '床', flowerPot: '植木鉢', shelf: '棚', painting: '絵画', drop: 'ドロップ', fans: 'ファンス' };
+  const emptyBluePlusProbs = (() => { const bpKeys = ['cyan', 'yellow', 'purple', 'blue']; const sum = bpKeys.reduce((s, c) => s + COLOR_DEFAULT_PROBS[c], 0); const init: Record<string, number> = {}; for (const c of bpKeys) init[c] = COLOR_DEFAULT_PROBS[c] / sum; return init; })();
+  const [simPools, setSimPools] = useState<Record<PoolId, { count: number | null; itemIds: string[] }>>(() => {
+    // Pool counts from probability settings
+    const initPoolCounts = initState?.poolCounts || {};
+    // Pool items from pool data
+    let poolItemsData: any = {};
+    try { const raw = localStorage.getItem(SIM_POOLS_LOCAL_KEY); if (raw) { const p = JSON.parse(raw); if (p.pools) poolItemsData = p.pools; } } catch {}
+    return POOL_IDS.reduce((a, pid) => {
+      const pdata = poolItemsData[pid];
+      const itemIds = Array.isArray(pdata) ? pdata : (pdata?.itemIds ?? []);
+      return { ...a, [pid]: { count: initPoolCounts[pid] ?? null, itemIds } };
+    }, {} as any);
+  });
+  const [poolCollapsed, setPoolCollapsed] = useState<Record<string, boolean>>(() => POOL_IDS.reduce((a, p) => ({ ...a, [p]: true }), {} as Record<string, boolean>));
+  const [simBluePlusProbs, setSimBluePlusProbs] = useState<Record<string, number>>(() => {
+    try { const raw = localStorage.getItem(SIM_POOLS_LOCAL_KEY); if (raw) { const p = JSON.parse(raw); if (p.bluePlusProbs) return p.bluePlusProbs; } } catch {}
+    return { ...emptyBluePlusProbs };
+  });
+  const poolDefaultsRef = useRef<{ pools: any; bluePlusProbs: Record<string, number> }>({ pools: {}, bluePlusProbs: {} });
   const [simExcluded, setSimExcluded] = useState<Set<string>>(new Set());
   const [simLimits, setSimLimits] = useState<Record<string, number>>({});
   const [simResult, setSimResult] = useState<SimResultSummary | null>(null);
@@ -351,7 +376,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       return parsed.filter((e: any) => e && e.summary && typeof e.summary.successes === 'number');
     } catch { return []; }
   });
-  const [simActiveTab, setSimActiveTab] = useState<'input' | 'prob' | 'result' | 'history'>('input');
+  const [simActiveTab, setSimActiveTab] = useState<'input' | 'prob' | 'result' | 'history' | 'pool'>('input');
   const [simProbs, setSimProbs] = useState<Record<string, number>>(initState?.probs ?? { ...COLOR_DEFAULT_PROBS });
   const [simProbOverrides, setSimProbOverrides] = useState<Record<string, number | null>>(initState?.probOverrides ?? {});
   const [simTrialCount, setSimTrialCount] = useState(2000);
@@ -375,15 +400,17 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     return {};
   });
 
-  // Auto-save during use
+  // Auto-save probability + pool counts (pool counts are sim parameters, not pool config)
   useEffect(() => {
     try {
+      const poolCounts = POOL_IDS.reduce((a, pid) => ({ ...a, [pid]: simPools[pid].count }), {} as Record<string, number | null>);
       localStorage.setItem(SIM_LOCAL_KEY, JSON.stringify({
         probs: simProbs, probOverrides: simProbOverrides,
         multipliers: simMultipliers, playerCount: simPlayerCount,
+        poolCounts,
       }));
     } catch {}
-  }, [simProbs, simProbOverrides, simMultipliers, simPlayerCount]);
+  }, [simProbs, simProbOverrides, simMultipliers, simPlayerCount, simPools]);
 
   // Fetch latest server defaults from API/static JSON once on mount
   useEffect(() => {
@@ -407,6 +434,60 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       }
     })();
   }, []);
+
+  // Pool data: fetch server defaults on mount (store for reset), then merge with user overrides
+  useEffect(() => {
+    (async () => {
+      try {
+        const url = `${import.meta.env.BASE_URL}api/global-sim-pools`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error();
+        const serverData = await res.json();
+        poolDefaultsRef.current = { pools: serverData.pools || {}, bluePlusProbs: serverData.bluePlusProbs || {} };
+        // Only apply server defaults if user has NO local overrides
+        const localRaw = localStorage.getItem(SIM_POOLS_LOCAL_KEY);
+        if (!localRaw) {
+          if (serverData.pools) setSimPools(prev => {
+            const next = { ...prev };
+            for (const pid of POOL_IDS) {
+              const srv = serverData.pools[pid];
+              if (srv) next[pid] = { ...next[pid], itemIds: Array.isArray(srv) ? srv : (srv.itemIds ?? next[pid].itemIds) };
+            }
+            return next;
+          });
+          if (serverData.bluePlusProbs) setSimBluePlusProbs(serverData.bluePlusProbs);
+        }
+      } catch {
+        try {
+          const url = `${import.meta.env.BASE_URL}global_sim_pools.json`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error();
+          const serverData = await res.json();
+          poolDefaultsRef.current = { pools: serverData.pools || {}, bluePlusProbs: serverData.bluePlusProbs || {} };
+          const localRaw = localStorage.getItem(SIM_POOLS_LOCAL_KEY);
+          if (!localRaw) {
+            if (serverData.pools) setSimPools(prev => {
+              const next = { ...prev };
+              for (const pid of POOL_IDS) {
+                const srv = serverData.pools[pid];
+                if (srv) next[pid] = { ...next[pid], itemIds: Array.isArray(srv) ? srv : (srv.itemIds ?? next[pid].itemIds) };
+              }
+              return next;
+            });
+            if (serverData.bluePlusProbs) setSimBluePlusProbs(serverData.bluePlusProbs);
+          }
+        } catch {}
+      }
+    })();
+  }, []);
+
+  // Pool data auto-save to localStorage only (itemIds only, no counts)
+  useEffect(() => {
+    try {
+      const poolItems = POOL_IDS.reduce((a, pid) => ({ ...a, [pid]: simPools[pid].itemIds }), {} as Record<string, string[]>);
+      localStorage.setItem(SIM_POOLS_LOCAL_KEY, JSON.stringify({ pools: poolItems, bluePlusProbs: simBluePlusProbs }));
+    } catch {}
+  }, [simPools, simBluePlusProbs]);
 
   // Auto-discard overrides that match base probability
   useEffect(() => {
@@ -499,15 +580,95 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     return adjusted;
   };
 
+  const resetPools = useCallback(() => {
+    const defs = poolDefaultsRef.current;
+    if (defs.pools && Object.keys(defs.pools).length > 0) {
+      setSimPools(prev => POOL_IDS.reduce((a, pid) => {
+        const srv = defs.pools[pid];
+        const itemIds = Array.isArray(srv) ? srv : (srv?.itemIds ?? prev[pid].itemIds);
+        return { ...a, [pid]: { ...prev[pid], itemIds } };
+      }, {} as any));
+    }
+    if (defs.bluePlusProbs && Object.keys(defs.bluePlusProbs).length > 0) {
+      setSimBluePlusProbs({ ...defs.bluePlusProbs });
+    }
+    localStorage.removeItem(SIM_POOLS_LOCAL_KEY);
+  }, []);
+
+  const savePoolsToServer = useCallback(() => {
+    const poolItems = POOL_IDS.reduce((a, pid) => ({ ...a, [pid]: simPools[pid].itemIds }), {} as Record<string, string[]>);
+    fetch(`${import.meta.env.BASE_URL}api/global-sim-pools`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pools: poolItems, bluePlusProbs: simBluePlusProbs }),
+    }).then(() => {}).catch(() => {});
+  }, [simPools, simBluePlusProbs]);
+
   const runSimulation = useCallback(async () => {
     const tf = simTargetFans;
     const tc = simTargetCoins;
     if (tf <= 0 && tc <= 0) return;
     setSimSimulating(true);
 
-    // Build weighted pool from individual items
+    // Build pools from all 4 pool configs
     const effProbs = getEffectiveProbs();
-    const pool: { item: SimFlatItem; prob: number; limit: number }[] = [];
+    const bpKeys = ['cyan', 'yellow', 'purple', 'blue'];
+    const bpProbSum = Math.max(0.001, bpKeys.reduce((s, c) => s + (simBluePlusProbs[c] ?? 0), 0));
+    const TRIALS = Math.max(100, simTrialCount);
+    const MAX_DRAWS = 100000;
+    const stats: SimTrialResult[] = [];
+
+    interface PoolCdf { weight: number; cdf: { item: SimFlatItem; limit: number; cumProb: number }[] }
+    const poolCdfs: PoolCdf[] = [];
+    for (const pid of POOL_IDS) {
+      const cfg = simPools[pid];
+      if (!cfg.count || cfg.count <= 0) continue;
+      const poolItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
+      for (const it of simItems) {
+        if (!cfg.itemIds.includes(it.id)) continue;
+        if (simExcluded.has(it.id)) continue;
+        const limit = simLimits[it.id] ?? -1;
+        if (limit === 0) continue;
+        const colorProb = effProbs[it.color] ?? 0;
+        const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
+        const serverVal = simServerOverrides[it.id];
+        const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+        let prob = overrideVal !== null ? overrideVal : (pid === 'deskRare' ? ((simBluePlusProbs[it.color] ?? 0) / bpProbSum) : colorProb);
+        if (overrideVal !== null && simPlayerCount > 1) prob *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
+        if (prob > 0) poolItems.push({ item: it, prob, limit });
+      }
+      const total = poolItems.reduce((s, p) => s + p.prob, 0);
+      if (total <= 0) continue;
+      const cdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+      let cum = 0;
+      for (const p of poolItems) { cum += p.prob / total; cdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
+      poolCdfs.push({ weight: cfg.count, cdf });
+    }
+
+    // Fallback: no pools configured → single pool with all items
+    if (poolCdfs.length === 0) {
+      const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
+      for (const it of simItems) {
+        if (simExcluded.has(it.id)) continue;
+        const limit = simLimits[it.id] ?? -1;
+        if (limit === 0) continue;
+        const colorProb = effProbs[it.color] ?? 0;
+        const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
+        const serverVal = simServerOverrides[it.id];
+        const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+        let prob = overrideVal !== null ? overrideVal : colorProb;
+        if (overrideVal !== null && simPlayerCount > 1) prob *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
+        if (prob > 0) fallbackItems.push({ item: it, prob, limit });
+      }
+      const total = fallbackItems.reduce((s, p) => s + p.prob, 0);
+      if (total <= 0) { setSimSimulating(false); return; }
+      const cdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+      let cum = 0;
+      for (const p of fallbackItems) { cum += p.prob / total; cdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
+      poolCdfs.push({ weight: 1, cdf });
+    }
+
+    // Build fallback pool: all items weighted by global color probs (overflow when a pool is exhausted)
+    const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
     for (const it of simItems) {
       if (simExcluded.has(it.id)) continue;
       const limit = simLimits[it.id] ?? -1;
@@ -516,32 +677,59 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       const hasOverride = it.id in simProbOverrides && simProbOverrides[it.id] !== null;
       const serverVal = simServerOverrides[it.id];
       const overrideVal = hasOverride ? simProbOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
-      let effectiveProb = overrideVal !== null ? overrideVal : colorProb;
-      if (overrideVal !== null && simPlayerCount > 1) effectiveProb *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
-      if (effectiveProb <= 0) continue;
-      pool.push({ item: it, prob: effectiveProb, limit });
+      let prob = overrideVal !== null ? overrideVal : colorProb;
+      if (overrideVal !== null && simPlayerCount > 1) prob *= (simMultipliers[simPlayerCount] ?? simPlayerCount);
+      if (prob > 0) fallbackItems.push({ item: it, prob, limit });
+    }
+    const fallbackTotal = fallbackItems.reduce((s, p) => s + p.prob, 0);
+    let fallbackCdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+    if (fallbackTotal > 0) {
+      let cum = 0;
+      for (const p of fallbackItems) { cum += p.prob / fallbackTotal; fallbackCdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
     }
 
-    const TRIALS = Math.max(100, simTrialCount);
-    const MAX_DRAWS = 100000;
-    const stats: SimTrialResult[] = [];
+    const totalWeight = poolCdfs.reduce((s, p) => s + p.weight, 0);
+    const hasFallback = fallbackCdf.length > 0;
 
-    const totalProb = pool.reduce((s, p) => s + p.prob, 0);
-    if (totalProb <= 0) { setSimSimulating(false); return; }
-    const cdf: { item: SimFlatItem; prob: number; limit: number; cumProb: number }[] = [];
-    let cum = 0;
-    for (const p of pool) {
-      cum += p.prob / totalProb;
-      cdf.push({ ...p, cumProb: cum });
-    }
-
-    const rollItem = (itemCounts: Record<string, number>): SimFlatItem | null => {
-      const r = Math.random();
-      for (const entry of cdf) {
-        if (r <= entry.cumProb) {
-          const current = itemCounts[entry.item.id] || 0;
-          if (entry.limit > 0 && current >= entry.limit) return null;
-          return entry.item;
+    const rollItem = (itemCounts: Record<string, number>, poolDraws: number[]): SimFlatItem | null => {
+      let rw = Math.random() * totalWeight;
+      for (let i = 0; i < poolCdfs.length; i++) {
+        const pc = poolCdfs[i];
+        rw -= pc.weight;
+        if (rw > 0) continue;
+        // If this pool is exhausted (draws >= count), fall through to fallback
+        if (poolDraws[i] >= pc.weight) {
+          if (hasFallback) {
+            const r = Math.random();
+            for (const entry of fallbackCdf) {
+              if (r <= entry.cumProb) {
+                const current = itemCounts[entry.item.id] || 0;
+                if (entry.limit > 0 && current >= entry.limit) return null;
+                return entry.item;
+              }
+            }
+          }
+          return null;
+        }
+        poolDraws[i]++;
+        const r = Math.random();
+        for (const entry of pc.cdf) {
+          if (r <= entry.cumProb) {
+            const current = itemCounts[entry.item.id] || 0;
+            if (entry.limit > 0 && current >= entry.limit) return null;
+            return entry.item;
+          }
+        }
+      }
+      // No pool matched at random → try fallback
+      if (hasFallback) {
+        const r = Math.random();
+        for (const entry of fallbackCdf) {
+          if (r <= entry.cumProb) {
+            const current = itemCounts[entry.item.id] || 0;
+            if (entry.limit > 0 && current >= entry.limit) return null;
+            return entry.item;
+          }
         }
       }
       return null;
@@ -549,14 +737,14 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
     for (let t = 0; t < TRIALS; t++) {
       const itemCounts: Record<string, number> = {};
+      const poolDraws = new Array(poolCdfs.length).fill(0);
       let totalFans = 0;
       let totalCoins = 0;
       let cardKeys = 0;
       let pickedCardKey = false;
       let nonEHItems = 0, nonEHFans = 0, nonEHCoins = 0;
-
       for (let d = 0; d < MAX_DRAWS; d++) {
-        const picked = rollItem(itemCounts);
+        const picked = rollItem(itemCounts, poolDraws);
         if (!picked) continue;
         itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
         if (picked.color === 'red') { cardKeys++; pickedCardKey = true; }
@@ -660,6 +848,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const startOptimization = async () => {
     const tf = simTargetFans;
     const tc = simTargetCoins;
+    const targetItems = simTargetItems;
     if (tf <= 0 && tc <= 0) return;
     setSimOptimizing(true);
     const items = [...simItems];
@@ -667,10 +856,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     const limits = { ...simLimits };
     const probOverrides = { ...simProbOverrides };
     const serverOverrides = { ...simServerOverrides };
-    const pc = simPlayerCount;
-    const mult = pc > 1 ? (simMultipliers[pc] ?? pc) : 1;
     const ITERS = 100;
     const TRIALS = 200;
+    const bpKeys = ['cyan', 'yellow', 'purple', 'blue'];
 
     let bestProbs = { ...simProbs };
     let bestScore = Infinity;
@@ -685,17 +873,60 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       const delta = (Math.random() * 2 - 1) * maxDelta;
       candidate[c] = Math.max(0.0001, Math.min(0.5, (candidate[c] ?? 0) + delta));
 
-      // Calculate effective probs with player count
-      let eff: Record<string, number>;
-      if (pc > 1) {
-        eff = computeEffectiveProbsFor(candidate, mult);
-      } else {
-        const green = Math.max(0, 1 - colors.reduce((s, col) => s + (candidate[col] || 0), 0));
-        eff = { ...candidate, green };
-      }
+      // Always use single-player base values for optimization
+      const green = Math.max(0, 1 - colors.reduce((s, col) => s + (candidate[col] || 0), 0));
+      const eff: Record<string, number> = { ...candidate, green };
 
-      // Build pool & run trials
-      const pool: { item: SimFlatItem; prob: number; limit: number }[] = [];
+      // Build pools from all 4 pool configs
+      const bpProbSum = Math.max(0.001, bpKeys.reduce((s, col) => s + (simBluePlusProbs[col] ?? 0), 0));
+      interface PoolCdf { weight: number; cdf: { item: SimFlatItem; limit: number; cumProb: number }[] }
+      const poolCdfs: PoolCdf[] = [];
+      for (const pid of POOL_IDS) {
+        const cfg = simPools[pid];
+        if (!cfg.count || cfg.count <= 0) continue;
+        const poolItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
+        for (const it of items) {
+          if (!cfg.itemIds.includes(it.id)) continue;
+          if (excluded.has(it.id)) continue;
+          const limit = limits[it.id] ?? -1;
+          if (limit === 0) continue;
+          const colorProb = eff[it.color] ?? 0;
+          const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
+          const serverVal = serverOverrides[it.id];
+          const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+          let prob = overrideVal !== null ? overrideVal : (pid === 'deskRare' ? ((simBluePlusProbs[it.color] ?? 0) / bpProbSum) : colorProb);
+          if (prob > 0) poolItems.push({ item: it, prob, limit });
+        }
+        const total = poolItems.reduce((s, p) => s + p.prob, 0);
+        if (total <= 0) continue;
+        const cdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+        let cum = 0;
+        for (const p of poolItems) { cum += p.prob / total; cdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
+        poolCdfs.push({ weight: cfg.count, cdf });
+      }
+      // Fallback: no pools → single pool with all items
+      if (poolCdfs.length === 0) {
+        const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
+        for (const it of items) {
+          if (excluded.has(it.id)) continue;
+          const limit = limits[it.id] ?? -1;
+          if (limit === 0) continue;
+          const colorProb = eff[it.color] ?? 0;
+          const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
+          const serverVal = serverOverrides[it.id];
+          const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+          let prob = overrideVal !== null ? overrideVal : colorProb;
+          if (prob > 0) fallbackItems.push({ item: it, prob, limit });
+        }
+        const total = fallbackItems.reduce((s, p) => s + p.prob, 0);
+        if (total <= 0) continue;
+        const cdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+        let cum = 0;
+        for (const p of fallbackItems) { cum += p.prob / total; cdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
+        poolCdfs.push({ weight: 1, cdf });
+      }
+      // Build fallback pool for overflow
+      const optFallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
       for (const it of items) {
         if (excluded.has(it.id)) continue;
         const limit = limits[it.id] ?? -1;
@@ -704,32 +935,64 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
         const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
         const serverVal = serverOverrides[it.id];
         const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
-        let effectiveProb = overrideVal !== null ? overrideVal : colorProb;
-        if (overrideVal !== null && pc > 1) effectiveProb *= mult;
-        if (effectiveProb <= 0) continue;
-        pool.push({ item: it, prob: effectiveProb, limit });
+        let prob = overrideVal !== null ? overrideVal : colorProb;
+        if (prob > 0) optFallbackItems.push({ item: it, prob, limit });
       }
-
-      const totalProb = pool.reduce((s, p) => s + p.prob, 0);
-      if (totalProb <= 0) continue;
-      const cdf: { item: SimFlatItem; cumProb: number; limit: number }[] = [];
-      let cum = 0;
-      for (const p of pool) { cum += p.prob / totalProb; cdf.push({ item: p.item, cumProb: cum, limit: p.limit }); }
+      const optFbTotal = optFallbackItems.reduce((s, p) => s + p.prob, 0);
+      let optFbCdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
+      if (optFbTotal > 0) {
+        let cum = 0;
+        for (const p of optFallbackItems) { cum += p.prob / optFbTotal; optFbCdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
+      }
+      const hasOptFb = optFbCdf.length > 0;
+      const totalWeight = poolCdfs.reduce((s, p) => s + p.weight, 0);
 
       const fans: number[] = [];
       const coins: number[] = [];
       const itemTotals: number[] = [];
       for (let t = 0; t < TRIALS; t++) {
         const itemCounts: Record<string, number> = {};
+        const poolDraws = new Array(poolCdfs.length).fill(0);
         let totalFans = 0, totalCoins = 0;
         for (let d = 0; d < 100000; d++) {
-          const r = Math.random();
+          let rw = Math.random() * totalWeight;
           let picked: SimFlatItem | null = null;
-          for (const entry of cdf) {
-            if (r <= entry.cumProb) {
-              const current = itemCounts[entry.item.id] || 0;
-              if (entry.limit > 0 && current >= entry.limit) break;
-              picked = entry.item; break;
+          for (let i = 0; i < poolCdfs.length; i++) {
+            const pc = poolCdfs[i];
+            rw -= pc.weight;
+            if (rw > 0) continue;
+            if (poolDraws[i] >= pc.weight) {
+              if (hasOptFb) {
+                const r = Math.random();
+                for (const entry of optFbCdf) {
+                  if (r <= entry.cumProb) {
+                    const current = itemCounts[entry.item.id] || 0;
+                    if (entry.limit > 0 && current >= entry.limit) break;
+                    picked = entry.item; break;
+                  }
+                }
+              }
+              break;
+            }
+            poolDraws[i]++;
+            const r = Math.random();
+            for (const entry of pc.cdf) {
+              if (r <= entry.cumProb) {
+                const current = itemCounts[entry.item.id] || 0;
+                if (entry.limit > 0 && current >= entry.limit) break;
+                picked = entry.item; break;
+              }
+            }
+            break;
+          }
+          if (!picked && hasOptFb) {
+            const r = Math.random();
+            for (const entry of optFbCdf) {
+              if (r <= entry.cumProb) {
+                const current = itemCounts[entry.item.id] || 0;
+                if (entry.limit > 0 && current >= entry.limit) break;
+                picked = entry.item; break;
+              }
             }
           }
           if (!picked) continue;
@@ -749,7 +1012,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
       const mFans = sFans[Math.floor(sFans.length / 2)];
       const mCoins = sCoins[Math.floor(sCoins.length / 2)];
       const mItems = sItems[Math.floor(sItems.length / 2)];
-      const score = Math.abs(mFans - tf) / Math.max(1, tf) + Math.abs(mCoins - tc) / Math.max(1, tc) + mItems / Math.max(1, tf + tc);
+      const itemsPenalty = targetItems > 0 ? Math.abs(mItems - targetItems) / targetItems : 0;
+      const score = Math.abs(mFans - tf) / Math.max(1, tf) + Math.abs(mCoins - tc) / Math.max(1, tc) + itemsPenalty;
 
       if (score < bestScore) {
         bestScore = score;
@@ -2798,7 +3062,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
             {/* Tab bar */}
             <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,240,255,0.15)' }}>
-              {(['input', 'prob', 'result', 'history'] as const).map(tab => (
+              {(['input', 'prob', 'result', 'history', 'pool'] as const).map(tab => (
                 <button
                   key={tab}
                   className="btn-cyber"
@@ -2811,7 +3075,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                   }}
                   onClick={() => setSimActiveTab(tab)}
                 >
-                  {tab === 'input' ? t('設定') : tab === 'prob' ? t('確率') : tab === 'result' ? t('結果') : t('履歴')}
+                  {tab === 'input' ? t('設定') : tab === 'prob' ? t('確率') : tab === 'result' ? t('結果') : tab === 'history' ? t('履歴') : t('プール')}
                 </button>
               ))}
             </div>
@@ -2825,13 +3089,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
               ) : simActiveTab === 'input' ? (
                 <>
                   {/* Target & Probability settings side by side */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                     <div>
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('目標 ファンス')}</div>
                       <input
                         type="number" min="0" step="1000"
                         className="input-cyber"
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '18px', padding: '8px 10px' }}
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '16px', padding: '6px 8px' }}
                         value={simTargetFans || ''}
                         placeholder="0"
                         onChange={(e) => {
@@ -2845,12 +3109,26 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       <input
                         type="number" min="0" step="100"
                         className="input-cyber"
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '18px', padding: '8px 10px' }}
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '16px', padding: '6px 8px' }}
                         value={simTargetCoins || ''}
                         placeholder="0"
                         onChange={(e) => {
                           const raw = e.target.value;
                           setSimTargetCoins(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('目標アイテム数')}</div>
+                      <input
+                        type="number" min="0" step="10"
+                        className="input-cyber"
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '16px', padding: '6px 8px' }}
+                        value={simTargetItems || ''}
+                        placeholder="0 (不使用)"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setSimTargetItems(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
                         }}
                       />
                     </div>
@@ -3519,7 +3797,24 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     </div>
                   )}
                 </>
-              ) : null}
+                  ) : simActiveTab === 'pool' ? (
+                    <PoolTab
+                      POOL_IDS={POOL_IDS}
+                      POOL_LABELS={POOL_LABELS}
+                      simPools={simPools}
+                      setSimPools={setSimPools}
+                      simItems={simItems}
+                      simColorFilter={simColorFilter}
+                      simBluePlusProbs={simBluePlusProbs}
+                      setSimBluePlusProbs={setSimBluePlusProbs}
+                      poolCollapsed={poolCollapsed}
+                      setPoolCollapsed={setPoolCollapsed}
+                      onResetPools={resetPools}
+                      onSaveToServer={savePoolsToServer}
+                      isLocal={isLocal}
+                      t={t}
+                    />
+                  ) : null}
             </div>
           </div>
         </div>,
@@ -3539,6 +3834,267 @@ interface RecordRowProps {
   onStartEdit: (rec: PlayDataRecord) => void;
   onSaveEdit: (id: string) => void;
   onCancelEdit: () => void;
+}
+
+/* ─── Pool tab constants ─── */
+const POOL_COLOR_ORDER = ['cyan', 'yellow', 'red', 'purple', 'blue', 'green'] as const;
+const POOL_COLOR_HEX: Record<string, string> = { cyan: '#00ffff', yellow: '#ffd700', red: '#ff4444', purple: '#a855f7', blue: '#3b82f6', green: '#22c55e' };
+const POOL_COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
+
+interface PoolTabProps {
+  POOL_IDS: readonly string[];
+  POOL_LABELS: Record<string, string>;
+  simPools: Record<string, { count: number | null; itemIds: string[] }>;
+  setSimPools: React.Dispatch<React.SetStateAction<Record<string, { count: number | null; itemIds: string[] }>>>;
+  simItems: Array<{ id: string; name: string; color: string; fans: number; coins: number }>;
+  simColorFilter: Record<string, boolean>;
+  simBluePlusProbs: Record<string, number>;
+  setSimBluePlusProbs: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  poolCollapsed: Record<string, boolean>;
+  setPoolCollapsed: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onResetPools: () => void;
+  onSaveToServer: () => void;
+  isLocal?: boolean;
+  t: (key: string, ...args: any[]) => string;
+}
+
+function groupItemsByColor(
+  items: Array<{ id: string; name: string; color: string }>,
+  colorFilter: Record<string, boolean>,
+): Array<{ color: string; items: Array<{ id: string; name: string }> }> {
+  const filtered = items.filter(it => colorFilter[it.color] !== false);
+  const groups: Array<{ color: string; items: Array<{ id: string; name: string }> }> = [];
+  for (const color of POOL_COLOR_ORDER) {
+    const group = filtered.filter(it => it.color === color).map(it => ({ id: it.id, name: it.name }));
+    if (group.length > 0) groups.push({ color, items: group });
+  }
+  return groups;
+}
+
+function poolSectionPropsEqual(prev: any, next: any) {
+  return prev.count === next.count && prev.itemIds === next.itemIds
+    && prev.isBp === next.isBp && prev.collapsed === next.collapsed
+    && prev.simItems === next.simItems && prev.simColorFilter === next.simColorFilter
+    && prev.simBluePlusProbs === next.simBluePlusProbs;
+}
+
+const PoolSection = React.memo(function PoolSection({
+  label, count, itemIds, isBp,
+  simItems, simColorFilter, simBluePlusProbs,
+  onCountChange, onToggleItem, onBatchToggleItems, collapsed, onToggleCollapse,
+  onBluePlusProbChange, t,
+}: {
+  label: string;
+  count: number | null;
+  itemIds: string[];
+  isBp: boolean;
+  simItems: Array<{ id: string; name: string; color: string; fans: number; coins: number }>;
+  simColorFilter: Record<string, boolean>;
+  simBluePlusProbs: Record<string, number>;
+  onCountChange: (v: number | null) => void;
+  onToggleItem: (itemId: string, add: boolean) => void;
+  onBatchToggleItems: (ids: string[], add: boolean) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onBluePlusProbChange: (color: string, v: number) => void;
+  t: (key: string, ...args: any[]) => string;
+}) {
+  const groups = useMemo(() => groupItemsByColor(simItems, simColorFilter), [simItems, simColorFilter]);
+  const itemSet = useMemo(() => new Set(itemIds), [itemIds]);
+
+  const selectedCount = itemIds.length;
+  const anySelected = selectedCount > 0;
+
+  return (
+    <div style={{
+      background: isBp ? 'rgba(59,130,246,0.06)' : 'rgba(255,215,0,0.04)',
+      border: `1px solid ${isBp ? 'rgba(59,130,246,0.25)' : 'rgba(255,215,0,0.15)'}`,
+      borderRadius: '6px', padding: '10px 12px'
+    }}>
+      {/* Header */}
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: collapsed ? 0 : '6px', cursor: 'pointer', userSelect: 'none' }}
+        onClick={onToggleCollapse}
+      >
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+          ▼
+        </span>
+        <span style={{ fontSize: '13px', color: isBp ? '#60a5fa' : 'var(--yellow-neon)', fontWeight: 700 }}>
+          {label}
+        </span>
+        {anySelected && (
+          <span style={{ fontSize: '10px', color: '#00ffff', background: 'rgba(0,240,255,0.1)', padding: '1px 6px', borderRadius: '8px' }}>
+            {selectedCount}
+          </span>
+        )}
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>{t('ポイント数')}</span>
+        <input
+          type="number" min="0" max="100" step="1"
+          className="input-cyber"
+          placeholder="未"
+          style={{ width: '50px', fontSize: '11px', padding: '2px 4px', textAlign: 'right', color: count === null ? 'var(--text-muted)' : undefined }}
+          value={count === null ? '' : count}
+          onChange={e => {
+            if (e.target.value === '') { onCountChange(null); return; }
+            const raw = parseInt(e.target.value);
+            onCountChange(isNaN(raw) || raw < 0 ? null : Math.min(100, raw));
+          }}
+          onClick={e => e.stopPropagation()}
+        />
+      </div>
+
+      {/* BluePlus sub-probs */}
+      {isBp && !collapsed && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px 6px', marginBottom: '6px' }}>
+          {['cyan', 'yellow', 'purple', 'blue'].map(col => {
+            const bpKeys = ['cyan', 'yellow', 'purple', 'blue'];
+            const sum = Math.max(0.001, bpKeys.reduce((s, c) => s + (simBluePlusProbs[c] ?? 0), 0));
+            return (
+              <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: POOL_COLOR_HEX[col], flexShrink: 0 }} />
+                <input
+                  type="number" min="0" max="100" step="0.1"
+                  className="input-cyber"
+                  style={{ width: '50px', fontSize: '10px', padding: '2px 4px', textAlign: 'right' }}
+                  value={((simBluePlusProbs[col] ?? 0) / sum) * 100}
+                  onChange={e => {
+                    const raw = parseFloat(e.target.value);
+                    if (isNaN(raw) || raw < 0) return;
+                    onBluePlusProbChange(col, Math.min(100, raw) / 100);
+                  }}
+                />
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Item groups by color */}
+      {!collapsed && groups.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxHeight: '280px', overflowY: 'auto' }}>
+          {groups.map(group => {
+            const colorHex = POOL_COLOR_HEX[group.color] || '#888';
+            const groupAllSelected = group.items.every(it => itemSet.has(it.id));
+            const groupSomeSelected = group.items.some(it => itemSet.has(it.id));
+            return (
+              <div key={group.color} style={{ border: `1px solid ${colorHex}22`, borderRadius: '4px', background: `${colorHex}08` }}>
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    fontSize: '10px'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={groupAllSelected}
+                    ref={el => { if (el) el.indeterminate = groupSomeSelected && !groupAllSelected; }}
+                    onChange={() => onBatchToggleItems(group.items.map(it => it.id), !groupAllSelected)}
+                    style={{ width: '11px', height: '11px', flexShrink: 0, accentColor: colorHex, cursor: 'pointer' }}
+                  />
+                  <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: colorHex, flexShrink: 0 }} />
+                  <span style={{ color: colorHex, fontWeight: 600 }}>{POOL_COLOR_LABELS[group.color] || group.color}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '9px', marginLeft: 'auto' }}>
+                    {group.items.filter(it => itemSet.has(it.id)).length}/{group.items.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1px', padding: '2px 4px' }}>
+                  {group.items.map(it => {
+                    const checked = itemSet.has(it.id);
+                    return (
+                      <label key={it.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 5px',
+                        fontSize: '10px', cursor: 'pointer',
+                        background: checked ? `${colorHex}18` : 'transparent',
+                        borderRadius: '3px',
+                        border: `1px solid ${checked ? `${colorHex}44` : 'transparent'}`,
+                        minWidth: 0
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => onToggleItem(it.id, e.target.checked)}
+                          style={{ width: '11px', height: '11px', flexShrink: 0, accentColor: colorHex, cursor: 'pointer' }}
+                        />
+                        <span style={{ color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>{it.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!collapsed && groups.length === 0 && (
+        <div style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)' }}>
+          該当アイテムなし（カラーフィルターを確認）
+        </div>
+      )}
+    </div>
+  );
+}, poolSectionPropsEqual);
+
+function PoolTab(props: PoolTabProps) {
+  const { POOL_IDS, POOL_LABELS, simPools, setSimPools, simItems, simColorFilter,
+    simBluePlusProbs, setSimBluePlusProbs, poolCollapsed, setPoolCollapsed, onResetPools, onSaveToServer, isLocal, t } = props;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', marginBottom: '2px' }}>
+        {isLocal && (
+        <button className="btn-cyber success" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }}
+          onClick={onSaveToServer}>
+          {t('サーバーに保存')}
+        </button>
+        )}
+        <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }}
+          onClick={() => { if (window.confirm('プール設定をサーバーデフォルトにリセットしますか？')) onResetPools(); }}>
+          {t('デフォルトにリセット')}
+        </button>
+      </div>
+      {POOL_IDS.map(pid => {
+        const pool = simPools[pid];
+        const isBp = pid === 'deskRare';
+        return (
+          <PoolSection
+            key={pid}
+            label={POOL_LABELS[pid]}
+            count={pool.count}
+            itemIds={pool.itemIds}
+            isBp={isBp}
+            simItems={simItems}
+            simColorFilter={simColorFilter}
+            simBluePlusProbs={simBluePlusProbs}
+            collapsed={poolCollapsed[pid] !== false}
+            onToggleCollapse={() => setPoolCollapsed(prev => ({ ...prev, [pid]: !(prev[pid] !== false) }))}
+            onCountChange={(v: number | null) => setSimPools(prev => ({ ...prev, [pid]: { ...prev[pid], count: v } }))}
+            onToggleItem={(itemId: string, add: boolean) => {
+              setSimPools(prev => {
+                const ids = add
+                  ? (prev[pid].itemIds.includes(itemId) ? prev[pid].itemIds : [...prev[pid].itemIds, itemId])
+                  : prev[pid].itemIds.filter(id => id !== itemId);
+                return { ...prev, [pid]: { ...prev[pid], itemIds: ids } };
+              });
+            }}
+            onBatchToggleItems={(ids: string[], add: boolean) => {
+              setSimPools(prev => {
+                const current = new Set(prev[pid].itemIds);
+                if (add) for (const id of ids) current.add(id);
+                else for (const id of ids) current.delete(id);
+                return { ...prev, [pid]: { ...prev[pid], itemIds: Array.from(current) } };
+              });
+            }}
+            onBluePlusProbChange={(color: string, v: number) => {
+              setSimBluePlusProbs(prev => ({ ...prev, [color]: v }));
+            }}
+            t={t}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 function RecordRow({

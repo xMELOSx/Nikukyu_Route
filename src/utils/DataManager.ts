@@ -1,11 +1,13 @@
 export {
-  generateId, TEXTCOLOR_OPTIONS, SPAWN_CATEGORIES
+  generateId, TEXTCOLOR_OPTIONS, SPAWN_CATEGORIES, APPEARANCE_RATES,
+  CATEGORY_TO_POOL, POOL_LABELS
 } from './types'
 export type {
   FloorType, MarkerType, Point, DrawingStroke, ScrollConfig, MediaItem,
   HeistMarker, RouteData, SaveDataMigration, MigrationResult,
   PresetVisibility, PresetData, PresetMeta, SkillCdMode, SkillCdPreset,
-  TextColorOption, RegisteredItem, SpawnPointItem, SpawnCategory, SpawnPoint
+  TextColorOption, RegisteredItem, SpawnPointItem, SpawnCategory, SpawnPoint,
+  AppearanceRate
 } from './types'
 
 export {

@@ -2794,6 +2794,7 @@ export default function App() {
                     routeTitle={routeApi.route.title}
                     onNotify={(msg) => { notification.show(msg); }}
                     refreshKey={playDataRefreshKey}
+                    isLocal={isLocal}
                   />
                 </div>
               </>

@@ -734,5 +734,6 @@ export const en: Locale = {
     'Checkpoint': 'Checkpoint',
     '🏁 Checkpoint': '🏁 Checkpoint',
     'スキル': 'Skill',
+    '出現率': 'Appearance Rate',
   },
 };

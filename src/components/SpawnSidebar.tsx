@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
 import { t } from '../i18n';
-import { MARKER_META, TEXTCOLOR_OPTIONS, TEXTCOLOR_META, SPAWN_CATEGORIES } from '../utils/DataManager';
+import { MARKER_META, TEXTCOLOR_OPTIONS, TEXTCOLOR_META, SPAWN_CATEGORIES, CATEGORY_TO_POOL, POOL_LABELS } from '../utils/DataManager';
 import type { RegisteredItem } from '../utils/DataManager';
 
 const SpawnSidebar: React.FC<any> = (p) => {
@@ -15,6 +15,8 @@ const SpawnSidebar: React.FC<any> = (p) => {
   const [cropImgSize, setCropImgSize] = useState({w:0,h:0});
   const cropImgRef = useRef<HTMLImageElement>(null);
   const cropDragRef = useRef<{isDragging:boolean;type:string;startX:number;startY:number;initialX:number;initialY:number;initialW:number;initialH:number}|null>(null);
+  const [svMode, setSvMode] = useState<'records' | 'pool'>(() => (localStorage.getItem('heist_sv_mode') as 'records' | 'pool') || 'records');
+  useEffect(() => { localStorage.setItem('heist_sv_mode', svMode); }, [svMode]);
 
   // Clipboard paste for item image
   useEffect(() => {
@@ -379,6 +381,10 @@ const SpawnSidebar: React.FC<any> = (p) => {
                           </div>
                           {item.description && (<div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>)}
                         </div>
+                        <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 4px', clipPath: 'none', flexShrink: 0, opacity: p.spawnApi.items.indexOf(item) === 0 ? 0.3 : 1 }}
+                          onClick={() => p.spawnApi.moveItem(item.id, -1)} disabled={p.spawnApi.items.indexOf(item) === 0}>▲</button>
+                        <button className="btn-cyber" style={{ fontSize: '8px', padding: '2px 4px', clipPath: 'none', flexShrink: 0, opacity: p.spawnApi.items.indexOf(item) === p.spawnApi.items.length - 1 ? 0.3 : 1 }}
+                          onClick={() => p.spawnApi.moveItem(item.id, 1)} disabled={p.spawnApi.items.indexOf(item) === p.spawnApi.items.length - 1}>▼</button>
                         <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flexShrink: 0 }}
                           onClick={() => { p.setItemFormEditId(item.id); p.setItemFormName(item.name); p.setItemFormDescription(item.description || ''); p.setItemFormImage(item.image || ''); p.setItemFormTextColor(item.textColor); p.setItemFormFans(item.fans); p.setItemFormCoins(item.coins); }}>
                           {t('\u7de8\u96c6')}
@@ -499,6 +505,7 @@ const SpawnSidebar: React.FC<any> = (p) => {
         grouped[pi.itemId].count++;
       }
       const sorted = Object.values(grouped).sort((a:any, b:any) => b.count - a.count);
+      const poolId = pt.category ? CATEGORY_TO_POOL[pt.category] : null;
       return (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 5002, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => p.setSpawnViewPointId(null)}>
@@ -506,8 +513,16 @@ const SpawnSidebar: React.FC<any> = (p) => {
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
               <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>{t('\u70b9\u60c5\u5831')} X:{pt.x} Y:{pt.y}{pt.category ? ` (${pt.category})` : ''}</span>
-              <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => p.setSpawnViewPointId(null)}>✕ {t('\u9589\u3058\u308b')}</button>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none', background: svMode === 'records' ? 'rgba(0,240,255,0.15)' : 'transparent', borderColor: svMode === 'records' ? '#00ffff' : 'rgba(0,240,255,0.2)' }}
+                  onClick={() => setSvMode('records')}>{t('\u53d6\u5f97\u8a18\u9332')}</button>
+                <button className="btn-cyber" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none', background: svMode === 'pool' ? 'rgba(255,215,0,0.15)' : 'transparent', borderColor: svMode === 'pool' ? '#ffd700' : 'rgba(255,215,0,0.2)' }}
+                  onClick={() => setSvMode('pool')}>{t('\u30d7\u30fc\u30eb')}</button>
+                <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => p.setSpawnViewPointId(null)}>✕</button>
+              </div>
             </div>
+            {svMode === 'records' ? (
+            <>
             <div style={{ display: 'flex', gap: '4px', padding: '8px 16px', borderBottom: '1px solid rgba(79,195,247,0.1)' }}>
               {[{ v: null, label: t('\u5168\u30c7\u30fc\u30bf') }, { v: 1, label: '1\u4eba' }, { v: 2, label: '2\u4eba' }, { v: 3, label: '3\u4eba' }, { v: 4, label: '4\u4eba' }].map(({ v, label }) => (
                 <button key={String(v)} onClick={() => p.setViewerFilterPlayers(v)}
@@ -532,7 +547,37 @@ const SpawnSidebar: React.FC<any> = (p) => {
                   })}
                 </div>
               )}
-              <button className="btn-cyber" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none', marginTop: '10px' }}
+            </div>
+            </>
+            ) : (() => {
+              const poolRaw = (() => { try { return JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}'); } catch { return {}; } })();
+              const poolInfo = poolId && poolRaw.pools ? poolRaw.pools[poolId] : null;
+              const poolItems = poolInfo?.itemIds ?? [];
+              return (
+              <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
+                {poolItems.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--cyan-neon)', fontWeight: 600, marginBottom: '2px' }}>{t('\u3053\u306e\u30d7\u30fc\u30eb\u306e\u767b\u9332\u30a2\u30a4\u30c6\u30e0')} ({poolItems.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px' }}>
+                      {poolItems.map((iid: string) => {
+                        const item = p.spawnApi.items.find((i: any) => i.id === iid);
+                        const tc = item ? TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META] : null;
+                        return (
+                          <span key={iid} style={{ fontSize: '9px', padding: '1px 5px', background: tc ? `${tc.color}18` : 'rgba(255,255,255,0.05)', borderRadius: '3px', color: tc?.color || '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+                            {item?.name || iid}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>{t('\u3053\u306e\u30d7\u30fc\u30eb\u306b\u767b\u9332\u30a2\u30a4\u30c6\u30e0\u306a\u3057')}</div>
+                )}
+              </div>
+              );
+            })()}
+            <div style={{ padding: '4px 16px 12px', borderTop: svMode === 'pool' ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              <button className="btn-cyber" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none' }}
                 onClick={() => { p.setSpawnFocusTrigger({ x: pt.x, y: pt.y, ts: Date.now() }); p.setSpawnViewPointId(null); }}>
                 {t('\u70b9\u3078\u79fb\u52d5')}
               </button>
