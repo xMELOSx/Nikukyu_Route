@@ -299,6 +299,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const SIM_POOLS_LOCAL_KEY = 'heist_sim_pools_v1';
 
   const COLOR_LABELS: Record<string, string> = { cyan: 'EH', yellow: '金', red: 'カードキー', purple: '紫', blue: '青', green: '緑' };
+  const COLOR_ORDER = ['cyan', 'yellow', 'red', 'purple', 'blue', 'green'] as const;
+  const COLOR_HEX: Record<string, string> = { cyan: '#00ffff', yellow: '#ffd700', red: '#ff4444', purple: '#a855f7', blue: '#3b82f6', green: '#22c55e' };
   const COLOR_DEFAULT_PROBS: Record<string, number> = { cyan: 0.001, yellow: 0.01, red: 0.01, purple: 0.05, blue: 0.3, green: 0.629 };
   const DEFAULT_MULTIPLIERS: Record<number, number> = { 2: 2, 3: 3, 4: 4 };
 
@@ -338,9 +340,27 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const [simItems, setSimItems] = useState<SimFlatItem[]>([]);
   const [simLoading, setSimLoading] = useState(false);
   const [simSimulating, setSimSimulating] = useState(false);
-  const [simTargetFans, setSimTargetFans] = useState(0);
-  const [simTargetCoins, setSimTargetCoins] = useState(0);
-  const [simTargetItems, setSimTargetItems] = useState(0);
+  const SIM_TARGET_KEY = 'heist_sim_target_v1';
+  const [simTargetFans, setSimTargetFans] = useState(() => {
+    try { const raw = localStorage.getItem(SIM_TARGET_KEY); if (raw) { const d = JSON.parse(raw); return d.fans ?? 0; } } catch {}
+    return 0;
+  });
+  const [simTargetCoins, setSimTargetCoins] = useState(() => {
+    try { const raw = localStorage.getItem(SIM_TARGET_KEY); if (raw) { const d = JSON.parse(raw); return d.coins ?? 0; } } catch {}
+    return 0;
+  });
+  const [simTargetItems, setSimTargetItems] = useState(() => {
+    try { const raw = localStorage.getItem(SIM_TARGET_KEY); if (raw) { const d = JSON.parse(raw); return d.items ?? 0; } } catch {}
+    return 0;
+  });
+  const [simSaveTargets, setSimSaveTargets] = useState(() => {
+    try { return localStorage.getItem('heist_sim_save_targets') === 'true'; } catch { return false; }
+  });
+  // Auto-save targets when checkbox is on
+  useEffect(() => {
+    if (!simSaveTargets) return;
+    try { localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); } catch {}
+  }, [simSaveTargets, simTargetFans, simTargetCoins, simTargetItems]);
   const POOL_IDS = ['desk', 'deskRare', 'drawer', 'smallSafe', 'midSafe', 'display', 'jewelStand', 'floor', 'flowerPot', 'shelf', 'painting', 'drop', 'fans'] as const;
   type PoolId = typeof POOL_IDS[number];
   const POOL_LABELS: Record<PoolId, string> = { desk: '机上', deskRare: '机上(レア)', drawer: '引出', smallSafe: '小金庫', midSafe: '中金庫', display: '展示台', jewelStand: '宝石置き', floor: '床', flowerPot: '植木鉢', shelf: '棚', painting: '絵画', drop: 'ドロップ', fans: 'ファンス' };
@@ -390,6 +410,20 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
   const [simOptimizing, setSimOptimizing] = useState(false);
   const [simOptimProgress, setSimOptimProgress] = useState<{ iter: number; total: number; bestScore: number } | null>(null);
+  const [simOptimResult, setSimOptimResult] = useState<{ probs: Record<string, number>; avgFans: number; avgCoins: number; avgItems: number } | null>(null);
+  const OPTIM_SETTINGS_KEY = 'heist_sim_optim_settings_v1';
+  const [simOptimColorMax, setSimOptimColorMax] = useState<Record<string, number>>(() => {
+    try { const raw = localStorage.getItem(OPTIM_SETTINGS_KEY); if (raw) { const d = JSON.parse(raw); if (d.colorMax) return d.colorMax; } } catch {}
+    return { cyan: 0.0002, yellow: 0.05, red: 0.05, purple: 0.1, blue: 0.3 };
+  });
+  const [simOptimTrials, setSimOptimTrials] = useState(() => {
+    try { const raw = localStorage.getItem(OPTIM_SETTINGS_KEY); if (raw) { const d = JSON.parse(raw); if (d.trials) return d.trials; } } catch {}
+    return 1000;
+  });
+  // Auto-save optim settings
+  useEffect(() => {
+    try { localStorage.setItem(OPTIM_SETTINGS_KEY, JSON.stringify({ colorMax: simOptimColorMax, trials: simOptimTrials })); } catch {}
+  }, [simOptimColorMax, simOptimTrials]);
 
   // Server-side overrides (loaded from server key, NOT cleared by reset — used for placeholder)
   const [simServerOverrides, setSimServerOverrides] = useState<Record<string, number | null>>(() => {
@@ -422,6 +456,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
         const serverData = await res.json();
         localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(serverData));
         setSimServerOverrides(serverData.probOverrides ?? {});
+        // Extract optim settings from server defaults
+        if (serverData.optimColorMax) setSimOptimColorMax(serverData.optimColorMax);
+        if (serverData.optimTrials) setSimOptimTrials(serverData.optimTrials);
       } catch {
         try {
           const url = `${import.meta.env.BASE_URL}global_sim_defaults.json`;
@@ -430,6 +467,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
           const serverData = await res.json();
           localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(serverData));
           setSimServerOverrides(serverData.probOverrides ?? {});
+          if (serverData.optimColorMax) setSimOptimColorMax(serverData.optimColorMax);
+          if (serverData.optimTrials) setSimOptimTrials(serverData.optimTrials);
         } catch {}
       }
     })();
@@ -667,10 +706,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       poolCdfs.push({ weight: 1, cdf });
     }
 
-    // Build fallback pool: all items weighted by global color probs (overflow when a pool is exhausted)
+    // Build fallback pool: items NOT assigned to any specific pool (overflow when a pool is exhausted)
+    const poolAssignedIds = new Set<string>();
+    for (const pid of POOL_IDS) { for (const id of simPools[pid].itemIds) poolAssignedIds.add(id); }
     const fallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
     for (const it of simItems) {
       if (simExcluded.has(it.id)) continue;
+      if (poolAssignedIds.has(it.id)) continue; // skip items already in a specific pool
       const limit = simLimits[it.id] ?? -1;
       if (limit === 0) continue;
       const colorProb = effProbs[it.color] ?? 0;
@@ -810,7 +852,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       trials: TRIALS,
       successes: successCount,
       avgTotalItems,
-      minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.nonEHItems)) : 0,
+      minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.totalItems)) : 0,
       maxTotalItems: stats.length > 0 ? Math.max(...stats.map(s => s.totalItems)) : 0,
       avgFans: Math.round(successes.reduce((a, s) => a + s.nonEHFans, 0) / (successCount || 1)),
       minFans: stats.length > 0 ? Math.min(...stats.map(s => s.totalFans)) : 0,
@@ -856,26 +898,39 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     const limits = { ...simLimits };
     const probOverrides = { ...simProbOverrides };
     const serverOverrides = { ...simServerOverrides };
-    const ITERS = 100;
-    const TRIALS = 200;
+    const TRIALS = Math.max(100, simOptimTrials);
+    const ITERS = Math.max(50, Math.round(TRIALS / 2));
+    const colorMax = simOptimColorMax;
     const bpKeys = ['cyan', 'yellow', 'purple', 'blue'];
 
     let bestProbs = { ...simProbs };
     let bestScore = Infinity;
-    const colors = ['cyan', 'yellow', 'red', 'purple', 'blue'];
+    let bestStats = { avgFans: 0, avgCoins: 0, avgItems: 0 };
+    const colors = ['cyan', 'yellow', 'purple', 'blue']; // red excluded: optimized as red = yellow
 
     for (let iter = 0; iter < ITERS; iter++) {
       const candidate = { ...bestProbs };
-      const idx = Math.floor(Math.random() * colors.length);
-      const c = colors[idx];
+      const nMutate = 2 + Math.floor(Math.random() * 2); // mutate 2-3 colors per iteration
+      const shuffled = [...colors].sort(() => Math.random() - 0.5).slice(0, nMutate);
       const temp = 1 - iter / ITERS;
-      const maxDelta = 0.05 + temp * 0.15;
-      const delta = (Math.random() * 2 - 1) * maxDelta;
-      candidate[c] = Math.max(0.0001, Math.min(0.5, (candidate[c] ?? 0) + delta));
+      const maxDelta = 0.08 + temp * 0.2;
+      for (const c of shuffled) {
+        const delta = (Math.random() * 2 - 1) * maxDelta;
+        candidate[c] = Math.max(0.0001, Math.min(colorMax[c] ?? 0.5, (candidate[c] ?? 0) + delta));
+      }
+      candidate.red = candidate.yellow; // red = yellow (cardkey tied to gold)
 
-      // Always use single-player base values for optimization
-      const green = Math.max(0, 1 - colors.reduce((s, col) => s + (candidate[col] || 0), 0));
-      const eff: Record<string, number> = { ...candidate, green };
+      // Apply player multiplier for effective probs (supports multi-player optimization)
+      const playerMult = simPlayerCount > 1 ? (simMultipliers[simPlayerCount] ?? simPlayerCount) : 1;
+      const effective = { ...candidate };
+      if (playerMult > 1) {
+        for (const c of ['cyan', 'yellow', 'red', 'purple']) {
+          effective[c] = Math.min(1, (effective[c] ?? 0) * playerMult);
+        }
+      }
+      const allColors = ['cyan', 'yellow', 'red', 'purple', 'blue'];
+      const green = Math.max(0, 1 - allColors.reduce((s, col) => s + (effective[col] || 0), 0));
+      const eff: Record<string, number> = { ...effective, green };
 
       // Build pools from all 4 pool configs
       const bpProbSum = Math.max(0.001, bpKeys.reduce((s, col) => s + (simBluePlusProbs[col] ?? 0), 0));
@@ -925,26 +980,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
         for (const p of fallbackItems) { cum += p.prob / total; cdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
         poolCdfs.push({ weight: 1, cdf });
       }
-      // Build fallback pool for overflow
-      const optFallbackItems: { item: SimFlatItem; prob: number; limit: number }[] = [];
-      for (const it of items) {
-        if (excluded.has(it.id)) continue;
-        const limit = limits[it.id] ?? -1;
-        if (limit === 0) continue;
-        const colorProb = eff[it.color] ?? 0;
-        const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
-        const serverVal = serverOverrides[it.id];
-        const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
-        let prob = overrideVal !== null ? overrideVal : colorProb;
-        if (prob > 0) optFallbackItems.push({ item: it, prob, limit });
-      }
-      const optFbTotal = optFallbackItems.reduce((s, p) => s + p.prob, 0);
-      let optFbCdf: { item: SimFlatItem; limit: number; cumProb: number }[] = [];
-      if (optFbTotal > 0) {
-        let cum = 0;
-        for (const p of optFallbackItems) { cum += p.prob / optFbTotal; optFbCdf.push({ item: p.item, limit: p.limit, cumProb: cum }); }
-      }
-      const hasOptFb = optFbCdf.length > 0;
       const totalWeight = poolCdfs.reduce((s, p) => s + p.weight, 0);
 
       const fans: number[] = [];
@@ -952,29 +987,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       const itemTotals: number[] = [];
       for (let t = 0; t < TRIALS; t++) {
         const itemCounts: Record<string, number> = {};
-        const poolDraws = new Array(poolCdfs.length).fill(0);
         let totalFans = 0, totalCoins = 0;
         for (let d = 0; d < 100000; d++) {
           let rw = Math.random() * totalWeight;
           let picked: SimFlatItem | null = null;
-          for (let i = 0; i < poolCdfs.length; i++) {
-            const pc = poolCdfs[i];
+          for (const pc of poolCdfs) {
             rw -= pc.weight;
             if (rw > 0) continue;
-            if (poolDraws[i] >= pc.weight) {
-              if (hasOptFb) {
-                const r = Math.random();
-                for (const entry of optFbCdf) {
-                  if (r <= entry.cumProb) {
-                    const current = itemCounts[entry.item.id] || 0;
-                    if (entry.limit > 0 && current >= entry.limit) break;
-                    picked = entry.item; break;
-                  }
-                }
-              }
-              break;
-            }
-            poolDraws[i]++;
             const r = Math.random();
             for (const entry of pc.cdf) {
               if (r <= entry.cumProb) {
@@ -984,16 +1003,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
               }
             }
             break;
-          }
-          if (!picked && hasOptFb) {
-            const r = Math.random();
-            for (const entry of optFbCdf) {
-              if (r <= entry.cumProb) {
-                const current = itemCounts[entry.item.id] || 0;
-                if (entry.limit > 0 && current >= entry.limit) break;
-                picked = entry.item; break;
-              }
-            }
           }
           if (!picked) continue;
           itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
@@ -1013,11 +1022,13 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       const mCoins = sCoins[Math.floor(sCoins.length / 2)];
       const mItems = sItems[Math.floor(sItems.length / 2)];
       const itemsPenalty = targetItems > 0 ? Math.abs(mItems - targetItems) / targetItems : 0;
-      const score = Math.abs(mFans - tf) / Math.max(1, tf) + Math.abs(mCoins - tc) / Math.max(1, tc) + itemsPenalty;
+      const coinsPenalty = mCoins > tc ? (mCoins - tc) / Math.max(1, tc) * 3 : (tc - mCoins) / Math.max(1, tc);
+      const score = Math.abs(mFans - tf) / Math.max(1, tf) + coinsPenalty + itemsPenalty;
 
       if (score < bestScore) {
         bestScore = score;
         bestProbs = candidate;
+        bestStats = { avgFans: Math.round(mFans), avgCoins: Math.round(mCoins), avgItems: Math.round(mItems) };
         setSimOptimProgress({ iter: iter + 1, total: ITERS, bestScore });
       }
 
@@ -1027,7 +1038,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       }
     }
 
-    setSimProbs(bestProbs);
+    setSimOptimResult({ probs: bestProbs, ...bestStats });
     setSimOptimizing(false);
     setSimOptimProgress(null);
   };
@@ -3131,6 +3142,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                           setSimTargetItems(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
                         }}
                       />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '4px' }}>
+                        <input type="checkbox" checked={simSaveTargets} onChange={e => { setSimSaveTargets(e.target.checked); if (e.target.checked) localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); }} />
+                        {t('目標値を保存')}
+                      </label>
                     </div>
                   </div>
 
@@ -3402,7 +3417,39 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                   )}
 
                   {/* 自動最適化 */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', fontSize: '10px', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{t('最大値')}:</span>
+                      {['cyan', 'yellow', 'purple', 'blue'].map(c => (
+                        <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: COLOR_HEX[c], fontWeight: 600 }}>
+                          {COLOR_LABELS[c]}
+                          <input type="number" min="0.01" max="50" step="0.01"
+                            value={((simOptimColorMax[c] ?? 0.5) * 100).toFixed(2)}
+                            onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setSimOptimColorMax(prev => ({ ...prev, [c]: v / 100 })); }}
+                            style={{ width: '48px', fontSize: '10px', padding: '1px 3px', textAlign: 'right', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '3px', color: '#fff' }}
+                          />%
+                        </label>
+                      ))}
+                      <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>{t('試行数')}:</span>
+                      <input type="number" min="100" max="5000" step="100"
+                        value={simOptimTrials}
+                        onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 100) setSimOptimTrials(Math.min(5000, v)); }}
+                        style={{ width: '55px', fontSize: '10px', padding: '1px 3px', textAlign: 'right', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '3px', color: '#fff' }}
+                      />
+                      <button className="btn-cyber" style={{ padding: '2px 6px', fontSize: '9px', clipPath: 'none', marginLeft: 'auto' }}
+                        onClick={() => {
+                          try {
+                            const raw = localStorage.getItem(SIM_SERVER_KEY);
+                            if (raw) { const d = JSON.parse(raw);
+                              if (d.optimColorMax) setSimOptimColorMax(d.optimColorMax);
+                              if (d.optimTrials) setSimOptimTrials(d.optimTrials);
+                            }
+                          } catch {}
+                        }}>
+                        {t('リセット')}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button
                       className="btn-cyber"
                       style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
@@ -3424,19 +3471,58 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                       }}>
                         <div style={{ flex: 1, height: '6px', background: 'rgba(0,240,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
                           <div style={{
-                            height: '100%', width: `${(simOptimProgress.iter / simOptimProgress.total) * 100}%`,
+                            height: '100%', width: `${Math.min(100, (simOptimProgress.iter / simOptimProgress.total) * 100)}%`,
                             background: 'var(--cyan-neon)', borderRadius: '3px',
                             transition: 'width 0.3s'
                           }} />
                         </div>
-                        <span style={{ color: 'var(--cyan-neon)', whiteSpace: 'nowrap' }}>
-                          {simOptimProgress.iter}/{simOptimProgress.total}
-                        </span>
-                        <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap', fontSize: '10px' }}>
                           {t('score: {0}', simOptimProgress.bestScore.toFixed(4))}
                         </span>
                       </div>
                     )}
+                    {simOptimResult && (
+                      <div style={{ marginTop: '8px', padding: '10px', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.25)', borderRadius: '6px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow-neon)', marginBottom: '6px' }}>{t('最適化結果')}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 8px', fontSize: '10px', marginBottom: '6px' }}>
+                          <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(0,240,255,0.06)', borderRadius: '4px' }}>
+                            <div style={{ color: 'var(--cyan-neon)', fontWeight: 700 }}>{simOptimResult.avgFans.toLocaleString()}</div>
+                            <div style={{ color: 'var(--text-muted)' }}>{t('平均ファンス')}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(255,215,0,0.06)', borderRadius: '4px' }}>
+                            <div style={{ color: 'var(--yellow-neon)', fontWeight: 700 }}>{simOptimResult.avgCoins.toLocaleString()}</div>
+                            <div style={{ color: 'var(--text-muted)' }}>{t('平均コイン')}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(57,255,20,0.06)', borderRadius: '4px' }}>
+                            <div style={{ color: '#39ff14', fontWeight: 700 }}>{simOptimResult.avgItems.toLocaleString()}</div>
+                            <div style={{ color: 'var(--text-muted)' }}>{t('平均アイテム数')}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '11px', marginBottom: '8px' }}>
+                          {COLOR_ORDER.filter(c => c !== 'red').map(c => (
+                            <div key={c} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ color: COLOR_HEX[c] }}>{COLOR_LABELS[c]}</span>
+                              <span style={{ color: '#fff', fontWeight: 600 }}>{((simOptimResult.probs[c] ?? 0) * 100).toFixed(1)}%</span>
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: COLOR_HEX.red }}>カードキー</span>
+                            <span style={{ color: '#fff', fontWeight: 600 }}>{((simOptimResult.probs.yellow ?? 0) * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className="btn-cyber success" style={{ flex: 1, padding: '5px', fontSize: '11px', clipPath: 'none' }}
+                            onClick={() => { setSimProbs({ ...simOptimResult.probs, red: simOptimResult.probs.yellow }); setSimOptimResult(null); }}>
+                            {t('適用')}
+                          </button>
+                          <button className="btn-cyber" style={{ flex: 1, padding: '5px', fontSize: '11px', clipPath: 'none' }}
+                            onClick={() => setSimOptimResult(null)}>
+                            {t('キャンセル')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   </div>
 
                   {/* Save/reset local defaults — セーブボタンは開発時のみ表示 */}
@@ -3489,16 +3575,22 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                 </>
               ) : simActiveTab === 'result' && simResult ? (
                 <>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--green-neon)', marginBottom: '6px' }}>
-                    {t('シミュレーション結果 (試行数: {0})', simResult.trials.toLocaleString())}
-                  </div>
-
                   <div style={{
                     background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)',
                     borderRadius: '6px', padding: '12px 14px', fontSize: '13px',
                     display: 'flex', flexDirection: 'column', gap: '6px'
                   }}>
-                    <div style={{ color: 'var(--yellow-neon)', fontWeight: 700, fontSize: '12px' }}>{t('平均 (EH除外)')} <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>(クリックで切替)</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--yellow-neon)', fontWeight: 700, fontSize: '12px' }}>
+                        {t('平均 (EH除外)')} <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>(クリックで切替)</span>
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: '14px', fontWeight: 700, color: 'var(--green-neon)' }}>
+                        {t('シミュレーション結果')}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        ({t('試行数: {0}', simResult.trials.toLocaleString())})
+                      </span>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
                       <div style={{ cursor: 'pointer', opacity: sampleMode === 'median' ? 1 : 0.65 }} onClick={() => setSampleMode('median')}>
                         <div style={{ color: sampleMode === 'median' ? '#ffd700' : 'var(--text-muted)', fontSize: '10px' }}>{t('アイテム数')}</div>
@@ -3643,6 +3735,34 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                             })}
                           </div>
                         <div style={{ borderTop: '1px solid rgba(255,215,0,0.1)', marginBottom: '8px' }} />
+                        {(() => {
+                          let totalF = 0, totalC = 0, totalI = 0;
+                          for (const id of Object.keys(trialData)) {
+                            const cnt = trialData[id];
+                            if (cnt <= 0) continue;
+                            const it = simItems.find(x => x.id === id);
+                            if (!it) continue;
+                            totalF += it.fans * cnt;
+                            totalC += it.coins * cnt;
+                            totalI += cnt;
+                          }
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', padding: '0 4px 8px' }}>
+                              <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(0,240,255,0.06)', borderRadius: '4px', border: '1px solid rgba(0,240,255,0.15)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('アイテム数')}</div>
+                                <div style={{ fontSize: '12px', color: '#00ffff', fontWeight: 700 }}>{totalI.toLocaleString()}個</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(255,215,0,0.06)', borderRadius: '4px', border: '1px solid rgba(255,215,0,0.15)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('ファンス')}</div>
+                                <div style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700 }}>{totalF.toLocaleString()}f</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px', background: 'rgba(255,215,0,0.06)', borderRadius: '4px', border: '1px solid rgba(255,215,0,0.15)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('コイン')}</div>
+                                <div style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700 }}>🪙{totalC.toLocaleString()}</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {simResultItemsOnly ? (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 12px', padding: '2px 0' }}>
                             {groups.flatMap(g => g.entries.map(e => ({ ...e, color: g.color }))).sort((a, b) => b.count - a.count).map(e => {
