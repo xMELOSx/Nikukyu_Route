@@ -341,6 +341,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [simExcluded, setSimExcluded] = useState<Set<string>>(new Set());
   const [simLimits, setSimLimits] = useState<Record<string, number>>({});
   const [simResult, setSimResult] = useState<SimResultSummary | null>(null);
+  const [simResultItemsOnly, setSimResultItemsOnly] = useState(false);
   const [simHistory, setSimHistory] = useState<SimHistoryEntry[]>(() => {
     try {
       const raw = localStorage.getItem(SIM_HISTORY_KEY);
@@ -362,6 +363,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const [sampleMode, setSampleMode] = useState<string>('median');
   const [simPlayerCount, setSimPlayerCount] = useState(initState?.playerCount ?? 1);
   const [simMultipliers, setSimMultipliers] = useState<Record<number, number>>(initState?.multipliers ?? { ...DEFAULT_MULTIPLIERS });
+  const [simOptimizing, setSimOptimizing] = useState(false);
+  const [simOptimProgress, setSimOptimProgress] = useState<{ iter: number; total: number; bestScore: number } | null>(null);
 
   // Server-side overrides (loaded from server key, NOT cleared by reset — used for placeholder)
   const [simServerOverrides, setSimServerOverrides] = useState<Record<string, number | null>>(() => {
@@ -652,6 +655,118 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     setSimHistory(prev => [entry, ...prev].slice(0, 100));
     setSimSimulating(false);
   }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbOverrides, simServerOverrides, simTrialCount, getEffectiveProbs]);
+
+  // 確率自動最適化: 中央値ベース
+  const startOptimization = async () => {
+    const tf = simTargetFans;
+    const tc = simTargetCoins;
+    if (tf <= 0 && tc <= 0) return;
+    setSimOptimizing(true);
+    const items = [...simItems];
+    const excluded = new Set(simExcluded);
+    const limits = { ...simLimits };
+    const probOverrides = { ...simProbOverrides };
+    const serverOverrides = { ...simServerOverrides };
+    const pc = simPlayerCount;
+    const mult = pc > 1 ? (simMultipliers[pc] ?? pc) : 1;
+    const ITERS = 100;
+    const TRIALS = 200;
+
+    let bestProbs = { ...simProbs };
+    let bestScore = Infinity;
+    const colors = ['cyan', 'yellow', 'red', 'purple', 'blue'];
+
+    for (let iter = 0; iter < ITERS; iter++) {
+      const candidate = { ...bestProbs };
+      const idx = Math.floor(Math.random() * colors.length);
+      const c = colors[idx];
+      const temp = 1 - iter / ITERS;
+      const maxDelta = 0.05 + temp * 0.15;
+      const delta = (Math.random() * 2 - 1) * maxDelta;
+      candidate[c] = Math.max(0.0001, Math.min(0.5, (candidate[c] ?? 0) + delta));
+
+      // Calculate effective probs with player count
+      let eff: Record<string, number>;
+      if (pc > 1) {
+        eff = computeEffectiveProbsFor(candidate, mult);
+      } else {
+        const green = Math.max(0, 1 - colors.reduce((s, col) => s + (candidate[col] || 0), 0));
+        eff = { ...candidate, green };
+      }
+
+      // Build pool & run trials
+      const pool: { item: SimFlatItem; prob: number; limit: number }[] = [];
+      for (const it of items) {
+        if (excluded.has(it.id)) continue;
+        const limit = limits[it.id] ?? -1;
+        if (limit === 0) continue;
+        const colorProb = eff[it.color] ?? 0;
+        const hasOverride = it.id in probOverrides && probOverrides[it.id] !== null;
+        const serverVal = serverOverrides[it.id];
+        const overrideVal = hasOverride ? probOverrides[it.id]! : (serverVal !== undefined ? serverVal : null);
+        let effectiveProb = overrideVal !== null ? overrideVal : colorProb;
+        if (overrideVal !== null && pc > 1) effectiveProb *= mult;
+        if (effectiveProb <= 0) continue;
+        pool.push({ item: it, prob: effectiveProb, limit });
+      }
+
+      const totalProb = pool.reduce((s, p) => s + p.prob, 0);
+      if (totalProb <= 0) continue;
+      const cdf: { item: SimFlatItem; cumProb: number; limit: number }[] = [];
+      let cum = 0;
+      for (const p of pool) { cum += p.prob / totalProb; cdf.push({ item: p.item, cumProb: cum, limit: p.limit }); }
+
+      const fans: number[] = [];
+      const coins: number[] = [];
+      const items: number[] = [];
+      for (let t = 0; t < TRIALS; t++) {
+        const itemCounts: Record<string, number> = {};
+        let totalFans = 0, totalCoins = 0;
+        for (let d = 0; d < 100000; d++) {
+          const r = Math.random();
+          let picked: SimFlatItem | null = null;
+          for (const entry of cdf) {
+            if (r <= entry.cumProb) {
+              const current = itemCounts[entry.item.id] || 0;
+              if (entry.limit > 0 && current >= entry.limit) break;
+              picked = entry.item; break;
+            }
+          }
+          if (!picked) continue;
+          itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
+          totalFans += picked.fans;
+          totalCoins += picked.coins;
+          if (totalFans >= tf && totalCoins >= tc) break;
+        }
+        fans.push(totalFans);
+        coins.push(totalCoins);
+        items.push(Object.values(itemCounts).reduce((a, b) => a + b, 0));
+      }
+
+      const sFans = [...fans].sort((a, b) => a - b);
+      const sCoins = [...coins].sort((a, b) => a - b);
+      const sItems = [...items].sort((a, b) => a - b);
+      const mFans = sFans[Math.floor(sFans.length / 2)];
+      const mCoins = sCoins[Math.floor(sCoins.length / 2)];
+      const mItems = sItems[Math.floor(sItems.length / 2)];
+      const score = Math.abs(mFans - tf) / Math.max(1, tf) + Math.abs(mCoins - tc) / Math.max(1, tc) + mItems / Math.max(1, tf + tc);
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestProbs = candidate;
+        setSimOptimProgress({ iter: iter + 1, total: ITERS, bestScore });
+      }
+
+      if (iter % 10 === 0) {
+        setSimOptimProgress({ iter: iter + 1, total: ITERS, bestScore });
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    setSimProbs(bestProbs);
+    setSimOptimizing(false);
+    setSimOptimProgress(null);
+  };
 
   // Direct OCR paste integration state
   const [ocrImg1, setOcrImg1] = useState<string | null>(null);
@@ -3004,9 +3119,47 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
 
                   {simPlayerCount > 1 && (
                     <div style={{ fontSize: '11px', color: '#ffd700', background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', padding: '6px 10px' }}>
-                      {t('現在 {0}人設定: EH･金･カードキー･紫 ×{1}、青･緑を按分減', simPlayerCount, simMultipliers[simPlayerCount] ?? simPlayerCount)}
+                      {t('現在 {0}人設定: EH･金･カードキー･紫 ×{1}、緑を按分減', simPlayerCount, simMultipliers[simPlayerCount] ?? simPlayerCount)}
                     </div>
                   )}
+
+                  {/* 自動最適化 */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn-cyber"
+                      style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
+                      onClick={startOptimization}
+                      disabled={simOptimizing || simTargetFans <= 0 || simTargetCoins <= 0}
+                    >
+                      {simOptimizing ? (
+                        <>{t('最適化中...')}</>
+                      ) : (
+                        <>{t('確率を自動最適化')}</>
+                      )}
+                    </button>
+                    {simOptimProgress && (
+                      <div style={{
+                        flex: 2, fontSize: '11px', padding: '4px 8px',
+                        background: 'rgba(0,240,255,0.08)', borderRadius: '4px',
+                        border: '1px solid rgba(0,240,255,0.2)',
+                        display: 'flex', alignItems: 'center', gap: '6px'
+                      }}>
+                        <div style={{ flex: 1, height: '6px', background: 'rgba(0,240,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%', width: `${(simOptimProgress.iter / simOptimProgress.total) * 100}%`,
+                            background: 'var(--cyan-neon)', borderRadius: '3px',
+                            transition: 'width 0.3s'
+                          }} />
+                        </div>
+                        <span style={{ color: 'var(--cyan-neon)', whiteSpace: 'nowrap' }}>
+                          {simOptimProgress.iter}/{simOptimProgress.total}
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {t('score: {0}', simOptimProgress.bestScore.toFixed(4))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Save/reset local defaults — セーブボタンは開発時のみ表示 */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -3062,7 +3215,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                     {t('シミュレーション結果 (試行数: {0})', simResult.trials.toLocaleString())}
                   </div>
 
-                  {/* Averages & card key stats */}
                   <div style={{
                     background: 'rgba(0,240,255,0.04)', border: '1px solid rgba(0,240,255,0.15)',
                     borderRadius: '6px', padding: '12px 14px', fontSize: '13px',
@@ -3174,6 +3326,27 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                             <span style={{ fontSize: '12px', color: '#ffd700', fontWeight: 700 }}>
                               サンプルパターン ({sampleMode === 'median' ? '中央値' : sampleMode === 'minItems' ? '最小アイテム' : sampleMode === 'maxItems' ? '最大アイテム' : sampleMode === 'minFans' ? '最小ファンス' : sampleMode === 'maxFans' ? '最大ファンス' : sampleMode === 'minCoins' ? '最小コイン' : sampleMode === 'maxCoins' ? '最大コイン' : sampleMode})
                             </span>
+                              <button
+                                className="btn-cyber"
+                                style={{
+                                  padding: '2px 8px', fontSize: '10px', borderRadius: '3px',
+                                  background: !simResultItemsOnly ? 'rgba(0,240,255,0.15)' : 'transparent',
+                                  border: `1px solid ${!simResultItemsOnly ? '#00ffff' : 'rgba(0,240,255,0.2)'}`,
+                                  color: !simResultItemsOnly ? '#00ffff' : 'var(--text-muted)',
+                                }}
+                                onClick={() => setSimResultItemsOnly(false)}
+                              >詳細表示</button>
+                              <button
+                                className="btn-cyber"
+                                style={{
+                                  padding: '2px 8px', fontSize: '10px', borderRadius: '3px',
+                                  background: simResultItemsOnly ? 'rgba(0,240,255,0.15)' : 'transparent',
+                                  border: `1px solid ${simResultItemsOnly ? '#00ffff' : 'rgba(0,240,255,0.2)'}`,
+                                  color: simResultItemsOnly ? '#00ffff' : 'var(--text-muted)',
+                                }}
+                                onClick={() => setSimResultItemsOnly(true)}
+                              >アイテムのみ表示</button>
+                            <div style={{ width: '100%' }} />
                             {([['median', '中央値'], ['minItems', '最小アイテム'], ['maxItems', '最大アイテム'], ['minFans', '最小ファンス'], ['maxFans', '最大ファンス'], ['minCoins', '最小コイン'], ['maxCoins', '最大コイン']] as [string, string][]).map(([mode, label]) => {
                               const trialKeyMap: Record<string, keyof SimResultSummary> = { median: 'sampleTrial', minItems: 'minItemsTrial', maxItems: 'maxItemsTrial', minFans: 'minFansTrial', maxFans: 'maxFansTrial', minCoins: 'minCoinsTrial', maxCoins: 'maxCoinsTrial' };
                               const trialKey = trialKeyMap[mode];
@@ -3191,29 +3364,41 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                               );
                             })}
                           </div>
+                        <div style={{ borderTop: '1px solid rgba(255,215,0,0.1)', marginBottom: '8px' }} />
+                        {simResultItemsOnly ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 12px', padding: '2px 0' }}>
+                            {groups.flatMap(g => g.entries).sort((a, b) => b.count - a.count).map(e => (
+                              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', fontSize: '11px', minWidth: 0 }}>
+                                <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
+                                <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0 }}>x{e.count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {groups.map(g => {
                             const cd = g.color === 'cyan' ? '#00ffff' : g.color === 'yellow' ? '#ffd700' : g.color === 'red' ? '#ff4444' : g.color === 'purple' ? '#a855f7' : g.color === 'blue' ? '#3b82f6' : '#22c55e';
                             return (
-                              <div key={g.key} style={{ border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', background: 'rgba(255,215,0,0.04)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderBottom: '1px solid rgba(255,215,0,0.1)', fontSize: '11px' }}>
-                                  <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: cd }} />
-                                  <span style={{ color: '#00ffff', fontWeight: 700 }}>{g.fans.toLocaleString()}f / 🪙{g.coins.toLocaleString()}</span>
-                                  <span style={{ color: '#888', marginLeft: 'auto' }}>計 {g.entries.reduce((s, e) => s + e.count, 0).toLocaleString()}個</span>
+                                <div key={g.key} style={{ border: '1px solid rgba(255,215,0,0.15)', borderRadius: '4px', background: 'rgba(255,215,0,0.04)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderBottom: '1px solid rgba(255,215,0,0.1)', fontSize: '11px' }}>
+                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: cd }} />
+                                    <span style={{ color: '#00ffff', fontWeight: 700 }}>{g.fans.toLocaleString()}f / 🪙{g.coins.toLocaleString()}</span>
+                                    <span style={{ color: '#888', marginLeft: 'auto' }}>計 {g.entries.reduce((s, e) => s + e.count, 0).toLocaleString()}個</span>
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px 8px', padding: '2px 0' }}>
+                                    {g.entries.map(e => (
+                                      <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '11px', minWidth: 0 }}>
+                                        <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
+                                        <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0 }}>x{e.count}</span>
+                                        <span style={{ color: '#888', minWidth: '36px', textAlign: 'right', flexShrink: 0 }}>{e.rate.toFixed(1)}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px 8px', padding: '2px 0' }}>
-                                  {g.entries.map(e => (
-                                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '11px', minWidth: 0 }}>
-                                      <span style={{ flex: 1, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</span>
-                                      <span style={{ color: '#00ffff', fontWeight: 600, flexShrink: 0 }}>x{e.count}</span>
-                                      <span style={{ color: '#888', minWidth: '36px', textAlign: 'right', flexShrink: 0 }}>{e.rate.toFixed(1)}%</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
                             );
                           })}
                         </div>
+                        )}
                       </div>
                     );
                   })() : (
