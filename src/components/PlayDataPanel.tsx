@@ -488,12 +488,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
   const computeEffectiveProbsFor = (base: Record<string, number>, multiplier: number) => {
     const mc = ['cyan', 'yellow', 'red', 'purple'] as const;
     const adjusted: Record<string, number> = {};
-    let totalIncrease = 0;
     for (const c of mc) {
       adjusted[c] = Math.min(1, (base[c] ?? 0) * multiplier);
-      totalIncrease += adjusted[c] - (base[c] ?? 0);
     }
-    adjusted.blue = Math.max(0, (base.blue ?? 0) - totalIncrease * ((base.blue ?? 0) / Math.max(0.001, (base.blue ?? 0) + (base.green ?? 0))));
+    adjusted.blue = base.blue ?? 0;
     adjusted.green = Math.max(0, 1 - mc.reduce((s, c) => s + (adjusted[c] ?? 0), 0) - (adjusted.blue ?? 0));
     return adjusted;
   };
@@ -2939,7 +2937,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                         const isGreen = col === 'green';
                         const computedGreen = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] ?? 0), 0));
                         const baseVal = isGreen ? computedGreen : (simProbs[col] ?? 0);
-                        const disabled = col === 'green' || col === 'blue';
+                        const disabled = col === 'green';
                         return (
                           <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{
