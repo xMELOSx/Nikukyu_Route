@@ -382,6 +382,29 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
     } catch {}
   }, [simProbs, simProbOverrides, simMultipliers, simPlayerCount]);
 
+  // Fetch latest server defaults from API/static JSON once on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const url = `${import.meta.env.BASE_URL}api/global-sim-defaults`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error();
+        const serverData = await res.json();
+        localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(serverData));
+        setSimServerOverrides(serverData.probOverrides ?? {});
+      } catch {
+        try {
+          const url = `${import.meta.env.BASE_URL}global_sim_defaults.json`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error();
+          const serverData = await res.json();
+          localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(serverData));
+          setSimServerOverrides(serverData.probOverrides ?? {});
+        } catch {}
+      }
+    })();
+  }, []);
+
   // Auto-discard overrides that match base probability
   useEffect(() => {
     const baseGreen = Math.max(0, 1 - ['cyan', 'yellow', 'red', 'purple', 'blue'].reduce((s, c) => s + (simProbs[c] ?? 0), 0));
@@ -2993,13 +3016,21 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey }: PlayDat
                       <button
                          className="btn-cyber"
                         style={{ padding: '5px 12px', fontSize: '11px', flex: 1 }}
-                        onClick={() => {
+                        onClick={async () => {
                           const saveData = {
                             probs: simProbs, probOverrides: simProbOverrides,
                             multipliers: simMultipliers, playerCount: simPlayerCount,
                           };
                           localStorage.setItem(SIM_SERVER_KEY, JSON.stringify(saveData));
                           setSimServerOverrides(simProbOverrides);
+                          try {
+                            const url = `${import.meta.env.BASE_URL}api/global-sim-defaults`;
+                            await fetch(url, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(saveData),
+                            });
+                          } catch {}
                           window.alert(t('現在の設定をサーバー値として保存しました'));
                         }}
                       >{t('現在の設定をサーバー値として保存')}</button>

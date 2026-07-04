@@ -79,6 +79,13 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/global-sim-defaults
+        if (isPathMatch(urlPath, '/api/global-sim-defaults')) {
+          if (req.method === 'GET') return handleGet(req, res, 'global_sim_defaults.json', JSON.stringify({ probs: {}, probOverrides: {}, multipliers: {}, playerCount: 1 }))
+          if (req.method === 'POST') return handlePost(req, res, 'global_sim_defaults.json')
+          return next()
+        }
+
         // /api/default-preset
         if (isPathMatch(urlPath, '/api/default-preset')) {
           if (req.method === 'GET') {
@@ -256,6 +263,7 @@ export function apiMiddleware(): Plugin {
       copyToDist('global_spawns.json')
       copyToDist('global_help.json')
       copyToDist('global_defaults.json')
+      copyToDist('global_sim_defaults.json')
 
       // public/uploads/ → dist/uploads/
       const uploadsSrcDir = path.resolve(__dirname, '..', 'public', 'uploads')
