@@ -3,11 +3,13 @@ import type { Point, HeistMarker } from '../utils/DataManager';
 import {
   type PlayerState,
   normalizeAngle,
+  castRay,
   movePlayer,
   movePlayerTps,
   renderFpsView,
   renderTpsView,
-  renderMinimap
+  renderMinimap,
+  renderMarkers3D
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -24,7 +26,7 @@ interface FpsViewProps {
 const FOV = Math.PI * 0.45;
 const MOVE_SPEED = 1.5;
 const ROTATE_SPEED = 0.0015;
-const PLAYER_RADIUS = 12;
+const PLAYER_RADIUS = 6;
 const TPS_CAM_DISTANCE = 60;
 
 const FLOOR_COLOR_1 = '#0a0f1c';
@@ -198,8 +200,9 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         }
       }
 
+      let colHeights: { top: number; bottom: number; perpDist: number }[];
       if (mode === 'tps') {
-        renderTpsView(
+        colHeights = renderTpsView(
           ctx, canvas,
           playerRef.current,
           lw,
@@ -212,7 +215,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           bgImageDataRef.current
         );
       } else {
-        renderFpsView(
+        colHeights = renderFpsView(
           ctx, canvas,
           playerRef.current,
           lw,
@@ -223,6 +226,17 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           bgImageDataRef.current
         );
       }
+
+      // Render markers in 3D view
+      const oppAngle = normalizeAngle(playerRef.current.angle + Math.PI);
+      const camHitDist = castRay({ x: playerRef.current.x, y: playerRef.current.y }, oppAngle, lw).distance;
+      const actualCamDist = camHitDist < TPS_CAM_DISTANCE
+        ? Math.max(15, camHitDist - 15)
+        : TPS_CAM_DISTANCE;
+      const camPos = mode === 'tps'
+        ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
+        : { x: playerRef.current.x, y: playerRef.current.y };
+      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
 
       renderMinimap(ctx, canvas, playerRef.current, lw, lm);
 

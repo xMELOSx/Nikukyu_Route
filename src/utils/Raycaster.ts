@@ -251,8 +251,8 @@ export function renderFpsView(
   ceilingColor1: string,
   ceilingColor2: string,
   bgImageData?: ImageData | null
-): void {
-  renderWalls({
+): { top: number; bottom: number; perpDist: number }[] {
+  return renderWalls({
     ctx, canvas,
     origin: { x: player.x, y: player.y },
     originAngle: player.angle,
@@ -261,7 +261,7 @@ export function renderFpsView(
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
     bgImageData
-  });
+  }).colHeights;
 }
 
 const PLAYER_HEIGHT = 6;
@@ -369,6 +369,85 @@ export function renderMinimap(
   ctx.restore();
 }
 
+function markerColor(type: string): string {
+  switch (type) {
+    case 'start': return '#39ff14';
+    case 'stairs': return '#ffaa00';
+    case 'warp':
+    case 'iwarp': return '#ff44ff';
+    case 'goal': return '#ffdd00';
+    case 'boss':
+    case 'gbattle': return '#ff3333';
+    case 'info':
+    case 'iinfo':
+    case 'note':
+    case 'inote':
+    case 'text':
+    case 'itext': return '#00bbff';
+    case 'phone': return '#ff8800';
+    default: return '#00ffcc';
+  }
+}
+
+export function renderMarkers3D(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  origin: { x: number; y: number },
+  originAngle: number,
+  fov: number,
+  colHeights: { top: number; bottom: number; perpDist: number }[],
+  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string }[]
+): void {
+  if (markers.length === 0) return;
+  const W = canvas.width;
+  const H = canvas.height;
+  const yOffset = -50;
+  const halfH = H / 2 + yOffset;
+  const distPlane = (W / 2) / Math.tan(fov / 2);
+  const halfFov = fov / 2;
+  const camHeight = 24;
+  const MARKER_WORLD_HEIGHT = 12;
+  const MARKER_WORLD_WIDTH = 1.5;
+
+  const visible: { dist: number; screenX: number; perpDist: number; pTop: number; pBottom: number; pw: number; ph: number; color: string; type: string }[] = [];
+
+  for (const m of markers) {
+    const dx = m.x - origin.x;
+    const dy = m.y - origin.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) continue;
+
+    const angleToMarker = Math.atan2(dy, dx);
+    let relAngle = normalizeAngle(angleToMarker - originAngle);
+    if (relAngle > Math.PI) relAngle -= TAU;
+    if (Math.abs(relAngle) > halfFov) continue;
+
+    const screenX = Math.round(((relAngle + halfFov) / fov) * (W - 1));
+    const perpDist = dist * Math.cos(relAngle);
+    if (perpDist < 1 || screenX < 0 || screenX >= W) continue;
+
+    if (colHeights[screenX].perpDist < perpDist) continue;
+
+    const ph = Math.max(2, Math.round((MARKER_WORLD_HEIGHT * distPlane) / perpDist));
+    const pw = Math.max(1, Math.round((MARKER_WORLD_WIDTH * distPlane) / perpDist));
+    const pBottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
+    const pTop = pBottom - ph;
+
+    visible.push({ dist, screenX, perpDist, pTop, pBottom, pw, ph, color: markerColor(m.type), type: m.type });
+  }
+
+  // Sort far to near for correct overdraw
+  visible.sort((a, b) => b.dist - a.dist);
+
+  for (const v of visible) {
+    const glow = v.color + '30';
+    ctx.fillStyle = glow;
+    ctx.fillRect(v.screenX - v.pw - 1, v.pTop - 1, v.pw * 2 + 2, v.ph + 2);
+    ctx.fillStyle = v.color;
+    ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
+  }
+}
+
 export function renderTpsView(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -384,7 +463,7 @@ export function renderTpsView(
   ceilingColor2: string,
   playerColor: string,
   bgImageData?: ImageData | null
-): void {
+): { top: number; bottom: number; perpDist: number }[] {
   // プレイヤーの真後ろ（角度 + Math.PI）にレイを飛ばし、壁との距離を測る
   const oppAngle = normalizeAngle(player.angle + Math.PI);
   const camHit = castRay({ x: player.x, y: player.y }, oppAngle, walls);
@@ -416,13 +495,13 @@ export function renderTpsView(
   const dx = player.x - camX;
   const dy = player.y - camY;
   const playerDist = Math.hypot(dx, dy);
-  if (playerDist < 1) return;
+  if (playerDist < 1) return colHeights;
 
   const angleToPlayer = Math.atan2(dy, dx);
   let relAngle = normalizeAngle(angleToPlayer - player.angle);
   if (relAngle > Math.PI) relAngle -= TAU;
   const halfFov = fov / 2;
-  if (Math.abs(relAngle) > halfFov + 0.05) return;
+  if (Math.abs(relAngle) > halfFov + 0.05) return colHeights;
 
   const pCol = Math.round(((relAngle + halfFov) / fov) * (W - 1));
   const pAngularWidth = Math.atan2(PLAYER_WIDTH / 2, playerDist);
@@ -459,4 +538,5 @@ export function renderTpsView(
       ctx.fillRect(i, headY, 1, headSize);
     }
   }
+  return colHeights;
 }
