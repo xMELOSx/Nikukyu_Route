@@ -387,9 +387,9 @@ function renderWalls(
     let diff = rayAngle - originAngle;
     if (diff > Math.PI) diff -= Math.PI * 2;
     if (diff < -Math.PI) diff += Math.PI * 2;
-    const isCenterRay = Math.abs(diff) < 0.5;
+    const isCenterRay = Math.abs(diff) < 0.4;
 
-    if (args.playerDist !== undefined && isCenterRay && frontDist < (args.playerDist - 12)) {
+    if (args.playerDist !== undefined && frontDist < (args.playerDist + 20)) {
       const frontWallHeight = frontPerpDist > 0.1 ? (halfH / frontPerpDist) * distPlane : H;
       const frontWallTop = Math.max(0, Math.floor(halfH - frontWallHeight * (1 - camHeightFrac)));
       const frontWallBottom = Math.min(H, Math.floor(halfH + frontWallHeight * camHeightFrac));
@@ -671,7 +671,7 @@ export function renderMarkers3D(
 
     let markerCol = markerColor(m.type);
     if (m.type === 'phone') {
-      markerCol = m.phoneLocked ? '#666666' : m.phoneActive ? '#39ff14' : '#ff3333';
+      markerCol = (m.phoneActive || m.phoneLocked) ? '#ff3333' : '#888888';
     }
     visible.push({ dist, screenX, perpDist, pTop, pBottom, pw, ph, color: markerCol, type: m.type });
   }

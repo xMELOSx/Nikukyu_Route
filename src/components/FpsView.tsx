@@ -392,7 +392,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             if (Math.abs(dx) > mcx || Math.abs(dy) > mcy) continue;
             const px = mcx + dx;
             const py = mcy + dy;
-            const dotColor = pm.phoneLocked ? '#666' : pm.phoneActive ? '#39ff14' : '#ff3333';
+            const dotColor = (pm.phoneActive || pm.phoneLocked) ? '#ff3333' : '#888888';
             mctx.fillStyle = dotColor;
             mctx.beginPath();
             mctx.arc(px, py, 3, 0, Math.PI * 2);
@@ -468,8 +468,8 @@ const FpsView: React.FC<FpsViewProps> = ({
         const cx3 = canvas.width - 44;
         const cy3 = 44;
         const r = 16;
-        // Orbit ring (solid green)
-        ctx.strokeStyle = 'rgba(57, 255, 20, 0.25)';
+        // Orbit ring (solid red)
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.25)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(cx3, cy3, r, 0, Math.PI * 2);
@@ -477,12 +477,12 @@ const FpsView: React.FC<FpsViewProps> = ({
         // Direction arrow on ring (0=up in compass = forward)
         const arrowX = cx3 + Math.sin(relAngle) * r;
         const arrowY = cy3 - Math.cos(relAngle) * r;
-        ctx.fillStyle = '#39ff14';
+        ctx.fillStyle = '#ff3333';
         ctx.beginPath();
         ctx.arc(arrowX, arrowY, 3, 0, Math.PI * 2);
         ctx.fill();
         // Pulse glow
-        ctx.strokeStyle = 'rgba(57, 255, 20, 0.25)';
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.25)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(arrowX, arrowY, 6 + Math.sin(Date.now() * 0.005) * 2, 0, Math.PI * 2);
@@ -491,11 +491,11 @@ const FpsView: React.FC<FpsViewProps> = ({
         ctx.font = '12px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#39ff14';
+        ctx.fillStyle = '#ff3333';
         ctx.fillText('📞', cx3, cy3);
         // Distance text
         ctx.font = '8px monospace';
-        ctx.fillStyle = 'rgba(57,255,20,0.6)';
+        ctx.fillStyle = 'rgba(255,50,50,0.6)';
         ctx.fillText(`${Math.round(nearestPhoneDist)}px`, cx3, cy3 + r + 12);
       }
 
