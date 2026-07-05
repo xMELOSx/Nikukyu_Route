@@ -24,6 +24,7 @@ import {
   type PresetData,
   type PresetVisibility,
   type SpawnPoint,
+  type LockedWallSegment,
   type GlobalLockedWalls,
   PRESET_VISIBILITY_META,
   MARKER_META,
@@ -939,6 +940,10 @@ export default function App() {
   const updateGlobalWalls = (next: Record<string, any>) => {
     globalWallsStore.replace(next as any);
   };
+
+  const handleLockedWallsChange = useCallback((newLocked: LockedWallSegment[]) => {
+    setLockedWalls(prev => ({ ...prev, [currentFloor]: newLocked }));
+  }, [currentFloor]);
 
   const historyApiRef = useRef<any>(null);
 
@@ -2138,9 +2143,7 @@ export default function App() {
               wallSubMode={wallSubMode}
               wallAutoSnap={wallAutoSnap}
               lockedWalls={lockedWalls[currentFloor] || []}
-              onLockedWallsChange={(newLocked) => {
-                setLockedWalls(prev => ({ ...prev, [currentFloor]: newLocked }));
-              }}
+              onLockedWallsChange={handleLockedWallsChange}
               wallLockedSubMode={wallLockedSubMode}
             />
           ), [

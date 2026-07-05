@@ -8,7 +8,8 @@ import {
   renderFpsView,
   renderTpsView,
   renderMinimapView,
-  renderMarkers3D
+  renderMarkers3D,
+  pointToSegmentDist
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -236,7 +237,6 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (keys.has('s') || keys.has('arrowdown')) forward = -1;
       if (keys.has('a') || keys.has('arrowleft')) strafe = -1;
       if (keys.has('d') || keys.has('arrowright')) strafe = 1;
-
       const lw = wallsRef.current;
       const llw = lockedWallsRef.current;
       const closedLockedArr = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
@@ -252,7 +252,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             playerRef.current.angle,
             collisionWalls,
             MOVE_SPEED * dt,
-            PLAYER_RADIUS
+            6 // PLAYER_RADIUS → 6 に固定（ユーザー変更しやすいよう定数化）
           );
           playerRef.current = newPlayer;
         } else {
@@ -262,7 +262,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             strafe,
             collisionWalls,
             MOVE_SPEED * dt,
-            PLAYER_RADIUS
+            6
           );
           playerRef.current = newPlayer;
         }
@@ -519,6 +519,18 @@ const FpsView: React.FC<FpsViewProps> = ({
         ctx.fillStyle = nearDoor.isOpen ? 'rgba(0, 200, 255, 0.9)' : 'rgba(255, 200, 0, 0.9)';
         ctx.fillText(prompt, px, py);
       }
+
+      // 当たり判定デバッグ表示
+      const pp = playerRef.current;
+      ctx.font = '8px monospace';
+      ctx.fillStyle = 'rgba(255,255,0,0.6)';
+      let minDist = 10000;
+      for (const w of lw) {
+        const d = pointToSegmentDist(pp.x, pp.y, w[0].x, w[0].y, w[1].x, w[1].y);
+        if (d < minDist) minDist = d;
+      }
+      ctx.fillText(`Radius:6 Nearest:${minDist < 10000 ? minDist.toFixed(1) : '-'}`, canvas.width - 120, 14);
+      ctx.fillText(`Walls:${lw.length} Locked:${closedLockedArr.length}`, canvas.width - 120, 24);
 
       rafRef.current = requestAnimationFrame(loop);
     };

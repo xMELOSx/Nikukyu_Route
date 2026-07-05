@@ -387,7 +387,7 @@ function renderWalls(
     let diff = rayAngle - originAngle;
     if (diff > Math.PI) diff -= Math.PI * 2;
     if (diff < -Math.PI) diff += Math.PI * 2;
-    const isCenterRay = Math.abs(diff) < 0.25;
+    const isCenterRay = Math.abs(diff) < 0.5;
 
     if (args.playerDist !== undefined && isCenterRay && frontDist < (args.playerDist - 12)) {
       const frontWallHeight = frontPerpDist > 0.1 ? (halfH / frontPerpDist) * distPlane : H;
