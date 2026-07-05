@@ -8,8 +8,7 @@ import {
   renderFpsView,
   renderTpsView,
   renderMinimapView,
-  renderMarkers3D,
-  pointToSegmentDist
+  renderMarkers3D
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -226,7 +225,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (!ctx) return;
 
     const loop = (time: number) => {
-      const dt = prevTimeRef.current ? (time - prevTimeRef.current) / 16.667 : 1;
+      const dt = prevTimeRef.current ? Math.min((time - prevTimeRef.current) / 16.667, 2) : 1;
       prevTimeRef.current = time;
 
       const keys = keysRef.current;
@@ -244,40 +243,30 @@ const FpsView: React.FC<FpsViewProps> = ({
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
-        // 通常壁のみで衝突判定 (鍵壁は別途ソフト判定)
-        let newPlayer: PlayerState;
+        const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
         if (mode === 'tps') {
-          newPlayer = movePlayerTps(
+          const newPlayer = movePlayerTps(
             playerRef.current,
             forward,
             strafe,
             playerRef.current.angle,
-            lw,
+            collisionWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
+          playerRef.current = newPlayer;
         } else {
-          newPlayer = movePlayer(
+          const newPlayer = movePlayer(
             playerRef.current,
             forward,
             strafe,
-            lw,
+            collisionWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
-        }
-        // 鍵壁との当たり判定は半径 2 でソフトに (見た目の30%高さに合わせる)
-        let blockedByLocked = false;
-        for (const seg of closedLockedArr) {
-          if (pointToSegmentDist(newPlayer.x, newPlayer.y, seg[0].x, seg[0].y, seg[1].x, seg[1].y) < 2) {
-            blockedByLocked = true;
-            break;
-          }
-        }
-        if (!blockedByLocked) {
           playerRef.current = newPlayer;
-          playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
         }
+        playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
       }
 
       const now = Date.now();

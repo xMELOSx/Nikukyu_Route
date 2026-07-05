@@ -83,20 +83,36 @@ export function pointToSegmentDist(px: number, py: number, ax: number, ay: numbe
   return Math.hypot(px - cx, py - cy);
 }
 
-export function movePlayer(
+function segsCross(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+): boolean {
+  const d1x = bx - ax, d1y = by - ay;
+  const d2x = dx - cx, d2y = dy - cy;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-10) return false;
+  const t = ((cx - ax) * d2y - (cy - ay) * d2x) / denom;
+  const u = ((cx - ax) * d1y - (cy - ay) * d1x) / denom;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+function movePlayerImpl(
   player: PlayerState,
-  forward: number,
-  strafe: number,
+  dx: number, dy: number,
   walls: [Point, Point][],
-  speed: number,
   radius: number
 ): PlayerState {
-  const cos = Math.cos(player.angle);
-  const sin = Math.sin(player.angle);
-  const dx = (forward * cos - strafe * sin) * speed;
-  const dy = (forward * sin + strafe * cos) * speed;
   let nx = player.x + dx;
   let ny = player.y + dy;
+
+  // スイープ衝突: 移動線分が壁と交差していないか
+  for (const w of walls) {
+    if (segsCross(player.x, player.y, nx, ny, w[0].x, w[0].y, w[1].x, w[1].y)) {
+      nx = player.x;
+      ny = player.y;
+      return { x: nx, y: ny, angle: player.angle };
+    }
+  }
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -125,6 +141,21 @@ export function movePlayer(
   return { x: nx, y: ny, angle: player.angle };
 }
 
+export function movePlayer(
+  player: PlayerState,
+  forward: number,
+  strafe: number,
+  walls: [Point, Point][],
+  speed: number,
+  radius: number
+): PlayerState {
+  const cos = Math.cos(player.angle);
+  const sin = Math.sin(player.angle);
+  const dx = (forward * cos - strafe * sin) * speed;
+  const dy = (forward * sin + strafe * cos) * speed;
+  return movePlayerImpl(player, dx, dy, walls, radius);
+}
+
 export function movePlayerTps(
   player: PlayerState,
   forward: number,
@@ -138,34 +169,7 @@ export function movePlayerTps(
   const sin = Math.sin(camAngle);
   const dx = (forward * cos - strafe * sin) * speed;
   const dy = (forward * sin + strafe * cos) * speed;
-  let nx = player.x + dx;
-  let ny = player.y + dy;
-
-  const check = (x: number, y: number): boolean => {
-    for (const w of walls) {
-      if (pointToSegmentDist(x, y, w[0].x, w[0].y, w[1].x, w[1].y) < radius) return false;
-    }
-    return true;
-  };
-
-  if (!check(nx, ny)) {
-    const nxTest = player.x + dx;
-    if (check(nxTest, player.y)) {
-      nx = nxTest;
-      ny = player.y;
-    } else {
-      const nyTest = player.y + dy;
-      if (check(player.x, nyTest)) {
-        nx = player.x;
-        ny = nyTest;
-      } else {
-        nx = player.x;
-        ny = player.y;
-      }
-    }
-  }
-
-  return { x: nx, y: ny, angle: player.angle };
+  return movePlayerImpl(player, dx, dy, walls, radius);
 }
 
 interface WallRenderArgs {
@@ -650,7 +654,7 @@ export function renderMarkers3D(
   originAngle: number,
   fov: number,
   colHeights: { top: number; bottom: number; perpDist: number }[],
-  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string }[]
+  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean }[]
 ): void {
   if (markers.length === 0) return;
   const W = canvas.width;
@@ -687,7 +691,11 @@ export function renderMarkers3D(
     const pBottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
     const pTop = pBottom - ph;
 
-    visible.push({ dist, screenX, perpDist, pTop, pBottom, pw, ph, color: markerColor(m.type), type: m.type });
+    let markerCol = markerColor(m.type);
+    if (m.type === 'phone') {
+      markerCol = m.phoneLocked ? '#666666' : m.phoneActive ? '#39ff14' : '#ff3333';
+    }
+    visible.push({ dist, screenX, perpDist, pTop, pBottom, pw, ph, color: markerCol, type: m.type });
   }
 
   // Sort far to near for correct overdraw
