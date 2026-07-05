@@ -101,10 +101,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           for (const sp of spawnPoints) {
             if (sp.floor === floor) {
               tempCtx.beginPath();
-              tempCtx.arc(sp.x, sp.y, 16, 0, Math.PI * 2);
+              tempCtx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
               tempCtx.fill();
               tempCtx.strokeStyle = '#000000';
-              tempCtx.lineWidth = 3;
+              tempCtx.lineWidth = 1.5;
               tempCtx.stroke();
             }
           }

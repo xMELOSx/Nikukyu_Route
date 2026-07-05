@@ -21,6 +21,8 @@ export interface UseFileIOOptions {
    *  current route. Use this to stop long-running features (e.g. the
    *  auto-route guide) before the route is replaced. */
   onBeforeLoad?: () => void;
+  /** Called when a new route dataset is successfully loaded. */
+  onLoadSuccess?: () => void;
 }
 
 export interface UseFileIOApi {
@@ -46,7 +48,7 @@ export interface UseFileIOApi {
  * `.json` and `.png` files to the appropriate code path.
  */
 export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
-  const { routeApi, globalMarkersStore, markerScale, showNotification, onBeforeLoad } = options;
+  const { routeApi, globalMarkersStore, markerScale, showNotification, onBeforeLoad, onLoadSuccess } = options;
 
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +116,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       if (data.markerScale !== undefined) {
         localStorage.setItem('heist_marker_scale', String(data.markerScale));
       }
+      onLoadSuccess?.();
       showNotification(`インポート完了: ${data.title}`, 2000);
     } catch (err) {
       showNotification('JSONファイルの読み込みに失敗しました', 2000);
@@ -149,6 +152,7 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
       if (importedGlobals.length > 0) {
         globalMarkersStore.mergeFromImport(importedGlobals);
       }
+      onLoadSuccess?.();
       showNotification(`PNGインポート完了: ${importedRoute.title}`, 2000);
     } catch (err) {
       showNotification('PNG読み込みに失敗しました', 3000);

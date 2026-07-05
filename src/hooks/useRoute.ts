@@ -68,6 +68,8 @@ export interface UseRouteOptions {
   autoSaveEnabled?: boolean;
   /** オートセーブ間隔 (ms)。デフォルト 300000 (5分)。最小 1500 (デバウンス即時)。 */
   autoSaveInterval?: number;
+  /** Called when a new route dataset is successfully loaded or created. */
+  onLoadSuccess?: () => void;
 }
 
 export interface UseRouteApi {
@@ -141,8 +143,12 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     showNotification,
     initialMarkerScale, onMarkerScaleChange,
     autoSaveEnabled = true,
-    autoSaveInterval = 300000
+    autoSaveInterval = 300000,
+    onLoadSuccess
   } = options;
+
+  const onLoadSuccessRef = useRef(onLoadSuccess);
+  onLoadSuccessRef.current = onLoadSuccess;
 
   const [route, setRouteRaw] = useState<RouteData>(DEFAULT_ROUTE());
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -468,6 +474,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
     }
     setRouteWithGlobalDefaults(newRoute);
     localStorage.setItem('heist_last_used_route_id', newId);
+    onLoadSuccessRef.current?.();
   }, [route, setRouteWithGlobalDefaults]);
 
   // サーバ (= static presets.json) のプリセット実体キャッシュ。
@@ -727,6 +734,7 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       if (data.markerScale !== undefined) {
         onMarkerScaleChange(data.markerScale);
       }
+      onLoadSuccessRef.current?.();
       showNotificationRef.current(`読み込み完了: ${data.title}`);
     } catch (e) {
       console.error('loadFromLocal failed:', e);

@@ -48,6 +48,8 @@ export interface UseHistoryApi {
   commitDragSnapshot: () => void;
   /** Strip all 'temporary' strokes from all snapshots currently stored in history. */
   clearTemporaryStrokes: () => void;
+  /** Clear the entire undo/redo history. */
+  clearHistory: () => void;
 }
 
 const HISTORY_LIMIT = 50;
@@ -187,12 +189,19 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     }
   }, []);
 
+  const clearHistory = useCallback(() => {
+    setPastHistory([]);
+    setFutureHistory([]);
+    dragSnapshotRef.current = null;
+  }, []);
+
   return {
     pastHistory, futureHistory,
     canUndo: pastHistory.length > 0,
     canRedo: futureHistory.length > 0,
     pushHistory, undo, redo,
     startDragSnapshot, commitDragSnapshot,
-    clearTemporaryStrokes
+    clearTemporaryStrokes,
+    clearHistory
   };
 }

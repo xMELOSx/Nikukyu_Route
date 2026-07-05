@@ -889,6 +889,8 @@ export default function App() {
     globalWallsStore.replace(next as any);
   };
 
+  const historyApiRef = useRef<any>(null);
+
   const routeApi = useRoute({
     isLocal,
     globalDefaultsRef,
@@ -900,7 +902,10 @@ export default function App() {
       localStorage.setItem('heist_marker_scale', String(s));
     },
     autoSaveEnabled,
-    autoSaveInterval
+    autoSaveInterval,
+    onLoadSuccess: () => {
+      historyApiRef.current?.clearHistory();
+    }
   });
 
   const routeRef = useRef(routeApi.route);
@@ -1007,6 +1012,7 @@ export default function App() {
       setActiveMarkerType(null);
     }
   });
+  historyApiRef.current = historyApi;
 
   const autoRoute = useAutoRoute();
 
@@ -1026,7 +1032,10 @@ export default function App() {
     globalMarkersStore,
     markerScale,
     showNotification: notification.show,
-    onBeforeLoad: stopAutoRouteIfActive
+    onBeforeLoad: stopAutoRouteIfActive,
+    onLoadSuccess: () => {
+      historyApi.clearHistory();
+    }
   });
 
   useKeyboardShortcuts({
@@ -3256,6 +3265,7 @@ export default function App() {
                 notification.show(`セーブデータを ${result.applied.length} 件マイグレーションしました (→ v${result.finalVersion})`, 3000);
               }
               routeApi.setRouteWithGlobalDefaults(migrated);
+              historyApi.clearHistory();
               if (migrated.markerScale !== undefined) {
                 setMarkerScale(migrated.markerScale);
                 localStorage.setItem('heist_marker_scale', String(migrated.markerScale));
