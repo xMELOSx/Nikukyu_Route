@@ -22,10 +22,10 @@ interface FpsViewProps {
 }
 
 const FOV = Math.PI * 0.45;
-const MOVE_SPEED = 0.8;
-const ROTATE_SPEED = 0.0025;
-const PLAYER_RADIUS = 3;
-const TPS_CAM_DISTANCE = 40;
+const MOVE_SPEED = 1.5;
+const ROTATE_SPEED = 0.0015;
+const PLAYER_RADIUS = 12;
+const TPS_CAM_DISTANCE = 60;
 
 const FLOOR_COLOR_1 = '#0a0f1c';
 const FLOOR_COLOR_2 = '#0d1424';
@@ -36,17 +36,16 @@ const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImageData }) => {
-  // Determine starting angle based on any nearby marker with teleportAngle defined
   const initialAngle = (() => {
     const nearbyMarker = markers.find(m => {
       if (m.teleportAngle === undefined) return false;
       const dist = Math.hypot(playerPos.x - m.x, playerPos.y - m.y);
-      return dist < 15; // 15px radius for proximity
+      return dist < 15;
     });
     if (nearbyMarker && nearbyMarker.teleportAngle !== undefined) {
       return (nearbyMarker.teleportAngle * Math.PI) / 180;
     }
-    return 0; // default: East
+    return 0;
   })();
 
   const playerRef = useRef<PlayerState>({
@@ -57,6 +56,9 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
+
+  const bgImageDataRef = useRef<ImageData | null>(null);
+  bgImageDataRef.current = bgImageData ?? null;
 
   const lastTeleportTimeRef = useRef<number>(0);
   const teleportEffectTimerRef = useRef<number>(0);
@@ -91,7 +93,6 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
     if (canvas && document.pointerLockElement === canvas) {
-      // Prevent sudden massive jumps (e.g. pointer lock initialization glitch) by clamping
       const clampedX = Math.max(-150, Math.min(150, e.movementX));
       playerRef.current.angle = normalizeAngle(
         playerRef.current.angle + clampedX * ROTATE_SPEED
@@ -158,7 +159,6 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
       }
 
-      // Check for warp/stairs teleportation
       const now = Date.now();
       if (now - lastTeleportTimeRef.current > 1500) {
         const curP = playerRef.current;
@@ -171,7 +171,6 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         if (portal && portal.linkedWarpId) {
           const partner = markers.find(m => m.id === portal.linkedWarpId);
           if (partner) {
-            // Apply target's teleportAngle orientation if defined
             let newAngle = curP.angle;
             if (partner.teleportAngle !== undefined) {
               newAngle = (partner.teleportAngle * Math.PI) / 180;
@@ -202,8 +201,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
           PLAYER_COLOR,
-          bgImageData,
-          markers
+          bgImageDataRef.current
         );
       } else {
         renderFpsView(
@@ -214,22 +212,18 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
-          bgImageData,
-          markers
+          bgImageDataRef.current
         );
       }
 
-      // Minimap
-      renderMinimap(ctx, playerRef.current, walls, markers, bgImageData);
+      renderMinimap(ctx, canvas, playerRef.current, walls, markers);
 
-      // Flash effect on teleport
       if (teleportEffectTimerRef.current > 0) {
         ctx.fillStyle = teleportEffectColorRef.current;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         teleportEffectTimerRef.current--;
       }
 
-      // Crosshair
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
       ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
@@ -241,7 +235,6 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       ctx.lineTo(cx, cy + 8);
       ctx.stroke();
 
-      // Corner brackets
       const bracket = 20;
       ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
       ctx.lineWidth = 1;
@@ -258,23 +251,11 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       ctx.moveTo(canvas.width - 10 - bracket, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10 - bracket);
       ctx.stroke();
 
-      // HUD text
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
+      ctx.font = '10px monospace';
       const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
-      const hudTextL = `${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
-      const hudTextR = `ESC: 終了`;
-
-      ctx.font = 'bold 14px monospace';
-
-      // Outline
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(hudTextL, 15, canvas.height - 15);
-      ctx.strokeText(hudTextR, canvas.width - 110, canvas.height - 15);
-
-      // Fill
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
-      ctx.fillText(hudTextL, 15, canvas.height - 15);
-      ctx.fillText(hudTextR, canvas.width - 110, canvas.height - 15);
+      ctx.fillText(`${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`, 10, canvas.height - 10);
+      ctx.fillText(`ESC: 終了`, canvas.width - 80, canvas.height - 10);
 
       rafRef.current = requestAnimationFrame(loop);
     };

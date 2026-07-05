@@ -19,7 +19,7 @@ import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
-import FpsView from './FpsView';
+import FpsTpsControls from './FpsTpsControls';
 import { t, tNote, useLangState } from '../i18n';
 import { getUserDictFor, subscribe as subscribeUserDict } from '../i18n/userDict';
 
@@ -172,8 +172,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   strokes,
   markers,
   customBg,
-  bgOffset = { x: 0, y: 0 },
-  bgScale = { x: 1, y: 1 },
+  bgOffset: bgOffsetProp,
+  bgScale: bgScaleProp,
   toolMode,
   activeMarkerType,
   walls = [],
@@ -270,12 +270,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   spawnPointSize = 3,
   spawnGridSnap = 0
 }) => {
+  const bgOffset = useMemo(() => bgOffsetProp ?? { x: 0, y: 0 }, [bgOffsetProp]);
+  const bgScale = useMemo(() => bgScaleProp ?? { x: 1, y: 1 }, [bgScaleProp]);
+
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
                   window.location.hostname === '::1';
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -508,65 +510,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
-  const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
-
-  const captureLatestBgImageData = useCallback(() => {
-    const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
-    if (!bgUrl) {
-      setBgImageData(null);
-      return;
-    }
-
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 1600;
-      tempCanvas.height = 4550;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx) {
-        tempCtx.fillStyle = '#0a0f1c';
-        tempCtx.fillRect(0, 0, 1600, 4550);
-        
-        if (customBg) {
-          tempCtx.save();
-          const ox = bgOffset?.x ?? 0;
-          const oy = bgOffset?.y ?? 0;
-          const sx = bgScale?.x ?? 1;
-          const sy = bgScale?.y ?? 1;
-          tempCtx.translate(ox, oy);
-          tempCtx.scale(sx, sy);
-          tempCtx.drawImage(img, 0, 0, 1600, 4550);
-          tempCtx.restore();
-        } else {
-          tempCtx.drawImage(img, 0, 0, 1600, 4550);
-        }
-
-        // Overlay the hand-drawn route lines canvas if it exists
-        if (canvasRef.current) {
-          tempCtx.drawImage(canvasRef.current, 0, 0);
-        }
-        
-        try {
-          const data = tempCtx.getImageData(0, 0, 1600, 4550);
-          setBgImageData(data);
-        } catch (e) {
-          console.error("Failed to capture latest bg image data:", e);
-          setBgImageData(null);
-        }
-      }
-    };
-    img.onerror = () => {
-      setBgImageData(null);
-    };
-    img.src = bgUrl;
-  }, [floor, customBg, bgOffset, bgScale]);
-
-  useEffect(() => {
-    captureLatestBgImageData();
-  }, [captureLatestBgImageData]);
-
-  const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
 
   // スキルCD編集用ステート
@@ -5738,93 +5681,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       )}
 
-      {/* 一人称/三人称モード切替 (右上) */}
-      {!activeNoteMarkerId && (
-        <div style={{
-          position: 'absolute',
-          top: '12px',
-          right: '12px',
-          zIndex: 100,
-          display: 'flex',
-          gap: '4px',
-          alignItems: 'center',
-          transform: 'scale(var(--zoom-hud-scale, 1))',
-          transformOrigin: 'top right'
-        }}>
-          <button
-            className="zoom-btn"
-            onClick={() => {
-              captureLatestBgImageData();
-              if (!currentPosition) {
-                setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
-              }
-              const c = fpsCanvasRef.current;
-              if (c) { c.requestPointerLock(); }
-              setFreeCamMode('fps');
-            }}
-            title="FPSモード: 一人称でマップ上を歩く"
-            style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
-          >
-            🎮 FPS
-          </button>
-          <button
-            className="zoom-btn"
-            onClick={() => {
-              captureLatestBgImageData();
-              if (!currentPosition) {
-                setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
-              }
-              const c = fpsCanvasRef.current;
-              if (c) { c.requestPointerLock(); }
-              setFreeCamMode('tps');
-            }}
-            title="TPSモード: 三人称でマップ上を歩く"
-            style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
-          >
-            🏃 TPS
-          </button>
-        </div>
-      )}
-
-      {/* FPS/TPS overlay */}
-      <div style={{
-        display: freeCamMode ? 'block' : 'none',
-        position: 'absolute', inset: 0, zIndex: 9999,
-        background: '#000', overflow: 'hidden'
-      }}>
-        <canvas
-          ref={fpsCanvasRef}
-          width={848}
-          height={480}
-          className="fps-overlay"
-        />
-        {freeCamMode && currentPosition && (
-          <FpsView
-            walls={walls}
-            markers={markers}
-            playerPos={currentPosition}
-            onExit={() => {
-              setFreeCamMode(false);
-              // Center the camera on the player's final position when exiting TPS/FPS mode
-              const wrapper = wrapperRef.current;
-              if (wrapper) {
-                const W_v = wrapper.clientWidth;
-                const H_v = wrapper.clientHeight;
-                const tgtZoom = zoom || 1;
-                const tgtPan = {
-                  x: W_v * 0.5 - 800 - (currentPosition.x - 800) * tgtZoom,
-                  y: H_v * 0.6 - 2275 - (currentPosition.y - 2275) * tgtZoom
-                };
-                startSmoothScroll(tgtPan, tgtZoom);
-              }
-            }}
-            onPlayerChange={(pos) => setCurrentPosition(pos)}
-            mode={freeCamMode}
-            canvasRef={fpsCanvasRef}
-            bgImageData={bgImageData}
-          />
-        )}
-      </div>
+      <FpsTpsControls
+        walls={walls}
+        markers={markers}
+        floor={floor}
+        customBg={customBg}
+        bgOffset={bgOffset}
+        bgScale={bgScale}
+        canvasRef={canvasRef}
+        wrapperRef={wrapperRef}
+        zoom={zoom}
+        startSmoothScroll={startSmoothScroll}
+        startupFocusMarkerId={startupFocusMarkerId}
+        hideButtons={!!activeNoteMarkerId}
+        currentPosition={currentPosition}
+        onPositionChange={setCurrentPosition}
+      />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}
       {showPhoneBoxHud && (() => {
@@ -5983,26 +5855,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     </div>
   );
 };
-
-/** 初期位置を解決: 現在地 > 起動時マーカー(リンク先) > startマーカー > 中央 */
-function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
-  let pos: Point | null = null;
-  if (startupFocusMarkerId) {
-    const m = markers.find(mk => mk.id === startupFocusMarkerId);
-    if (m) {
-      if (m.linkedWarpId) {
-        const dest = markers.find(mk => mk.id === m.linkedWarpId);
-        if (dest) pos = { x: dest.x, y: dest.y };
-      }
-      if (!pos) pos = { x: m.x, y: m.y };
-    }
-  }
-  if (!pos) {
-    const sm = markers.find(mk => mk.type === 'start');
-    if (sm) pos = { x: sm.x, y: sm.y };
-  }
-  return pos || { x: 800, y: 2275 };
-}
 
 /** 電話ボックスHUDのセル (コンポーネント外で定義 → Reactが毎回新型として扱わない) */
 function PhoneHudCell({ marker, onToggle }: { marker?: HeistMarker; onToggle: (m: HeistMarker) => void }) {
