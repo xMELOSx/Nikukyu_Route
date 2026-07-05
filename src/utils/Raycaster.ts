@@ -20,7 +20,8 @@ export function normalizeAngle(a: number): number {
 export function castRay(
   origin: { x: number; y: number },
   angle: number,
-  walls: [Point, Point][]
+  walls: [Point, Point][],
+  playerDist?: number
 ): RayHit {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
@@ -37,9 +38,14 @@ export function castRay(
     const t = ((a.x - origin.x) * sdy - (a.y - origin.y) * sdx) / denom;
     const s = ((a.x - origin.x) * dy - (a.y - origin.y) * dx) / denom;
 
-    if (t > 0.1 && s >= 0 && s <= 1 && t < minDist) {
-      minDist = t;
-      hitWallIndex = i;
+    if (t > 0.1 && s >= 0 && s <= 1) {
+      if (playerDist !== undefined && t < playerDist) {
+        continue;
+      }
+      if (t < minDist) {
+        minDist = t;
+        hitWallIndex = i;
+      }
     }
   }
 
@@ -50,14 +56,15 @@ export function castRays(
   player: PlayerState,
   walls: [Point, Point][],
   fov: number,
-  numRays: number
+  numRays: number,
+  playerDist?: number
 ): RayHit[] {
   const halfFov = fov / 2;
   const hits: RayHit[] = [];
   for (let i = 0; i < numRays; i++) {
     const frac = numRays > 1 ? i / (numRays - 1) : 0.5;
     const angle = player.angle - halfFov + frac * fov;
-    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls));
+    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls, playerDist));
   }
   return hits;
 }
@@ -152,6 +159,8 @@ interface WallRenderArgs {
   floorColor2: string;
   ceilingColor1: string;
   ceilingColor2: string;
+  bgImageData?: ImageData | null;
+  playerDist?: number;
 }
 
 function renderWalls(
@@ -165,8 +174,33 @@ function renderWalls(
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
 
-  const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays);
+  const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays, args.playerDist);
   const colHeights: { top: number; bottom: number; perpDist: number }[] = [];
+
+  // Create screen pixel buffer
+  const imgData = ctx.createImageData(W, H);
+  const buf = imgData.data;
+
+  // Pre-parse wall colors
+  const r = parseInt(args.wallColor.slice(1, 3), 16);
+  const g = parseInt(args.wallColor.slice(3, 5), 16);
+  const b = parseInt(args.wallColor.slice(5, 7), 16);
+  const darkR = parseInt(args.wallColorDark.slice(1, 3), 16);
+  const darkG = parseInt(args.wallColorDark.slice(3, 5), 16);
+  const darkB = parseInt(args.wallColorDark.slice(5, 7), 16);
+
+  // Pre-parse ceiling / floor colors
+  const parseHex = (hex: string) => {
+    return {
+      r: parseInt(hex.slice(1, 3), 16),
+      g: parseInt(hex.slice(3, 5), 16),
+      b: parseInt(hex.slice(5, 7), 16)
+    };
+  };
+  const c1 = parseHex(args.ceilingColor1);
+  const c2 = parseHex(args.ceilingColor2);
+  const f1 = parseHex(args.floorColor1);
+  const f2 = parseHex(args.floorColor2);
 
   for (let i = 0; i < numRays; i++) {
     const hit = hits[i];
@@ -179,27 +213,84 @@ function renderWalls(
     const camHeightFrac = 0.375;
     const wallTop = Math.max(0, Math.floor(halfH - wallHeight * (1 - camHeightFrac))); // 天井側（遠い）
     const wallBottom = Math.min(H, Math.floor(halfH + wallHeight * camHeightFrac));    // 床側（近い）
+
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
 
-    ctx.fillStyle = i % 2 === 0 ? args.ceilingColor1 : args.ceilingColor2;
-    ctx.fillRect(i, 0, 1, wallTop);
+    // 1. Render Ceiling to buffer
+    for (let y = 0; y < wallTop; y++) {
+      const idx = (y * W + i) * 4;
+      const cc = i % 2 === 0 ? c1 : c2;
+      buf[idx] = cc.r;
+      buf[idx + 1] = cc.g;
+      buf[idx + 2] = cc.b;
+      buf[idx + 3] = 255;
+    }
 
+    // 2. Render Wall to buffer
     const shade = Math.min(1, 4 / perpDist);
-    const r = parseInt(args.wallColor.slice(1, 3), 16);
-    const g = parseInt(args.wallColor.slice(3, 5), 16);
-    const b = parseInt(args.wallColor.slice(5, 7), 16);
-    const darkR = parseInt(args.wallColorDark.slice(1, 3), 16);
-    const darkG = parseInt(args.wallColorDark.slice(3, 5), 16);
-    const darkB = parseInt(args.wallColorDark.slice(5, 7), 16);
     const colR = Math.round(darkR + (r - darkR) * shade);
     const colG = Math.round(darkG + (g - darkG) * shade);
     const colB = Math.round(darkB + (b - darkB) * shade);
-    ctx.fillStyle = `rgb(${colR},${colG},${colB})`;
-    ctx.fillRect(i, wallTop, 1, wallBottom - wallTop);
 
-    ctx.fillStyle = i % 2 === 0 ? args.floorColor1 : args.floorColor2;
-    ctx.fillRect(i, wallBottom, 1, H - wallBottom);
+    for (let y = wallTop; y < wallBottom; y++) {
+      const idx = (y * W + i) * 4;
+      buf[idx] = colR;
+      buf[idx + 1] = colG;
+      buf[idx + 2] = colB;
+      buf[idx + 3] = 255;
+    }
+
+    // 3. Render Floor to buffer (Floor Casting)
+    if (args.bgImageData) {
+      const bg = args.bgImageData;
+      const camHeight = 24; // カメラの目線の高さ（32から24に下げて低くする）
+      const cosRay = Math.cos(rayAngle);
+      const sinRay = Math.sin(rayAngle);
+      const cosBeta = Math.cos(rayAngle - originAngle);
+
+      for (let y = wallBottom; y < H; y++) {
+        const idx = (y * W + i) * 4;
+        const denom = y - halfH;
+        if (denom <= 0) {
+          buf[idx] = 13; buf[idx+1] = 20; buf[idx+2] = 36; buf[idx+3] = 255;
+          continue;
+        }
+        const perpDistFloor = (camHeight * distPlane) / denom;
+        const straightDist = perpDistFloor / cosBeta;
+
+        const wx = origin.x + cosRay * straightDist;
+        const wy = origin.y + sinRay * straightDist;
+
+        const tx = Math.floor(wx);
+        const ty = Math.floor(wy);
+
+        let fr = 13, fg = 20, fb = 36; // デフォルト床色
+        if (tx >= 0 && tx < bg.width && ty >= 0 && ty < bg.height) {
+          const bIdx = (ty * bg.width + tx) * 4;
+          fr = bg.data[bIdx];
+          fg = bg.data[bIdx + 1];
+          fb = bg.data[bIdx + 2];
+        }
+
+        buf[idx] = fr;
+        buf[idx + 1] = fg;
+        buf[idx + 2] = fb;
+        buf[idx + 3] = 255;
+      }
+    } else {
+      for (let y = wallBottom; y < H; y++) {
+        const idx = (y * W + i) * 4;
+        const fc = i % 2 === 0 ? f1 : f2;
+        buf[idx] = fc.r;
+        buf[idx + 1] = fc.g;
+        buf[idx + 2] = fc.b;
+        buf[idx + 3] = 255;
+      }
+    }
   }
+
+  // Draw buffer to canvas in 1 draw call!
+  ctx.putImageData(imgData, 0, 0);
 
   return { colHeights };
 }
@@ -215,7 +306,8 @@ export function renderFpsView(
   floorColor1: string,
   floorColor2: string,
   ceilingColor1: string,
-  ceilingColor2: string
+  ceilingColor2: string,
+  bgImageData?: ImageData | null
 ): { top: number; bottom: number; perpDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -224,7 +316,8 @@ export function renderFpsView(
     walls, fov,
     wallColor, wallColorDark,
     floorColor1, floorColor2,
-    ceilingColor1, ceilingColor2
+    ceilingColor1, ceilingColor2,
+    bgImageData
   }).colHeights;
 }
 
@@ -492,14 +585,10 @@ export function renderTpsView(
   floorColor2: string,
   ceilingColor1: string,
   ceilingColor2: string,
-  playerColor: string
+  playerColor: string,
+  bgImageData?: ImageData | null
 ): { top: number; bottom: number; perpDist: number }[] {
-  // プレイヤーの真後ろ（角度 + Math.PI）にレイを飛ばし、壁との距離を測る
-  const oppAngle = normalizeAngle(player.angle + Math.PI);
-  const camHit = castRay({ x: player.x, y: player.y }, oppAngle, walls);
-  const actualCamDistance = camHit.distance < camDistance
-    ? Math.max(15, camHit.distance - 15) // 壁の手前に寄せる。最小15px
-    : camDistance;
+  const actualCamDistance = camDistance;
 
   const camX = player.x - Math.cos(player.angle) * actualCamDistance;
   const camY = player.y - Math.sin(player.angle) * actualCamDistance;
@@ -511,7 +600,9 @@ export function renderTpsView(
     walls, fov,
     wallColor, wallColorDark,
     floorColor1, floorColor2,
-    ceilingColor1, ceilingColor2
+    ceilingColor1, ceilingColor2,
+    bgImageData,
+    playerDist: actualCamDistance
   });
 
   // Render player billboard
@@ -538,9 +629,9 @@ export function renderTpsView(
   const pPerpDist = playerDist * Math.cos(relAngle);
   const pScreenHeight = Math.round((PLAYER_HEIGHT * distPlane) / pPerpDist);
 
-  // アバターの足元をその距離の床面（camHeight = 24）の射影位置に正確に接地させる
-  const camHeight = 24;
-  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist);
+  // アバターの足元をその距離の床面（camHeight = 30）の射影位置に正確に接地させ、手前に15px寄せる
+  const camHeight = 30;
+  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist) + 15;
   const pTop = pBottom - pScreenHeight;
 
   const pr = parseInt(playerColor.slice(1, 3), 16);

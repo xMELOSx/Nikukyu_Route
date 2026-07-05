@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Point, HeistMarker } from '../utils/DataManager';
 import {
   type PlayerState,
@@ -57,6 +57,45 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
+
+  const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
+
+  useEffect(() => {
+    const canvas = bgImage;
+    if (!canvas) {
+      setBgImageData(null);
+      return;
+    }
+
+    if (canvas instanceof HTMLCanvasElement) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        try {
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          setBgImageData(data);
+        } catch (e) {
+          console.error("Failed to extract ImageData from bgImage canvas:", e);
+        }
+      }
+    } else if (canvas instanceof HTMLImageElement) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.naturalWidth || canvas.width || 1600;
+      tempCanvas.height = canvas.naturalHeight || canvas.height || 4550;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (tempCtx) {
+        try {
+          tempCtx.drawImage(canvas, 0, 0);
+          const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+          setBgImageData(data);
+        } catch (e) {
+          console.error("Failed to extract ImageData from bgImage image:", e);
+        }
+      }
+    }
+  }, [bgImage]);
+
+  const bgImageDataRef = useRef<ImageData | null>(null);
+  bgImageDataRef.current = bgImageData;
 
   const bgImageRef = useRef<HTMLCanvasElement | HTMLImageElement | null>(null);
   bgImageRef.current = bgImage ?? null;
@@ -217,7 +256,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
-          PLAYER_COLOR
+          PLAYER_COLOR,
+          bgImageDataRef.current
         );
       } else {
         colHeights = renderFpsView(
@@ -227,7 +267,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           FOV,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
-          CEILING_COLOR_1, CEILING_COLOR_2
+          CEILING_COLOR_1, CEILING_COLOR_2,
+          bgImageDataRef.current
         );
       }
 
