@@ -324,7 +324,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) applyPressed(true);
 
-      // Undo shortcut (Ctrl+Z) — メイン履歴 → スポーン履歴
+      // Undo shortcut (Ctrl+Z) — メイン履歴 (スポーンも統合済み)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -333,13 +333,10 @@ export default function App() {
         if (historyApi.canUndo) {
           e.preventDefault();
           historyApi.undo();
-        } else if (spawnUndoRef.current.length > 0) {
-          e.preventDefault();
-          undoPoints();
         }
       }
 
-      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — メイン履歴 → スポーン履歴
+      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — メイン履歴 (スポーンも統合済み)
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -348,9 +345,6 @@ export default function App() {
         if (historyApi.canRedo) {
           e.preventDefault();
           historyApi.redo();
-        } else if (spawnRedoRef.current.length > 0) {
-          e.preventDefault();
-          redoPoints();
         }
       }
     };
@@ -731,33 +725,11 @@ export default function App() {
     reader.onload = () => setItemFormImage(reader.result as string);
     reader.readAsDataURL(file);
   }, []);
-  // スポーン点履歴 (undo/redo)
-  const spawnUndoRef = useRef<SpawnPoint[][]>([]);
-  const spawnRedoRef = useRef<SpawnPoint[][]>([]);
+  // スポーン点履歴 (undo/redo) — メイン履歴に統合 (historyApiRef 経由)
   const pushSpawnHistory = useCallback(() => {
-    setSpawnPoints(prev => {
-      spawnUndoRef.current.push([...prev]);
-      if (spawnUndoRef.current.length > 30) spawnUndoRef.current.shift();
-      spawnRedoRef.current = [];
-      return prev;
-    });
-  }, []);
-  const undoPoints = useCallback(() => {
-    const prev = spawnUndoRef.current.pop();
-    if (!prev) return;
-    setSpawnPoints(curr => {
-      spawnRedoRef.current.push([...curr]);
-      return prev;
-    });
-  }, []);
-  const redoPoints = useCallback(() => {
-    const next = spawnRedoRef.current.pop();
-    if (!next) return;
-    setSpawnPoints(curr => {
-      spawnUndoRef.current.push([...curr]);
-      return next;
-    });
-  }, []);
+    if (!historyApiRef.current) return;
+    historyApiRef.current.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers, undefined, spawnApi.points);
+  }, [globalMarkersStore.globalMarkers, spawnApi.points]);
   const handleSpawnMoveComplete = useCallback((id: string, x: number, y: number) => {
     pushSpawnHistory();
     spawnApi.updatePoint(id, { x, y });
@@ -999,13 +971,15 @@ export default function App() {
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
     persistGlobalMarkers: (markers) => {
-      localStorage.setItem('heist_global_markers', JSON.stringify(markers));
-      if (isLocal) {
-        fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(markers)
-        }).catch(() => { });
+      if (Array.isArray(markers) && markers.length > 0) {
+        localStorage.setItem('heist_global_markers', JSON.stringify(markers));
+        if (isLocal) {
+          fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(markers)
+          }).catch(() => { });
+        }
       }
     },
     onRestore: () => {

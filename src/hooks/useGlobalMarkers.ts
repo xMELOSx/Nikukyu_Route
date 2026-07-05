@@ -33,7 +33,7 @@ function filterLegacyAndClean(markers: HeistMarker[]): HeistMarker[] {
 }
 
 function persist(markers: HeistMarker[], isLocal: boolean) {
-  if (!isLocal) return;
+  if (!isLocal || !Array.isArray(markers) || markers.length === 0) return;
   try {
     const json = JSON.stringify(markers);
     localStorage.setItem('heist_global_markers', json);
@@ -43,7 +43,6 @@ function persist(markers: HeistMarker[], isLocal: boolean) {
       body: json
     }).catch(() => {});
   } catch (_err) {
-    // localStorage が利用不可の場合も無視
   }
 }
 
