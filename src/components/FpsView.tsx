@@ -23,7 +23,7 @@ interface FpsViewProps {
 
 const FOV = Math.PI * 0.45;
 const MOVE_SPEED = 0.8;
-const ROTATE_SPEED = 0.0015;
+const ROTATE_SPEED = 0.0025;
 const PLAYER_RADIUS = 3;
 const TPS_CAM_DISTANCE = 40;
 
@@ -78,8 +78,10 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
     if (canvas && document.pointerLockElement === canvas) {
+      // Prevent sudden massive jumps (e.g. pointer lock initialization glitch) by clamping
+      const clampedX = Math.max(-150, Math.min(150, e.movementX));
       playerRef.current.angle = normalizeAngle(
-        playerRef.current.angle + e.movementX * ROTATE_SPEED
+        playerRef.current.angle + clampedX * ROTATE_SPEED
       );
     }
   }, [canvasRef]);
@@ -156,10 +158,17 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         if (portal && portal.linkedWarpId) {
           const partner = markers.find(m => m.id === portal.linkedWarpId);
           if (partner) {
+            // Apply target's teleportAngle orientation if defined
+            let newAngle = curP.angle;
+            if (partner.teleportAngle !== undefined) {
+              newAngle = (partner.teleportAngle * Math.PI) / 180;
+            }
+
             playerRef.current = {
               ...curP,
               x: partner.x,
-              y: partner.y
+              y: partner.y,
+              angle: newAngle
             };
             playerChangeRef.current({ x: partner.x, y: partner.y });
             lastTeleportTimeRef.current = now;

@@ -1,4 +1,5 @@
 import type { Point } from '../utils/DataManager';
+import { MARKER_META } from './constants';
 
 const TAU = Math.PI * 2;
 
@@ -270,10 +271,9 @@ function renderWalls(
     }
   }
 
-  // Render portal (warp/stairs) markers as light pillars in 3D space
+  // Render map markers (warp, stairs, goals, and point info pins) in 3D space
   if (args.markers) {
     const sortedMarkers = args.markers
-      .filter(m => m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs')
       .map(m => {
         const dx = m.x - origin.x;
         const dy = m.y - origin.y;
@@ -293,21 +293,47 @@ function renderWalls(
 
       const col = Math.round(((relAngle + fov / 2) / fov) * (W - 1));
       const mHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
-      const wallTop = Math.max(0, Math.floor(halfH - mHeight * 0.625));
-      const wallBottom = Math.min(H, Math.floor(halfH + mHeight * 0.375));
-      const mWidth = Math.max(2, Math.round(mHeight * 0.15));
+      const isPortal = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
+      const isGoal = m.type === 'goal';
+
+      // Lower marker heights relative to floor level (baseFloorY) to reduce portal heights and lower label text positions
+      const baseFloorY = Math.floor(halfH + mHeight * 0.375);
+      const markerHeight = isPortal ? mHeight * 0.35 : (isGoal ? mHeight * 0.5 : mHeight * 0.15);
+
+      const wallTop = Math.max(0, Math.floor(baseFloorY - markerHeight));
+      const wallBottom = Math.min(H, baseFloorY);
+
+      // Get color and metadata from constants
+      const meta = MARKER_META[m.type as keyof typeof MARKER_META] || { emoji: '📍', label: 'PIN', color: '#00f0ff' };
+      const hexColor = meta.color;
+
+      // Parse color to RGB
+      let r = 0, g = 240, b = 255;
+      if (hexColor.startsWith('#')) {
+        r = parseInt(hexColor.slice(1, 3), 16);
+        g = parseInt(hexColor.slice(3, 5), 16);
+        b = parseInt(hexColor.slice(5, 7), 16);
+      }
+
+      // Pillar thickness: Portals and goals are thick, others are very thin lines
+      const mWidth = (isPortal || isGoal)
+        ? Math.max(2, Math.round(mHeight * 0.15))
+        : Math.max(1, Math.round(mHeight * 0.03));
 
       const left = Math.max(0, col - Math.round(mWidth / 2));
       const right = Math.min(W - 1, col + Math.round(mWidth / 2));
 
-      const color = m.type === 'stairs' ? 'rgba(255, 170, 0, 0.45)' : 'rgba(255, 0, 255, 0.45)';
-      const coreColor = m.type === 'stairs' ? '#ffaa00' : '#ff00ff';
+      // Fade out markers in the distance
+      const distanceFade = Math.max(0.05, Math.min(1.0, 1.0 - (perpDist / 800)));
+      const alpha = (isPortal || isGoal) ? 0.45 * distanceFade : 0.25 * distanceFade;
+      const fillColor = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      const coreColor = `rgba(${r}, ${g}, ${b}, ${0.85 * distanceFade})`;
 
       for (let xCol = left; xCol <= right; xCol++) {
         if (colHeights[xCol] && colHeights[xCol].perpDist < perpDist) {
           continue;
         }
-        ctx.fillStyle = color;
+        ctx.fillStyle = fillColor;
         ctx.fillRect(xCol, wallTop, 1, wallBottom - wallTop);
 
         if (xCol === col) {
@@ -316,12 +342,29 @@ function renderWalls(
         }
       }
 
-      if (perpDist < 300 && col > 20 && col < W - 20) {
-        ctx.fillStyle = '#ffffff';
+      // Render marker text labels (emoji + name/note)
+      if (perpDist < 400 && col > 25 && col < W - 25) {
+        // Skip label if the marker is occluded by a wall in its center column
+        if (colHeights[col] && colHeights[col].perpDist < perpDist) {
+          continue;
+        }
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${distanceFade})`;
         ctx.font = '8px monospace';
         ctx.textAlign = 'center';
-        const text = m.type === 'stairs' ? '🪜 STAIRS' : '🌀 WARP';
-        ctx.fillText(text, col, wallTop - 4);
+
+        let labelText = `${meta.emoji} ${meta.label}`;
+        if (!isPortal && !isGoal) {
+          // If marker has a note/name, show it instead of the generic type label
+          const noteText = (m as any).note?.trim();
+          if (noteText) {
+            labelText = `${meta.emoji} ${noteText}`;
+          }
+        } else if (isGoal) {
+          labelText = `🚪 脱出口 (ESCAPE)`;
+        }
+
+        ctx.fillText(labelText, col, wallTop - 4);
       }
     }
   }

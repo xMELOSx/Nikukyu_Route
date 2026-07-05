@@ -46,6 +46,7 @@ export interface HeistMarker {
   floor: FloorType;
   scrollConfig?: ScrollConfig;
   linkedWarpId?: string;
+  teleportAngle?: number;
   phoneActive?: boolean;
   phoneLocked?: boolean;
   infoExpanded?: boolean;

@@ -3531,6 +3531,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   >
                     {displayEmoji}
                   </div>
+                  {/* teleportAngle directional indicator */}
+                  {m.teleportAngle !== undefined && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        width: '0',
+                        height: '0',
+                        overflow: 'visible',
+                        pointerEvents: 'none',
+                        zIndex: 5
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '50%',
+                          top: '50%',
+                          transform: `translate(-50%, -50%) rotate(${m.teleportAngle}deg) translateX(${15 * scaleMultiplier}px)`,
+                          fontSize: `${11 * scaleMultiplier}px`,
+                          color: '#39ff14',
+                          textShadow: '0 0 3px #000, 0 0 5px #39ff14',
+                          lineHeight: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold'
+                        }}
+                        title={`進入時の向き: ${m.teleportAngle}°`}
+                      >
+                        ➔
+                      </div>
+                    </div>
+                  )}
                   {showMarkerLabels && zoom >= 0.25 && (m.note.trim() || (isInfoType(m.type) && m.infoLabel?.trim())) && !isLargePin && (isEditMode || !isInfoType(m.type)) && (
                     <div 
                       className="map-marker-label"
@@ -5448,6 +5483,93 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Teleport Angle Config (Entering Direction) */}
+                <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>🧭 進入後のプレイヤーの向き (度数: 0-359):</span>
+                    {activeNoteMarker.teleportAngle !== undefined && (
+                      <span
+                        style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
+                        onClick={() => {
+                          onMarkersChange(
+                            markers.map(m => {
+                              if (m.id === activeNoteMarker.id) {
+                                const { teleportAngle, ...rest } = m;
+                                return rest;
+                              }
+                              return m;
+                            }),
+                            true
+                          );
+                        }}
+                      >
+                        クリア
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="number"
+                      className="input-cyber"
+                      style={{ width: '80px', fontSize: '10px', padding: '2px 4px', background: 'rgba(0,0,0,0.5)', border: '1px solid #7ec8e3', color: '#fff', borderRadius: '4px' }}
+                      min="0"
+                      max="359"
+                      placeholder="指定なし"
+                      value={activeNoteMarker.teleportAngle !== undefined ? activeNoteMarker.teleportAngle : ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? undefined : Math.max(0, Math.min(359, parseInt(e.target.value) || 0));
+                        onMarkersChange(
+                          markers.map(m => {
+                            if (m.id === activeNoteMarker.id) {
+                              return { ...m, teleportAngle: val };
+                            }
+                            return m;
+                          }),
+                          true
+                        );
+                      }}
+                    />
+                    <span style={{ fontSize: '9px', color: '#b0b0b0' }}>
+                      {activeNoteMarker.teleportAngle !== undefined
+                        ? `(${activeNoteMarker.teleportAngle}°: ${
+                            activeNoteMarker.teleportAngle >= 315 || activeNoteMarker.teleportAngle < 45 ? '東(→)' :
+                            activeNoteMarker.teleportAngle >= 45 && activeNoteMarker.teleportAngle < 135 ? '南(↓)' :
+                            activeNoteMarker.teleportAngle >= 135 && activeNoteMarker.teleportAngle < 225 ? '西(←)' : '北(↑)'
+                          })`
+                        : '現在の向きを維持'
+                      }
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                    {[
+                      { label: '↑ 北(270°)', angle: 270 },
+                      { label: '↓ 南(90°)', angle: 90 },
+                      { label: '← 西(180°)', angle: 180 },
+                      { label: '→ 東(0°)', angle: 0 }
+                    ].map(btn => (
+                      <button
+                        key={btn.angle}
+                        type="button"
+                        className="btn-cyber"
+                        style={{ padding: '2px 4px', fontSize: '9px', flex: 1, clipPath: 'none' }}
+                        onClick={() => {
+                          onMarkersChange(
+                            markers.map(m => {
+                              if (m.id === activeNoteMarker.id) {
+                                return { ...m, teleportAngle: btn.angle };
+                              }
+                              return m;
+                            }),
+                            true
+                          );
+                        }}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Waypoint controls - visible when connection exists */}
                 {conn.hasLink && conn.primary && conn.partner && (
