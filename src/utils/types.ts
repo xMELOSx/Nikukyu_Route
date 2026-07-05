@@ -1,3 +1,11 @@
+export interface LockedWallSegment {
+  p1: Point;
+  p2: Point;
+  isOpen: boolean;
+}
+
+export type GlobalLockedWalls = { [key: string]: LockedWallSegment[] };
+
 export function generateId(prefix: string = ''): string {
   const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()

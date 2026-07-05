@@ -24,6 +24,7 @@ import {
   type PresetData,
   type PresetVisibility,
   type SpawnPoint,
+  type GlobalLockedWalls,
   PRESET_VISIBILITY_META,
   MARKER_META,
   normalizeStrokes,
@@ -203,13 +204,14 @@ export default function App() {
     saveFloorNavCollapsed(floorNavCollapsed);
   }, [floorNavCollapsed]);
 
-  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall' | 'add-spawn'>(() => {
+  const [toolMode, setToolMode] = useState<'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn'>(() => {
     const saved = localStorage.getItem('heist_tool_mode');
+    if (saved === 'draw-wall' || saved === 'erase-wall') return 'wall';
     return (saved as any) || 'move';
   });
   const prevToolModeRef = useRef(toolMode);
   useEffect(() => {
-    localStorage.setItem('heist_tool_mode', toolMode);
+    localStorage.setItem('heist_tool_mode', toolMode === 'wall' ? 'wall' : toolMode);
     const prev = prevToolModeRef.current;
     if (prev === 'draw' && toolMode !== 'draw') {
       routeApi.setRoute(prev => {
@@ -230,6 +232,22 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase'>(() => {
+    const saved = localStorage.getItem('heist_wall_sub_mode');
+    return (saved as any) || 'draw';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_wall_sub_mode', wallSubMode);
+  }, [wallSubMode]);
+
+  const [wallAutoSnap, setWallAutoSnap] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_wall_auto_snap');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_wall_auto_snap', String(wallAutoSnap));
+  }, [wallAutoSnap]);
+
   const [hideStrokesDuringWalls, setHideStrokesDuringWalls] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_hide_strokes_during_walls');
     return saved !== null ? saved === 'true' : false;
@@ -245,6 +263,39 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_hide_markers_during_walls', String(hideMarkersDuringWalls));
   }, [hideMarkersDuringWalls]);
+
+  const [lockedWalls, setLockedWalls] = useState<GlobalLockedWalls>(() => {
+    try {
+      const saved = localStorage.getItem('heist_global_locked_walls');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const out: GlobalLockedWalls = {};
+        for (const floor of ['main', 'second', 'third', 'fourth']) {
+          out[floor] = [];
+          if (Array.isArray(parsed[floor])) {
+            for (const seg of parsed[floor]) {
+              if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
+                out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: !!seg.isOpen });
+              }
+            }
+          }
+        }
+        return out;
+      }
+    } catch {}
+    return { main: [], second: [], third: [], fourth: [] };
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_global_locked_walls', JSON.stringify(lockedWalls));
+  }, [lockedWalls]);
+
+  const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked'>(() => {
+    const saved = localStorage.getItem('heist_wall_locked_sub_mode');
+    return (saved as any) || 'normal';
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_wall_locked_sub_mode', wallLockedSubMode);
+  }, [wallLockedSubMode]);
 
   const [bypassWallsEnabled, setBypassWallsEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_bypass_walls_enabled');
@@ -324,7 +375,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) applyPressed(true);
 
-      // Undo shortcut (Ctrl+Z) — ref 経由で常に最新の historyApi を参照
+      // Undo shortcut (Ctrl+Z) — メイン履歴 → スポーン履歴 (ref 経由で常に最新)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -333,10 +384,13 @@ export default function App() {
         if (historyApiRef.current?.canUndo) {
           e.preventDefault();
           historyApiRef.current.undo();
+        } else if (spawnUndoRef.current.length > 0) {
+          e.preventDefault();
+          undoPoints();
         }
       }
 
-      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — ref 経由で常に最新の historyApi を参照
+      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — メイン履歴 → スポーン履歴 (ref 経由で常に最新)
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -345,6 +399,9 @@ export default function App() {
         if (historyApiRef.current?.canRedo) {
           e.preventDefault();
           historyApiRef.current.redo();
+        } else if (spawnRedoRef.current.length > 0) {
+          e.preventDefault();
+          redoPoints();
         }
       }
     };
@@ -725,11 +782,33 @@ export default function App() {
     reader.onload = () => setItemFormImage(reader.result as string);
     reader.readAsDataURL(file);
   }, []);
-  // スポーン点履歴 (undo/redo) — メイン履歴に統合 (historyApiRef 経由)
+  // スポーン点履歴 (undo/redo) — 専用スタック
+  const spawnUndoRef = useRef<SpawnPoint[][]>([]);
+  const spawnRedoRef = useRef<SpawnPoint[][]>([]);
   const pushSpawnHistory = useCallback(() => {
-    if (!historyApiRef.current) return;
-    historyApiRef.current.pushHistory(routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers, undefined, spawnApi.points);
-  }, [globalMarkersStore.globalMarkers, spawnApi.points]);
+    setSpawnPoints(prev => {
+      spawnUndoRef.current.push([...prev]);
+      if (spawnUndoRef.current.length > 30) spawnUndoRef.current.shift();
+      spawnRedoRef.current = [];
+      return prev;
+    });
+  }, []);
+  const undoPoints = useCallback(() => {
+    const prev = spawnUndoRef.current.pop();
+    if (!prev) return;
+    setSpawnPoints(curr => {
+      spawnRedoRef.current.push([...curr]);
+      return prev;
+    });
+  }, []);
+  const redoPoints = useCallback(() => {
+    const next = spawnRedoRef.current.pop();
+    if (!next) return;
+    setSpawnPoints(curr => {
+      spawnUndoRef.current.push([...curr]);
+      return next;
+    });
+  }, []);
   const handleSpawnMoveComplete = useCallback((id: string, x: number, y: number) => {
     pushSpawnHistory();
     spawnApi.updatePoint(id, { x, y });
@@ -967,11 +1046,9 @@ export default function App() {
     getRoute: () => routeApi.route,
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
     getWalls: () => globalWallsRef.current as any,
-    getSpawnPoints: () => spawnApi.points,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
-    replaceSpawnPoints: (next) => setSpawnPoints(next),
     persistGlobalMarkers: (markers) => {
       if (Array.isArray(markers) && markers.length > 0) {
         localStorage.setItem('heist_global_markers', JSON.stringify(markers));
@@ -1896,6 +1973,8 @@ export default function App() {
           postGlobalDefaults={postGlobalDefaults}
           openSubWindow={openSubWindow}
           pushSpawnHistory={pushSpawnHistory}
+          undoPoints={undoPoints}
+          redoPoints={redoPoints}
           handleSpawnPointAdd={handleSpawnPointAdd}
           handleSpawnPointEdit={handleSpawnPointEdit}
           handleSpawnPointView={handleSpawnPointView}
@@ -1911,9 +1990,19 @@ export default function App() {
           leftSidebarCollapsed={leftSidebarCollapsed}
           isMobile={isMobile}
           itemImageInputRef={itemImageInputRef}
+          spawnUndoRef={spawnUndoRef}
+          spawnRedoRef={spawnRedoRef}
           onHighlightCategoriesChange={(cats: string[]) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
           onHighlightItemIdsChange={(ids: string[]) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
           onOpenPoolSettings={() => setRightTab('play')}
+          wallSubMode={wallSubMode}
+          setWallSubMode={setWallSubMode}
+          wallAutoSnap={wallAutoSnap}
+          setWallAutoSnap={setWallAutoSnap}
+          lockedWalls={lockedWalls}
+          setLockedWalls={setLockedWalls}
+          wallLockedSubMode={wallLockedSubMode}
+          setWallLockedSubMode={setWallLockedSubMode}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2046,6 +2135,13 @@ export default function App() {
               onSpawnMoveComplete={handleSpawnMoveComplete}
               spawnVisible={spawnVisible}
               hideMapBg={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideBg) ? true : false}
+              wallSubMode={wallSubMode}
+              wallAutoSnap={wallAutoSnap}
+              lockedWalls={lockedWalls[currentFloor] || []}
+              onLockedWallsChange={(newLocked) => {
+                setLockedWalls(prev => ({ ...prev, [currentFloor]: newLocked }));
+              }}
+              wallLockedSubMode={wallLockedSubMode}
             />
           ), [
             currentFloor,

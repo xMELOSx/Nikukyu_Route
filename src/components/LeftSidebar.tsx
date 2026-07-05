@@ -107,6 +107,8 @@ export interface LeftSidebarProps {
   postGlobalDefaults: (hiddenMarkers: string[], hiddenMarkerTypes: string[]) => void;
   openSubWindow: () => void;
   pushSpawnHistory: () => void;
+  undoPoints: () => void;
+  redoPoints: () => void;
   handleSpawnPointAdd: (x: number, y: number) => void;
   handleSpawnPointEdit: (id: string) => void;
   handleSpawnPointView: (id: string) => void;
@@ -185,12 +187,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     handleHideGlobalMarkerType, handleShowGlobalMarkerType,
     handleToggleMarkerVisibility,
     updateStrokes, updateGlobalWalls, postGlobalDefaults, openSubWindow,
-    pushSpawnHistory,
+    pushSpawnHistory, undoPoints, redoPoints,
     handleSpawnPointAdd, handleSpawnPointEdit, handleSpawnPointView,
     handleSpawnMoveComplete, handlePointAddItem, handlePointRemoveItem,
     handleItemSave, handleBulkImport, handleItemImageUpload,
     warpColor, stairsColor, memoizedStrokes,
     leftSidebarCollapsed, isMobile,
+    spawnUndoRef, spawnRedoRef,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1207,11 +1210,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   </div>
                   <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                     <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flex: 1 }}
-                      disabled={!historyApi.canUndo}
-                      onClick={historyApi.undo}>↩ 元に戻す</button>
+                      disabled={spawnUndoRef.current.length === 0}
+                      onClick={undoPoints}>↩ 元に戻す</button>
                     <button className="btn-cyber" style={{ fontSize: '10px', padding: '3px 8px', clipPath: 'none', flex: 1 }}
-                      disabled={!historyApi.canRedo}
-                      onClick={historyApi.redo}>↪ やり直し</button>
+                      disabled={spawnRedoRef.current.length === 0}
+                      onClick={redoPoints}>↪ やり直し</button>
                   </div>
                 </div>
 

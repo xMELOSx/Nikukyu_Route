@@ -9,6 +9,7 @@ import {
   type SkillCdPreset,
   type SpawnPoint,
   type RegisteredItem,
+  type LockedWallSegment,
   MARKER_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
@@ -30,9 +31,14 @@ interface MapCanvasProps {
   customBg: string | null;
   bgOffset?: { x: number; y: number };
   bgScale?: { x: number; y: number };
-  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'draw-wall' | 'erase-wall' | 'add-spawn';
+  toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
   walls?: [Point, Point][];
   onWallsChange?: (walls: [Point, Point][]) => void;
+  wallSubMode?: 'draw' | 'erase';
+  wallAutoSnap?: boolean;
+  lockedWalls?: LockedWallSegment[];
+  onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
+  wallLockedSubMode?: 'normal' | 'locked';
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -178,6 +184,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   activeMarkerType,
   walls = [],
   onWallsChange,
+  wallSubMode = 'draw',
+  wallAutoSnap = false,
+  lockedWalls = [],
+  onLockedWallsChange,
+  wallLockedSubMode = 'normal',
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -457,7 +468,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const viewBottom = ((wrapperRect.bottom - containerRect.top) / containerRect.height) * 4550 + PIN_MARGIN;
     return markers.filter(m => {
       if (m.floor !== floor) return false;
-      const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
+      const isWallMode = toolMode === 'wall';
       if (isWallMode && hideMarkersDuringWalls) return false;
       if (erasedMarkerIdsRef.current.has(m.id)) return false;
       if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
@@ -1154,7 +1165,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.clearRect(0, 0, 1600, 4550);
     ctx.globalAlpha = 1;
 
-    const isWallMode = toolMode === 'draw-wall' || toolMode === 'erase-wall';
+    const isWallMode = toolMode === 'wall';
     if (isWallMode && hideStrokesDuringWalls) {
       return;
     }
@@ -1822,13 +1833,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (toolMode === 'draw-wall') {
+    if (toolMode === 'wall' && wallSubMode === 'draw') {
       setIsDrawing(true);
       setCurrentPoints([coords]);
       return;
     }
 
-    if (toolMode === 'erase-wall') {
+    if (toolMode === 'wall' && wallSubMode === 'erase') {
       setIsDrawing(true);
       eraseWallsAtPoint(coords);
       return;
@@ -1848,10 +1859,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     // Fast-path: if actively drawing or erasing, handle only that and return immediately
     // to bypass heavy dragging/collision checks on every single mousemove event.
-    if (isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'draw-wall' || toolMode === 'erase-wall' || toolMode === 'toggle-vis')) {
+    if (isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'wall' || toolMode === 'toggle-vis')) {
       // 45-degree angle snap logic when Alt key is pressed during straight lines
       let effectiveCoords = coords;
-      if (e.altKey && currentPoints.length > 0 && (toolMode === 'draw-wall' || (toolMode === 'draw' && drawMode === 'straight'))) {
+      const useAngleSnap = e.altKey || (wallAutoSnap && toolMode === 'wall' && wallSubMode === 'draw');
+      if (useAngleSnap && currentPoints.length > 0 && (toolMode === 'wall' || (toolMode === 'draw' && drawMode === 'straight'))) {
         const startPt = currentPoints[0];
         const dx = coords.x - startPt.x;
         const dy = coords.y - startPt.y;
@@ -1885,11 +1897,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         unifiedEraseAtPoint(coords, e.altKey);
         return;
       }
-      if (toolMode === 'draw-wall') {
+      if (toolMode === 'wall' && wallSubMode === 'draw') {
         setCurrentPoints([currentPoints[0], effectiveCoords]);
         return;
       }
-      if (toolMode === 'erase-wall') {
+      if (toolMode === 'wall' && wallSubMode === 'erase') {
         eraseWallsAtPoint(coords);
         return;
       }
@@ -2070,7 +2082,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (toolMode === 'erase') {
         erasedMarkerIdsRef.current.clear();
       }
-      if (toolMode === 'draw-wall' && currentPoints.length === 2) {
+      if (toolMode === 'wall' && wallSubMode === 'draw' && wallLockedSubMode === 'normal' && currentPoints.length === 2) {
         let p1 = currentPoints[0];
         let p2 = currentPoints[1];
         const SNAP_WALL_THRESHOLD = 8;
@@ -2146,6 +2158,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
           const merged = mergeWalls([...activeWalls, [p1, p2]], [p1, p2]);
           onWallsChange?.(merged);
+        }
+      }
+      if (toolMode === 'wall' && wallSubMode === 'draw' && wallLockedSubMode === 'locked' && currentPoints.length === 2) {
+        const p1 = currentPoints[0];
+        const p2 = currentPoints[1];
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
+          const newSeg: LockedWallSegment = { p1, p2, isOpen: false };
+          onLockedWallsChange?.([...lockedWalls, newSeg]);
         }
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
@@ -2359,6 +2379,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     });
     if (remaining.length !== walls.length) {
       onWallsChange?.(mergeWalls(remaining));
+    }
+    const remainingLocked = lockedWalls.filter(w => {
+      const d1 = getDistanceToSegment(pt, w.p1, w.p2);
+      return d1 > r;
+    });
+    if (remainingLocked.length !== lockedWalls.length) {
+      onLockedWallsChange?.(remainingLocked);
     }
   };
 
@@ -3003,7 +3030,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     cursorClass = 'edit-stroke-cursor';
   }
 
-  const eraseCursorStyle = (toolMode === 'erase' || toolMode === 'erase-wall') && isEditMode
+  const eraseCursorStyle = (toolMode === 'erase' || (toolMode === 'wall' && wallSubMode === 'erase')) && isEditMode
     ? { cursor: eraseCursorUrl }
     : undefined;
 
@@ -3051,7 +3078,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
 
         {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
-        {(toolMode === 'draw-wall' || toolMode === 'erase-wall') && ((walls && walls.length > 0) || (toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2)) && (
+        {toolMode === 'wall' && (((walls && walls.length > 0) || lockedWalls.length > 0) || (wallSubMode === 'draw' && isDrawing && currentPoints.length === 2)) && (
           <svg
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
@@ -3068,13 +3095,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 strokeDasharray="6,4"
               />
             ))}
-            {toolMode === 'draw-wall' && isDrawing && currentPoints.length === 2 && (
+            {lockedWalls.map((w, idx) => (
+              <line
+                key={`lwall-${idx}`}
+                x1={w.p1.x}
+                y1={w.p1.y}
+                x2={w.p2.x}
+                y2={w.p2.y}
+                stroke={w.isOpen ? 'rgba(0, 200, 255, 0.85)' : 'rgba(255, 200, 0, 0.9)'}
+                strokeWidth={5}
+                strokeDasharray={w.isOpen ? '4,4' : '2,6'}
+              />
+            ))}
+            {wallSubMode === 'draw' && isDrawing && currentPoints.length === 2 && (
               <line
                 x1={currentPoints[0].x}
                 y1={currentPoints[0].y}
                 x2={currentPoints[1].x}
                 y2={currentPoints[1].y}
-                stroke="#ff5500"
+                stroke={wallLockedSubMode === 'locked' ? '#ffcc00' : '#ff5500'}
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
