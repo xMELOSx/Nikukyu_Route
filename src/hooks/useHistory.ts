@@ -104,8 +104,9 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
 
     replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers });
     if (previous.walls) replaceWalls(previous.walls);
-    replaceGlobalMarkers(previous.globalMarkers);
-    persistGlobalMarkers(previous.globalMarkers);
+    const safeGlobals = Array.isArray(previous.globalMarkers) ? previous.globalMarkers : [];
+    replaceGlobalMarkers(safeGlobals);
+    persistGlobalMarkers(safeGlobals);
     if (onRestore) onRestore(previous.individualMarkers, previous.globalMarkers);
   }, [pastHistory, getRoute, getGlobalMarkers, getWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, persistGlobalMarkers, onRestore]);
 
@@ -125,9 +126,10 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
 
     replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers });
     if (next.walls) replaceWalls(next.walls);
-    replaceGlobalMarkers(next.globalMarkers);
-    persistGlobalMarkers(next.globalMarkers);
-    if (onRestore) onRestore(next.individualMarkers, next.globalMarkers);
+    const safeGlobals = Array.isArray(next.globalMarkers) ? next.globalMarkers : [];
+    replaceGlobalMarkers(safeGlobals);
+    persistGlobalMarkers(safeGlobals);
+    if (onRestore) onRestore(next.individualMarkers, safeGlobals);
   }, [futureHistory, getRoute, getGlobalMarkers, getWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, persistGlobalMarkers, onRestore]);
 
   const startDragSnapshot = useCallback(() => {

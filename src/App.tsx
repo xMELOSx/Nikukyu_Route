@@ -1039,8 +1039,6 @@ export default function App() {
   });
 
   useKeyboardShortcuts({
-    onUndo: historyApi.undo,
-    onRedo: historyApi.redo,
     onDeleteSelected: () => {
       const cur = routeApi.route.strokes[currentFloor];
       if (!cur) return;

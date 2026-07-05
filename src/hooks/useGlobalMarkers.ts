@@ -217,7 +217,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
   // Debounced persist: レンダリングをブロックしないよう setTimeout で遅延させ、
   // 高速な連続変更は最後の1回にまとめる。
   useEffect(() => {
-    if (globalMarkers.length === 0) return;
+    if (!Array.isArray(globalMarkers) || globalMarkers.length === 0) return;
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
       persist(globalMarkers, isLocalRef.current);

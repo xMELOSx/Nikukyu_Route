@@ -5701,6 +5701,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         hiddenMarkers={hiddenMarkers}
         hiddenMarkerTypes={hiddenMarkerTypes}
         spawnPoints={spawnPoints}
+        strokes={strokes}
+        spawnItems={spawnItems}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

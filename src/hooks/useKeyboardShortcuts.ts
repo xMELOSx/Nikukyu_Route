@@ -3,8 +3,6 @@ import { useEffect } from 'react';
 export interface KeyboardShortcutsOptions {
   /** Returns true to short-circuit the default browser handling. */
   preventDefault?: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
   onDeleteSelected?: () => void;
   onToggleEditMode: () => void;
   onToggleLeftSidebar: () => void;
@@ -17,17 +15,18 @@ export interface KeyboardShortcutsOptions {
  * Global keyboard shortcuts. Ignores key events fired from form inputs so
  * that typing in text fields doesn't trigger app-level shortcuts.
  *
- *   Ctrl/Cmd + Z → Undo
- *   Ctrl/Cmd + Y → Redo
  *   Delete       → Delete selected strokes (edit-stroke / measure mode)
  *   P / V        → Toggle edit/view mode
  *   [            → Toggle left sidebar
  *   ]            → Toggle right sidebar
  *   Esc          → Close topmost modal (if `onCloseModal` provided)
+ *
+ * Note: Ctrl+Z / Ctrl+Y (Undo/Redo) are handled in App.tsx capture-phase
+ * listener, which also includes the spawn undo fallback.
  */
 export function useKeyboardShortcuts({
   preventDefault = true,
-  onUndo, onRedo, onDeleteSelected, onToggleEditMode,
+  onDeleteSelected, onToggleEditMode,
   onToggleLeftSidebar, onToggleRightSidebar,
   onCloseModal, hasOpenModal
 }: KeyboardShortcutsOptions) {
@@ -41,16 +40,6 @@ export function useKeyboardShortcuts({
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-        if (preventDefault) e.preventDefault();
-        onUndo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
-        if (preventDefault) e.preventDefault();
-        onRedo();
-        return;
-      }
       if (e.key === 'Delete' && onDeleteSelected) {
         if (preventDefault) e.preventDefault();
         onDeleteSelected();
@@ -74,7 +63,7 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
-    preventDefault, onUndo, onRedo, onDeleteSelected, onToggleEditMode,
+    preventDefault, onDeleteSelected, onToggleEditMode,
     onToggleLeftSidebar, onToggleRightSidebar, onCloseModal, hasOpenModal
   ]);
 }

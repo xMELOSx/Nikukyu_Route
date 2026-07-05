@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Point, HeistMarker, FloorType } from '../utils/DataManager';
 import { PRESET_MAPS_META } from '../utils/DataManager';
 import FpsView from './FpsView';
@@ -20,6 +20,8 @@ interface FpsTpsControlsProps {
   hiddenMarkers?: string[];
   hiddenMarkerTypes?: string[];
   spawnPoints?: any[];
+  strokes?: any;
+  spawnItems?: any[];
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -46,12 +48,15 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   wrapperRef, zoom, startSmoothScroll,
   startupFocusMarkerId, hideButtons,
   currentPosition, onPositionChange,
-  hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = []
+  hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = [],
+  strokes = {}, spawnItems = []
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
+  const canvasScale = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
 
   const captureLatestBgImageData = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
@@ -64,7 +69,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     const hTypes = hiddenMarkerTypes || [];
     const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
 
-    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}|m:${activeMarkers.length}|sp:${spawnPoints?.length ?? 0}`;
+    const currentFloorStrokes = strokes[floor] || [];
+    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}|m:${activeMarkers.length}|sp:${spawnPoints?.length ?? 0}|s:${currentFloorStrokes.length}`;
     if (bgCacheRef.current && bgCacheRef.current.key === cacheKey && bgCacheRef.current.canvas) {
       setBgImage(bgCacheRef.current.canvas);
       return;
@@ -95,20 +101,58 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           tempCtx.drawImage(img, 0, 0, 1600, 4550);
         }
 
-        // Draw Spawn Points on ground texture
+        // Draw Spawn Points on ground texture (matching rarity color from settings)
         if (spawnPoints) {
-          tempCtx.fillStyle = 'rgba(57, 255, 20, 0.75)';
+          const itemMap: Record<string, any> = {};
+          if (spawnItems) {
+            for (const item of spawnItems) itemMap[item.id] = item;
+          }
+          const rarityRank: Record<string, number> = { green: 0, blue: 1, purple: 2, yellow: 3, red: 4, cyan: 5 };
+          const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
+
           for (const sp of spawnPoints) {
             if (sp.floor === floor) {
+              let bestRank = -1;
+              let color = '#888888';
+              if (sp.items) {
+                for (const pi of sp.items) {
+                  const item = itemMap[pi.itemId];
+                  if (!item) continue;
+                  const rank = rarityRank[item.textColor] ?? -1;
+                  if (rank > bestRank) {
+                    bestRank = rank;
+                    color = rarityColor[item.textColor] ?? '#888888';
+                  }
+                }
+              }
+
+              tempCtx.fillStyle = color;
               tempCtx.beginPath();
-              tempCtx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+              tempCtx.arc(sp.x, sp.y, 3, 0, Math.PI * 2);
               tempCtx.fill();
               tempCtx.strokeStyle = '#000000';
-              tempCtx.lineWidth = 1.5;
+              tempCtx.lineWidth = 1;
               tempCtx.stroke();
             }
           }
         }
+
+        // Draw Route Strokes on ground texture
+        for (const stroke of currentFloorStrokes) {
+          if (stroke.points.length < 2) continue;
+          tempCtx.beginPath();
+          tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+          for (let i = 1; i < stroke.points.length; i++) {
+            tempCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+          }
+          tempCtx.strokeStyle = stroke.color || '#39ff14';
+          tempCtx.lineWidth = stroke.width || 4;
+          tempCtx.lineCap = 'round';
+          tempCtx.lineJoin = 'round';
+          tempCtx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1.0;
+          tempCtx.stroke();
+        }
+        tempCtx.globalAlpha = 1.0; // Reset alpha
 
         // Draw Active Markers on ground texture
         for (const m of activeMarkers) {
@@ -222,9 +266,26 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       }}>
         <canvas
           ref={fpsCanvasRef}
-          width={424}
-          height={240}
+          width={Math.round(424 * canvasScale)}
+          height={Math.round(240 * canvasScale)}
           className="fps-overlay"
+        />
+        <canvas
+          ref={minimapCanvasRef}
+          width={280}
+          height={280}
+          style={{
+            position: 'absolute',
+            top: '14px',
+            left: '14px',
+            width: '70px',
+            height: '70px',
+            imageRendering: 'pixelated',
+            borderRadius: '2px',
+            border: '1px solid rgba(0, 240, 255, 0.35)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
         />
         {freeCamMode && currentPosition && (
           <FpsView
@@ -235,6 +296,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             onPlayerChange={handlePlayerChange}
             mode={freeCamMode}
             canvasRef={fpsCanvasRef}
+            minimapCanvasRef={minimapCanvasRef}
             bgImage={bgImage}
             hiddenMarkers={hiddenMarkers}
             hiddenMarkerTypes={hiddenMarkerTypes}

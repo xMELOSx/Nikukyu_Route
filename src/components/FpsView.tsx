@@ -7,7 +7,7 @@ import {
   movePlayerTps,
   renderFpsView,
   renderTpsView,
-  renderMinimap,
+  renderMinimapView,
   renderMarkers3D
 } from '../utils/Raycaster';
 
@@ -19,6 +19,7 @@ interface FpsViewProps {
   onPlayerChange: (pos: { x: number; y: number }) => void;
   mode: 'fps' | 'tps';
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  minimapCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   bgImage?: HTMLCanvasElement | HTMLImageElement | null;
   hiddenMarkers?: string[];
   hiddenMarkerTypes?: string[];
@@ -39,7 +40,7 @@ const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({
-  walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImage,
+  walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = []
 }) => {
   const hMarkers = hiddenMarkers || [];
@@ -318,7 +319,13 @@ const FpsView: React.FC<FpsViewProps> = ({
         : { x: playerRef.current.x, y: playerRef.current.y };
       renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
 
-      renderMinimap(ctx, playerRef.current, lw, lm, bgImageRef.current);
+      const minimapCvs = minimapCanvasRef.current;
+      if (minimapCvs) {
+        const mctx = minimapCvs.getContext('2d');
+        if (mctx) {
+          renderMinimapView(mctx, playerRef.current, bgImageRef.current);
+        }
+      }
 
       if (teleportEffectTimerRef.current > 0) {
         ctx.fillStyle = teleportEffectColorRef.current;

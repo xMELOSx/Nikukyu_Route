@@ -490,6 +490,47 @@ export function renderMinimap(
   ctx.restore();
 }
 
+/** 独立した高解像度ミニマップcanvasに描画。壁/マーカーの上書きはせずbgImageだけを表示 */
+export function renderMinimapView(
+  ctx: CanvasRenderingContext2D,
+  player: PlayerState,
+  bgImage?: HTMLCanvasElement | HTMLImageElement | null
+): void {
+  const W = ctx.canvas.width;
+  const H = ctx.canvas.height;
+  const range = 250;
+  const cx = W / 2;
+  const cy = H / 2;
+
+  ctx.save();
+  ctx.clearRect(0, 0, W, H);
+
+  if (bgImage) {
+    const sx = player.x - range / 2;
+    const sy = player.y - range / 2;
+    ctx.drawImage(bgImage, sx, sy, range, range, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Player dot
+  ctx.fillStyle = '#39ff14';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Direction line
+  ctx.strokeStyle = '#39ff14';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(player.angle) * 20, cy + Math.sin(player.angle) * 20);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function markerColor(type: string): string {
   switch (type) {
     case 'start': return '#39ff14';
