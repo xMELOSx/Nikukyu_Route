@@ -125,11 +125,13 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   }, []);
 
   const hasLockedRef = useRef(false);
+  const lockTimeRef = useRef<number>(0);
 
   const handlePointerLockChange = useCallback(() => {
     const canvas = canvasRef.current;
     if (canvas && document.pointerLockElement === canvas) {
       hasLockedRef.current = true;
+      lockTimeRef.current = Date.now();
     }
 
     if (hasLockedRef.current && !document.pointerLockElement) {
@@ -144,7 +146,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
     if (canvas && document.pointerLockElement === canvas) {
-      if (Math.abs(e.movementX) > 100) {
+      // ポインターロック初期化時の巨大な初期入力（100ms以内）のみを遮断
+      if (Date.now() - lockTimeRef.current < 100) {
         return;
       }
       const clampedX = Math.max(-150, Math.min(150, e.movementX));

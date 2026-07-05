@@ -106,12 +106,20 @@ export function movePlayer(
   };
 
   if (!check(nx, ny)) {
-    nx = player.x + dx;
-    ny = player.y;
-    if (!check(nx, ny)) nx = player.x;
-    nx = player.x;
-    ny = player.y + dy;
-    if (!check(nx, ny)) ny = player.y;
+    const nxTest = player.x + dx;
+    if (check(nxTest, player.y)) {
+      nx = nxTest;
+      ny = player.y;
+    } else {
+      const nyTest = player.y + dy;
+      if (check(player.x, nyTest)) {
+        nx = player.x;
+        ny = nyTest;
+      } else {
+        nx = player.x;
+        ny = player.y;
+      }
+    }
   }
 
   return { x: nx, y: ny, angle: player.angle };
@@ -141,12 +149,20 @@ export function movePlayerTps(
   };
 
   if (!check(nx, ny)) {
-    nx = player.x + dx;
-    ny = player.y;
-    if (!check(nx, ny)) nx = player.x;
-    nx = player.x;
-    ny = player.y + dy;
-    if (!check(nx, ny)) ny = player.y;
+    const nxTest = player.x + dx;
+    if (check(nxTest, player.y)) {
+      nx = nxTest;
+      ny = player.y;
+    } else {
+      const nyTest = player.y + dy;
+      if (check(player.x, nyTest)) {
+        nx = player.x;
+        ny = nyTest;
+      } else {
+        nx = player.x;
+        ny = player.y;
+      }
+    }
   }
 
   return { x: nx, y: ny, angle: player.angle };
