@@ -24,7 +24,7 @@ interface FpsViewProps {
 
 const FOV = Math.PI * 0.45;
 const MOVE_SPEED = 1.5;
-const ROTATE_SPEED = 0.0015;
+const ROTATE_SPEED = 0.0045;
 const PLAYER_RADIUS = 6;
 const TPS_CAM_DISTANCE = 60;
 
@@ -107,6 +107,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const lastTeleportTimeRef = useRef<number>(0);
   const teleportEffectTimerRef = useRef<number>(0);
   const teleportEffectColorRef = useRef<string>('rgba(255,0,255,0.3)');
+  const lastTeleportedPortalIdRef = useRef<string | null>(null);
 
   const exitRef = useRef(onExit);
   exitRef.current = onExit;
@@ -148,6 +149,10 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
     if (canvas && document.pointerLockElement === canvas) {
       // ポインターロック初期化時の巨大な初期入力（100ms以内）のみを遮断
       if (Date.now() - lockTimeRef.current < 100) {
+        return;
+      }
+      // ブラウザのポインターロックバグによる突発的な超巨大移動スパイク（200px以上）を二重で遮断
+      if (Math.abs(e.movementX) > 200) {
         return;
       }
       const clampedX = Math.max(-150, Math.min(150, e.movementX));
@@ -220,10 +225,27 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       }
 
       const now = Date.now();
+      const curP = playerRef.current;
+
+      // 最後にテレポートしたポータルから 15px 以上離れたら離脱ガードをリセット
+      if (lastTeleportedPortalIdRef.current) {
+        const lastPortal = lm.find(m => m.id === lastTeleportedPortalIdRef.current);
+        if (lastPortal) {
+          const distFromLast = Math.hypot(curP.x - lastPortal.x, curP.y - lastPortal.y);
+          if (distFromLast >= 15) {
+            lastTeleportedPortalIdRef.current = null;
+          }
+        } else {
+          lastTeleportedPortalIdRef.current = null;
+        }
+      }
+
       if (now - lastTeleportTimeRef.current > 1500) {
-        const curP = playerRef.current;
         const portal = lm.find(m => {
           if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') return false;
+          // 踏みっぱなしの離脱前ポータルは判定スキップ
+          if (lastTeleportedPortalIdRef.current === m.id) return false;
+
           const dist = Math.hypot(curP.x - m.x, curP.y - m.y);
           return dist < 8;
         });
@@ -244,6 +266,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
             };
             playerChangeRef.current({ x: partner.x, y: partner.y });
             lastTeleportTimeRef.current = now;
+            // パートナーのポータルIDを登録して離脱まで踏みっぱなし暴発を防止
+            lastTeleportedPortalIdRef.current = partner.id;
             teleportEffectTimerRef.current = 15;
             teleportEffectColorRef.current = portal.type === 'stairs' ? 'rgba(255, 170, 0, 0.35)' : 'rgba(255, 0, 255, 0.35)';
           }
