@@ -64,6 +64,9 @@ export interface LeftSidebarProps {
   setFocusTrigger: (v: any) => void;
   resetTarget: string | null; setResetTarget: (v: any) => void;
   spawnToolMode: string; setSpawnToolMode: React.Dispatch<React.SetStateAction<any>>;
+  spawnAutoEdit: boolean; setSpawnAutoEdit: (v: boolean) => void;
+  spawnPointSize: number; setSpawnPointSize: (v: number) => void;
+  spawnGridSnap: number; setSpawnGridSnap: (v: number) => void;
   spawnMoveX: number; setSpawnMoveX: (v: number) => void;
   spawnMoveY: number; setSpawnMoveY: (v: number) => void;
   spawnMovingPointId: string | null; setSpawnMovingPointId: (v: string | null) => void;
@@ -156,6 +159,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     setCurrentPosTrigger, setFocusTrigger,
     resetTarget, setResetTarget,
     spawnToolMode, setSpawnToolMode,
+    spawnAutoEdit, setSpawnAutoEdit,
+    spawnPointSize, setSpawnPointSize,
+    spawnGridSnap, setSpawnGridSnap,
     spawnPlaceCategory, setSpawnPlaceCategory,
     spawnMoveX, setSpawnMoveX, spawnMoveY, setSpawnMoveY,
     spawnMovingPointId, setSpawnMovingPointId,
@@ -213,6 +219,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const [editFilterItemIds, setEditFilterItemIds] = useState<Set<string>>(new Set());
   const [svMode, setSvMode] = useState<'records' | 'pool'>(() => (localStorage.getItem('heist_sv_mode') as 'records' | 'pool') || 'records');
   useEffect(() => { localStorage.setItem('heist_sv_mode', svMode); }, [svMode]);
+  const [addToPoolId, setAddToPoolId] = useState<string>(Object.keys(POOL_LABELS)[0] || '');
 
   // 編集タブの絞り込みをキャンバスに同期
   useEffect(() => {
@@ -1182,6 +1189,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       点を打った後、「編集」タブでアイテムを追加してください。
                     </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                      <input type="checkbox" checked={spawnAutoEdit}
+                        onChange={e => setSpawnAutoEdit(e.target.checked)}
+                        style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                      設置後すぐにアイテム編集
+                    </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>種別</span>
                       <select value={spawnPlaceCategory} onChange={e => setSpawnPlaceCategory(e.target.value)}
@@ -1307,6 +1320,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       onClick={() => setShowItemModal(true)}>
                       アイテム登録/編集を開く
                     </button>
+                    <button className="btn-cyber" style={{ width: '100%', fontSize: '11px', padding: '6px', clipPath: 'none', marginTop: '6px', borderColor: '#ffd700', color: '#ffd700' }}
+                      onClick={() => { props.onOpenPoolSettings?.(); }}>
+                      🏊 プール設定
+                    </button>
                   </div>
                 )}
 
@@ -1324,6 +1341,26 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                     背景を隠す
                   </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px', borderTop: '1px solid rgba(79,195,247,0.1)', paddingTop: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
+                      <span>点のサイズ</span>
+                      <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{spawnPointSize}px</span>
+                    </div>
+                    <input type="range" min="1" max="8" step="1" value={spawnPointSize}
+                      onChange={e => setSpawnPointSize(parseInt(e.target.value))}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', borderTop: '1px solid rgba(79,195,247,0.1)', paddingTop: '6px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>グリッド</span>
+                    <select value={spawnGridSnap} onChange={e => setSpawnGridSnap(parseInt(e.target.value))}
+                      style={{ flex: 1, fontSize: '11px', padding: '3px 6px', background: '#0a0e18', color: '#fff', border: '1px solid rgba(79,195,247,0.3)', borderRadius: '3px' }}>
+                      <option value={0}>なし</option>
+                      <option value={5}>5px</option>
+                      <option value={10}>10px</option>
+                      <option value={25}>25px</option>
+                      <option value={50}>50px</option>
+                    </select>
+                  </div>
                 </div>
               </>
             )}
@@ -1763,6 +1800,27 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         </div>
                       )}
                     </div>
+                    {filteredItems.length > 0 && (
+                      <div style={{ padding: '6px 16px', borderTop: '1px solid rgba(79,195,247,0.1)', display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                        <select value={addToPoolId} onChange={e => setAddToPoolId(e.target.value)}
+                          style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(79,195,247,0.2)', borderRadius: '4px', color: 'var(--text-primary)' }}>
+                          {Object.entries(POOL_LABELS).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                        <button className="btn-cyber" style={{ padding: '4px 10px', fontSize: '10px', clipPath: 'none', whiteSpace: 'nowrap' }}
+                          onClick={() => {
+                            const uniqueIds = [...new Set(filteredItems.map((pi: any) => pi.itemId))];
+                            const raw = JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}');
+                            const pools: Record<string, string[]> = raw.pools || {};
+                            const current = pools[addToPoolId] || [];
+                            pools[addToPoolId] = [...new Set([...current, ...uniqueIds])];
+                            localStorage.setItem('heist_sim_pools_v1', JSON.stringify({ ...raw, pools }));
+                          }}>
+                          表示をプールに追加
+                        </button>
+                      </div>
+                    )}
                     </>
                     ) : (() => {
                       const poolRaw = (() => { try { return JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}'); } catch { return {}; } })();

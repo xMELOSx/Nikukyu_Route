@@ -646,6 +646,24 @@ export default function App() {
   const [spawnPlaceCategory, setSpawnPlaceCategory] = useState<string>('');
   const [spawnMoveX, setSpawnMoveX] = useState(0);
   const [spawnMoveY, setSpawnMoveY] = useState(0);
+  // 設置後に自動で編集モーダルを開く
+  const [spawnAutoEdit, setSpawnAutoEdit] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_spawn_auto_edit');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => { localStorage.setItem('heist_spawn_auto_edit', String(spawnAutoEdit)); }, [spawnAutoEdit]);
+  // スポーン点の表示サイズ
+  const [spawnPointSize, setSpawnPointSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_spawn_point_size') || '');
+    return !isNaN(v) && v >= 1 && v <= 8 ? v : 3;
+  });
+  useEffect(() => { localStorage.setItem('heist_spawn_point_size', String(spawnPointSize)); }, [spawnPointSize]);
+  // グリッドスナップ
+  const [spawnGridSnap, setSpawnGridSnap] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_spawn_grid_snap') || '');
+    return [0,5,10,25,50].includes(v) ? v : 0;
+  });
+  useEffect(() => { localStorage.setItem('heist_spawn_grid_snap', String(spawnGridSnap)); }, [spawnGridSnap]);
   const [spawnMovingPointId, setSpawnMovingPointId] = useState<string | null>(null);
   const [spawnViewPointId, setSpawnViewPointId] = useState<string | null>(null);
   const [viewerFilterPlayers, setViewerFilterPlayers] = useState<number | null>(null);
@@ -747,16 +765,24 @@ export default function App() {
   // スポーン点追加: マップクリック時 (空の点)
   const handleSpawnPointAdd = useCallback((x: number, y: number) => {
     pushSpawnHistory();
+    const snap = spawnGridSnap > 0 ? spawnGridSnap : 0;
+    const sx = snap > 0 ? Math.round(x / snap) * snap : x;
+    const sy = snap > 0 ? Math.round(y / snap) * snap : y;
     const point: SpawnPoint = {
       id: generateId('sp'),
-      x, y,
+      x: sx, y: sy,
       floor: currentFloor,
       category: (spawnPlaceCategory || undefined) as any,
       createdAt: new Date().toISOString(),
       items: [],
     };
     spawnApi.addPoint(point);
-  }, [currentFloor, spawnApi, pushSpawnHistory, spawnPlaceCategory]);
+    if (spawnAutoEdit) {
+      setEditPointId(point.id);
+      setSpawnMoveX(sx); setSpawnMoveY(sy);
+      setShowEditModal(true);
+    }
+  }, [currentFloor, spawnApi, pushSpawnHistory, spawnPlaceCategory, spawnAutoEdit, spawnGridSnap]);
 
   // スポーン点編集: マップの点をクリック時 → モーダル表示
   const handleSpawnPointEdit = useCallback((id: string) => {
@@ -1808,6 +1834,12 @@ export default function App() {
           setSpawnToolMode={setSpawnToolMode}
           spawnPlaceCategory={spawnPlaceCategory}
           setSpawnPlaceCategory={setSpawnPlaceCategory}
+          spawnAutoEdit={spawnAutoEdit}
+          setSpawnAutoEdit={setSpawnAutoEdit}
+          spawnPointSize={spawnPointSize}
+          setSpawnPointSize={setSpawnPointSize}
+          spawnGridSnap={spawnGridSnap}
+          setSpawnGridSnap={setSpawnGridSnap}
           spawnMoveX={spawnMoveX}
           setSpawnMoveX={setSpawnMoveX}
           spawnMoveY={spawnMoveY}
@@ -1899,6 +1931,7 @@ export default function App() {
           spawnRedoRef={spawnRedoRef}
           onHighlightCategoriesChange={(cats: string[]) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
           onHighlightItemIdsChange={(ids: string[]) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
+          onOpenPoolSettings={() => setRightTab('play')}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2022,6 +2055,8 @@ export default function App() {
               onSpawnPointEdit={handleSpawnPointEdit}
               onSpawnPointView={handleSpawnPointView}
               spawnToolMode={spawnToolMode}
+              spawnPointSize={spawnPointSize}
+              spawnGridSnap={spawnGridSnap}
               spawnFocusTrigger={spawnFocusTrigger}
               spawnHighlightItemIds={spawnHighlightItemIds}
               spawnHighlightCategories={spawnHighlightCategories}

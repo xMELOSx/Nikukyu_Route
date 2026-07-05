@@ -1,6 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { type SpawnPoint, type RegisteredItem, TEXTCOLOR_META, SPAWN_CATEGORIES } from '../utils/DataManager';
 
+const TEXTCOLORS = ['green', 'blue', 'purple', 'yellow', 'red', 'cyan'] as const;
+const COLOR_HEX: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
+const COLOR_LABELS: Record<string, string> = { green: '緑', blue: '青', purple: '紫', yellow: '金', red: 'キー', cyan: 'EH' };
+
+const RATE_COLORS: Record<string, string> = { high: '#39ff14', mid: '#ffd700', low: '#ff4444' };
+const QUALITY_GROUPS: { key: string; label: string; rates: string[] }[] = [
+  { key: 'high', label: '高', rates: ['高'] },
+  { key: 'mid', label: '中', rates: ['中'] },
+  { key: 'low', label: '低', rates: ['低'] },
+];
+
 interface SpawnAnalysisPanelProps {
   points: SpawnPoint[];
   items: RegisteredItem[];
@@ -36,12 +47,23 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   const [detailPointId, setDetailPointId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showRecent, setShowRecent] = useState(false);
+  const [selectedItemColors, setSelectedItemColors] = useState<Set<string>>(() => new Set([...TEXTCOLORS]));
+  const [selectedQualityGroups, setSelectedQualityGroups] = useState<Set<string>>(() => new Set(QUALITY_GROUPS.map(g => g.key)));
 
   const sortedItems = useMemo(() =>
     [...items]
       .map(i => ({ item: i, count: points.filter(p => p.items && p.items.some(pi => pi.itemId === i.id)).length }))
       .sort((a, b) => b.count - a.count),
   [items, points]);
+
+  const filteredItems = useMemo(() => {
+    return sortedItems.filter(({ item }) => {
+      if (!selectedItemColors.has(item.textColor)) return false;
+      const itemRates = new Set(points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).map(p => p.appearanceRate || '高'));
+      const selectedRates = new Set(QUALITY_GROUPS.filter(g => selectedQualityGroups.has(g.key)).flatMap(g => g.rates));
+      return [...itemRates].some(r => selectedRates.has(r));
+    });
+  }, [sortedItems, selectedItemColors, selectedQualityGroups, points]);
 
   const filteredPoints = useMemo(() => {
     if (selectedItemIds.size === 0 && selectedCategories.size === 0) return [];
@@ -210,8 +232,60 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
         <div className="panel-title" style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>
           該当: {filteredPoints.length} 点
         </div>
+
+        {/* Rarity (color) filter */}
+        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
+          {([...TEXTCOLORS] as const).map(col => {
+            const active = selectedItemColors.has(col);
+            return (
+              <button key={col} onClick={() => {
+                const next = new Set(selectedItemColors);
+                if (next.has(col)) next.delete(col); else next.add(col);
+                setSelectedItemColors(next);
+              }}
+                style={{
+                  fontSize: '9px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '2px',
+                  border: `1px solid ${active ? COLOR_HEX[col] : 'rgba(255,255,255,0.15)'}`,
+                  background: active ? `${COLOR_HEX[col]}22` : 'transparent',
+                  color: active ? COLOR_HEX[col] : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: COLOR_HEX[col], display: 'inline-block' }} />
+                {COLOR_LABELS[col]}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Quality (appearance rate) filter */}
+        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px', alignItems: 'center' }}>
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, marginRight: '2px' }}>出現率</span>
+          {QUALITY_GROUPS.map(g => {
+            const active = selectedQualityGroups.has(g.key);
+            const col = RATE_COLORS[g.key] || '#888';
+            return (
+              <button key={g.key} onClick={() => {
+                const next = new Set(selectedQualityGroups);
+                if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+                setSelectedQualityGroups(next);
+              }}
+                style={{
+                  fontSize: '9px', padding: '2px 6px',
+                  border: `1px solid ${active ? col : 'rgba(255,255,255,0.12)'}`,
+                  background: active ? `${col}22` : 'transparent',
+                  color: active ? col : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >{g.label}</button>
+            );
+          })}
+        </div>
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', maxHeight: '70vh', overflowY: 'auto' }}>
-          {sortedItems.map(({ item, count }) => {
+          {filteredItems.length === 0 ? (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '8px' }}>条件に合うアイテムなし</div>
+          ) : filteredItems.map(({ item, count }) => {
             const tc = TEXTCOLOR_META[item.textColor as keyof typeof TEXTCOLOR_META];
             const isSel = selectedItemIds.has(item.id);
             return (

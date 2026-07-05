@@ -403,6 +403,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const [simColorFilter, setSimColorFilter] = useState<Record<string, boolean>>(() => ({
     cyan: true, yellow: true, red: true, purple: true, blue: true, green: true
   }));
+  const [simStopMode, setSimStopMode] = useState<'any' | 'all'>(() => {
+    try { const v = localStorage.getItem('heist_sim_stop_mode2'); return v === 'all' ? 'all' : 'any'; } catch { return 'any'; }
+  });
   const [resultSubTab, setResultSubTab] = useState<'sample' | 'draws'>('sample');
   const [drawViewMode, setDrawViewMode] = useState<'count' | 'rate'>('count');
   const [sampleMode, setSampleMode] = useState<string>('median');
@@ -648,7 +651,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
   const runSimulation = useCallback(async () => {
     const tf = simTargetFans;
     const tc = simTargetCoins;
-    if (tf <= 0 && tc <= 0) return;
+    if (tf <= 0 && tc <= 0 && simTargetItems <= 0) return;
     setSimSimulating(true);
 
     // Build pools from all 4 pool configs
@@ -809,6 +812,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       const poolDraws = new Array(poolCdfs.length).fill(0);
       let totalFans = 0;
       let totalCoins = 0;
+      let totalItems = 0;
       let cardKeys = 0;
       let pickedCardKey = false;
       let nonEHItems = 0, nonEHFans = 0, nonEHCoins = 0;
@@ -816,11 +820,16 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
         const picked = rollItem(itemCounts, poolDraws);
         if (!picked) continue;
         itemCounts[picked.id] = (itemCounts[picked.id] || 0) + 1;
+        totalItems++;
         if (picked.color === 'red') { cardKeys++; pickedCardKey = true; }
         if (picked.color !== 'cyan') { nonEHItems++; nonEHFans += picked.fans; nonEHCoins += picked.coins; }
         totalFans += picked.fans;
         totalCoins += picked.coins;
-        if (totalFans >= tf && totalCoins >= tc) break;
+        if (simTargetItems > 0 && totalItems >= simTargetItems) break;
+        if (simTargetItems <= 0 && tf > 0 && tc > 0) {
+          if (simStopMode === 'all') { if (totalFans >= tf && totalCoins >= tc) break; }
+          else { if (totalFans >= tf || totalCoins >= tc) break; }
+        }
       }
 
       stats.push({
@@ -867,10 +876,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       sampleTrial = sorted[Math.floor(sorted.length / 2)].counts;
       minItemsTrial = sorted[0].counts;
       maxItemsTrial = sorted[sorted.length - 1].counts;
-      const byFans = successes.slice().sort((a, b) => a.totalFans - b.totalFans);
+      const byFans = successes.slice().sort((a, b) => a.nonEHFans - b.nonEHFans);
       minFansTrial = byFans[0].counts;
       maxFansTrial = byFans[byFans.length - 1].counts;
-      const byCoins = successes.slice().sort((a, b) => a.totalCoins - b.totalCoins);
+      const byCoins = successes.slice().sort((a, b) => a.nonEHCoins - b.nonEHCoins);
       minCoinsTrial = byCoins[0].counts;
       maxCoinsTrial = byCoins[byCoins.length - 1].counts;
     }
@@ -882,11 +891,11 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.totalItems)) : 0,
       maxTotalItems: stats.length > 0 ? Math.max(...stats.map(s => s.totalItems)) : 0,
       avgFans: Math.round(successes.reduce((a, s) => a + s.nonEHFans, 0) / (successCount || 1)),
-      minFans: stats.length > 0 ? Math.min(...stats.map(s => s.totalFans)) : 0,
-      maxFans: stats.length > 0 ? Math.max(...stats.map(s => s.totalFans)) : 0,
+      minFans: stats.length > 0 ? Math.min(...stats.map(s => s.nonEHFans)) : 0,
+      maxFans: stats.length > 0 ? Math.max(...stats.map(s => s.nonEHFans)) : 0,
       avgCoins: Math.round(successes.reduce((a, s) => a + s.nonEHCoins, 0) / (successCount || 1)),
-      minCoins: stats.length > 0 ? Math.min(...stats.map(s => s.totalCoins)) : 0,
-      maxCoins: stats.length > 0 ? Math.max(...stats.map(s => s.totalCoins)) : 0,
+      minCoins: stats.length > 0 ? Math.min(...stats.map(s => s.nonEHCoins)) : 0,
+      maxCoins: stats.length > 0 ? Math.max(...stats.map(s => s.nonEHCoins)) : 0,
       avgCardKeys: stats.reduce((s, t) => s + t.cardKeys, 0) / stats.length,
       cardKeyPickRate: stats.filter(t => t.pickedCardKey).length / stats.length,
       itemStats: perItemStats,
@@ -918,7 +927,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     const tf = simTargetFans;
     const tc = simTargetCoins;
     const targetItems = simTargetItems;
-    if (tf <= 0 && tc <= 0) return;
+    if (tf <= 0 && tc <= 0 && targetItems <= 0) return;
     setSimOptimizing(true);
     const items = [...simItems];
     const excluded = new Set(simExcluded);
@@ -1059,7 +1068,6 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       for (let t = 0; t < TRIALS; t++) {
         const itemCounts: Record<string, number> = {};
         let totalFans = 0, totalCoins = 0, totalItems = 0;
-        const maxItems = targetItems > 0 ? Math.round(targetItems * 1.3) : 0;
         for (let d = 0; d < 100000; d++) {
           let rw = Math.random() * totalWeight;
           let picked: SimFlatItem | null = null;
@@ -1081,8 +1089,11 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
           totalFans += picked.fans;
           totalCoins += picked.coins;
           totalItems++;
-          if (totalFans >= tf && totalCoins >= tc) break;
-          if (maxItems > 0 && totalItems >= maxItems && totalFans >= tf * 0.8 && totalCoins >= tc * 0.8) break;
+          if (targetItems > 0 && totalItems >= targetItems) break;
+          if (targetItems <= 0 && tf > 0 && tc > 0) {
+            if (simStopMode === 'all') { if (totalFans >= tf && totalCoins >= tc) break; }
+            else { if (totalFans >= tf || totalCoins >= tc) break; }
+          }
         }
         fans.push(totalFans);
         coins.push(totalCoins);
@@ -3280,47 +3291,56 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                           setSimTargetItems(raw === '' ? 0 : Math.max(0, parseInt(raw) || 0));
                         }}
                       />
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', marginTop: '4px' }}>
-                          <input type="checkbox" checked={simSaveTargets} onChange={e => { setSimSaveTargets(e.target.checked); try { localStorage.setItem('heist_sim_save_targets', e.target.checked ? 'true' : 'false'); } catch {} if (e.target.checked) localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); }} />
-                        {t('目標値を保存')}
-                      </label>
                     </div>
                   </div>
 
-                  {/* Trial count */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>{t('シミュレーション回数')}</span>
-                    <input
-                      type="number" min="100" max="50000" step="100"
-                      className="input-cyber"
-                      style={{ width: '100px', fontSize: '14px', padding: '5px 8px', textAlign: 'right' }}
-                      value={simTrialCount}
-                      onChange={(e) => setSimTrialCount(Math.max(100, parseInt(e.target.value) || 100))}
-                    />
+                  {/* Save targets, stop mode, player count — one line */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={simSaveTargets} onChange={e => { setSimSaveTargets(e.target.checked); try { localStorage.setItem('heist_sim_save_targets', e.target.checked ? 'true' : 'false'); } catch {} if (e.target.checked) localStorage.setItem(SIM_TARGET_KEY, JSON.stringify({ fans: simTargetFans, coins: simTargetCoins, items: simTargetItems })); }} />
+                      {t('目標値を保存')}
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <span style={{ fontWeight: 600, fontSize: '10px' }}>{t('停止')}</span>
+                      {([['any', t('いずれか')], ['all', t('すべて')]] as const).map(([mode, label]) => (
+                        <button key={mode} onClick={() => { setSimStopMode(mode); localStorage.setItem('heist_sim_stop_mode2', mode); }}
+                          style={{
+                            padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
+                            border: `1px solid ${simStopMode === mode ? '#39ff14' : 'rgba(255,255,255,0.15)'}`,
+                            background: simStopMode === mode ? 'rgba(57,255,20,0.15)' : 'transparent',
+                            color: simStopMode === mode ? '#39ff14' : 'var(--text-muted)',
+                            fontWeight: simStopMode === mode ? 700 : 400,
+                          }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>{t('人数')}</span>
+                      {[1, 2, 3, 4].map(n => (
+                        <button key={n} className="btn-cyber"
+                          style={{
+                            padding: '2px 10px', fontSize: '11px', minWidth: '28px',
+                            background: simPlayerCount === n ? 'rgba(0,240,255,0.15)' : 'transparent',
+                            border: `1px solid ${simPlayerCount === n ? 'var(--cyan-neon)' : 'rgba(0,240,255,0.2)'}`,
+                            color: simPlayerCount === n ? 'var(--cyan-neon)' : 'var(--text-muted)',
+                          }}
+                          onClick={() => setSimPlayerCount(n)}
+                        >{n}{t('人')}</button>
+                      ))}
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginLeft: '4px' }}>{t('試行')}</span>
+                      <input type="number" min="100" max="50000" step="100"
+                        style={{ width: '60px', fontSize: '11px', padding: '2px 6px', textAlign: 'right', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.2)', borderRadius: '3px', color: 'var(--text-primary)' }}
+                        value={simTrialCount}
+                        onChange={(e) => setSimTrialCount(Math.max(100, parseInt(e.target.value) || 100))}
+                      />
+                    </div>
                   </div>
                   {(simTrialCount >= 10000 || simTargetFans >= 1000000) && (
                     <div style={{ fontSize: '10px', color: '#ff9500', background: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)', borderRadius: '4px', padding: '4px 8px' }}>
                       ⚠ {t('試行数が多い、または目標ファンスが大きいため処理に時間がかかる場合があります')}
                     </div>
                   )}
-
-                  {/* Player count buttons */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginRight: '4px' }}>{t('プレイヤー人数')}</span>
-                    {[1, 2, 3, 4].map(n => (
-                      <button
-                        key={n}
-                        className="btn-cyber"
-                        style={{
-                          padding: '4px 12px', fontSize: '12px', minWidth: '36px',
-                          background: simPlayerCount === n ? 'rgba(0,240,255,0.15)' : 'transparent',
-                          border: `1px solid ${simPlayerCount === n ? 'var(--cyan-neon)' : 'rgba(0,240,255,0.2)'}`,
-                          color: simPlayerCount === n ? 'var(--cyan-neon)' : 'var(--text-muted)',
-                        }}
-                        onClick={() => setSimPlayerCount(n)}
-                      >{n}{t('人')}</button>
-                    ))}
-                  </div>
 
                   {/* Color filter tabs */}
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
@@ -3600,6 +3620,9 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                         <>{t('確率を自動最適化')}</>
                       )}
                     </button>
+                    {!simOptimResult && !simOptimizing && (
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', alignSelf: 'center' }}>{t('目標F/C/アイテム数が必要')}</span>
+                    )}
                     {simOptimProgress && (
                       <div style={{
                         flex: 2, fontSize: '11px', padding: '4px 8px',
@@ -4159,7 +4182,7 @@ function poolSectionPropsEqual(prev: any, next: any) {
 
 const PoolSection = React.memo(function PoolSection({
   label, count, itemIds, isBp,
-  simItems, simColorFilter, simBluePlusProbs,
+  simItems, simBluePlusProbs,
   onCountChange, onToggleItem, onBatchToggleItems, collapsed, onToggleCollapse,
   onBluePlusProbChange, t,
 }: {
@@ -4178,7 +4201,8 @@ const PoolSection = React.memo(function PoolSection({
   onBluePlusProbChange: (color: string, v: number) => void;
   t: (key: string, ...args: any[]) => string;
 }) {
-  const groups = useMemo(() => groupItemsByColor(simItems, simColorFilter), [simItems, simColorFilter]);
+  const allColorsOn = useMemo(() => ({ cyan: true, yellow: true, red: true, purple: true, blue: true, green: true }), []);
+  const groups = useMemo(() => groupItemsByColor(simItems, allColorsOn), [simItems]);
   const itemSet = useMemo(() => new Set(itemIds), [itemIds]);
 
   const selectedCount = itemIds.length;

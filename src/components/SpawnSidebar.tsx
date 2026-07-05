@@ -17,6 +17,7 @@ const SpawnSidebar: React.FC<any> = (p) => {
   const cropDragRef = useRef<{isDragging:boolean;type:string;startX:number;startY:number;initialX:number;initialY:number;initialW:number;initialH:number}|null>(null);
   const [svMode, setSvMode] = useState<'records' | 'pool'>(() => (localStorage.getItem('heist_sv_mode') as 'records' | 'pool') || 'records');
   useEffect(() => { localStorage.setItem('heist_sv_mode', svMode); }, [svMode]);
+  const [addToPoolId, setAddToPoolId] = useState<string>(Object.keys(POOL_LABELS)[0] || '');
 
   // Clipboard paste for item image
   useEffect(() => {
@@ -548,6 +549,27 @@ const SpawnSidebar: React.FC<any> = (p) => {
                 </div>
               )}
             </div>
+            {sorted.length > 0 && (
+              <div style={{ padding: '6px 16px', borderTop: '1px solid rgba(79,195,247,0.1)', display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                <select value={addToPoolId} onChange={e => setAddToPoolId(e.target.value)}
+                  style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(79,195,247,0.2)', borderRadius: '4px', color: 'var(--text-primary)' }}>
+                  {Object.entries(POOL_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+                <button className="btn-cyber" style={{ padding: '4px 10px', fontSize: '10px', clipPath: 'none', whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    const uniqueIds = [...new Set(sorted.map((s: any) => s.item?.id).filter(Boolean))];
+                    const raw = JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}');
+                    const pools: Record<string, string[]> = raw.pools || {};
+                    const current = pools[addToPoolId] || [];
+                    pools[addToPoolId] = [...new Set([...current, ...uniqueIds])];
+                    localStorage.setItem('heist_sim_pools_v1', JSON.stringify({ ...raw, pools }));
+                  }}>
+                  {t('表示をプールに追加')}
+                </button>
+              </div>
+            )}
             </>
             ) : (() => {
               const poolRaw = (() => { try { return JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}'); } catch { return {}; } })();

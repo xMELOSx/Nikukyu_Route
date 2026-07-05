@@ -19,6 +19,7 @@ import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
 import MediaLightbox from './MediaLightbox';
+import FpsView from './FpsView';
 import { t, tNote, useLangState } from '../i18n';
 import { getUserDictFor, subscribe as subscribeUserDict } from '../i18n/userDict';
 
@@ -162,6 +163,8 @@ interface MapCanvasProps {
   onSpawnPointEdit?: (id: string) => void;
   onSpawnPointView?: (id: string) => void;
   spawnToolMode?: 'place' | 'edit' | 'erase' | 'manage';
+  spawnPointSize?: number;
+  spawnGridSnap?: number;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -263,13 +266,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onSpawnPointDelete,
   onSpawnPointEdit,
   onSpawnPointView,
-  spawnToolMode = 'place'
+  spawnToolMode = 'place',
+  spawnPointSize = 3,
+  spawnGridSnap = 0
 }) => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1' || 
                   window.location.hostname === '::1';
 
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -502,6 +508,56 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
+  const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
+
+  useEffect(() => {
+    const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
+    if (!bgUrl) {
+      setBgImageData(null);
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1600;
+      canvas.height = 4550;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#0a0f1c';
+        ctx.fillRect(0, 0, 1600, 4550);
+        
+        if (customBg) {
+          ctx.save();
+          const ox = bgOffset?.x ?? 0;
+          const oy = bgOffset?.y ?? 0;
+          const sx = bgScale?.x ?? 1;
+          const sy = bgScale?.y ?? 1;
+          ctx.translate(ox, oy);
+          ctx.scale(sx, sy);
+          ctx.drawImage(img, 0, 0, 1600, 4550);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, 0, 0, 1600, 4550);
+        }
+        
+        try {
+          const data = ctx.getImageData(0, 0, 1600, 4550);
+          setBgImageData(data);
+        } catch (e) {
+          console.error("Failed to get bg image data:", e);
+          setBgImageData(null);
+        }
+      }
+    };
+    img.onerror = () => {
+      setBgImageData(null);
+    };
+    img.src = bgUrl;
+  }, [floor, customBg, bgOffset, bgScale]);
+
+  const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
 
   // スキルCD編集用ステート
@@ -905,12 +961,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, toolMode]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
@@ -1101,8 +1157,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.globalAlpha = 1;
         continue;
       }
-      const radius = filtering && isHighlighted ? 6 : 3;
-      const glow = filtering && isHighlighted ? 10 : 2.5;
+      const radius = filtering && isHighlighted ? Math.max(spawnPointSize * 2, 6) : spawnPointSize;
+      const glow = filtering && isHighlighted ? Math.max(spawnPointSize * 3, 10) : 2;
       ctx.shadowColor = color;
       ctx.shadowBlur = glow;
       ctx.fillStyle = color;
@@ -1358,6 +1414,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.restore();
     }
 
+    // 3.5 Draw grid when grid snap is active
+    if (spawnGridSnap > 0 && toolMode === 'add-spawn') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(57, 255, 20, 0.06)';
+      ctx.lineWidth = 0.5;
+      const step = spawnGridSnap;
+      for (let gx = 0; gx <= 1600; gx += step) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, 4550);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy <= 4550; gy += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(1600, gy);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // 4. Render spawn points
     drawSpawnPoints();
   } catch (e) { console.warn('[redrawStrokes]', e); }
@@ -1519,7 +1596,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (onSpawnPointView && toolMode !== 'add-spawn') {
       const c = getCanvasCoords(e);
       let bestId: string | null = null;
-      let bestDist = 8;
+      let bestDist = spawnPointSize + 5;
       for (const p of (spawnPoints || [])) {
         if (p.floor !== floor) continue;
         const d = Math.hypot(p.x - c.x, p.y - c.y);
@@ -1741,12 +1818,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'add-spawn' && isEditMode) {
+      // Alt押下で設置⇔編集を一時的にシフト
+      const effectiveMode = e.altKey
+        ? (spawnToolMode === 'place' ? 'edit' :
+           spawnToolMode === 'edit' ? 'place' : spawnToolMode)
+        : spawnToolMode;
       let handled = false;
-      if (spawnToolMode === 'place' && onSpawnPointAdd) {
+      if (effectiveMode === 'place' && onSpawnPointAdd) {
         onSpawnPointAdd(coords.x, coords.y);
         handled = true;
-      } else if (spawnToolMode === 'edit' && onSpawnPointEdit) {
-        const HIT = 8;
+      } else if (effectiveMode === 'edit' && onSpawnPointEdit) {
+        const HIT = spawnPointSize + 5;
         let bestId: string | null = null;
         let bestDist = HIT;
         for (const p of spawnPoints) {
@@ -1755,8 +1837,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           if (d < bestDist) { bestDist = d; bestId = p.id; }
         }
         if (bestId) { onSpawnPointEdit(bestId); handled = true; }
-      } else if (spawnToolMode === 'erase' && onSpawnPointDelete) {
-        const HIT = 8;
+      } else if (effectiveMode === 'erase' && onSpawnPointDelete) {
+        const HIT = spawnPointSize + 5;
         let bestId: string | null = null;
         let bestDist = HIT;
         for (const p of spawnPoints) {
@@ -5525,6 +5607,76 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       )}
 
+      {/* 一人称/三人称モード切替 (右上) */}
+      <div style={{
+        position: 'absolute',
+        top: '12px',
+        right: '12px',
+        zIndex: 100,
+        display: 'flex',
+        gap: '4px',
+        alignItems: 'center',
+        transform: 'scale(var(--zoom-hud-scale, 1))',
+        transformOrigin: 'top right'
+      }}>
+        <button
+          className="zoom-btn"
+          onClick={() => {
+            if (!currentPosition) {
+              setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
+            }
+            const c = fpsCanvasRef.current;
+            if (c) { c.requestPointerLock(); }
+            setFreeCamMode('fps');
+          }}
+          title="FPSモード: 一人称でマップ上を歩く"
+          style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
+        >
+          🎮 FPS
+        </button>
+        <button
+          className="zoom-btn"
+          onClick={() => {
+            if (!currentPosition) {
+              setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
+            }
+            const c = fpsCanvasRef.current;
+            if (c) { c.requestPointerLock(); }
+            setFreeCamMode('tps');
+          }}
+          title="TPSモード: 三人称でマップ上を歩く"
+          style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
+        >
+          🏃 TPS
+        </button>
+      </div>
+
+      {/* FPS/TPS overlay */}
+      <div style={{
+        display: freeCamMode ? 'block' : 'none',
+        position: 'absolute', inset: 0, zIndex: 9999,
+        background: '#000', overflow: 'hidden'
+      }}>
+        <canvas
+          ref={fpsCanvasRef}
+          width={424}
+          height={240}
+          className="fps-overlay"
+        />
+        {freeCamMode && currentPosition && (
+          <FpsView
+            walls={walls}
+            markers={markers}
+            playerPos={currentPosition}
+            onExit={() => setFreeCamMode(false)}
+            onPlayerChange={(pos) => setCurrentPosition(pos)}
+            mode={freeCamMode}
+            canvasRef={fpsCanvasRef}
+            bgImageData={bgImageData}
+          />
+        )}
+      </div>
+
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}
       {showPhoneBoxHud && (() => {
         const phoneMarkers = markers.filter(m => m.type === 'phone');
@@ -5682,6 +5834,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     </div>
   );
 };
+
+/** 初期位置を解決: 現在地 > 起動時マーカー(リンク先) > startマーカー > 中央 */
+function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
+  let pos: Point | null = null;
+  if (startupFocusMarkerId) {
+    const m = markers.find(mk => mk.id === startupFocusMarkerId);
+    if (m) {
+      if (m.linkedWarpId) {
+        const dest = markers.find(mk => mk.id === m.linkedWarpId);
+        if (dest) pos = { x: dest.x, y: dest.y };
+      }
+      if (!pos) pos = { x: m.x, y: m.y };
+    }
+  }
+  if (!pos) {
+    const sm = markers.find(mk => mk.type === 'start');
+    if (sm) pos = { x: sm.x, y: sm.y };
+  }
+  return pos || { x: 800, y: 2275 };
+}
 
 /** 電話ボックスHUDのセル (コンポーネント外で定義 → Reactが毎回新型として扱わない) */
 function PhoneHudCell({ marker, onToggle }: { marker?: HeistMarker; onToggle: (m: HeistMarker) => void }) {
