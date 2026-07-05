@@ -301,27 +301,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
   const [miniMapSource, setMiniMapSource] = useState<HTMLCanvasElement | null>(null);
 
-  // Render the FULL map (floor + routes + walls + markers + waypoints) onto a hidden canvas for the minimap
+  // Build the minimap source canvas from the REAL MapCanvas rendering:
+  // floor image + canvasRef routes (pixel-identical) + walls + waypoints + markers
   const updateMiniMapSource = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
     if (!bgUrl) return;
     const hMarkers = hiddenMarkers || [];
     const hTypes = hiddenMarkerTypes || [];
     const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
-    const currentStrokes = strokes[floor] || [];
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 1600;
-    canvas.height = 4550;
-    const ctx = canvas.getContext('2d');
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = 1600;
+    srcCanvas.height = 4550;
+    const ctx = srcCanvas.getContext('2d');
     if (!ctx) return;
 
     ctx.fillStyle = '#0a0f1c';
     ctx.fillRect(0, 0, 1600, 4550);
 
-    const imgRef = new Image();
-    imgRef.crossOrigin = 'anonymous';
-    imgRef.onload = () => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // 1. Floor background (same image as display mode)
       if (customBg) {
         ctx.save();
         const ox = bgOffset?.x ?? 0;
@@ -330,30 +331,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const sy = bgScale?.y ?? 1;
         ctx.translate(ox, oy);
         ctx.scale(sx, sy);
-        ctx.drawImage(imgRef, 0, 0, 1600, 4550);
+        ctx.drawImage(img, 0, 0, 1600, 4550);
         ctx.restore();
       } else {
-        ctx.drawImage(imgRef, 0, 0, 1600, 4550);
+        ctx.drawImage(img, 0, 0, 1600, 4550);
       }
 
-      // Routes
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      for (const stroke of currentStrokes) {
-        if (stroke.points.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (let i = 1; i < stroke.points.length; i++) {
-          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-        }
-        ctx.strokeStyle = stroke.color || '#39ff14';
-        ctx.lineWidth = stroke.width || 4;
-        ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1.0;
-        ctx.stroke();
+      // 2. Copy the REAL canvas (routes) — pixel-identical to display mode
+      if (canvasRef.current) {
+        ctx.drawImage(canvasRef.current, 0, 0);
       }
-      ctx.globalAlpha = 1.0;
 
-      // Walls (dashed orange)
+      // 3. Walls (dashed orange, matching normal view SVG style)
       for (const w of walls) {
         ctx.strokeStyle = 'rgba(255, 85, 0, 0.85)';
         ctx.lineWidth = 5;
@@ -365,7 +354,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       ctx.setLineDash([]);
 
-      // Waypoint connection lines between linked markers
+      // 4. Waypoint / warp connection lines
       for (const m of activeMarkers) {
         if (m.floor !== floor || !m.linkedWarpId) continue;
         const partner = activeMarkers.find(mk => mk.id === m.linkedWarpId);
@@ -385,7 +374,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       ctx.globalAlpha = 1.0;
 
-      // Markers (ring + white fill + emoji)
+      // 5. Markers (colored ring + white fill + emoji, matching SVG marker style)
       for (const m of activeMarkers) {
         if (m.floor !== floor) continue;
         const meta = MARKER_META[m.type];
@@ -408,10 +397,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
 
-      setMiniMapSource(canvas);
+      setMiniMapSource(srcCanvas);
     };
-    imgRef.src = bgUrl;
-  }, [floor, customBg, bgOffset, bgScale, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes]);
+    img.onerror = () => setMiniMapSource(null);
+    img.src = bgUrl;
+  }, [floor, customBg, bgOffset, bgScale, canvasRef, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes]);
 
   // Update minimap source when map data changes
   useEffect(() => {
@@ -2270,11 +2260,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           return bestPt;
         };
 
-        p1 = snapAndAlignOldPoints(p1);
-        p2 = snapAndAlignOldPoints(p2);
+        if (wallAutoSnap) {
+          p1 = snapAndAlignOldPoints(p1);
+          p2 = snapAndAlignOldPoints(p2);
+        }
 
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
-          const merged = mergeWalls([...activeWalls, [p1, p2]], [p1, p2]);
+          const merged = wallAutoSnap ? mergeWalls([...activeWalls, [p1, p2]], [p1, p2]) : [...walls, [p1, p2]];
           onWallsChange?.(merged);
         }
       }
