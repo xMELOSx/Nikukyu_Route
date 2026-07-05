@@ -298,10 +298,20 @@ const FpsView: React.FC<FpsViewProps> = ({
         if (portal && portal.linkedWarpId) {
           const partner = lm.find(m => m.id === portal.linkedWarpId);
           if (partner) {
-            // 出口マーカーに teleportAngle が設定されていれば絶対角度として使う
-            let newAngle = curP.angle;
-            if (partner.teleportAngle !== undefined) {
+            // 両方の marker に teleportAngle が設定されていれば相対角度保持
+            let newAngle: number;
+            if (portal.teleportAngle !== undefined && partner.teleportAngle !== undefined) {
+              const srcRef = (portal.teleportAngle * Math.PI) / 180;
+              const dstRef = (partner.teleportAngle * Math.PI) / 180;
+              let offset = curP.angle - srcRef;
+              offset = ((offset % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+              if (offset > Math.PI) offset -= Math.PI * 2;
+              newAngle = dstRef + offset;
+              newAngle = ((newAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+            } else if (partner.teleportAngle !== undefined) {
               newAngle = (partner.teleportAngle * Math.PI) / 180;
+            } else {
+              newAngle = curP.angle;
             }
 
             playerRef.current = {
