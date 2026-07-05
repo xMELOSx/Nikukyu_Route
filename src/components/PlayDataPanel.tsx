@@ -833,7 +833,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       }
 
       stats.push({
-        success: totalFans >= tf && totalCoins >= tc,
+        success: (simTargetItems <= 0 || totalItems >= simTargetItems) && totalFans >= tf && totalCoins >= tc,
         totalItems: Object.values(itemCounts).reduce((a, b) => a + b, 0),
         totalFans,
         totalCoins,
@@ -848,7 +848,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
 
     const successes = stats.filter(s => s.success);
     const successCount = successes.length;
-    const itemsList = successes.map(s => s.nonEHItems).sort((a, b) => a - b);
+    const itemsList = stats.map(s => s.totalItems).sort((a, b) => a - b);
     const avgTotalItems = itemsList.length > 0 ? Math.round(itemsList.reduce((a, b) => a + b, 0) / itemsList.length) : 0;
 
     // Per-item stats across all items
@@ -874,15 +874,16 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     if (successCount > 0) {
       const sorted = successes.slice().sort((a, b) => a.totalItems - b.totalItems);
       sampleTrial = sorted[Math.floor(sorted.length / 2)].counts;
-      minItemsTrial = sorted[0].counts;
-      maxItemsTrial = sorted[sorted.length - 1].counts;
-      const byFans = successes.slice().sort((a, b) => a.totalFans - b.totalFans);
-      minFansTrial = byFans[0].counts;
-      maxFansTrial = byFans[byFans.length - 1].counts;
-      const byCoins = successes.slice().sort((a, b) => a.totalCoins - b.totalCoins);
-      minCoinsTrial = byCoins[0].counts;
-      maxCoinsTrial = byCoins[byCoins.length - 1].counts;
     }
+    const allSortedByItems = stats.slice().sort((a, b) => a.totalItems - b.totalItems);
+    minItemsTrial = allSortedByItems[0].counts;
+    maxItemsTrial = allSortedByItems[allSortedByItems.length - 1].counts;
+    const byFans = stats.slice().sort((a, b) => a.totalFans - b.totalFans);
+    minFansTrial = byFans[0].counts;
+    maxFansTrial = byFans[byFans.length - 1].counts;
+    const byCoins = stats.slice().sort((a, b) => a.totalCoins - b.totalCoins);
+    minCoinsTrial = byCoins[0].counts;
+    maxCoinsTrial = byCoins[byCoins.length - 1].counts;
 
     const summary: SimResultSummary = {
       trials: TRIALS,
@@ -890,10 +891,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       avgTotalItems,
       minTotalItems: stats.length > 0 ? Math.min(...stats.map(s => s.totalItems)) : 0,
       maxTotalItems: stats.length > 0 ? Math.max(...stats.map(s => s.totalItems)) : 0,
-      avgFans: Math.round(successes.reduce((a, s) => a + s.nonEHFans, 0) / (successCount || 1)),
+      avgFans: Math.round(stats.reduce((a, s) => a + s.nonEHFans, 0) / stats.length),
       minFans: stats.length > 0 ? Math.min(...stats.map(s => s.totalFans)) : 0,
       maxFans: stats.length > 0 ? Math.max(...stats.map(s => s.totalFans)) : 0,
-      avgCoins: Math.round(successes.reduce((a, s) => a + s.nonEHCoins, 0) / (successCount || 1)),
+      avgCoins: Math.round(stats.reduce((a, s) => a + s.nonEHCoins, 0) / stats.length),
       minCoins: stats.length > 0 ? Math.min(...stats.map(s => s.totalCoins)) : 0,
       maxCoins: stats.length > 0 ? Math.max(...stats.map(s => s.totalCoins)) : 0,
       avgCardKeys: stats.reduce((s, t) => s + t.cardKeys, 0) / stats.length,
@@ -920,7 +921,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     };
     setSimHistory(prev => [entry, ...prev].slice(0, 100));
     setSimSimulating(false);
-  }, [simTargetFans, simTargetCoins, simItems, simExcluded, simLimits, simProbOverrides, simServerOverrides, simTrialCount, getEffectiveProbs]);
+  }, [simTargetFans, simTargetCoins, simTargetItems, simStopMode, simItems, simExcluded, simLimits, simProbOverrides, simServerOverrides, simTrialCount, getEffectiveProbs]);
 
   // 確率自動最適化: 中央値ベース
   const startOptimization = async () => {

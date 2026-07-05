@@ -36,10 +36,23 @@ const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImageData }) => {
+  // Determine starting angle based on any nearby marker with teleportAngle defined
+  const initialAngle = (() => {
+    const nearbyMarker = markers.find(m => {
+      if (m.teleportAngle === undefined) return false;
+      const dist = Math.hypot(playerPos.x - m.x, playerPos.y - m.y);
+      return dist < 15; // 15px radius for proximity
+    });
+    if (nearbyMarker && nearbyMarker.teleportAngle !== undefined) {
+      return (nearbyMarker.teleportAngle * Math.PI) / 180;
+    }
+    return 0; // default: East
+  })();
+
   const playerRef = useRef<PlayerState>({
     x: playerPos.x,
     y: playerPos.y,
-    angle: 0
+    angle: initialAngle
   });
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
@@ -246,11 +259,22 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       ctx.stroke();
 
       // HUD text
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
-      ctx.font = '10px monospace';
       const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
-      ctx.fillText(`${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`, 10, canvas.height - 10);
-      ctx.fillText(`ESC: 終了`, canvas.width - 80, canvas.height - 10);
+      const hudTextL = `${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
+      const hudTextR = `ESC: 終了`;
+
+      ctx.font = 'bold 14px monospace';
+
+      // Outline
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(hudTextL, 15, canvas.height - 15);
+      ctx.strokeText(hudTextR, canvas.width - 110, canvas.height - 15);
+
+      // Fill
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
+      ctx.fillText(hudTextL, 15, canvas.height - 15);
+      ctx.fillText(hudTextR, canvas.width - 110, canvas.height - 15);
 
       rafRef.current = requestAnimationFrame(loop);
     };

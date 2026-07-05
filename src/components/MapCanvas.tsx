@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import {
   type FloorType,
@@ -510,7 +510,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
 
-  useEffect(() => {
+  const captureLatestBgImageData = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
     if (!bgUrl) {
       setBgImageData(null);
@@ -520,33 +520,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1600;
-      canvas.height = 4550;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#0a0f1c';
-        ctx.fillRect(0, 0, 1600, 4550);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 1600;
+      tempCanvas.height = 4550;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (tempCtx) {
+        tempCtx.fillStyle = '#0a0f1c';
+        tempCtx.fillRect(0, 0, 1600, 4550);
         
         if (customBg) {
-          ctx.save();
+          tempCtx.save();
           const ox = bgOffset?.x ?? 0;
           const oy = bgOffset?.y ?? 0;
           const sx = bgScale?.x ?? 1;
           const sy = bgScale?.y ?? 1;
-          ctx.translate(ox, oy);
-          ctx.scale(sx, sy);
-          ctx.drawImage(img, 0, 0, 1600, 4550);
-          ctx.restore();
+          tempCtx.translate(ox, oy);
+          tempCtx.scale(sx, sy);
+          tempCtx.drawImage(img, 0, 0, 1600, 4550);
+          tempCtx.restore();
         } else {
-          ctx.drawImage(img, 0, 0, 1600, 4550);
+          tempCtx.drawImage(img, 0, 0, 1600, 4550);
+        }
+
+        // Overlay the hand-drawn route lines canvas if it exists
+        if (canvasRef.current) {
+          tempCtx.drawImage(canvasRef.current, 0, 0);
         }
         
         try {
-          const data = ctx.getImageData(0, 0, 1600, 4550);
+          const data = tempCtx.getImageData(0, 0, 1600, 4550);
           setBgImageData(data);
         } catch (e) {
-          console.error("Failed to get bg image data:", e);
+          console.error("Failed to capture latest bg image data:", e);
           setBgImageData(null);
         }
       }
@@ -556,6 +561,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
     img.src = bgUrl;
   }, [floor, customBg, bgOffset, bgScale]);
+
+  useEffect(() => {
+    captureLatestBgImageData();
+  }, [captureLatestBgImageData]);
 
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
@@ -5730,48 +5739,52 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       )}
 
       {/* 一人称/三人称モード切替 (右上) */}
-      <div style={{
-        position: 'absolute',
-        top: '12px',
-        right: '12px',
-        zIndex: 100,
-        display: 'flex',
-        gap: '4px',
-        alignItems: 'center',
-        transform: 'scale(var(--zoom-hud-scale, 1))',
-        transformOrigin: 'top right'
-      }}>
-        <button
-          className="zoom-btn"
-          onClick={() => {
-            if (!currentPosition) {
-              setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
-            }
-            const c = fpsCanvasRef.current;
-            if (c) { c.requestPointerLock(); }
-            setFreeCamMode('fps');
-          }}
-          title="FPSモード: 一人称でマップ上を歩く"
-          style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
-        >
-          🎮 FPS
-        </button>
-        <button
-          className="zoom-btn"
-          onClick={() => {
-            if (!currentPosition) {
-              setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
-            }
-            const c = fpsCanvasRef.current;
-            if (c) { c.requestPointerLock(); }
-            setFreeCamMode('tps');
-          }}
-          title="TPSモード: 三人称でマップ上を歩く"
-          style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
-        >
-          🏃 TPS
-        </button>
-      </div>
+      {!activeNoteMarkerId && (
+        <div style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          zIndex: 100,
+          display: 'flex',
+          gap: '4px',
+          alignItems: 'center',
+          transform: 'scale(var(--zoom-hud-scale, 1))',
+          transformOrigin: 'top right'
+        }}>
+          <button
+            className="zoom-btn"
+            onClick={() => {
+              captureLatestBgImageData();
+              if (!currentPosition) {
+                setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
+              }
+              const c = fpsCanvasRef.current;
+              if (c) { c.requestPointerLock(); }
+              setFreeCamMode('fps');
+            }}
+            title="FPSモード: 一人称でマップ上を歩く"
+            style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
+          >
+            🎮 FPS
+          </button>
+          <button
+            className="zoom-btn"
+            onClick={() => {
+              captureLatestBgImageData();
+              if (!currentPosition) {
+                setCurrentPosition(resolveInitialPos(markers, startupFocusMarkerId));
+              }
+              const c = fpsCanvasRef.current;
+              if (c) { c.requestPointerLock(); }
+              setFreeCamMode('tps');
+            }}
+            title="TPSモード: 三人称でマップ上を歩く"
+            style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
+          >
+            🏃 TPS
+          </button>
+        </div>
+      )}
 
       {/* FPS/TPS overlay */}
       <div style={{
@@ -5781,8 +5794,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }}>
         <canvas
           ref={fpsCanvasRef}
-          width={424}
-          height={240}
+          width={848}
+          height={480}
           className="fps-overlay"
         />
         {freeCamMode && currentPosition && (
@@ -5790,7 +5803,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             walls={walls}
             markers={markers}
             playerPos={currentPosition}
-            onExit={() => setFreeCamMode(false)}
+            onExit={() => {
+              setFreeCamMode(false);
+              // Center the camera on the player's final position when exiting TPS/FPS mode
+              const wrapper = wrapperRef.current;
+              if (wrapper) {
+                const W_v = wrapper.clientWidth;
+                const H_v = wrapper.clientHeight;
+                const tgtZoom = zoom || 1;
+                const tgtPan = {
+                  x: W_v * 0.5 - 800 - (currentPosition.x - 800) * tgtZoom,
+                  y: H_v * 0.6 - 2275 - (currentPosition.y - 2275) * tgtZoom
+                };
+                startSmoothScroll(tgtPan, tgtZoom);
+              }
+            }}
             onPlayerChange={(pos) => setCurrentPosition(pos)}
             mode={freeCamMode}
             canvasRef={fpsCanvasRef}

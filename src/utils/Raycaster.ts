@@ -5,6 +5,7 @@ const TAU = Math.PI * 2;
 
 let tempMinimapCanvas: HTMLCanvasElement | null = null;
 let tempMinimapCtx: CanvasRenderingContext2D | null = null;
+let tempMinimapImageData: ImageData | null = null;
 
 export interface PlayerState {
   x: number;
@@ -190,6 +191,17 @@ interface WallRenderArgs {
   camHeight?: number;
   yOffset?: number;
   markers?: { x: number; y: number; type: string; id?: string; linkedWarpId?: string }[];
+  playerDist?: number;
+}
+
+function parseHexColor(hex: string): { r: number; g: number; b: number } {
+  if (hex && hex.startsWith('#')) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
+  }
+  return { r: 10, g: 15, b: 28 };
 }
 
 function renderWalls(
@@ -199,7 +211,7 @@ function renderWalls(
   const W = canvas.width;
   const H = canvas.height;
   const numRays = W;
-  const yOffset = args.yOffset ?? -50; // 地平線を上にずらして見下ろしパースにする
+  const yOffset = args.yOffset ?? Math.round(H * -0.2083); // Hに対し比率で地平線を上にずらして見下ろしパースにする
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
   const camHeight = args.camHeight ?? 24;
@@ -208,68 +220,83 @@ function renderWalls(
   const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays);
   const colHeights: { top: number; bottom: number; perpDist: number }[] = [];
 
+  // Create an offscreen pixel buffer to batch render the background, walls, and floor.
+  // Writing to a raw Uint8ClampedArray is extremely fast and avoids ctx.fillRect overhead.
+  const imgData = ctx.createImageData(W, H);
+  const buf = imgData.data;
+
+  // Pre-parse hex colors to RGB for fast pixel writing
+  const c1_rgb = parseHexColor(args.ceilingColor1);
+  const c2_rgb = parseHexColor(args.ceilingColor2);
+  const f1_rgb = parseHexColor(args.floorColor1);
+  const f2_rgb = parseHexColor(args.floorColor2);
+  const w_rgb = parseHexColor(args.wallColor);
+  const wd_rgb = parseHexColor(args.wallColorDark);
+
   for (let i = 0; i < numRays; i++) {
     const hit = hits[i];
     const dist = hit.distance;
     const rayAngle = normalizeAngle(originAngle - fov / 2 + (i / (numRays - 1)) * fov);
     const perpDist = dist * Math.cos(rayAngle - originAngle);
 
-    const wallHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
+    const wallHeight = perpDist > 0.1 ? (64 / perpDist) * distPlane : H;
     const wallTop = Math.max(0, Math.floor(halfH - wallHeight * (1 - camHeightFrac))); // 天井側（遠い）
     const wallBottom = Math.min(H, Math.floor(halfH + wallHeight * camHeightFrac));    // 床側（近い）
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
 
-    ctx.fillStyle = i % 2 === 0 ? args.ceilingColor1 : args.ceilingColor2;
-    ctx.fillRect(i, 0, 1, wallTop);
+    const isOverlayInFront = args.playerDist !== undefined && perpDist < args.playerDist;
 
-    const shade = Math.min(1, 4 / perpDist);
-    const r = parseInt(args.wallColor.slice(1, 3), 16);
-    const g = parseInt(args.wallColor.slice(3, 5), 16);
-    const b = parseInt(args.wallColor.slice(5, 7), 16);
-    const darkR = parseInt(args.wallColorDark.slice(1, 3), 16);
-    const darkG = parseInt(args.wallColorDark.slice(3, 5), 16);
-    const darkB = parseInt(args.wallColorDark.slice(5, 7), 16);
-    const colR = Math.round(darkR + (r - darkR) * shade);
-    const colG = Math.round(darkG + (g - darkG) * shade);
-    const colB = Math.round(darkB + (b - darkB) * shade);
-    ctx.fillStyle = `rgb(${colR},${colG},${colB})`;
-    ctx.fillRect(i, wallTop, 1, wallBottom - wallTop);
-
-    // 床のレンダリング (Floor Casting)
-    if (args.bgImageData) {
-      const bg = args.bgImageData;
-      const cosRay = Math.cos(rayAngle);
-      const sinRay = Math.sin(rayAngle);
-      const cosBeta = Math.cos(rayAngle - originAngle);
-
-      for (let y = wallBottom; y < H; y++) {
-        const denom = y - halfH;
-        if (denom <= 0) continue;
-        const perpDistFloor = (camHeight * distPlane) / denom;
-        const straightDist = perpDistFloor / cosBeta;
-
-        const wx = origin.x + cosRay * straightDist;
-        const wy = origin.y + sinRay * straightDist;
-
-        const tx = Math.floor(wx);
-        const ty = Math.floor(wy);
-
-        let fr = 13, fg = 20, fb = 36; // デフォルト床色
-        if (tx >= 0 && tx < bg.width && ty >= 0 && ty < bg.height) {
-          const idx = (ty * bg.width + tx) * 4;
-          fr = bg.data[idx];
-          fg = bg.data[idx + 1];
-          fb = bg.data[idx + 2];
-        }
-
-        ctx.fillStyle = `rgb(${fr},${fg},${fb})`;
-        ctx.fillRect(i, y, 1, 1);
+    // Render Ceiling to buffer
+    for (let y = 0; y < wallTop; y++) {
+      const idx = (y * W + i) * 4;
+      if (isOverlayInFront) {
+        // Semi-transparent ceiling blending with base background (#0a0f1c)
+        buf[idx] = 10;
+        buf[idx + 1] = 15;
+        buf[idx + 2] = 28;
+      } else {
+        const rgb = i % 2 === 0 ? c1_rgb : c2_rgb;
+        buf[idx] = rgb.r;
+        buf[idx + 1] = rgb.g;
+        buf[idx + 2] = rgb.b;
       }
-    } else {
-      ctx.fillStyle = i % 2 === 0 ? args.floorColor1 : args.floorColor2;
-      ctx.fillRect(i, wallBottom, 1, H - wallBottom);
+      buf[idx + 3] = 255;
+    }
+
+    // Render Wall slice to buffer
+    const shade = Math.min(1, 4 / perpDist);
+    const colR = Math.round(wd_rgb.r + (w_rgb.r - wd_rgb.r) * shade);
+    const colG = Math.round(wd_rgb.g + (w_rgb.g - wd_rgb.g) * shade);
+    const colB = Math.round(wd_rgb.b + (w_rgb.b - wd_rgb.b) * shade);
+
+    for (let y = wallTop; y < wallBottom; y++) {
+      const idx = (y * W + i) * 4;
+      if (isOverlayInFront) {
+        // Blending semi-transparent walls (15% opacity) with base background (#0a0f1c)
+        buf[idx] = Math.round(colR * 0.15 + 10 * 0.85);
+        buf[idx + 1] = Math.round(colG * 0.15 + 15 * 0.85);
+        buf[idx + 2] = Math.round(colB * 0.15 + 28 * 0.85);
+      } else {
+        buf[idx] = colR;
+        buf[idx + 1] = colG;
+        buf[idx + 2] = colB;
+      }
+      buf[idx + 3] = 255;
+    }
+
+    // Render Floor pattern to buffer (Flat checkerboard floor pattern for maximum performance)
+    for (let y = wallBottom; y < H; y++) {
+      const idx = (y * W + i) * 4;
+      const rgb = i % 2 === 0 ? f1_rgb : f2_rgb;
+      buf[idx] = rgb.r;
+      buf[idx + 1] = rgb.g;
+      buf[idx + 2] = rgb.b;
+      buf[idx + 3] = 255;
     }
   }
+
+  // Draw the entire pixel buffer to canvas in one call
+  ctx.putImageData(imgData, 0, 0);
 
   // Render map markers (warp, stairs, goals, and point info pins) in 3D space
   if (args.markers) {
@@ -292,8 +319,8 @@ function renderWalls(
       if (perpDist < 5) continue;
 
       const col = Math.round(((relAngle + fov / 2) / fov) * (W - 1));
-      const mHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
-      const isPortal = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
+      const mHeight = perpDist > 0.1 ? (64 / perpDist) * distPlane : H;
+      const isPortal = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs' || m.type === 'start' || m.type === 'checkpoint';
       const isGoal = m.type === 'goal';
 
       // Lower marker heights relative to floor level (baseFloorY) to reduce portal heights and lower label text positions
@@ -315,6 +342,9 @@ function renderWalls(
         b = parseInt(hexColor.slice(5, 7), 16);
       }
 
+      // Check if marker is in front of the player (between camera and player) in TPS mode
+      const isOverlayInFront = args.playerDist !== undefined && perpDist < args.playerDist;
+
       // Pillar thickness: Portals and goals are thick, others are very thin lines
       const mWidth = (isPortal || isGoal)
         ? Math.max(2, Math.round(mHeight * 0.15))
@@ -323,11 +353,14 @@ function renderWalls(
       const left = Math.max(0, col - Math.round(mWidth / 2));
       const right = Math.min(W - 1, col + Math.round(mWidth / 2));
 
-      // Fade out markers in the distance
+      // Fade out markers in the distance, or make them highly transparent if in front of player
       const distanceFade = Math.max(0.05, Math.min(1.0, 1.0 - (perpDist / 800)));
-      const alpha = (isPortal || isGoal) ? 0.45 * distanceFade : 0.25 * distanceFade;
+      const baseAlpha = isOverlayInFront 
+        ? 0.05 
+        : ((isPortal || isGoal) ? 0.45 : 0.25);
+      const alpha = baseAlpha * distanceFade;
       const fillColor = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-      const coreColor = `rgba(${r}, ${g}, ${b}, ${0.85 * distanceFade})`;
+      const coreColor = `rgba(${r}, ${g}, ${b}, ${isOverlayInFront ? 0.08 : 0.85 * distanceFade})`;
 
       for (let xCol = left; xCol <= right; xCol++) {
         if (colHeights[xCol] && colHeights[xCol].perpDist < perpDist) {
@@ -349,8 +382,7 @@ function renderWalls(
           continue;
         }
 
-        ctx.fillStyle = `rgba(255, 255, 255, ${distanceFade})`;
-        ctx.font = '8px monospace';
+        ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
 
         let labelText = `${meta.emoji} ${meta.label}`;
@@ -364,7 +396,13 @@ function renderWalls(
           labelText = `🚪 脱出口 (ESCAPE)`;
         }
 
-        ctx.fillText(labelText, col, wallTop - 4);
+        // Draw black stroke outline to guarantee visibility on light/white backgrounds
+        ctx.strokeStyle = `rgba(0, 0, 0, ${isOverlayInFront ? 0.15 : 0.8 * distanceFade})`;
+        ctx.lineWidth = 3;
+        ctx.strokeText(labelText, col, wallTop - 6);
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${isOverlayInFront ? 0.12 : distanceFade})`;
+        ctx.fillText(labelText, col, wallTop - 6);
       }
     }
   }
@@ -428,17 +466,20 @@ export function renderMinimap(
     const bg = bgImageData;
     const invScale = 1 / scale;
 
-    // キャッシュ用の一時キャンバスの初期化
+    // キャッシュ用の一時キャンバスとImageDataの初期化
     if (!tempMinimapCanvas) {
       tempMinimapCanvas = document.createElement('canvas');
       tempMinimapCanvas.width = MINIMAP_SIZE;
       tempMinimapCanvas.height = MINIMAP_SIZE;
       tempMinimapCtx = tempMinimapCanvas.getContext('2d');
+      if (tempMinimapCtx) {
+        tempMinimapImageData = tempMinimapCtx.createImageData(MINIMAP_SIZE, MINIMAP_SIZE);
+      }
     }
 
     const tempCtx = tempMinimapCtx;
-    if (tempCtx) {
-      const imgData = tempCtx.createImageData(MINIMAP_SIZE, MINIMAP_SIZE);
+    const imgData = tempMinimapImageData;
+    if (tempCtx && imgData) {
       for (let my = 0; my < MINIMAP_SIZE; my++) {
         const wy = player.y + (my - half) * invScale;
         const ty = Math.floor(wy);
@@ -568,14 +609,15 @@ export function renderTpsView(
   bgImageData?: ImageData | null,
   markers?: { x: number; y: number; type: string; id?: string; linkedWarpId?: string }[]
 ): void {
-  // プレイヤーの真後ろ（角度 + Math.PI）にレイを飛ばし、壁との距離を測る
-  const oppAngle = normalizeAngle(player.angle + Math.PI);
-  const camHit = castRay({ x: player.x, y: player.y }, oppAngle, walls);
-  const actualCamDistance = camHit.distance < camDistance
-    ? Math.max(5, camHit.distance - 6) // 壁から6px離した位置に寄せる。最小5px
-    : camDistance;
+  // 手前にある壁やオブジェクトは自動的に半透明化されるため、カメラを壁の手前で止める必要はありません。
+  // 常に一定のカメラ距離（camDistance）を維持することで、画面下にアバターが隠れる問題を根本解決します。
+  const actualCamDistance = camDistance;
   const camX = player.x - Math.cos(player.angle) * actualCamDistance;
   const camY = player.y - Math.sin(player.angle) * actualCamDistance;
+  
+  const dx = player.x - camX;
+  const dy = player.y - camY;
+  const playerDist = Math.hypot(dx, dy);
 
   const { colHeights } = renderWalls({
     ctx, canvas,
@@ -587,19 +629,18 @@ export function renderTpsView(
     ceilingColor1, ceilingColor2,
     bgImageData,
     camHeight: 24,
-    yOffset: -50,
-    markers
+    yOffset: Math.round(canvas.height * -0.2083),
+    markers,
+    playerDist
   });
 
   // Render player billboard
   const W = canvas.width;
   const H = canvas.height;
-  const halfH = H / 2 - 50; // 固定 yOffset = -50
+  const yOffset = Math.round(H * -0.2083);
+  const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
 
-  const dx = player.x - camX;
-  const dy = player.y - camY;
-  const playerDist = Math.hypot(dx, dy);
   // カメラがキャラクターに近すぎる（後ろにすぐ壁がある）場合は、
   // キャラ自身や手前の壁が視界を遮らないようにアバターを非表示にする
   if (playerDist < 25) return;
