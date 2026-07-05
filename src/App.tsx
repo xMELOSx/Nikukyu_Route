@@ -685,6 +685,8 @@ export default function App() {
   }, [defaultsLoaded]);
   // 表示制御: ローカルは常時表示、本番はサーバー設定に従う
   const showSpawnFeature = isLocal || spawnServerEnabled;
+  // スポーン編集ツールはローカル専用
+  const showSpawnEditFeature = isLocal;
   // デバッグメニュートグル → サーバーの global_defaults.json を書き換え
   const handleSpawnFeatureToggle = useCallback((enabled: boolean) => {
     setSpawnServerEnabled(enabled);
@@ -1773,6 +1775,7 @@ export default function App() {
           isLocal={isLocal}
           currentFloor={currentFloor}
           showSpawnFeature={showSpawnFeature}
+          showSpawnEditFeature={showSpawnEditFeature}
           showSettingsExpanded={showSettingsExpanded}
           setShowSettingsExpanded={setShowSettingsExpanded}
           markerVisibilityExpanded={markerVisibilityExpanded}

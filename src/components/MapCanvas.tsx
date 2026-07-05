@@ -1769,7 +1769,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (toolMode === 'add-spawn' && isEditMode) {
+    if (toolMode === 'add-spawn' && isEditMode && isLocal) {
       // Alt押下で設置⇔編集を一時的にシフト
       const effectiveMode = e.altKey
         ? (spawnToolMode === 'place' ? 'edit' :

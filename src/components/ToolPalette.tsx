@@ -9,6 +9,7 @@ interface ToolPaletteProps {
   toolMode: string; setToolMode: (v: string) => void;
   historyApi: any;
   showSpawnFeature: boolean;
+  showSpawnEditFeature: boolean;
   isLocal: boolean;
   resetTarget: string | null; setResetTarget: (v: any) => void;
   routeApi: any;
@@ -29,7 +30,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = (p) => (<>
       <button className={`tool-btn ${p.toolMode === 'edit-stroke' ? 'active' : ''}`} onClick={() => p.setToolMode('edit-stroke')}><Wand2 size={18} /><span>{t('\u7dda\u5206\u7de8\u96c6')}</span></button>
       <button className={`tool-btn ${p.toolMode === 'erase' ? 'active' : ''}`} onClick={() => p.setToolMode('erase')}><Eraser size={18} /><span>{t('\u6d88\u3057\u30b4\u30e0')}</span></button>
       <button className={`tool-btn ${p.toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => p.setToolMode('toggle-vis')}><EyeOff size={18} /><span>{t('\u8868\u793a\u5207\u66ff')}</span></button>
-      {p.showSpawnFeature && (
+      {p.showSpawnEditFeature && (
         <button className={`tool-btn ${p.toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => p.setToolMode(p.toolMode === 'add-spawn' ? 'move' : 'add-spawn')} style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
           <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('\u30b9\u30dd\u30fc\u30f3')}</span>
         </button>

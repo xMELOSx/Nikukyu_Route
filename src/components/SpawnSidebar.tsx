@@ -169,7 +169,7 @@ const SpawnSidebar: React.FC<any> = (p) => {
 
   return (<>
     {/* Spawn tool panel */}
-    {p.toolMode === 'add-spawn' && p.showSpawnFeature && (
+    {p.toolMode === 'add-spawn' && p.showSpawnEditFeature && (
       <>
         <div className="panel-section">
           <div className="panel-title">{t('\u30b9\u30dd\u30fc\u30f3')}</div>

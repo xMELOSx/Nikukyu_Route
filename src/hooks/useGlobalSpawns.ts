@@ -76,6 +76,10 @@ export function useGlobalSpawns(): UseGlobalSpawnsApi {
     if (points.length === 0) return;
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
+      // ローカル環境以外ではサーバーに保存しない
+      if (window.location.hostname !== 'localhost' &&
+          window.location.hostname !== '127.0.0.1' &&
+          window.location.hostname !== '::1') return;
       fetch(`${import.meta.env.BASE_URL}api/global-spawns`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ points, items })

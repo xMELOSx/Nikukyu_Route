@@ -32,7 +32,7 @@ export interface LeftSidebarProps {
   canvasRef: any;
   isEditMode: boolean; setIsEditMode: (v: boolean) => void;
   toolMode: string; setToolMode: React.Dispatch<React.SetStateAction<any>>;
-  isLocal: boolean; currentFloor: FloorType; showSpawnFeature: boolean;
+  isLocal: boolean; currentFloor: FloorType; showSpawnFeature: boolean; showSpawnEditFeature: boolean;
   showSettingsExpanded: boolean; setShowSettingsExpanded: (v: boolean) => void;
   markerVisibilityExpanded: boolean; setMarkerVisibilityExpanded: (v: boolean) => void;
   floorNavCollapsed: boolean; setFloorNavCollapsed: (v: any) => void;
@@ -128,7 +128,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const {
     routeApi, globalMarkersStore, historyApi, spawnApi, globalWalls, notification,
     canvasRef, isEditMode, setIsEditMode, toolMode, setToolMode,
-    isLocal, currentFloor, showSpawnFeature,
+    isLocal, currentFloor, showSpawnFeature, showSpawnEditFeature,
     showSettingsExpanded, setShowSettingsExpanded,
     markerVisibilityExpanded, setMarkerVisibilityExpanded,
     floorNavCollapsed, setFloorNavCollapsed,
@@ -755,7 +755,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <button className={`tool-btn ${toolMode === 'toggle-vis' ? 'active' : ''}`} onClick={() => setToolMode('toggle-vis')} id="tool-toggle-vis-btn">
                     <EyeOff size={18} /><span>{t('表示切替')}</span>
                   </button>
-                  {showSpawnFeature && (
+                  {showSpawnEditFeature && (
                     <button className={`tool-btn ${toolMode === 'add-spawn' ? 'active' : ''}`} onClick={() => setToolMode(toolMode === 'add-spawn' ? 'move' : 'add-spawn')} id="tool-add-spawn-btn" style={{ borderColor: 'rgba(57, 255, 20, 0.4)' }}>
                       <Star size={18} style={{ color: '#39ff14' }} /><span style={{ color: '#39ff14' }}>{t('スポーン')}</span>
                     </button>
@@ -1152,7 +1152,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
               </div>
             )}
 
-            {toolMode === 'add-spawn' && showSpawnFeature && (
+            {toolMode === 'add-spawn' && showSpawnEditFeature && (
               <>
                 <div className="panel-section">
                   <div className="panel-title" style={{ fontSize: '10px' }}>スポーン</div>
