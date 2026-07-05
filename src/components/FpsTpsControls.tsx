@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { Point, HeistMarker, FloorType } from '../utils/DataManager';
 import { PRESET_MAPS_META } from '../utils/DataManager';
 import FpsView from './FpsView';
@@ -121,13 +121,22 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     }
   }, [wrapperRef, zoom, currentPosition, startSmoothScroll]);
 
+  useEffect(() => {
+    if (freeCamMode) {
+      const c = fpsCanvasRef.current;
+      if (c) {
+        const tryLock = () => { try { c.requestPointerLock(); } catch {} };
+        // requestPointerLock は要素が可視になってからでないと失敗する場合がある
+        requestAnimationFrame(() => requestAnimationFrame(tryLock));
+      }
+    }
+  }, [freeCamMode]);
+
   const handleStart = useCallback((mode: 'fps' | 'tps') => {
     captureLatestBgImageData();
     if (!currentPosition) {
       onPositionChange(resolveInitialPos(markers, startupFocusMarkerId));
     }
-    const c = fpsCanvasRef.current;
-    if (c) { c.requestPointerLock(); }
     setFreeCamMode(mode);
   }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId]);
 

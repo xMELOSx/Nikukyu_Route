@@ -60,6 +60,11 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const bgImageDataRef = useRef<ImageData | null>(null);
   bgImageDataRef.current = bgImageData ?? null;
 
+  const wallsRef = useRef(walls);
+  wallsRef.current = walls;
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
+
   const lastTeleportTimeRef = useRef<number>(0);
   const teleportEffectTimerRef = useRef<number>(0);
   const teleportEffectColorRef = useRef<string>('rgba(255,0,255,0.3)');
@@ -133,6 +138,9 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       if (keys.has('a') || keys.has('arrowleft')) strafe = -1;
       if (keys.has('d') || keys.has('arrowright')) strafe = 1;
 
+      const lw = wallsRef.current;
+      const lm = markersRef.current;
+
       if (forward !== 0 || strafe !== 0) {
         if (mode === 'tps') {
           const newPlayer = movePlayerTps(
@@ -140,7 +148,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
             forward,
             strafe,
             playerRef.current.angle,
-            walls,
+            lw,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -150,7 +158,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
             playerRef.current,
             forward,
             strafe,
-            walls,
+            lw,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -162,14 +170,14 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       const now = Date.now();
       if (now - lastTeleportTimeRef.current > 1500) {
         const curP = playerRef.current;
-        const portal = markers.find(m => {
+        const portal = lm.find(m => {
           if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') return false;
           const dist = Math.hypot(curP.x - m.x, curP.y - m.y);
           return dist < 14;
         });
 
         if (portal && portal.linkedWarpId) {
-          const partner = markers.find(m => m.id === portal.linkedWarpId);
+          const partner = lm.find(m => m.id === portal.linkedWarpId);
           if (partner) {
             let newAngle = curP.angle;
             if (partner.teleportAngle !== undefined) {
@@ -194,7 +202,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         renderTpsView(
           ctx, canvas,
           playerRef.current,
-          walls,
+          lw,
           FOV,
           TPS_CAM_DISTANCE,
           WALL_COLOR, WALL_COLOR_DARK,
@@ -207,7 +215,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         renderFpsView(
           ctx, canvas,
           playerRef.current,
-          walls,
+          lw,
           FOV,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
@@ -216,7 +224,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         );
       }
 
-      renderMinimap(ctx, canvas, playerRef.current, walls, markers);
+      renderMinimap(ctx, canvas, playerRef.current, lw, lm);
 
       if (teleportEffectTimerRef.current > 0) {
         ctx.fillStyle = teleportEffectColorRef.current;
@@ -265,7 +273,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, [walls, mode, canvasRef, markers]);
+  }, [mode, canvasRef]);
 
   return null;
 };

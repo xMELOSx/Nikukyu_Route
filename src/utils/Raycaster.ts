@@ -80,8 +80,10 @@ export function movePlayer(
 ): PlayerState {
   const cos = Math.cos(player.angle);
   const sin = Math.sin(player.angle);
-  let nx = player.x + (forward * cos - strafe * sin) * speed;
-  let ny = player.y + (forward * sin + strafe * cos) * speed;
+  const dx = (forward * cos - strafe * sin) * speed;
+  const dy = (forward * sin + strafe * cos) * speed;
+  let nx = player.x + dx;
+  let ny = player.y + dy;
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -91,10 +93,11 @@ export function movePlayer(
   };
 
   if (!check(nx, ny)) {
-    nx = player.x + (forward * cos + strafe * sin) * speed;
+    nx = player.x + dx;
     ny = player.y;
     if (!check(nx, ny)) nx = player.x;
-    ny = player.y + (forward * sin - strafe * cos) * speed;
+    nx = player.x;
+    ny = player.y + dy;
     if (!check(nx, ny)) ny = player.y;
   }
 
@@ -112,8 +115,10 @@ export function movePlayerTps(
 ): PlayerState {
   const cos = Math.cos(camAngle);
   const sin = Math.sin(camAngle);
-  let nx = player.x + (forward * cos - strafe * sin) * speed;
-  let ny = player.y + (forward * sin + strafe * cos) * speed;
+  const dx = (forward * cos - strafe * sin) * speed;
+  const dy = (forward * sin + strafe * cos) * speed;
+  let nx = player.x + dx;
+  let ny = player.y + dy;
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -123,10 +128,11 @@ export function movePlayerTps(
   };
 
   if (!check(nx, ny)) {
-    nx = player.x + (forward * cos + strafe * sin) * speed;
+    nx = player.x + dx;
     ny = player.y;
     if (!check(nx, ny)) nx = player.x;
-    ny = player.y + (forward * sin - strafe * cos) * speed;
+    nx = player.x;
+    ny = player.y + dy;
     if (!check(nx, ny)) ny = player.y;
   }
 
@@ -283,6 +289,12 @@ export function renderMinimap(
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
 
+  // Clip to minimap area so walls/markers don't bleed outside the border
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  ctx.clip();
+
   // Grid lines (every 100 world units = 100/500*90 = 18px)
   ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
   ctx.lineWidth = 0.5;
@@ -353,6 +365,8 @@ export function renderMinimap(
     y + half + Math.sin(player.angle) * coneLen
   );
   ctx.stroke();
+
+  ctx.restore();
 }
 
 export function renderTpsView(
