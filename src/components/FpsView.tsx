@@ -8,7 +8,8 @@ import {
   renderFpsView,
   renderTpsView,
   renderMinimapView,
-  renderMarkers3D
+  renderMarkers3D,
+  castRay
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -26,6 +27,7 @@ interface FpsViewProps {
   hiddenMarkers?: string[];
   hiddenMarkerTypes?: string[];
   mapSnapshotCanvas?: HTMLCanvasElement | null;
+  onToggleNearestPhone?: () => void;
 }
 
 const FOV = Math.PI * 0.45;
@@ -44,7 +46,7 @@ const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
-  hiddenMarkers = [], hiddenMarkerTypes = [], mapSnapshotCanvas
+  hiddenMarkers = [], hiddenMarkerTypes = [], mapSnapshotCanvas, onToggleNearestPhone
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -157,7 +159,10 @@ const FpsView: React.FC<FpsViewProps> = ({
         onLockedWallsChange(next);
       }
     }
-  }, [onLockedWallsChange]);
+    if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
+      onToggleNearestPhone?.();
+    }
+  }, [onLockedWallsChange, onToggleNearestPhone]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -235,8 +240,8 @@ const FpsView: React.FC<FpsViewProps> = ({
 
       const lw = wallsRef.current;
       const llw = lockedWallsRef.current;
-      const closedLocked = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
-      const allWalls = lw.length > 0 || closedLocked.length > 0 ? [...lw, ...closedLocked] : lw;
+      const closedLockedArr = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
+      const collisionWalls = lw.length > 0 || closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
@@ -246,7 +251,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             forward,
             strafe,
             playerRef.current.angle,
-            allWalls,
+            collisionWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -256,7 +261,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             playerRef.current,
             forward,
             strafe,
-            allWalls,
+            collisionWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -318,11 +323,14 @@ const FpsView: React.FC<FpsViewProps> = ({
       const actualCamDist = TPS_CAM_DISTANCE;
 
       let colHeights: { top: number; bottom: number; perpDist: number }[];
+      const LOCKED_WALL_COLOR = '#cc9900';
+      const LOCKED_WALL_COLOR_DARK = '#664400';
+      const closedLockedForRender = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
       if (mode === 'tps') {
         colHeights = renderTpsView(
           ctx, canvas,
           playerRef.current,
-          allWalls,
+          lw,
           FOV,
           actualCamDist,
           WALL_COLOR, WALL_COLOR_DARK,
@@ -335,13 +343,45 @@ const FpsView: React.FC<FpsViewProps> = ({
         colHeights = renderFpsView(
           ctx, canvas,
           playerRef.current,
-          allWalls,
+          lw,
           FOV,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
           bgImageDataRef.current
         );
+      }
+
+      // Overlay locked walls as semi-transparent short columns (above the rendered scene)
+      if (closedLockedForRender.length > 0) {
+        const W2 = canvas.width;
+        const H2 = canvas.height;
+        const halfH2 = H2 / 2 + (-50);
+        const distPlane2 = (W2 / 2) / Math.tan(FOV / 2);
+        const actualCamPos = mode === 'tps'
+          ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
+          : { x: playerRef.current.x, y: playerRef.current.y };
+        const originAngle2 = playerRef.current.angle;
+        for (let i = 0; i < W2; i++) {
+          const rayAngle2 = normalizeAngle(originAngle2 - FOV / 2 + (i / (W2 - 1)) * FOV);
+          const wallHit = castRay(actualCamPos, rayAngle2, lw);
+          const lHit = castRay(actualCamPos, rayAngle2, closedLockedForRender);
+          if (lHit.distance >= Infinity) continue;
+          // 通常壁が鍵壁より手前にある場合は鍵壁を描画しない（壁抜け防止）
+          if (wallHit.distance < lHit.distance) continue;
+          const lPerpDist = lHit.distance * Math.cos(rayAngle2 - originAngle2);
+          const fullHt = lPerpDist > 0.1 ? (halfH2 / lPerpDist) * distPlane2 : H2;
+          const lockedHt = fullHt * 0.3;
+          const camHtFrac = 0.375;
+          const lBot = Math.min(H2, Math.floor(halfH2 + fullHt * camHtFrac));
+          const lTop = Math.max(0, Math.floor(lBot - lockedHt));
+          const lShade = Math.min(1, 4 / lPerpDist);
+          const lColR = Math.round(0x66 + (0xcc - 0x66) * lShade);
+          const lColG = Math.round(0x44 + (0x99 - 0x44) * lShade);
+          const lColB = Math.round(0x00 + (0x00 - 0x00) * lShade);
+          ctx.fillStyle = `rgba(${lColR},${lColG},${lColB},0.85)`;
+          ctx.fillRect(i, lTop, 1, lBot - lTop);
+        }
       }
 
       // Render markers in 3D view
@@ -407,6 +447,51 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
       ctx.fillText(hudL, 10, canvas.height - 10);
       ctx.fillText(hudR, canvas.width - 80, canvas.height - 10);
+
+      // Phone compass: nearest ACTIVE phone direction & status
+      const activePhoneMarkers = lm.filter(m => m.type === 'phone' && m.phoneActive && !m.phoneLocked);
+      let nearestPhone: typeof lm[0] | null = null;
+      let nearestPhoneDist = Infinity;
+      for (const pm of activePhoneMarkers) {
+        const d = Math.hypot(pm.x - playerRef.current.x, pm.y - playerRef.current.y);
+        if (d < nearestPhoneDist) { nearestPhoneDist = d; nearestPhone = pm; }
+      }
+      if (nearestPhone) {
+        const pa = Math.atan2(nearestPhone.y - playerRef.current.y, nearestPhone.x - playerRef.current.x);
+        const relAngle = normalizeAngle(pa - playerRef.current.angle);
+        const cx3 = canvas.width - 44;
+        const cy3 = 44;
+        const r = 16;
+        // Orbit ring (solid green)
+        ctx.strokeStyle = 'rgba(57, 255, 20, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx3, cy3, r, 0, Math.PI * 2);
+        ctx.stroke();
+        // Direction arrow on ring (0=up in compass = forward)
+        const arrowX = cx3 + Math.sin(relAngle) * r;
+        const arrowY = cy3 - Math.cos(relAngle) * r;
+        ctx.fillStyle = '#39ff14';
+        ctx.beginPath();
+        ctx.arc(arrowX, arrowY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Pulse glow
+        ctx.strokeStyle = 'rgba(57, 255, 20, 0.25)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(arrowX, arrowY, 6 + Math.sin(Date.now() * 0.005) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+        // Center label
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#39ff14';
+        ctx.fillText('📞', cx3, cy3);
+        // Distance text
+        ctx.font = '8px monospace';
+        ctx.fillStyle = 'rgba(57,255,20,0.6)';
+        ctx.fillText(`${Math.round(nearestPhoneDist)}px`, cx3, cy3 + r + 12);
+      }
 
       // Locked door interaction prompt
       const llocked = lockedWallsRef.current;

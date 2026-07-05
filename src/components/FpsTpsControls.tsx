@@ -25,6 +25,8 @@ interface FpsTpsControlsProps {
   strokes?: any;
   spawnItems?: any[];
   mapSnapshotCanvas?: HTMLCanvasElement | null;
+  onFreeCamModeChange?: (active: boolean) => void;
+  onToggleNearestPhone?: () => void;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -52,7 +54,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   startupFocusMarkerId, hideButtons,
   currentPosition, onPositionChange,
   hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = [],
-  strokes = {}, spawnItems = [], mapSnapshotCanvas
+  strokes = {}, spawnItems = [], mapSnapshotCanvas,
+  onFreeCamModeChange, onToggleNearestPhone
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -60,6 +63,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
   const canvasScale = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
+
+  useEffect(() => {
+    onFreeCamModeChange?.(!!freeCamMode);
+  }, [freeCamMode, onFreeCamModeChange]);
 
   const captureLatestBgImageData = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
@@ -348,6 +355,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             hiddenMarkers={hiddenMarkers}
             hiddenMarkerTypes={hiddenMarkerTypes}
             mapSnapshotCanvas={mapSnapshotCanvas ?? null}
+            onToggleNearestPhone={onToggleNearestPhone}
           />
         )}
       </div>

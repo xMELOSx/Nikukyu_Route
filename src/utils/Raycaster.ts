@@ -183,6 +183,10 @@ interface WallRenderArgs {
   ceilingColor2: string;
   bgImageData?: ImageData | null;
   playerDist?: number;
+  lockedWalls?: [Point, Point][];
+  lockedWallColor?: string;
+  lockedWallColorDark?: string;
+  lockedWallHeightFrac?: number;
 }
 
 function renderWalls(
@@ -197,6 +201,10 @@ function renderWalls(
   const distPlane = (W / 2) / Math.tan(fov / 2);
 
   const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays, args.playerDist);
+  const lw = args.lockedWalls;
+  const lockedHits = lw && lw.length > 0
+    ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, lw, fov, numRays, args.playerDist)
+    : null;
   const colHeights: { top: number; bottom: number; perpDist: number }[] = [];
 
   // Create screen pixel buffer
@@ -210,6 +218,15 @@ function renderWalls(
   const darkR = parseInt(args.wallColorDark.slice(1, 3), 16);
   const darkG = parseInt(args.wallColorDark.slice(3, 5), 16);
   const darkB = parseInt(args.wallColorDark.slice(5, 7), 16);
+
+  // Pre-parse locked wall colors
+  const lr = args.lockedWallColor ? parseInt(args.lockedWallColor.slice(1, 3), 16) : r;
+  const lg = args.lockedWallColor ? parseInt(args.lockedWallColor.slice(3, 5), 16) : g;
+  const lb = args.lockedWallColor ? parseInt(args.lockedWallColor.slice(5, 7), 16) : b;
+  const lDarkR = args.lockedWallColorDark ? parseInt(args.lockedWallColorDark.slice(1, 3), 16) : darkR;
+  const lDarkG = args.lockedWallColorDark ? parseInt(args.lockedWallColorDark.slice(3, 5), 16) : darkG;
+  const lDarkB = args.lockedWallColorDark ? parseInt(args.lockedWallColorDark.slice(5, 7), 16) : darkB;
+  const lhf = args.lockedWallHeightFrac ?? 0.5;
 
   // Pre-parse ceiling / floor colors
   const parseHex = (hex: string) => {
@@ -227,14 +244,35 @@ function renderWalls(
   for (let i = 0; i < numRays; i++) {
     const hit = hits[i];
     const dist = hit.distance;
-    const rayAngle = normalizeAngle(originAngle - fov / 2 + (i / (numRays - 1)) * fov);
-    const perpDist = dist * Math.cos(rayAngle - originAngle);
 
-    const wallHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
+    // Check if a locked wall is closer
+    let isLocked = false;
+    let lockedDist = dist;
+    if (lockedHits) {
+      const lHit = lockedHits[i];
+      if (lHit.distance < dist) {
+        lockedDist = lHit.distance;
+        isLocked = true;
+      }
+    }
+    const effectiveDist = isLocked ? lockedDist : dist;
+    const rayAngle = normalizeAngle(originAngle - fov / 2 + (i / (numRays - 1)) * fov);
+    const perpDist = effectiveDist * Math.cos(rayAngle - originAngle);
+
+    let fullWallHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
     // カメラの高さ比率を 0.375 とし、目線を少し下げて床面とパースを完全に合わせる
     const camHeightFrac = 0.375;
-    const wallTop = Math.max(0, Math.floor(halfH - wallHeight * (1 - camHeightFrac))); // 天井側（遠い）
-    const wallBottom = Math.min(H, Math.floor(halfH + wallHeight * camHeightFrac));    // 床側（近い）
+    const wallTopFull = Math.max(0, Math.floor(halfH - fullWallHeight * (1 - camHeightFrac))); // 天井側（遠い）
+    const wallBottomFull = Math.min(H, Math.floor(halfH + fullWallHeight * camHeightFrac));    // 床側（近い）
+
+    let wallTop = wallTopFull;
+    let wallBottom = wallBottomFull;
+    if (isLocked) {
+      // 鍵付き壁は地面から lhf の高さまで描画（浮かせず地面設置）
+      const lockedH = (wallBottomFull - wallTopFull) * lhf;
+      wallTop = Math.max(0, Math.floor(wallBottomFull - lockedH));
+      wallBottom = wallBottomFull;
+    }
 
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
 
@@ -250,9 +288,9 @@ function renderWalls(
 
     // 2. Render Wall to buffer
     const shade = Math.min(1, 4 / perpDist);
-    const colR = Math.round(darkR + (r - darkR) * shade);
-    const colG = Math.round(darkG + (g - darkG) * shade);
-    const colB = Math.round(darkB + (b - darkB) * shade);
+    const colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * shade));
+    const colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * shade));
+    const colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * shade));
 
     for (let y = wallTop; y < wallBottom; y++) {
       const idx = (y * W + i) * 4;
@@ -312,7 +350,12 @@ function renderWalls(
 
     // 4. Render Front Translucent Wall Overlay (if any)
     const frontHit = castRay({ x: origin.x, y: origin.y }, rayAngle, walls);
-    const frontDist = frontHit.distance;
+    let frontDist = frontHit.distance;
+    // Also check locked walls for front overlay
+    if (lw && lw.length > 0) {
+      const lFront = castRay({ x: origin.x, y: origin.y }, rayAngle, lw);
+      if (lFront.distance < frontDist) frontDist = lFront.distance;
+    }
     const frontPerpDist = frontDist * Math.cos(rayAngle - originAngle);
 
     let diff = rayAngle - originAngle;
@@ -359,7 +402,11 @@ export function renderFpsView(
   floorColor2: string,
   ceilingColor1: string,
   ceilingColor2: string,
-  bgImageData?: ImageData | null
+  bgImageData?: ImageData | null,
+  lockedWalls?: [Point, Point][],
+  lockedWallColor?: string,
+  lockedWallColorDark?: string,
+  lockedWallHeightFrac?: number
 ): { top: number; bottom: number; perpDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -369,7 +416,8 @@ export function renderFpsView(
     wallColor, wallColorDark,
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
-    bgImageData
+    bgImageData,
+    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac
   }).colHeights;
 }
 
@@ -681,7 +729,11 @@ export function renderTpsView(
   ceilingColor1: string,
   ceilingColor2: string,
   playerColor: string,
-  bgImageData?: ImageData | null
+  bgImageData?: ImageData | null,
+  lockedWalls?: [Point, Point][],
+  lockedWallColor?: string,
+  lockedWallColorDark?: string,
+  lockedWallHeightFrac?: number
 ): { top: number; bottom: number; perpDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -697,7 +749,8 @@ export function renderTpsView(
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
     bgImageData,
-    playerDist: actualCamDistance
+    playerDist: actualCamDistance,
+    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac
   });
 
   // Render player billboard

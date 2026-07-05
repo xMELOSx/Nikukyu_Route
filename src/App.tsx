@@ -275,7 +275,7 @@ export default function App() {
           if (Array.isArray(parsed[floor])) {
             for (const seg of parsed[floor]) {
               if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
-                out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: !!seg.isOpen });
+                out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
               }
             }
           }

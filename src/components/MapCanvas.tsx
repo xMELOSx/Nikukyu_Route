@@ -299,7 +299,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isDrawingRef = useRef(false);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
+  const freeCamModeRef = useRef(false);
   const [miniMapSource, setMiniMapSource] = useState<HTMLCanvasElement | null>(null);
+
+  const handleFreeCamModeChange = useCallback((active: boolean) => {
+    freeCamModeRef.current = active;
+  }, []);
 
   // Build the minimap source canvas from the REAL MapCanvas rendering:
   // floor image + canvasRef routes (pixel-identical) + walls + waypoints + markers
@@ -630,6 +635,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
+
+  const handleToggleNearestPhone = useCallback(() => {
+    if (!currentPosition) return;
+    const phoneMarkers = markers.filter(m => m.type === 'phone' && m.floor === floor);
+    if (phoneMarkers.length === 0) return;
+    let closestPhone: HeistMarker | null = null;
+    let minDistance = Infinity;
+    phoneMarkers.forEach(m => {
+      const dist = Math.hypot(m.x - currentPosition.x, m.y - currentPosition.y);
+      if (dist < minDistance) { minDistance = dist; closestPhone = m; }
+    });
+    if (closestPhone && !closestPhone.phoneLocked) {
+      onMarkersChange(
+        markers.map(mk => mk.id === closestPhone!.id ? { ...mk, phoneActive: !mk.phoneActive } : mk),
+        true
+      );
+    }
+  }, [currentPosition, markers, floor, onMarkersChange]);
 
   // スキルCD編集用ステート
   // プリセット未使用時 (=skillPresetId が空) は note がラベルの役割。編集の頭文字がリアルタイムでアイコンに反映される。
@@ -1114,6 +1137,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Keyboard shortcut listener to toggle the nearest phone box with the "R" key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // TPS/FPSモード中はマップのキーハンドラをスキップ
+      if (freeCamModeRef.current) return;
+
       if (e.key === 'Escape' && zoomedMedia) {
         e.preventDefault();
         setZoomedMedia(null);
@@ -1124,10 +1150,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setActiveNoteMarkerId(null);
         return;
       }
-      // Presentation-mode popups (picking / info / boss / battle) are
-      // tracked on the marker via `*Expanded` flags rather than
-      // `activeNoteMarkerId`, so the ESC check above misses them.
-      // Close any open presentation popup here.
       if (e.key === 'Escape') {
         const hasOpenPopup = markers.some(
           m => m.pickingExpanded || m.infoExpanded || m.bossExpanded || m.battleExpanded || m.noteExpanded
@@ -1148,15 +1170,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (e.key === 'r' || e.key === 'R') {
         if (!currentPosition) return;
-        
-        // Find all phone markers on the current floor
         const phoneMarkers = markers.filter(m => m.type === 'phone' && m.floor === floor);
         if (phoneMarkers.length === 0) return;
-        
-        // Find the closest phone marker
         let closestPhone: HeistMarker | null = null;
         let minDistance = Infinity;
-        
         phoneMarkers.forEach(m => {
           const dist = Math.hypot(m.x - currentPosition.x, m.y - currentPosition.y);
           if (dist < minDistance) {
@@ -1164,7 +1181,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             closestPhone = m;
           }
         });
-        
         if (closestPhone && !(closestPhone as HeistMarker).phoneLocked) {
           onMarkersChange(
             markers.map(mk => {
@@ -1173,7 +1189,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               }
               return mk;
             }),
-            true // should push history
+            true
           );
         }
       }
@@ -1970,7 +1986,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isDrawing && (toolMode === 'draw' || toolMode === 'erase' || toolMode === 'wall' || toolMode === 'toggle-vis')) {
       // 45-degree angle snap logic when Alt key is pressed during straight lines
       let effectiveCoords = coords;
-      const useAngleSnap = e.altKey || (wallAutoSnap && toolMode === 'wall' && wallSubMode === 'draw');
+      const useAngleSnap = e.altKey;
       if (useAngleSnap && currentPoints.length > 0 && (toolMode === 'wall' || (toolMode === 'draw' && drawMode === 'straight'))) {
         const startPt = currentPoints[0];
         const dx = coords.x - startPt.x;
@@ -5855,6 +5871,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         strokes={strokes}
         spawnItems={spawnItems}
         mapSnapshotCanvas={miniMapSource}
+        onFreeCamModeChange={handleFreeCamModeChange}
+        onToggleNearestPhone={handleToggleNearestPhone}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

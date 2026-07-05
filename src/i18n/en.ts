@@ -313,7 +313,7 @@ export const en: Locale = {
     '消す': 'Erase',
     '通常壁': 'Normal Wall',
     '鍵付き扉': 'Locked Door',
-    '自動補正 (角度スナップ)': 'Auto Snap (Angle)',
+    '頂点自動統合': 'Auto Vertex Merge',
     '壁エディタ設定': 'Wall Editor Settings',
     'マップの背景画像をもとに、黒い線を壁として自動検出できます。': 'Automatically detect black contours in the background map as walls.',
     '壁の自動検出を実行': 'Run Auto Wall Detection',

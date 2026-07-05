@@ -1097,7 +1097,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         onChange={(e) => setWallAutoSnap(e.target.checked)}
                         style={{ accentColor: '#ffcc00', cursor: 'pointer' }}
                       />
-                      {t('自動補正 (角度スナップ)')}
+                      {t('頂点自動統合')}
                     </label>
                   )}
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
