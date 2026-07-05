@@ -142,7 +142,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       const curP = playerRef.current;
       const lw = lockedWallsRef.current;
       let nearestIdx = -1;
-      let nearestDist = 40;
+      let nearestDist = 16;
       for (let i = 0; i < lw.length; i++) {
         const seg = lw[i];
         const cx = (seg.p1.x + seg.p2.x) / 2;
@@ -292,12 +292,13 @@ const FpsView: React.FC<FpsViewProps> = ({
           if (lastTeleportedPortalIdRef.current === m.id) return false;
 
           const dist = Math.hypot(curP.x - m.x, curP.y - m.y);
-          return dist < 8;
+          return dist < 12;
         });
 
         if (portal && portal.linkedWarpId) {
           const partner = lm.find(m => m.id === portal.linkedWarpId);
           if (partner) {
+            // 出口マーカーに teleportAngle が設定されていれば絶対角度として使う
             let newAngle = curP.angle;
             if (partner.teleportAngle !== undefined) {
               newAngle = (partner.teleportAngle * Math.PI) / 180;
@@ -495,7 +496,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         const cx2 = (seg.p1.x + seg.p2.x) / 2;
         const cy2 = (seg.p1.y + seg.p2.y) / 2;
         const d = Math.hypot(cx2 - playerRef.current.x, cy2 - playerRef.current.y);
-        if (d < 40) { nearDoor = seg; break; }
+        if (d < 16) { nearDoor = seg; break; }
       }
       if (nearDoor) {
         const prompt = nearDoor.isOpen ? '[F] 閉める' : '[F] 開ける';

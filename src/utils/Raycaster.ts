@@ -83,20 +83,7 @@ export function pointToSegmentDist(px: number, py: number, ax: number, ay: numbe
   return Math.hypot(px - cx, py - cy);
 }
 
-function segsCross(
-  ax: number, ay: number, bx: number, by: number,
-  cx: number, cy: number, dx: number, dy: number
-): boolean {
-  const d1x = bx - ax, d1y = by - ay;
-  const d2x = dx - cx, d2y = dy - cy;
-  const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-10) return false;
-  const t = ((cx - ax) * d2y - (cy - ay) * d2x) / denom;
-  const u = ((cx - ax) * d1y - (cy - ay) * d1x) / denom;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
-}
-
-function movePlayerImpl(
+function movePlayerCommon(
   player: PlayerState,
   dx: number, dy: number,
   walls: [Point, Point][],
@@ -104,15 +91,6 @@ function movePlayerImpl(
 ): PlayerState {
   let nx = player.x + dx;
   let ny = player.y + dy;
-
-  // スイープ衝突: 移動線分が壁と交差していないか
-  for (const w of walls) {
-    if (segsCross(player.x, player.y, nx, ny, w[0].x, w[0].y, w[1].x, w[1].y)) {
-      nx = player.x;
-      ny = player.y;
-      return { x: nx, y: ny, angle: player.angle };
-    }
-  }
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -153,7 +131,7 @@ export function movePlayer(
   const sin = Math.sin(player.angle);
   const dx = (forward * cos - strafe * sin) * speed;
   const dy = (forward * sin + strafe * cos) * speed;
-  return movePlayerImpl(player, dx, dy, walls, radius);
+  return movePlayerCommon(player, dx, dy, walls, radius);
 }
 
 export function movePlayerTps(
@@ -169,7 +147,7 @@ export function movePlayerTps(
   const sin = Math.sin(camAngle);
   const dx = (forward * cos - strafe * sin) * speed;
   const dy = (forward * sin + strafe * cos) * speed;
-  return movePlayerImpl(player, dx, dy, walls, radius);
+  return movePlayerCommon(player, dx, dy, walls, radius);
 }
 
 interface WallRenderArgs {
