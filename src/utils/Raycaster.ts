@@ -439,12 +439,64 @@ export function renderMarkers3D(
   // Sort far to near for correct overdraw
   visible.sort((a, b) => b.dist - a.dist);
 
+  // Track already-drawn label x-ranges to avoid overlap
+  const drawnLabels: { x: number; y: number; halfW: number; h: number }[] = [];
+
   for (const v of visible) {
     const glow = v.color + '30';
     ctx.fillStyle = glow;
     ctx.fillRect(v.screenX - v.pw - 1, v.pTop - 1, v.pw * 2 + 2, v.ph + 2);
     ctx.fillStyle = v.color;
     ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
+  }
+
+  // Render labels for markers that have infoLabel or note
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  for (const m of markers) {
+    const label = m.infoLabel || m.note;
+    if (!label) continue;
+
+    const dx = m.x - origin.x;
+    const dy = m.y - origin.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) continue;
+
+    const angleToMarker = Math.atan2(dy, dx);
+    let relAngle = normalizeAngle(angleToMarker - originAngle);
+    if (relAngle > Math.PI) relAngle -= TAU;
+    if (Math.abs(relAngle) > halfFov) continue;
+
+    const screenX = Math.round(((relAngle + halfFov) / fov) * (W - 1));
+    const perpDist = dist * Math.cos(relAngle);
+    if (perpDist < 1 || screenX < 0 || screenX >= W) continue;
+
+    if (colHeights[screenX].perpDist < perpDist) continue;
+
+    const labelPx = Math.max(6, Math.round(10 * distPlane / perpDist));
+    const pBottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
+    ctx.font = `${labelPx}px monospace`;
+
+    const truncated = label.length > 20 ? label.slice(0, 20) + '…' : label;
+    const textWidth = ctx.measureText(truncated).width;
+
+    // Check overlap with previously drawn labels
+    const halfW = textWidth / 2;
+    const labelX = screenX;
+    const labelY = pBottom + 2;
+    const labelH = labelPx + 2;
+    const overlaps = drawnLabels.some(d =>
+      Math.abs(d.x - labelX) < (halfW + d.halfW + 4) &&
+      Math.abs(d.y - labelY) < labelH + 2
+    );
+    if (overlaps) continue;
+    drawnLabels.push({ x: labelX, y: labelY, halfW: halfW + 2, h: labelH });
+
+    ctx.fillStyle = '#000000cc';
+    ctx.fillRect(labelX - textWidth / 2 - 2, labelY - 1, textWidth + 4, labelH + 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(truncated, labelX, labelY);
   }
 }
 

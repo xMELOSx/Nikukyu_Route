@@ -184,8 +184,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       }}>
         <canvas
           ref={fpsCanvasRef}
-          width={424}
-          height={240}
+          width={848}
+          height={480}
           className="fps-overlay"
         />
         {freeCamMode && currentPosition && (
