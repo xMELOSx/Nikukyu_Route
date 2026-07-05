@@ -324,27 +324,27 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) applyPressed(true);
 
-      // Undo shortcut (Ctrl+Z) — メイン履歴 (スポーンも統合済み)
+      // Undo shortcut (Ctrl+Z) — ref 経由で常に最新の historyApi を参照
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
           return;
         }
-        if (historyApi.canUndo) {
+        if (historyApiRef.current?.canUndo) {
           e.preventDefault();
-          historyApi.undo();
+          historyApiRef.current.undo();
         }
       }
 
-      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — メイン履歴 (スポーンも統合済み)
+      // Redo shortcut (Ctrl+Y or Ctrl+Shift+Z) — ref 経由で常に最新の historyApi を参照
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
           return;
         }
-        if (historyApi.canRedo) {
+        if (historyApiRef.current?.canRedo) {
           e.preventDefault();
-          historyApi.redo();
+          historyApiRef.current.redo();
         }
       }
     };
@@ -967,9 +967,11 @@ export default function App() {
     getRoute: () => routeApi.route,
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
     getWalls: () => globalWallsRef.current as any,
+    getSpawnPoints: () => spawnApi.points,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
+    replaceSpawnPoints: (next) => setSpawnPoints(next),
     persistGlobalMarkers: (markers) => {
       if (Array.isArray(markers) && markers.length > 0) {
         localStorage.setItem('heist_global_markers', JSON.stringify(markers));
@@ -1894,8 +1896,6 @@ export default function App() {
           postGlobalDefaults={postGlobalDefaults}
           openSubWindow={openSubWindow}
           pushSpawnHistory={pushSpawnHistory}
-          undoPoints={undoPoints}
-          redoPoints={redoPoints}
           handleSpawnPointAdd={handleSpawnPointAdd}
           handleSpawnPointEdit={handleSpawnPointEdit}
           handleSpawnPointView={handleSpawnPointView}
@@ -1911,8 +1911,6 @@ export default function App() {
           leftSidebarCollapsed={leftSidebarCollapsed}
           isMobile={isMobile}
           itemImageInputRef={itemImageInputRef}
-          spawnUndoRef={spawnUndoRef}
-          spawnRedoRef={spawnRedoRef}
           onHighlightCategoriesChange={(cats: string[]) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
           onHighlightItemIdsChange={(ids: string[]) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
           onOpenPoolSettings={() => setRightTab('play')}

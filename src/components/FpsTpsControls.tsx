@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Point, HeistMarker, FloorType } from '../utils/DataManager';
-import { PRESET_MAPS_META } from '../utils/DataManager';
+import { MARKER_META, PRESET_MAPS_META } from '../utils/DataManager';
 import FpsView from './FpsView';
 
 interface FpsTpsControlsProps {
@@ -70,7 +70,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
 
     const currentFloorStrokes = strokes[floor] || [];
-    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}|m:${activeMarkers.length}|sp:${spawnPoints?.length ?? 0}|s:${currentFloorStrokes.length}`;
+    const waypointCount = markers.reduce((s, m) => s + (m.warpWaypoints?.length || 0), 0);
+    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}|m:${activeMarkers.length}|sp:${spawnPoints?.length ?? 0}|s:${currentFloorStrokes.length}|wp:${waypointCount}`;
     if (bgCacheRef.current && bgCacheRef.current.key === cacheKey && bgCacheRef.current.canvas) {
       setBgImage(bgCacheRef.current.canvas);
       return;
@@ -154,16 +155,57 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         }
         tempCtx.globalAlpha = 1.0; // Reset alpha
 
+        // Draw waypoint/link lines between connected markers
+        for (const m of activeMarkers) {
+          if (m.floor !== floor || !m.linkedWarpId) continue;
+          const partner = activeMarkers.find(mk => mk.id === m.linkedWarpId);
+          if (!partner || partner.floor !== floor) continue;
+          const meta = MARKER_META[m.type];
+          tempCtx.strokeStyle = meta?.color || '#ff00ff';
+          tempCtx.lineWidth = 2;
+          tempCtx.globalAlpha = 0.5;
+
+          const waypoints = (m.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
+          if (waypoints.length > 0) {
+            tempCtx.beginPath();
+            tempCtx.moveTo(m.x, m.y);
+            for (const wp of waypoints) tempCtx.lineTo(wp.x, wp.y);
+            tempCtx.lineTo(partner.x, partner.y);
+            tempCtx.stroke();
+          } else {
+            // Direct line (no waypoints)
+            tempCtx.beginPath();
+            tempCtx.moveTo(m.x, m.y);
+            tempCtx.lineTo(partner.x, partner.y);
+            tempCtx.stroke();
+          }
+        }
+        tempCtx.globalAlpha = 1.0;
+
         // Draw Active Markers on ground texture
         for (const m of activeMarkers) {
           if (m.floor === floor) {
-            tempCtx.fillStyle = m.type === 'phone' ? '#ffd700' : m.type === 'start' ? '#39ff14' : '#ff0055';
+            const meta = MARKER_META[m.type];
+            const color = meta?.color || '#ff0055';
+            // Colored ring (outer)
+            tempCtx.strokeStyle = color;
+            tempCtx.lineWidth = 2.5;
             tempCtx.beginPath();
-            tempCtx.arc(m.x, m.y, 12, 0, Math.PI * 2);
-            tempCtx.fill();
-            tempCtx.strokeStyle = '#ffffff';
-            tempCtx.lineWidth = 2;
+            tempCtx.arc(m.x, m.y, 7, 0, Math.PI * 2);
             tempCtx.stroke();
+            // White inner fill
+            tempCtx.fillStyle = 'rgba(255,255,255,0.85)';
+            tempCtx.beginPath();
+            tempCtx.arc(m.x, m.y, 6, 0, Math.PI * 2);
+            tempCtx.fill();
+            // Emoji icon
+            if (meta?.emoji) {
+              tempCtx.font = '9px sans-serif';
+              tempCtx.textAlign = 'center';
+              tempCtx.textBaseline = 'middle';
+              tempCtx.fillStyle = color;
+              tempCtx.fillText(meta.emoji, m.x, m.y + 0.5);
+            }
           }
         }
 

@@ -115,8 +115,12 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     if (previous.walls) replaceWalls(previous.walls);
     if (previous.spawnPoints) replaceSpawnPoints(previous.spawnPoints);
     const safeGlobals = Array.isArray(previous.globalMarkers) ? previous.globalMarkers : [];
-    replaceGlobalMarkers(safeGlobals);
-    if (safeGlobals.length > 0) persistGlobalMarkers(safeGlobals);
+    // snapshot が空のグローバルマーカーを持っている場合は現在の状態を維持する
+    // (非同期ロード前に取得したスナップショットによるデータ破壊を防止)
+    if (safeGlobals.length > 0) {
+      replaceGlobalMarkers(safeGlobals);
+      persistGlobalMarkers(safeGlobals);
+    }
     if (onRestore) onRestore(previous.individualMarkers, previous.globalMarkers);
   }, [pastHistory, getRoute, getGlobalMarkers, getWalls, getSpawnPoints, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceSpawnPoints, persistGlobalMarkers, onRestore]);
 
@@ -139,8 +143,10 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     if (next.walls) replaceWalls(next.walls);
     if (next.spawnPoints) replaceSpawnPoints(next.spawnPoints);
     const safeGlobals = Array.isArray(next.globalMarkers) ? next.globalMarkers : [];
-    replaceGlobalMarkers(safeGlobals);
-    if (safeGlobals.length > 0) persistGlobalMarkers(safeGlobals);
+    if (safeGlobals.length > 0) {
+      replaceGlobalMarkers(safeGlobals);
+      persistGlobalMarkers(safeGlobals);
+    }
     if (onRestore) onRestore(next.individualMarkers, safeGlobals);
   }, [futureHistory, getRoute, getGlobalMarkers, getWalls, getSpawnPoints, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceSpawnPoints, persistGlobalMarkers, onRestore]);
 
