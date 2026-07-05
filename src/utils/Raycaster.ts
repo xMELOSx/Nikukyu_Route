@@ -75,7 +75,7 @@ export function castRays(
   return hits;
 }
 
-function pointToSegmentDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+export function pointToSegmentDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const abx = bx - ax, aby = by - ay;
   const apx = px - ax, apy = py - ay;
   const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / (abx * abx + aby * aby)));
@@ -267,23 +267,72 @@ function renderWalls(
 
     let wallTop = wallTopFull;
     let wallBottom = wallBottomFull;
+    // Background wall info (for rendering behind locked walls)
+    let bgWallTop = wallTopFull;
+    let bgWallBottom = wallBottomFull;
+    let bgPerpDist = perpDist;
     if (isLocked) {
       // 鍵付き壁は地面から lhf の高さまで描画（浮かせず地面設置）
       const lockedH = (wallBottomFull - wallTopFull) * lhf;
       wallTop = Math.max(0, Math.floor(wallBottomFull - lockedH));
       wallBottom = wallBottomFull;
+      // 後ろにある通常壁の位置を計算
+      if (hit.distance < Infinity) {
+        const bgDist = hit.distance;
+        bgPerpDist = bgDist * Math.cos(rayAngle - originAngle);
+        const bgH = bgPerpDist > 0.1 ? (halfH / bgPerpDist) * distPlane : H;
+        bgWallTop = Math.max(0, Math.floor(halfH - bgH * (1 - camHeightFrac)));
+        bgWallBottom = Math.min(H, Math.floor(halfH + bgH * camHeightFrac));
+      }
     }
 
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
 
-    // 1. Render Ceiling to buffer
-    for (let y = 0; y < wallTop; y++) {
-      const idx = (y * W + i) * 4;
-      const cc = i % 2 === 0 ? c1 : c2;
-      buf[idx] = cc.r;
-      buf[idx + 1] = cc.g;
-      buf[idx + 2] = cc.b;
-      buf[idx + 3] = 255;
+    // 1. Render Ceiling / background wall to buffer
+    if (isLocked && hit.distance < Infinity && bgWallTop < wallTop) {
+      // 鍵壁の上に通常壁が見える部分を描画
+      const bgShade = Math.min(1, 4 / bgPerpDist);
+      const bgR = Math.round(darkR + (r - darkR) * bgShade);
+      const bgG = Math.round(darkG + (g - darkG) * bgShade);
+      const bgB = Math.round(darkB + (b - darkB) * bgShade);
+      const renderTop = Math.max(0, bgWallTop);
+      const renderBot = Math.min(wallTop, bgWallBottom);
+      for (let y = renderTop; y < renderBot; y++) {
+        const idx = (y * W + i) * 4;
+        buf[idx] = bgR;
+        buf[idx + 1] = bgG;
+        buf[idx + 2] = bgB;
+        buf[idx + 3] = 255;
+      }
+      // 天井 (背景壁の上)
+      for (let y = 0; y < bgWallTop; y++) {
+        const idx = (y * W + i) * 4;
+        const cc = i % 2 === 0 ? c1 : c2;
+        buf[idx] = cc.r;
+        buf[idx + 1] = cc.g;
+        buf[idx + 2] = cc.b;
+        buf[idx + 3] = 255;
+      }
+      // 壁と床の間 (背景壁の下端〜鍵壁の上端)
+      if (bgWallBottom < wallTop) {
+        for (let y = bgWallBottom; y < wallTop; y++) {
+          const idx = (y * W + i) * 4;
+          const fcol = i % 2 === 0 ? f1 : f2;
+          buf[idx] = fcol.r;
+          buf[idx + 1] = fcol.g;
+          buf[idx + 2] = fcol.b;
+          buf[idx + 3] = 255;
+        }
+      }
+    } else {
+      for (let y = 0; y < wallTop; y++) {
+        const idx = (y * W + i) * 4;
+        const cc = i % 2 === 0 ? c1 : c2;
+        buf[idx] = cc.r;
+        buf[idx + 1] = cc.g;
+        buf[idx + 2] = cc.b;
+        buf[idx + 3] = 255;
+      }
     }
 
     // 2. Render Wall to buffer
@@ -348,14 +397,9 @@ function renderWalls(
       }
     }
 
-    // 4. Render Front Translucent Wall Overlay (if any)
+    // 4. Render Front Translucent Wall Overlay (normal walls only)
     const frontHit = castRay({ x: origin.x, y: origin.y }, rayAngle, walls);
-    let frontDist = frontHit.distance;
-    // Also check locked walls for front overlay
-    if (lw && lw.length > 0) {
-      const lFront = castRay({ x: origin.x, y: origin.y }, rayAngle, lw);
-      if (lFront.distance < frontDist) frontDist = lFront.distance;
-    }
+    const frontDist = frontHit.distance;
     const frontPerpDist = frontDist * Math.cos(rayAngle - originAngle);
 
     let diff = rayAngle - originAngle;

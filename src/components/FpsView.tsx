@@ -9,7 +9,7 @@ import {
   renderTpsView,
   renderMinimapView,
   renderMarkers3D,
-  castRay
+  pointToSegmentDist
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -241,33 +241,43 @@ const FpsView: React.FC<FpsViewProps> = ({
       const lw = wallsRef.current;
       const llw = lockedWallsRef.current;
       const closedLockedArr = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
-      const collisionWalls = lw.length > 0 || closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
+        // 通常壁のみで衝突判定 (鍵壁は別途ソフト判定)
+        let newPlayer: PlayerState;
         if (mode === 'tps') {
-          const newPlayer = movePlayerTps(
+          newPlayer = movePlayerTps(
             playerRef.current,
             forward,
             strafe,
             playerRef.current.angle,
-            collisionWalls,
+            lw,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
-          playerRef.current = newPlayer;
         } else {
-          const newPlayer = movePlayer(
+          newPlayer = movePlayer(
             playerRef.current,
             forward,
             strafe,
-            collisionWalls,
+            lw,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
-          playerRef.current = newPlayer;
         }
-        playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
+        // 鍵壁との当たり判定は半径 2 でソフトに (見た目の30%高さに合わせる)
+        let blockedByLocked = false;
+        for (const seg of closedLockedArr) {
+          if (pointToSegmentDist(newPlayer.x, newPlayer.y, seg[0].x, seg[0].y, seg[1].x, seg[1].y) < 2) {
+            blockedByLocked = true;
+            break;
+          }
+        }
+        if (!blockedByLocked) {
+          playerRef.current = newPlayer;
+          playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
+        }
       }
 
       const now = Date.now();
@@ -337,7 +347,10 @@ const FpsView: React.FC<FpsViewProps> = ({
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
           PLAYER_COLOR,
-          bgImageDataRef.current
+          bgImageDataRef.current,
+          closedLockedForRender,
+          LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
+          0.3
         );
       } else {
         colHeights = renderFpsView(
@@ -348,40 +361,11 @@ const FpsView: React.FC<FpsViewProps> = ({
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
-          bgImageDataRef.current
+          bgImageDataRef.current,
+          closedLockedForRender,
+          LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
+          0.3
         );
-      }
-
-      // Overlay locked walls as semi-transparent short columns (above the rendered scene)
-      if (closedLockedForRender.length > 0) {
-        const W2 = canvas.width;
-        const H2 = canvas.height;
-        const halfH2 = H2 / 2 + (-50);
-        const distPlane2 = (W2 / 2) / Math.tan(FOV / 2);
-        const actualCamPos = mode === 'tps'
-          ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
-          : { x: playerRef.current.x, y: playerRef.current.y };
-        const originAngle2 = playerRef.current.angle;
-        for (let i = 0; i < W2; i++) {
-          const rayAngle2 = normalizeAngle(originAngle2 - FOV / 2 + (i / (W2 - 1)) * FOV);
-          const wallHit = castRay(actualCamPos, rayAngle2, lw);
-          const lHit = castRay(actualCamPos, rayAngle2, closedLockedForRender);
-          if (lHit.distance >= Infinity) continue;
-          // 通常壁が鍵壁より手前にある場合は鍵壁を描画しない（壁抜け防止）
-          if (wallHit.distance < lHit.distance) continue;
-          const lPerpDist = lHit.distance * Math.cos(rayAngle2 - originAngle2);
-          const fullHt = lPerpDist > 0.1 ? (halfH2 / lPerpDist) * distPlane2 : H2;
-          const lockedHt = fullHt * 0.3;
-          const camHtFrac = 0.375;
-          const lBot = Math.min(H2, Math.floor(halfH2 + fullHt * camHtFrac));
-          const lTop = Math.max(0, Math.floor(lBot - lockedHt));
-          const lShade = Math.min(1, 4 / lPerpDist);
-          const lColR = Math.round(0x66 + (0xcc - 0x66) * lShade);
-          const lColG = Math.round(0x44 + (0x99 - 0x44) * lShade);
-          const lColB = Math.round(0x00 + (0x00 - 0x00) * lShade);
-          ctx.fillStyle = `rgba(${lColR},${lColG},${lColB},0.85)`;
-          ctx.fillRect(i, lTop, 1, lBot - lTop);
-        }
       }
 
       // Render markers in 3D view
@@ -395,6 +379,28 @@ const FpsView: React.FC<FpsViewProps> = ({
         const mctx = minimapCvs.getContext('2d');
         if (mctx) {
           renderMinimapView(mctx, playerRef.current, mapSnapshotRef.current || bgImageRef.current);
+          // Overlay phone status dots on minimap (active=green, inactive=red, locked=gray)
+          const mw = minimapCvs.width; // 280
+          const mRange = 250;
+          const mScale = mw / mRange;
+          const mcx = mw / 2;
+          const mcy = mw / 2;
+          for (const pm of lm) {
+            if (pm.type !== 'phone') continue;
+            const dx = (pm.x - playerRef.current.x) * mScale;
+            const dy = (pm.y - playerRef.current.y) * mScale;
+            if (Math.abs(dx) > mcx || Math.abs(dy) > mcy) continue;
+            const px = mcx + dx;
+            const py = mcy + dy;
+            const dotColor = pm.phoneLocked ? '#666' : pm.phoneActive ? '#39ff14' : '#ff3333';
+            mctx.fillStyle = dotColor;
+            mctx.beginPath();
+            mctx.arc(px, py, 3, 0, Math.PI * 2);
+            mctx.fill();
+            mctx.strokeStyle = '#000';
+            mctx.lineWidth = 1;
+            mctx.stroke();
+          }
         }
       }
 
