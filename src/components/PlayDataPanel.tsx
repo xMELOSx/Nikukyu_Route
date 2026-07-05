@@ -876,10 +876,10 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       sampleTrial = sorted[Math.floor(sorted.length / 2)].counts;
       minItemsTrial = sorted[0].counts;
       maxItemsTrial = sorted[sorted.length - 1].counts;
-      const byFans = successes.slice().sort((a, b) => a.nonEHFans - b.nonEHFans);
+      const byFans = successes.slice().sort((a, b) => a.totalFans - b.totalFans);
       minFansTrial = byFans[0].counts;
       maxFansTrial = byFans[byFans.length - 1].counts;
-      const byCoins = successes.slice().sort((a, b) => a.nonEHCoins - b.nonEHCoins);
+      const byCoins = successes.slice().sort((a, b) => a.totalCoins - b.totalCoins);
       minCoinsTrial = byCoins[0].counts;
       maxCoinsTrial = byCoins[byCoins.length - 1].counts;
     }

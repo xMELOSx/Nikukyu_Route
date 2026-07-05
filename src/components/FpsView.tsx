@@ -22,10 +22,10 @@ interface FpsViewProps {
 }
 
 const FOV = Math.PI * 0.45;
-const MOVE_SPEED = 4;
+const MOVE_SPEED = 0.8;
 const ROTATE_SPEED = 0.0015;
-const PLAYER_RADIUS = 12;
-const TPS_CAM_DISTANCE = 60;
+const PLAYER_RADIUS = 3;
+const TPS_CAM_DISTANCE = 40;
 
 const FLOOR_COLOR_1 = '#0a0f1c';
 const FLOOR_COLOR_2 = '#0d1424';
@@ -44,6 +44,10 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
+
+  const lastTeleportTimeRef = useRef<number>(0);
+  const teleportEffectTimerRef = useRef<number>(0);
+  const teleportEffectColorRef = useRef<string>('rgba(255,0,255,0.3)');
 
   const exitRef = useRef(onExit);
   exitRef.current = onExit;
@@ -139,6 +143,32 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
       }
 
+      // Check for warp/stairs teleportation
+      const now = Date.now();
+      if (now - lastTeleportTimeRef.current > 1500) {
+        const curP = playerRef.current;
+        const portal = markers.find(m => {
+          if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') return false;
+          const dist = Math.hypot(curP.x - m.x, curP.y - m.y);
+          return dist < 14;
+        });
+
+        if (portal && portal.linkedWarpId) {
+          const partner = markers.find(m => m.id === portal.linkedWarpId);
+          if (partner) {
+            playerRef.current = {
+              ...curP,
+              x: partner.x,
+              y: partner.y
+            };
+            playerChangeRef.current({ x: partner.x, y: partner.y });
+            lastTeleportTimeRef.current = now;
+            teleportEffectTimerRef.current = 15;
+            teleportEffectColorRef.current = portal.type === 'stairs' ? 'rgba(255, 170, 0, 0.35)' : 'rgba(255, 0, 255, 0.35)';
+          }
+        }
+      }
+
       if (mode === 'tps') {
         renderTpsView(
           ctx, canvas,
@@ -150,7 +180,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
           PLAYER_COLOR,
-          bgImageData
+          bgImageData,
+          markers
         );
       } else {
         renderFpsView(
@@ -161,12 +192,20 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
-          bgImageData
+          bgImageData,
+          markers
         );
       }
 
       // Minimap
-      renderMinimap(ctx, canvas, playerRef.current, walls, markers);
+      renderMinimap(ctx, playerRef.current, walls, markers, bgImageData);
+
+      // Flash effect on teleport
+      if (teleportEffectTimerRef.current > 0) {
+        ctx.fillStyle = teleportEffectColorRef.current;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        teleportEffectTimerRef.current--;
+      }
 
       // Crosshair
       const cx = canvas.width / 2;
@@ -212,7 +251,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, [walls, mode, canvasRef]);
+  }, [walls, mode, canvasRef, markers]);
 
   return null;
 };

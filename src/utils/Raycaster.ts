@@ -2,6 +2,9 @@ import type { Point } from '../utils/DataManager';
 
 const TAU = Math.PI * 2;
 
+let tempMinimapCanvas: HTMLCanvasElement | null = null;
+let tempMinimapCtx: CanvasRenderingContext2D | null = null;
+
 export interface PlayerState {
   x: number;
   y: number;
@@ -80,8 +83,6 @@ export function movePlayer(
 ): PlayerState {
   const cos = Math.cos(player.angle);
   const sin = Math.sin(player.angle);
-  let nx = player.x + (forward * cos - strafe * sin) * speed;
-  let ny = player.y + (forward * sin + strafe * cos) * speed;
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -90,15 +91,35 @@ export function movePlayer(
     return true;
   };
 
-  if (!check(nx, ny)) {
-    nx = player.x + (forward * cos + strafe * sin) * speed;
-    ny = player.y;
-    if (!check(nx, ny)) nx = player.x;
-    ny = player.y + (forward * sin - strafe * cos) * speed;
-    if (!check(nx, ny)) ny = player.y;
+  const steps = 4;
+  const stepSpeed = speed / steps;
+  let cx = player.x;
+  let cy = player.y;
+
+  for (let s = 0; s < steps; s++) {
+    const dx = (forward * cos - strafe * sin) * stepSpeed;
+    const dy = (forward * sin + strafe * cos) * stepSpeed;
+
+    const nx = cx + dx;
+    const ny = cy + dy;
+
+    if (check(nx, ny)) {
+      cx = nx;
+      cy = ny;
+    } else {
+      const tryX = cx + dx;
+      if (check(tryX, cy)) {
+        cx = tryX;
+      } else {
+        const tryY = cy + dy;
+        if (check(cx, tryY)) {
+          cy = tryY;
+        }
+      }
+    }
   }
 
-  return { x: nx, y: ny, angle: player.angle };
+  return { x: cx, y: cy, angle: player.angle };
 }
 
 export function movePlayerTps(
@@ -112,8 +133,6 @@ export function movePlayerTps(
 ): PlayerState {
   const cos = Math.cos(camAngle);
   const sin = Math.sin(camAngle);
-  let nx = player.x + (forward * cos - strafe * sin) * speed;
-  let ny = player.y + (forward * sin + strafe * cos) * speed;
 
   const check = (x: number, y: number): boolean => {
     for (const w of walls) {
@@ -122,15 +141,35 @@ export function movePlayerTps(
     return true;
   };
 
-  if (!check(nx, ny)) {
-    nx = player.x + (forward * cos + strafe * sin) * speed;
-    ny = player.y;
-    if (!check(nx, ny)) nx = player.x;
-    ny = player.y + (forward * sin - strafe * cos) * speed;
-    if (!check(nx, ny)) ny = player.y;
+  const steps = 4;
+  const stepSpeed = speed / steps;
+  let cx = player.x;
+  let cy = player.y;
+
+  for (let s = 0; s < steps; s++) {
+    const dx = (forward * cos - strafe * sin) * stepSpeed;
+    const dy = (forward * sin + strafe * cos) * stepSpeed;
+
+    const nx = cx + dx;
+    const ny = cy + dy;
+
+    if (check(nx, ny)) {
+      cx = nx;
+      cy = ny;
+    } else {
+      const tryX = cx + dx;
+      if (check(tryX, cy)) {
+        cx = tryX;
+      } else {
+        const tryY = cy + dy;
+        if (check(cx, tryY)) {
+          cy = tryY;
+        }
+      }
+    }
   }
 
-  return { x: nx, y: ny, angle: player.angle };
+  return { x: cx, y: cy, angle: player.angle };
 }
 
 interface WallRenderArgs {
@@ -147,6 +186,9 @@ interface WallRenderArgs {
   ceilingColor1: string;
   ceilingColor2: string;
   bgImageData?: ImageData | null;
+  camHeight?: number;
+  yOffset?: number;
+  markers?: { x: number; y: number; type: string; id?: string; linkedWarpId?: string }[];
 }
 
 function renderWalls(
@@ -156,9 +198,11 @@ function renderWalls(
   const W = canvas.width;
   const H = canvas.height;
   const numRays = W;
-  const yOffset = -50; // 地平線を上にずらして見下ろしパースにする
+  const yOffset = args.yOffset ?? -50; // 地平線を上にずらして見下ろしパースにする
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
+  const camHeight = args.camHeight ?? 24;
+  const camHeightFrac = camHeight / 64;
 
   const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays);
   const colHeights: { top: number; bottom: number; perpDist: number }[] = [];
@@ -170,8 +214,6 @@ function renderWalls(
     const perpDist = dist * Math.cos(rayAngle - originAngle);
 
     const wallHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
-    // カメラの高さ比率を 0.375 とし、目線を少し下げて床面とパースを完全に合わせる
-    const camHeightFrac = 0.375;
     const wallTop = Math.max(0, Math.floor(halfH - wallHeight * (1 - camHeightFrac))); // 天井側（遠い）
     const wallBottom = Math.min(H, Math.floor(halfH + wallHeight * camHeightFrac));    // 床側（近い）
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
@@ -195,7 +237,6 @@ function renderWalls(
     // 床のレンダリング (Floor Casting)
     if (args.bgImageData) {
       const bg = args.bgImageData;
-      const camHeight = 24; // カメラの目線の高さ（32から24に下げて低くする）
       const cosRay = Math.cos(rayAngle);
       const sinRay = Math.sin(rayAngle);
       const cosBeta = Math.cos(rayAngle - originAngle);
@@ -229,6 +270,62 @@ function renderWalls(
     }
   }
 
+  // Render portal (warp/stairs) markers as light pillars in 3D space
+  if (args.markers) {
+    const sortedMarkers = args.markers
+      .filter(m => m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs')
+      .map(m => {
+        const dx = m.x - origin.x;
+        const dy = m.y - origin.y;
+        const dist = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        let relAngle = normalizeAngle(angle - originAngle);
+        if (relAngle > Math.PI) relAngle -= TAU;
+        return { m, dist, relAngle };
+      })
+      .filter(item => item.dist > 5 && Math.abs(item.relAngle) < fov / 2 + 0.2)
+      .sort((a, b) => b.dist - a.dist);
+
+    for (const item of sortedMarkers) {
+      const { m, dist, relAngle } = item;
+      const perpDist = dist * Math.cos(relAngle);
+      if (perpDist < 5) continue;
+
+      const col = Math.round(((relAngle + fov / 2) / fov) * (W - 1));
+      const mHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
+      const wallTop = Math.max(0, Math.floor(halfH - mHeight * 0.625));
+      const wallBottom = Math.min(H, Math.floor(halfH + mHeight * 0.375));
+      const mWidth = Math.max(2, Math.round(mHeight * 0.15));
+
+      const left = Math.max(0, col - Math.round(mWidth / 2));
+      const right = Math.min(W - 1, col + Math.round(mWidth / 2));
+
+      const color = m.type === 'stairs' ? 'rgba(255, 170, 0, 0.45)' : 'rgba(255, 0, 255, 0.45)';
+      const coreColor = m.type === 'stairs' ? '#ffaa00' : '#ff00ff';
+
+      for (let xCol = left; xCol <= right; xCol++) {
+        if (colHeights[xCol] && colHeights[xCol].perpDist < perpDist) {
+          continue;
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(xCol, wallTop, 1, wallBottom - wallTop);
+
+        if (xCol === col) {
+          ctx.fillStyle = coreColor;
+          ctx.fillRect(xCol, wallTop, 1, wallBottom - wallTop);
+        }
+      }
+
+      if (perpDist < 300 && col > 20 && col < W - 20) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        const text = m.type === 'stairs' ? '🪜 STAIRS' : '🌀 WARP';
+        ctx.fillText(text, col, wallTop - 4);
+      }
+    }
+  }
+
   return { colHeights };
 }
 
@@ -244,7 +341,8 @@ export function renderFpsView(
   floorColor2: string,
   ceilingColor1: string,
   ceilingColor2: string,
-  bgImageData?: ImageData | null
+  bgImageData?: ImageData | null,
+  markers?: { x: number; y: number; type: string; id?: string; linkedWarpId?: string }[]
 ): void {
   renderWalls({
     ctx, canvas,
@@ -254,7 +352,8 @@ export function renderFpsView(
     wallColor, wallColorDark,
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
-    bgImageData
+    bgImageData,
+    markers
   });
 }
 
@@ -265,34 +364,89 @@ const MINIMAP_RANGE = 500;
 
 export function renderMinimap(
   ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
   player: PlayerState,
   walls: [Point, Point][],
-  markers: { x: number; y: number; type: string }[]
+  markers: { x: number; y: number; type: string }[],
+  bgImageData?: ImageData | null
 ): void {
   const margin = 14;
-  const x = canvas.width - margin - MINIMAP_SIZE;
+  const x = margin; // 左上に配置
   const y = margin;
   const half = MINIMAP_SIZE / 2;
   const scale = MINIMAP_SIZE / MINIMAP_RANGE;
 
-  // Background
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  // クリッピング境界を設定してはみ出しを防ぐ
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  ctx.clip();
+
+  if (bgImageData) {
+    const bg = bgImageData;
+    const invScale = 1 / scale;
+
+    // キャッシュ用の一時キャンバスの初期化
+    if (!tempMinimapCanvas) {
+      tempMinimapCanvas = document.createElement('canvas');
+      tempMinimapCanvas.width = MINIMAP_SIZE;
+      tempMinimapCanvas.height = MINIMAP_SIZE;
+      tempMinimapCtx = tempMinimapCanvas.getContext('2d');
+    }
+
+    const tempCtx = tempMinimapCtx;
+    if (tempCtx) {
+      const imgData = tempCtx.createImageData(MINIMAP_SIZE, MINIMAP_SIZE);
+      for (let my = 0; my < MINIMAP_SIZE; my++) {
+        const wy = player.y + (my - half) * invScale;
+        const ty = Math.floor(wy);
+        const rowOffset = my * MINIMAP_SIZE * 4;
+
+        for (let mx = 0; mx < MINIMAP_SIZE; mx++) {
+          const wx = player.x + (mx - half) * invScale;
+          const tx = Math.floor(wx);
+
+          let r = 10, g = 15, b = 28, a = 200; // デフォルト背景色
+          if (tx >= 0 && tx < bg.width && ty >= 0 && ty < bg.height) {
+            const idx = (ty * bg.width + tx) * 4;
+            r = bg.data[idx];
+            g = bg.data[idx + 1];
+            b = bg.data[idx + 2];
+            a = 255;
+          }
+
+          const pIdx = rowOffset + mx * 4;
+          imgData.data[pIdx] = r;
+          imgData.data[pIdx + 1] = g;
+          imgData.data[pIdx + 2] = b;
+          imgData.data[pIdx + 3] = a;
+        }
+      }
+      tempCtx.putImageData(imgData, 0, 0);
+      ctx.drawImage(tempMinimapCanvas, x, y);
+    }
+  } else {
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  }
+
+  // ミニマップ外枠のストローク
   ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
 
-  // Grid lines (every 100 world units = 100/500*90 = 18px)
-  ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
-  ctx.lineWidth = 0.5;
-  for (let g = 100; g < MINIMAP_RANGE; g += 100) {
-    const gp = g * scale;
-    ctx.beginPath();
-    ctx.moveTo(x, y + half - gp); ctx.lineTo(x + MINIMAP_SIZE, y + half - gp);
-    ctx.moveTo(x + half + gp, y); ctx.lineTo(x + half + gp, y + MINIMAP_SIZE);
-    ctx.moveTo(x + half - gp, y); ctx.lineTo(x + half - gp, y + MINIMAP_SIZE);
-    ctx.stroke();
+  // グリッド線（背景画像がない場合のみ描画する、あるいは常に薄く重ねる）
+  if (!bgImageData) {
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
+    ctx.lineWidth = 0.5;
+    for (let g = 100; g < MINIMAP_RANGE; g += 100) {
+      const gp = g * scale;
+      ctx.beginPath();
+      ctx.moveTo(x, y + half - gp); ctx.lineTo(x + MINIMAP_SIZE, y + half - gp);
+      ctx.moveTo(x + half + gp, y); ctx.lineTo(x + half + gp, y + MINIMAP_SIZE);
+      ctx.moveTo(x + half - gp, y); ctx.lineTo(x + half - gp, y + MINIMAP_SIZE);
+      ctx.stroke();
+    }
   }
 
   // Walls within range
@@ -303,8 +457,6 @@ export function renderMinimap(
     const ay = (w[0].y - player.y) * scale + half;
     const bx = (w[1].x - player.x) * scale + half;
     const by = (w[1].y - player.y) * scale + half;
-    if (Math.min(ax, bx) < -20 || Math.max(ax, bx) > MINIMAP_SIZE + 20 ||
-        Math.min(ay, by) < -20 || Math.max(ay, by) > MINIMAP_SIZE + 20) continue;
     ctx.beginPath();
     ctx.moveTo(x + ax, y + ay);
     ctx.lineTo(x + bx, y + by);
@@ -315,7 +467,6 @@ export function renderMinimap(
   for (const m of markers) {
     const dx = (m.x - player.x) * scale;
     const dy = (m.y - player.y) * scale;
-    if (Math.abs(dx) > half || Math.abs(dy) > half) continue;
     const mx = x + half + dx;
     const my = y + half + dy;
     ctx.fillStyle = m.type === 'start' ? '#39ff14' : '#ff00ff';
@@ -353,6 +504,8 @@ export function renderMinimap(
     y + half + Math.sin(player.angle) * coneLen
   );
   ctx.stroke();
+
+  ctx.restore(); // クリッピング解除
 }
 
 export function renderTpsView(
@@ -369,15 +522,15 @@ export function renderTpsView(
   ceilingColor1: string,
   ceilingColor2: string,
   playerColor: string,
-  bgImageData?: ImageData | null
+  bgImageData?: ImageData | null,
+  markers?: { x: number; y: number; type: string; id?: string; linkedWarpId?: string }[]
 ): void {
   // プレイヤーの真後ろ（角度 + Math.PI）にレイを飛ばし、壁との距離を測る
   const oppAngle = normalizeAngle(player.angle + Math.PI);
   const camHit = castRay({ x: player.x, y: player.y }, oppAngle, walls);
   const actualCamDistance = camHit.distance < camDistance
-    ? Math.max(15, camHit.distance - 15) // 壁の手前に寄せる。最小15px
+    ? Math.max(5, camHit.distance - 6) // 壁から6px離した位置に寄せる。最小5px
     : camDistance;
-
   const camX = player.x - Math.cos(player.angle) * actualCamDistance;
   const camY = player.y - Math.sin(player.angle) * actualCamDistance;
 
@@ -389,20 +542,24 @@ export function renderTpsView(
     wallColor, wallColorDark,
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
-    bgImageData
+    bgImageData,
+    camHeight: 24,
+    yOffset: -50,
+    markers
   });
 
   // Render player billboard
   const W = canvas.width;
   const H = canvas.height;
-  const yOffset = -50; // 地平線を上にずらして見下ろしパースにする
-  const halfH = H / 2 + yOffset;
+  const halfH = H / 2 - 50; // 固定 yOffset = -50
   const distPlane = (W / 2) / Math.tan(fov / 2);
 
   const dx = player.x - camX;
   const dy = player.y - camY;
   const playerDist = Math.hypot(dx, dy);
-  if (playerDist < 1) return;
+  // カメラがキャラクターに近すぎる（後ろにすぐ壁がある）場合は、
+  // キャラ自身や手前の壁が視界を遮らないようにアバターを非表示にする
+  if (playerDist < 25) return;
 
   const angleToPlayer = Math.atan2(dy, dx);
   let relAngle = normalizeAngle(angleToPlayer - player.angle);
@@ -416,9 +573,8 @@ export function renderTpsView(
   const pPerpDist = playerDist * Math.cos(relAngle);
   const pScreenHeight = Math.round((PLAYER_HEIGHT * distPlane) / pPerpDist);
 
-  // アバターの足元をその距離の床面（camHeight = 24）の射影位置に正確に接地させる
-  const camHeight = 24;
-  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist);
+  // アバターの足元をその距離の床面（固定 camHeight = 24）の射影位置に正確に接地させる
+  const pBottom = Math.round(halfH + (24 * distPlane) / pPerpDist);
   const pTop = pBottom - pScreenHeight;
 
   const pr = parseInt(playerColor.slice(1, 3), 16);
