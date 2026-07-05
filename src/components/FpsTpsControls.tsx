@@ -1,10 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import type { Point, HeistMarker, FloorType } from '../utils/DataManager';
+import type { Point, HeistMarker, FloorType, LockedWallSegment } from '../utils/DataManager';
 import { MARKER_META, PRESET_MAPS_META } from '../utils/DataManager';
 import FpsView from './FpsView';
 
 interface FpsTpsControlsProps {
   walls: [Point, Point][];
+  lockedWalls: LockedWallSegment[];
+  onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   markers: HeistMarker[];
   floor: FloorType;
   customBg: string | null;
@@ -22,6 +24,7 @@ interface FpsTpsControlsProps {
   spawnPoints?: any[];
   strokes?: any;
   spawnItems?: any[];
+  mapSnapshotCanvas?: HTMLCanvasElement | null;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -44,12 +47,12 @@ function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string
 }
 
 const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
-  walls, markers, floor, customBg, bgOffset, bgScale,
+  walls, lockedWalls = [], onLockedWallsChange, markers, floor, customBg, bgOffset, bgScale,
   wrapperRef, zoom, startSmoothScroll,
   startupFocusMarkerId, hideButtons,
   currentPosition, onPositionChange,
   hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = [],
-  strokes = {}, spawnItems = []
+  strokes = {}, spawnItems = [], mapSnapshotCanvas
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -332,6 +335,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         {freeCamMode && currentPosition && (
           <FpsView
             walls={walls}
+            lockedWalls={lockedWalls}
+            onLockedWallsChange={onLockedWallsChange}
             markers={markers}
             playerPos={currentPosition}
             onExit={handleExit}
@@ -342,6 +347,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             bgImage={bgImage}
             hiddenMarkers={hiddenMarkers}
             hiddenMarkerTypes={hiddenMarkerTypes}
+            mapSnapshotCanvas={mapSnapshotCanvas ?? null}
           />
         )}
       </div>

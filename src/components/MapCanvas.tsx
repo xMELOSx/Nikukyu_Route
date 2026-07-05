@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import {
   type FloorType,
@@ -299,6 +299,124 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isDrawingRef = useRef(false);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
+  const [miniMapSource, setMiniMapSource] = useState<HTMLCanvasElement | null>(null);
+
+  // Render the FULL map (floor + routes + walls + markers + waypoints) onto a hidden canvas for the minimap
+  const updateMiniMapSource = useCallback(() => {
+    const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
+    if (!bgUrl) return;
+    const hMarkers = hiddenMarkers || [];
+    const hTypes = hiddenMarkerTypes || [];
+    const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
+    const currentStrokes = strokes[floor] || [];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;
+    canvas.height = 4550;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#0a0f1c';
+    ctx.fillRect(0, 0, 1600, 4550);
+
+    const imgRef = new Image();
+    imgRef.crossOrigin = 'anonymous';
+    imgRef.onload = () => {
+      if (customBg) {
+        ctx.save();
+        const ox = bgOffset?.x ?? 0;
+        const oy = bgOffset?.y ?? 0;
+        const sx = bgScale?.x ?? 1;
+        const sy = bgScale?.y ?? 1;
+        ctx.translate(ox, oy);
+        ctx.scale(sx, sy);
+        ctx.drawImage(imgRef, 0, 0, 1600, 4550);
+        ctx.restore();
+      } else {
+        ctx.drawImage(imgRef, 0, 0, 1600, 4550);
+      }
+
+      // Routes
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const stroke of currentStrokes) {
+        if (stroke.points.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        ctx.strokeStyle = stroke.color || '#39ff14';
+        ctx.lineWidth = stroke.width || 4;
+        ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1.0;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // Walls (dashed orange)
+      for (const w of walls) {
+        ctx.strokeStyle = 'rgba(255, 85, 0, 0.85)';
+        ctx.lineWidth = 5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(w[0].x, w[0].y);
+        ctx.lineTo(w[1].x, w[1].y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Waypoint connection lines between linked markers
+      for (const m of activeMarkers) {
+        if (m.floor !== floor || !m.linkedWarpId) continue;
+        const partner = activeMarkers.find(mk => mk.id === m.linkedWarpId);
+        if (!partner || partner.floor !== floor) continue;
+        const meta = MARKER_META[m.type];
+        ctx.strokeStyle = meta?.color || '#ff00ff';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.5;
+        const waypoints = (m.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        if (waypoints.length > 0) {
+          for (const wp of waypoints) ctx.lineTo(wp.x, wp.y);
+        }
+        ctx.lineTo(partner.x, partner.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // Markers (ring + white fill + emoji)
+      for (const m of activeMarkers) {
+        if (m.floor !== floor) continue;
+        const meta = MARKER_META[m.type];
+        const color = meta?.color || '#ff0055';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        if (meta?.emoji) {
+          ctx.font = '9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = color;
+          ctx.fillText(meta.emoji, m.x, m.y + 0.5);
+        }
+      }
+
+      setMiniMapSource(canvas);
+    };
+    imgRef.src = bgUrl;
+  }, [floor, customBg, bgOffset, bgScale, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes]);
+
+  // Update minimap source when map data changes
+  useEffect(() => {
+    updateMiniMapSource();
+  }, [updateMiniMapSource]);
 
   // Helper to resolve connection properties between Warp/Stairs
   const getWarpConnectionInfo = (m: HeistMarker, allMarkers: HeistMarker[]) => {
@@ -5725,6 +5843,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       <FpsTpsControls
         walls={walls}
+        lockedWalls={lockedWalls}
+        onLockedWallsChange={onLockedWallsChange}
         markers={markers}
         floor={floor}
         customBg={customBg}
@@ -5742,6 +5862,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         spawnPoints={spawnPoints}
         strokes={strokes}
         spawnItems={spawnItems}
+        mapSnapshotCanvas={miniMapSource}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

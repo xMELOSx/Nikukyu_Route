@@ -55,7 +55,7 @@ const WallEditorSettings: React.FC<WallEditorSettingsProps> = (p) => {
           {t('\u6700\u77ed\u30d0\u30a4\u30d1\u30b9\u306e\u307f')}
         </label>
       )}
-      {p.toolMode === 'draw-wall' && (
+      {p.toolMode === 'wall' && (
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '6px 0 6px' }} />
       )}
       <button className="btn-cyber" style={{ width: '100%', fontSize: '10px', padding: '6px', marginTop: '6px', clipPath: 'none' }} onClick={runAutoDetect}>

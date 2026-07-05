@@ -308,8 +308,12 @@ export const en: Locale = {
     'ルート線設定': 'Route line settings',
 
     // ----- Wall editor sub menu -----
-    '壁（直線）': 'Walls (Straight)',
-    '壁（消しゴム）': 'Walls (Eraser)',
+    '壁': 'Walls',
+    '描く': 'Draw',
+    '消す': 'Erase',
+    '通常壁': 'Normal Wall',
+    '鍵付き扉': 'Locked Door',
+    '自動補正 (角度スナップ)': 'Auto Snap (Angle)',
     '壁エディタ設定': 'Wall Editor Settings',
     'マップの背景画像をもとに、黒い線を壁として自動検出できます。': 'Automatically detect black contours in the background map as walls.',
     '壁の自動検出を実行': 'Run Auto Wall Detection',

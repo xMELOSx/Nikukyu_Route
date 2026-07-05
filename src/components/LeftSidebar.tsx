@@ -194,6 +194,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     warpColor, stairsColor, memoizedStrokes,
     leftSidebarCollapsed, isMobile,
     spawnUndoRef, spawnRedoRef,
+    wallSubMode, setWallSubMode,
+    wallAutoSnap, setWallAutoSnap,
+    lockedWalls, setLockedWalls,
+    wallLockedSubMode, setWallLockedSubMode,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -762,12 +766,45 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   )}
                   {isLocal && (
                     <>
-                      <button className={`tool-btn ${toolMode === 'draw-wall' ? 'active' : ''}`} onClick={() => setToolMode('draw-wall')} id="tool-draw-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
-                        <Fence size={18} style={{ color: '#ff0055' }} /><span>{t('壁（直線）')}</span>
+                      <button className={`tool-btn ${toolMode === 'wall' ? 'active' : ''}`} onClick={() => setToolMode('wall')} id="tool-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
+                        <Fence size={18} style={{ color: '#ff0055' }} /><span>{t('壁')}</span>
                       </button>
-                      <button className={`tool-btn ${toolMode === 'erase-wall' ? 'active' : ''}`} onClick={() => setToolMode('erase-wall')} id="tool-erase-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
-                        <Eraser size={18} style={{ color: '#ff0055' }} /><span>{t('壁（消しゴム）')}</span>
-                      </button>
+                      {toolMode === 'wall' && (
+                        <div style={{ display: 'flex', gap: '4px', padding: '2px 0' }}>
+                          <button
+                            className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
+                            onClick={() => setWallSubMode('draw')}
+                            style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                          >
+                            <Fence size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('描く')}</span>
+                          </button>
+                          <button
+                            className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
+                            onClick={() => setWallSubMode('erase')}
+                            style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                          >
+                            <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
+                          </button>
+                        </div>
+                      )}
+                      {toolMode === 'wall' && wallSubMode === 'draw' && (
+                        <div style={{ display: 'flex', gap: '4px', padding: '2px 0' }}>
+                          <button
+                            className={`tool-btn ${wallLockedSubMode === 'normal' ? 'active' : ''}`}
+                            onClick={() => setWallLockedSubMode('normal')}
+                            style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                          >
+                            <span style={{ fontSize: '10px' }}>{t('通常壁')}</span>
+                          </button>
+                          <button
+                            className={`tool-btn ${wallLockedSubMode === 'locked' ? 'active' : ''}`}
+                            onClick={() => setWallLockedSubMode('locked')}
+                            style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 200, 0, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#ffcc00' }}>{t('鍵付き扉')}</span>
+                          </button>
+                        </div>
+                      )}
                       <button
                         className="tool-btn"
                         style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}
@@ -1047,7 +1084,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
               />
             )}
 
-            {(toolMode === 'draw-wall' || toolMode === 'erase-wall') && (
+            {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '8px' }}>
@@ -1108,6 +1145,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   🗑️ {t('壁データをクリア')}
                 </button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px' }}>
+                  {wallSubMode === 'draw' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={wallAutoSnap}
+                        onChange={(e) => setWallAutoSnap(e.target.checked)}
+                        style={{ accentColor: '#ffcc00', cursor: 'pointer' }}
+                      />
+                      {t('自動補正 (角度スナップ)')}
+                    </label>
+                  )}
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"

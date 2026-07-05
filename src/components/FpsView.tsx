@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Point, HeistMarker } from '../utils/DataManager';
+import type { Point, HeistMarker, LockedWallSegment } from '../utils/DataManager';
 import {
   type PlayerState,
   normalizeAngle,
@@ -13,16 +13,19 @@ import {
 
 interface FpsViewProps {
   walls: [Point, Point][];
+  lockedWalls: LockedWallSegment[];
   markers: HeistMarker[];
   playerPos: { x: number; y: number };
   onExit: () => void;
   onPlayerChange: (pos: { x: number; y: number }) => void;
+  onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   mode: 'fps' | 'tps';
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   minimapCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   bgImage?: HTMLCanvasElement | HTMLImageElement | null;
   hiddenMarkers?: string[];
   hiddenMarkerTypes?: string[];
+  mapSnapshotCanvas?: HTMLCanvasElement | null;
 }
 
 const FOV = Math.PI * 0.45;
@@ -40,8 +43,8 @@ const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({
-  walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, minimapCanvasRef, bgImage,
-  hiddenMarkers = [], hiddenMarkerTypes = []
+  walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
+  hiddenMarkers = [], hiddenMarkerTypes = [], mapSnapshotCanvas
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -109,8 +112,13 @@ const FpsView: React.FC<FpsViewProps> = ({
   const bgImageRef = useRef<HTMLCanvasElement | HTMLImageElement | null>(null);
   bgImageRef.current = bgImage ?? null;
 
+  const mapSnapshotRef = useRef<HTMLCanvasElement | null>(null);
+  mapSnapshotRef.current = mapSnapshotCanvas ?? null;
+
   const wallsRef = useRef(walls);
   wallsRef.current = walls;
+  const lockedWallsRef = useRef(lockedWalls);
+  lockedWallsRef.current = lockedWalls;
   const markersRef = useRef(activeMarkers);
   markersRef.current = activeMarkers;
 
@@ -129,7 +137,27 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (e.key === 'Escape') {
       exitRef.current();
     }
-  }, []);
+    if (e.key.toLowerCase() === 'f' && !e.repeat) {
+      const curP = playerRef.current;
+      const lw = lockedWallsRef.current;
+      let nearestIdx = -1;
+      let nearestDist = 40;
+      for (let i = 0; i < lw.length; i++) {
+        const seg = lw[i];
+        const cx = (seg.p1.x + seg.p2.x) / 2;
+        const cy = (seg.p1.y + seg.p2.y) / 2;
+        const d = Math.hypot(cx - curP.x, cy - curP.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestIdx = i;
+        }
+      }
+      if (nearestIdx >= 0 && onLockedWallsChange) {
+        const next = lw.map((s, idx) => idx === nearestIdx ? { ...s, isOpen: !s.isOpen } : s);
+        onLockedWallsChange(next);
+      }
+    }
+  }, [onLockedWallsChange]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -206,6 +234,9 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (keys.has('d') || keys.has('arrowright')) strafe = 1;
 
       const lw = wallsRef.current;
+      const llw = lockedWallsRef.current;
+      const closedLocked = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
+      const allWalls = lw.length > 0 || closedLocked.length > 0 ? [...lw, ...closedLocked] : lw;
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
@@ -215,7 +246,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             forward,
             strafe,
             playerRef.current.angle,
-            lw,
+            allWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -225,7 +256,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             playerRef.current,
             forward,
             strafe,
-            lw,
+            allWalls,
             MOVE_SPEED * dt,
             PLAYER_RADIUS
           );
@@ -291,7 +322,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         colHeights = renderTpsView(
           ctx, canvas,
           playerRef.current,
-          lw,
+          allWalls,
           FOV,
           actualCamDist,
           WALL_COLOR, WALL_COLOR_DARK,
@@ -304,7 +335,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         colHeights = renderFpsView(
           ctx, canvas,
           playerRef.current,
-          lw,
+          allWalls,
           FOV,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
@@ -323,7 +354,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (minimapCvs) {
         const mctx = minimapCvs.getContext('2d');
         if (mctx) {
-          renderMinimapView(mctx, playerRef.current, bgImageRef.current);
+          renderMinimapView(mctx, playerRef.current, mapSnapshotRef.current || bgImageRef.current);
         }
       }
 
@@ -376,6 +407,27 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
       ctx.fillText(hudL, 10, canvas.height - 10);
       ctx.fillText(hudR, canvas.width - 80, canvas.height - 10);
+
+      // Locked door interaction prompt
+      const llocked = lockedWallsRef.current;
+      let nearDoor: LockedWallSegment | null = null;
+      for (const seg of llocked) {
+        const cx2 = (seg.p1.x + seg.p2.x) / 2;
+        const cy2 = (seg.p1.y + seg.p2.y) / 2;
+        const d = Math.hypot(cx2 - playerRef.current.x, cy2 - playerRef.current.y);
+        if (d < 40) { nearDoor = seg; break; }
+      }
+      if (nearDoor) {
+        const prompt = nearDoor.isOpen ? '[F] 閉める' : '[F] 開ける';
+        const promptW = ctx.measureText(prompt).width;
+        const px = (canvas.width - promptW) / 2;
+        const py = canvas.height - 40;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.strokeText(prompt, px, py);
+        ctx.fillStyle = nearDoor.isOpen ? 'rgba(0, 200, 255, 0.9)' : 'rgba(255, 200, 0, 0.9)';
+        ctx.fillText(prompt, px, py);
+      }
 
       rafRef.current = requestAnimationFrame(loop);
     };

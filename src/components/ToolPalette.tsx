@@ -36,11 +36,8 @@ const ToolPalette: React.FC<ToolPaletteProps> = (p) => (<>
         </button>
       )}
       {p.isLocal && (<>
-        <button className={`tool-btn ${p.toolMode === 'draw-wall' ? 'active' : ''}`} onClick={() => p.setToolMode('draw-wall')} style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
-          <Fence size={18} style={{ color: '#ff0055' }} /><span>{t('\u58c1\uff08\u76f4\u7dda\uff09')}</span>
-        </button>
-        <button className={`tool-btn ${p.toolMode === 'erase-wall' ? 'active' : ''}`} onClick={() => p.setToolMode('erase-wall')} style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
-          <Eraser size={18} style={{ color: '#ff0055' }} /><span>{t('\u58c1\uff08\u6d88\u3057\u30b4\u30e0\uff09')}</span>
+        <button className={`tool-btn ${p.toolMode === 'wall' ? 'active' : ''}`} onClick={() => p.setToolMode('wall')} style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
+          <Fence size={18} style={{ color: '#ff0055' }} /><span>{t('壁')}</span>
         </button>
       </>)}
       {!p.resetTarget ? (
