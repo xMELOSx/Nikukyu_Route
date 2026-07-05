@@ -20,6 +20,8 @@ interface FpsViewProps {
   mode: 'fps' | 'tps';
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   bgImage?: HTMLCanvasElement | HTMLImageElement | null;
+  hiddenMarkers?: string[];
+  hiddenMarkerTypes?: string[];
 }
 
 const FOV = Math.PI * 0.45;
@@ -36,9 +38,16 @@ const WALL_COLOR = '#00f0ff';
 const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
-const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImage }) => {
+const FpsView: React.FC<FpsViewProps> = ({
+  walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImage,
+  hiddenMarkers = [], hiddenMarkerTypes = []
+}) => {
+  const hMarkers = hiddenMarkers || [];
+  const hTypes = hiddenMarkerTypes || [];
+  const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
+
   const getInitialAngle = (): number => {
-    const nearby = markers.find(m => {
+    const nearby = activeMarkers.find(m => {
       const d = Math.hypot(m.x - playerPos.x, m.y - playerPos.y);
       return d < 15 && m.teleportAngle !== undefined;
     });
@@ -101,8 +110,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
 
   const wallsRef = useRef(walls);
   wallsRef.current = walls;
-  const markersRef = useRef(markers);
-  markersRef.current = markers;
+  const markersRef = useRef(activeMarkers);
+  markersRef.current = activeMarkers;
 
   const lastTeleportTimeRef = useRef<number>(0);
   const teleportEffectTimerRef = useRef<number>(0);

@@ -5698,6 +5698,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         hideButtons={!!activeNoteMarkerId}
         currentPosition={currentPosition}
         onPositionChange={setCurrentPosition}
+        hiddenMarkers={hiddenMarkers}
+        hiddenMarkerTypes={hiddenMarkerTypes}
+        spawnPoints={spawnPoints}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

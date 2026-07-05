@@ -17,6 +17,9 @@ interface FpsTpsControlsProps {
   hideButtons?: boolean;
   currentPosition: Point | null;
   onPositionChange: (pos: Point) => void;
+  hiddenMarkers?: string[];
+  hiddenMarkerTypes?: string[];
+  spawnPoints?: any[];
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -42,7 +45,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   walls, markers, floor, customBg, bgOffset, bgScale,
   wrapperRef, zoom, startSmoothScroll,
   startupFocusMarkerId, hideButtons,
-  currentPosition, onPositionChange
+  currentPosition, onPositionChange,
+  hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = []
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -56,7 +60,11 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       return;
     }
 
-    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}`;
+    const hMarkers = hiddenMarkers || [];
+    const hTypes = hiddenMarkerTypes || [];
+    const activeMarkers = markers.filter(m => !hMarkers.includes(m.id) && !hTypes.includes(m.type));
+
+    const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}|m:${activeMarkers.length}|sp:${spawnPoints?.length ?? 0}`;
     if (bgCacheRef.current && bgCacheRef.current.key === cacheKey && bgCacheRef.current.canvas) {
       setBgImage(bgCacheRef.current.canvas);
       return;
@@ -87,6 +95,34 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           tempCtx.drawImage(img, 0, 0, 1600, 4550);
         }
 
+        // Draw Spawn Points on ground texture
+        if (spawnPoints) {
+          tempCtx.fillStyle = 'rgba(57, 255, 20, 0.75)';
+          for (const sp of spawnPoints) {
+            if (sp.floor === floor) {
+              tempCtx.beginPath();
+              tempCtx.arc(sp.x, sp.y, 16, 0, Math.PI * 2);
+              tempCtx.fill();
+              tempCtx.strokeStyle = '#000000';
+              tempCtx.lineWidth = 3;
+              tempCtx.stroke();
+            }
+          }
+        }
+
+        // Draw Active Markers on ground texture
+        for (const m of activeMarkers) {
+          if (m.floor === floor) {
+            tempCtx.fillStyle = m.type === 'phone' ? '#ffd700' : m.type === 'start' ? '#39ff14' : '#ff0055';
+            tempCtx.beginPath();
+            tempCtx.arc(m.x, m.y, 12, 0, Math.PI * 2);
+            tempCtx.fill();
+            tempCtx.strokeStyle = '#ffffff';
+            tempCtx.lineWidth = 2;
+            tempCtx.stroke();
+          }
+        }
+
         bgCacheRef.current = { key: cacheKey, canvas: tempCanvas };
         setBgImage(tempCanvas);
       }
@@ -95,7 +131,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       setBgImage(null);
     };
     img.src = bgUrl;
-  }, [floor, customBg, bgOffset, bgScale]);
+  }, [floor, customBg, bgOffset, bgScale, markers, hiddenMarkers, hiddenMarkerTypes, spawnPoints]);
 
   const handleExit = useCallback(() => {
     setFreeCamMode(false);
@@ -200,6 +236,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             mode={freeCamMode}
             canvasRef={fpsCanvasRef}
             bgImage={bgImage}
+            hiddenMarkers={hiddenMarkers}
+            hiddenMarkerTypes={hiddenMarkerTypes}
           />
         )}
       </div>
