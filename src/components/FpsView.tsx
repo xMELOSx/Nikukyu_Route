@@ -20,7 +20,7 @@ interface FpsViewProps {
   onPlayerChange: (pos: { x: number; y: number }) => void;
   mode: 'fps' | 'tps';
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
-  bgImageData?: ImageData | null;
+  bgImage?: HTMLCanvasElement | HTMLImageElement | null;
 }
 
 const FOV = Math.PI * 0.45;
@@ -37,30 +37,29 @@ const WALL_COLOR = '#00f0ff';
 const WALL_COLOR_DARK = '#003344';
 const PLAYER_COLOR = '#39ff14';
 
-const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImageData }) => {
-  const initialAngle = (() => {
-    const nearbyMarker = markers.find(m => {
-      if (m.teleportAngle === undefined) return false;
-      const dist = Math.hypot(playerPos.x - m.x, playerPos.y - m.y);
-      return dist < 15;
+const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, onPlayerChange, mode, canvasRef, bgImage }) => {
+  const getInitialAngle = (): number => {
+    const nearby = markers.find(m => {
+      const d = Math.hypot(m.x - playerPos.x, m.y - playerPos.y);
+      return d < 15 && m.teleportAngle !== undefined;
     });
-    if (nearbyMarker && nearbyMarker.teleportAngle !== undefined) {
-      return (nearbyMarker.teleportAngle * Math.PI) / 180;
+    if (nearby && nearby.teleportAngle !== undefined) {
+      return (nearby.teleportAngle * Math.PI) / 180;
     }
     return 0;
-  })();
+  };
 
   const playerRef = useRef<PlayerState>({
     x: playerPos.x,
     y: playerPos.y,
-    angle: initialAngle
+    angle: getInitialAngle()
   });
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
 
-  const bgImageDataRef = useRef<ImageData | null>(null);
-  bgImageDataRef.current = bgImageData ?? null;
+  const bgImageRef = useRef<HTMLCanvasElement | HTMLImageElement | null>(null);
+  bgImageRef.current = bgImage ?? null;
 
   const wallsRef = useRef(walls);
   wallsRef.current = walls;
@@ -87,15 +86,22 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
     keysRef.current.delete(e.key.toLowerCase());
   }, []);
 
+  const hasLockedRef = useRef(false);
+
   const handlePointerLockChange = useCallback(() => {
-    if (!document.pointerLockElement) {
+    const canvas = canvasRef.current;
+    if (canvas && document.pointerLockElement === canvas) {
+      hasLockedRef.current = true;
+    }
+
+    if (hasLockedRef.current && !document.pointerLockElement) {
       requestAnimationFrame(() => {
         if (!document.pointerLockElement) {
           exitRef.current();
         }
       });
     }
-  }, []);
+  }, [canvasRef]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
@@ -211,8 +217,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
-          PLAYER_COLOR,
-          bgImageDataRef.current
+          PLAYER_COLOR
         );
       } else {
         colHeights = renderFpsView(
@@ -222,8 +227,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           FOV,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
-          CEILING_COLOR_1, CEILING_COLOR_2,
-          bgImageDataRef.current
+          CEILING_COLOR_1, CEILING_COLOR_2
         );
       }
 
@@ -238,7 +242,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         : { x: playerRef.current.x, y: playerRef.current.y };
       renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
 
-      renderMinimap(ctx, canvas, playerRef.current, lw, lm);
+      renderMinimap(ctx, playerRef.current, lw, lm, bgImageRef.current);
 
       if (teleportEffectTimerRef.current > 0) {
         ctx.fillStyle = teleportEffectColorRef.current;
@@ -273,11 +277,22 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       ctx.moveTo(canvas.width - 10 - bracket, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10 - bracket);
       ctx.stroke();
 
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
-      ctx.font = '10px monospace';
       const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
-      ctx.fillText(`${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`, 10, canvas.height - 10);
-      ctx.fillText(`ESC: 終了`, canvas.width - 80, canvas.height - 10);
+      const hudL = `${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
+      const hudR = `ESC: 終了`;
+
+      ctx.font = '10px monospace';
+
+      // Outline
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(hudL, 10, canvas.height - 10);
+      ctx.strokeText(hudR, canvas.width - 80, canvas.height - 10);
+
+      // Fill
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
+      ctx.fillText(hudL, 10, canvas.height - 10);
+      ctx.fillText(hudR, canvas.width - 80, canvas.height - 10);
 
       rafRef.current = requestAnimationFrame(loop);
     };

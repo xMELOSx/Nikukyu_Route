@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import {
   type FloorType,
@@ -5688,7 +5688,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         customBg={customBg}
         bgOffset={bgOffset}
         bgScale={bgScale}
-        canvasRef={canvasRef}
         wrapperRef={wrapperRef}
         zoom={zoom}
         startSmoothScroll={startSmoothScroll}

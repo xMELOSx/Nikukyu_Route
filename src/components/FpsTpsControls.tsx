@@ -10,7 +10,6 @@ interface FpsTpsControlsProps {
   customBg: string | null;
   bgOffset?: Point;
   bgScale?: Point;
-  canvasRef: React.RefObject<HTMLCanvasElement | null>;
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
   startSmoothScroll: (pan: Point, zoom: number) => void;
@@ -41,25 +40,25 @@ function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string
 
 const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   walls, markers, floor, customBg, bgOffset, bgScale,
-  canvasRef, wrapperRef, zoom, startSmoothScroll,
+  wrapperRef, zoom, startSmoothScroll,
   startupFocusMarkerId, hideButtons,
   currentPosition, onPositionChange
 }) => {
-  const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
+  const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
-  const bgCacheRef = useRef<{ key: string; data: ImageData | null } | null>(null);
+  const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
 
   const captureLatestBgImageData = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
     if (!bgUrl) {
-      setBgImageData(null);
+      setBgImage(null);
       return;
     }
 
     const cacheKey = `${floor}|${customBg ?? ''}|${bgOffset?.x ?? 0},${bgOffset?.y ?? 0}|${bgScale?.x ?? 1},${bgScale?.y ?? 1}`;
-    if (bgCacheRef.current && bgCacheRef.current.key === cacheKey && bgCacheRef.current.data) {
-      setBgImageData(bgCacheRef.current.data);
+    if (bgCacheRef.current && bgCacheRef.current.key === cacheKey && bgCacheRef.current.canvas) {
+      setBgImage(bgCacheRef.current.canvas);
       return;
     }
 
@@ -88,18 +87,12 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           tempCtx.drawImage(img, 0, 0, 1600, 4550);
         }
 
-        try {
-          const data = tempCtx.getImageData(0, 0, 1600, 4550);
-          bgCacheRef.current = { key: cacheKey, data };
-          setBgImageData(data);
-        } catch (e) {
-          console.error("Failed to capture latest bg image data:", e);
-          setBgImageData(null);
-        }
+        bgCacheRef.current = { key: cacheKey, canvas: tempCanvas };
+        setBgImage(tempCanvas);
       }
     };
     img.onerror = () => {
-      setBgImageData(null);
+      setBgImage(null);
     };
     img.src = bgUrl;
   }, [floor, customBg, bgOffset, bgScale]);
@@ -138,6 +131,15 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       onPositionChange(resolveInitialPos(markers, startupFocusMarkerId));
     }
     setFreeCamMode(mode);
+
+    const c = fpsCanvasRef.current;
+    if (c) {
+      try {
+        c.requestPointerLock();
+      } catch (e) {
+        console.error("Pointer lock failed on button click:", e);
+      }
+    }
   }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId]);
 
   const handlePlayerChange = useCallback((pos: Point) => {
@@ -184,8 +186,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       }}>
         <canvas
           ref={fpsCanvasRef}
-          width={848}
-          height={480}
+          width={424}
+          height={240}
           className="fps-overlay"
         />
         {freeCamMode && currentPosition && (
@@ -197,7 +199,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             onPlayerChange={handlePlayerChange}
             mode={freeCamMode}
             canvasRef={fpsCanvasRef}
-            bgImageData={bgImageData}
+            bgImage={bgImage}
           />
         )}
       </div>

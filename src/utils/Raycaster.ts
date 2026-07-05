@@ -152,7 +152,6 @@ interface WallRenderArgs {
   floorColor2: string;
   ceilingColor1: string;
   ceilingColor2: string;
-  bgImageData?: ImageData | null;
 }
 
 function renderWalls(
@@ -198,41 +197,8 @@ function renderWalls(
     ctx.fillStyle = `rgb(${colR},${colG},${colB})`;
     ctx.fillRect(i, wallTop, 1, wallBottom - wallTop);
 
-    // 床のレンダリング (Floor Casting)
-    if (args.bgImageData) {
-      const bg = args.bgImageData;
-      const camHeight = 24; // カメラの目線の高さ（32から24に下げて低くする）
-      const cosRay = Math.cos(rayAngle);
-      const sinRay = Math.sin(rayAngle);
-      const cosBeta = Math.cos(rayAngle - originAngle);
-
-      for (let y = wallBottom; y < H; y++) {
-        const denom = y - halfH;
-        if (denom <= 0) continue;
-        const perpDistFloor = (camHeight * distPlane) / denom;
-        const straightDist = perpDistFloor / cosBeta;
-
-        const wx = origin.x + cosRay * straightDist;
-        const wy = origin.y + sinRay * straightDist;
-
-        const tx = Math.floor(wx);
-        const ty = Math.floor(wy);
-
-        let fr = 13, fg = 20, fb = 36; // デフォルト床色
-        if (tx >= 0 && tx < bg.width && ty >= 0 && ty < bg.height) {
-          const idx = (ty * bg.width + tx) * 4;
-          fr = bg.data[idx];
-          fg = bg.data[idx + 1];
-          fb = bg.data[idx + 2];
-        }
-
-        ctx.fillStyle = `rgb(${fr},${fg},${fb})`;
-        ctx.fillRect(i, y, 1, 1);
-      }
-    } else {
-      ctx.fillStyle = i % 2 === 0 ? args.floorColor1 : args.floorColor2;
-      ctx.fillRect(i, wallBottom, 1, H - wallBottom);
-    }
+    ctx.fillStyle = i % 2 === 0 ? args.floorColor1 : args.floorColor2;
+    ctx.fillRect(i, wallBottom, 1, H - wallBottom);
   }
 
   return { colHeights };
@@ -249,8 +215,7 @@ export function renderFpsView(
   floorColor1: string,
   floorColor2: string,
   ceilingColor1: string,
-  ceilingColor2: string,
-  bgImageData?: ImageData | null
+  ceilingColor2: string
 ): { top: number; bottom: number; perpDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -259,8 +224,7 @@ export function renderFpsView(
     walls, fov,
     wallColor, wallColorDark,
     floorColor1, floorColor2,
-    ceilingColor1, ceilingColor2,
-    bgImageData
+    ceilingColor1, ceilingColor2
   }).colHeights;
 }
 
@@ -271,40 +235,52 @@ const MINIMAP_RANGE = 500;
 
 export function renderMinimap(
   ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
   player: PlayerState,
   walls: [Point, Point][],
-  markers: { x: number; y: number; type: string }[]
+  markers: { x: number; y: number; type: string }[],
+  bgImage?: HTMLCanvasElement | HTMLImageElement | null
 ): void {
   const margin = 14;
-  const x = canvas.width - margin - MINIMAP_SIZE;
+  const x = margin; // 左上に配置
   const y = margin;
   const half = MINIMAP_SIZE / 2;
   const scale = MINIMAP_SIZE / MINIMAP_RANGE;
 
-  // Background
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
-  ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
-
-  // Clip to minimap area so walls/markers don't bleed outside the border
+  // クリッピング境界を設定してはみ出しを防ぐ
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
   ctx.clip();
 
-  // Grid lines (every 100 world units = 100/500*90 = 18px)
-  ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
-  ctx.lineWidth = 0.5;
-  for (let g = 100; g < MINIMAP_RANGE; g += 100) {
-    const gp = g * scale;
-    ctx.beginPath();
-    ctx.moveTo(x, y + half - gp); ctx.lineTo(x + MINIMAP_SIZE, y + half - gp);
-    ctx.moveTo(x + half + gp, y); ctx.lineTo(x + half + gp, y + MINIMAP_SIZE);
-    ctx.moveTo(x + half - gp, y); ctx.lineTo(x + half - gp, y + MINIMAP_SIZE);
-    ctx.stroke();
+  if (bgImage) {
+    const sw = MINIMAP_RANGE;
+    const sh = MINIMAP_RANGE;
+    const sx = player.x - sw / 2;
+    const sy = player.y - sh / 2;
+    ctx.drawImage(bgImage, sx, sy, sw, sh, x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  } else {
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+  }
+
+  // ミニマップ外枠のストローク
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+
+  // グリッド線（背景画像がない場合のみ描画する、あるいは常に薄く重ねる）
+  if (!bgImage) {
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
+    ctx.lineWidth = 0.5;
+    for (let g = 100; g < MINIMAP_RANGE; g += 100) {
+      const gp = g * scale;
+      ctx.beginPath();
+      ctx.moveTo(x, y + half - gp); ctx.lineTo(x + MINIMAP_SIZE, y + half - gp);
+      ctx.moveTo(x + half + gp, y); ctx.lineTo(x + half + gp, y + MINIMAP_SIZE);
+      ctx.moveTo(x + half - gp, y); ctx.lineTo(x + half - gp, y + MINIMAP_SIZE);
+      ctx.stroke();
+    }
   }
 
   // Walls within range
@@ -495,6 +471,9 @@ export function renderMarkers3D(
 
     ctx.fillStyle = '#000000cc';
     ctx.fillRect(labelX - textWidth / 2 - 2, labelY - 1, textWidth + 4, labelH + 2);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2.5;
+    ctx.strokeText(truncated, labelX, labelY);
     ctx.fillStyle = '#ffffff';
     ctx.fillText(truncated, labelX, labelY);
   }
@@ -513,8 +492,7 @@ export function renderTpsView(
   floorColor2: string,
   ceilingColor1: string,
   ceilingColor2: string,
-  playerColor: string,
-  bgImageData?: ImageData | null
+  playerColor: string
 ): { top: number; bottom: number; perpDist: number }[] {
   // プレイヤーの真後ろ（角度 + Math.PI）にレイを飛ばし、壁との距離を測る
   const oppAngle = normalizeAngle(player.angle + Math.PI);
@@ -533,8 +511,7 @@ export function renderTpsView(
     walls, fov,
     wallColor, wallColorDark,
     floorColor1, floorColor2,
-    ceilingColor1, ceilingColor2,
-    bgImageData
+    ceilingColor1, ceilingColor2
   });
 
   // Render player billboard
