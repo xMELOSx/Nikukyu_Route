@@ -225,7 +225,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         const portal = lm.find(m => {
           if (m.type !== 'warp' && m.type !== 'iwarp' && m.type !== 'stairs') return false;
           const dist = Math.hypot(curP.x - m.x, curP.y - m.y);
-          return dist < 14;
+          return dist < 8;
         });
 
         if (portal && portal.linkedWarpId) {
