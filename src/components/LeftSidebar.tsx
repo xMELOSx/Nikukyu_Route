@@ -768,6 +768,44 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       <button className={`tool-btn ${toolMode === 'erase-wall' ? 'active' : ''}`} onClick={() => setToolMode('erase-wall')} id="tool-erase-wall-btn" style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}>
                         <Eraser size={18} style={{ color: '#ff0055' }} /><span>{t('壁（消しゴム）')}</span>
                       </button>
+                      <button
+                        className="tool-btn"
+                        style={{ borderColor: 'rgba(255, 0, 85, 0.4)' }}
+                        onClick={() => {
+                          historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers);
+                          
+                          const cleanedStrokes = {
+                            main: routeApi.route.strokes.main.map(stroke => {
+                              const cleanedPoints = stroke.points.filter(p => p.x >= 0 && p.x <= 1600 && p.y >= 0 && p.y <= 4550);
+                              return { ...stroke, points: cleanedPoints };
+                            }).filter(stroke => stroke.points.length >= 2)
+                          };
+                          
+                          const cleanedMarkers = routeApi.route.markers.filter(m => m.x >= 0 && m.x <= 1600 && m.y >= 0 && m.y <= 4550);
+                          
+                          routeApi.setRoute(prev => ({
+                            ...prev,
+                            strokes: cleanedStrokes,
+                            markers: cleanedMarkers
+                          }));
+
+                          const cleanedGlobalWalls = { ...globalWalls.walls };
+                          for (const fl of Object.keys(cleanedGlobalWalls)) {
+                            cleanedGlobalWalls[fl] = cleanedGlobalWalls[fl].filter(seg => {
+                              const a = seg[0];
+                              const b = seg[1];
+                              return a.x >= 0 && a.x <= 1600 && a.y >= 0 && a.y <= 4550 &&
+                                     b.x >= 0 && b.x <= 1600 && b.y >= 0 && b.y <= 4550;
+                            });
+                          }
+                          globalWalls.replace(cleanedGlobalWalls);
+
+                          notification.show(t('マップ範囲外のゴミ点を一括削除しました'));
+                        }}
+                        title={t('マップ範囲外(0〜1600, 0〜4550)に配置されてしまった線・壁・ピンを一括削除します')}
+                      >
+                        <Eraser size={18} style={{ color: '#ff0055' }} /><span>{t('ゴミ点削除')}</span>
+                      </button>
                     </>
                   )}
                   {!resetTarget ? (

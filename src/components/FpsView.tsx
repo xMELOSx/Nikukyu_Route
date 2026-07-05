@@ -3,7 +3,6 @@ import type { Point, HeistMarker } from '../utils/DataManager';
 import {
   type PlayerState,
   normalizeAngle,
-  castRay,
   movePlayer,
   movePlayerTps,
   renderFpsView,
@@ -145,6 +144,9 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
     if (canvas && document.pointerLockElement === canvas) {
+      if (Math.abs(e.movementX) > 100) {
+        return;
+      }
       const clampedX = Math.max(-150, Math.min(150, e.movementX));
       playerRef.current.angle = normalizeAngle(
         playerRef.current.angle + clampedX * ROTATE_SPEED
@@ -245,6 +247,8 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
         }
       }
 
+      const actualCamDist = TPS_CAM_DISTANCE;
+
       let colHeights: { top: number; bottom: number; perpDist: number }[];
       if (mode === 'tps') {
         colHeights = renderTpsView(
@@ -252,7 +256,7 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
           playerRef.current,
           lw,
           FOV,
-          TPS_CAM_DISTANCE,
+          actualCamDist,
           WALL_COLOR, WALL_COLOR_DARK,
           FLOOR_COLOR_1, FLOOR_COLOR_2,
           CEILING_COLOR_1, CEILING_COLOR_2,
@@ -273,11 +277,6 @@ const FpsView: React.FC<FpsViewProps> = ({ walls, markers, playerPos, onExit, on
       }
 
       // Render markers in 3D view
-      const oppAngle = normalizeAngle(playerRef.current.angle + Math.PI);
-      const camHitDist = castRay({ x: playerRef.current.x, y: playerRef.current.y }, oppAngle, lw).distance;
-      const actualCamDist = camHitDist < TPS_CAM_DISTANCE
-        ? Math.max(15, camHitDist - 15)
-        : TPS_CAM_DISTANCE;
       const camPos = mode === 'tps'
         ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
         : { x: playerRef.current.x, y: playerRef.current.y };

@@ -1595,6 +1595,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     const coords = getCanvasCoords(e);
+    if (coords.x < 0 || coords.x > 1600 || coords.y < 0 || coords.y > 4550) {
+      return;
+    }
 
     // 距離計測モード: クリックで線を選択 (Alt で累積追加、通常クリックで置き換え)
     if (toolMode === 'measure' && isEditMode) {

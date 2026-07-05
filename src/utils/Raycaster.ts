@@ -39,7 +39,7 @@ export function castRay(
     const s = ((a.x - origin.x) * dy - (a.y - origin.y) * dx) / denom;
 
     if (t > 0.1 && s >= 0 && s <= 1) {
-      if (playerDist !== undefined && t < playerDist) {
+      if (playerDist !== undefined && t < (playerDist - 12)) {
         continue;
       }
       if (t < minDist) {
@@ -64,7 +64,13 @@ export function castRays(
   for (let i = 0; i < numRays; i++) {
     const frac = numRays > 1 ? i / (numRays - 1) : 0.5;
     const angle = player.angle - halfFov + frac * fov;
-    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls, playerDist));
+
+    let diff = angle - player.angle;
+    if (diff > Math.PI) diff -= Math.PI * 2;
+    if (diff < -Math.PI) diff += Math.PI * 2;
+    const isCenterRay = Math.abs(diff) < 0.25;
+
+    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls, isCenterRay ? playerDist : undefined));
   }
   return hits;
 }
@@ -287,6 +293,36 @@ function renderWalls(
         buf[idx + 3] = 255;
       }
     }
+
+    // 4. Render Front Translucent Wall Overlay (if any)
+    const frontHit = castRay({ x: origin.x, y: origin.y }, rayAngle, walls);
+    const frontDist = frontHit.distance;
+    const frontPerpDist = frontDist * Math.cos(rayAngle - originAngle);
+
+    let diff = rayAngle - originAngle;
+    if (diff > Math.PI) diff -= Math.PI * 2;
+    if (diff < -Math.PI) diff += Math.PI * 2;
+    const isCenterRay = Math.abs(diff) < 0.25;
+
+    if (args.playerDist !== undefined && isCenterRay && frontDist < (args.playerDist - 12)) {
+      const frontWallHeight = frontPerpDist > 0.1 ? (halfH / frontPerpDist) * distPlane : H;
+      const frontWallTop = Math.max(0, Math.floor(halfH - frontWallHeight * (1 - camHeightFrac)));
+      const frontWallBottom = Math.min(H, Math.floor(halfH + frontWallHeight * camHeightFrac));
+
+      const alpha = 0.35; // 35% opacity for front walls
+      const invAlpha = 1 - alpha;
+      const fShade = Math.min(1, 4 / frontPerpDist);
+      const fR = Math.round(darkR + (r - darkR) * fShade);
+      const fG = Math.round(darkG + (g - darkG) * fShade);
+      const fB = Math.round(darkB + (b - darkB) * fShade);
+
+      for (let y = frontWallTop; y < frontWallBottom; y++) {
+        const idx = (y * W + i) * 4;
+        buf[idx] = Math.round(buf[idx] * invAlpha + fR * alpha);
+        buf[idx + 1] = Math.round(buf[idx + 1] * invAlpha + fG * alpha);
+        buf[idx + 2] = Math.round(buf[idx + 2] * invAlpha + fB * alpha);
+      }
+    }
   }
 
   // Draw buffer to canvas in 1 draw call!
@@ -323,7 +359,7 @@ export function renderFpsView(
 
 const PLAYER_HEIGHT = 6;
 const PLAYER_WIDTH = 2;
-const MINIMAP_SIZE = 90;
+const MINIMAP_SIZE = 70;
 const MINIMAP_RANGE = 500;
 
 export function renderMinimap(
@@ -543,8 +579,10 @@ export function renderMarkers3D(
 
     if (colHeights[screenX].perpDist < perpDist) continue;
 
-    const labelPx = Math.max(6, Math.round(10 * distPlane / perpDist));
+    const labelPx = Math.max(4, Math.round(5 * distPlane / perpDist));
     const pBottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
+    const ph = Math.max(2, Math.round((12 * distPlane) / perpDist)); // MARKER_WORLD_HEIGHT = 12
+    const pTop = pBottom - ph;
     ctx.font = `${labelPx}px monospace`;
 
     const truncated = label.length > 20 ? label.slice(0, 20) + '…' : label;
@@ -553,7 +591,7 @@ export function renderMarkers3D(
     // Check overlap with previously drawn labels
     const halfW = textWidth / 2;
     const labelX = screenX;
-    const labelY = pBottom + 2;
+    const labelY = pTop - labelPx - 4;
     const labelH = labelPx + 2;
     const overlaps = drawnLabels.some(d =>
       Math.abs(d.x - labelX) < (halfW + d.halfW + 4) &&
