@@ -258,16 +258,21 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     setGlobalMarkers(prev => {
       if (incoming.length === 0) return prev;
       const incomingById = new Map(incoming.map(m => [m.id, m]));
-      // Update existing markers with the incoming data; keep order stable
-      // so React keys / drag handles don't get reshuffled.
       const updated = prev.map(m => {
         const next = incomingById.get(m.id);
-        return next ? { ...m, ...next } : m;
+        if (!next) return m;
+        // Only override fields that are actually present in next (not undefined)
+        // to avoid wiping fields (like mediaItems) that only exist in prev.
+        const merged: any = { ...m };
+        for (const key of Object.keys(next)) {
+          if ((next as any)[key] !== undefined) {
+            merged[key] = (next as any)[key];
+          }
+        }
+        return merged as HeistMarker;
       });
-      // Append any IDs that weren't already present.
       const existingIds = new Set(prev.map(m => m.id));
       const newOnes = incoming.filter(m => !existingIds.has(m.id));
-      // No-op fast path: nothing changed.
       if (newOnes.length === 0 && updated.every((m, i) => m === prev[i])) {
         return prev;
       }

@@ -36,6 +36,7 @@ interface FpsViewProps {
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
+  imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
 }
 
 const FOV = Math.PI * 0.45;
@@ -54,7 +55,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
   autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
-  mapSnapshotCanvas,
+  mapSnapshotCanvas, imageOverlayCanvasRef,
   onToggleNearestPhone,
   onToggleMode
 }) => {
@@ -788,6 +789,35 @@ const FpsView: React.FC<FpsViewProps> = ({
       }
       ctx.fillText(`Radius:6 Nearest:${minDist < 10000 ? minDist.toFixed(1) : '-'}`, canvas.width - 120, 14);
       ctx.fillText(`Walls:${lw.length} Locked:${closedLockedArr.length}`, canvas.width - 120, 24);
+
+      // TPS画像: 高画質2Dオーバーレイ（マーカー接近時に画面中央固定表示）
+      const ovCanvas = imageOverlayCanvasRef?.current;
+      if (ovCanvas && mode === 'tps') {
+        const octx = ovCanvas.getContext('2d');
+        if (octx) {
+          octx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
+          const tpsImgs = tpsImagesRef.current;
+          for (const m of lm) {
+            if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
+            const dist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
+            if (dist > 200) continue;
+            const img = tpsImgs[m.id];
+            const maxW = ovCanvas.width * 0.5;
+            const maxH = ovCanvas.height * 0.5;
+            let dispW = maxW;
+            let dispH = dispW * img.height / img.width;
+            if (dispH > maxH) { dispH = maxH; dispW = dispH * img.width / img.height; }
+            const cx = (ovCanvas.width - dispW) / 2;
+            const cy = (ovCanvas.height - dispH) / 3;
+            octx.save();
+            octx.imageSmoothingEnabled = true;
+            octx.imageSmoothingQuality = 'high';
+            octx.drawImage(img, cx, cy, dispW, dispH);
+            octx.restore();
+            break;
+          }
+        }
+      }
 
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(loop);

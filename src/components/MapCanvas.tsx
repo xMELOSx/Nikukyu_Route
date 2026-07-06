@@ -2442,12 +2442,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const dStart = Math.hypot(w[0].x - intersect.x, w[0].y - intersect.y);
             const dEnd = Math.hypot(w[1].x - intersect.x, w[1].y - intersect.y);
             if (dStart > 2 && dEnd > 2) {
-              const part1: WallSegment = [w[0], intersect];
-              const part2: WallSegment = [intersect, w[1]];
-              if (w[2]) {
-                part1[2] = w[2];
-                part2[2] = w[2];
-              }
+              const part1: WallSegment = w[2] ? [w[0], intersect, w[2]] : [w[0], intersect];
+              const part2: WallSegment = w[2] ? [intersect, w[1], w[2]] : [intersect, w[1]];
               newWalls.push(part1, part2);
               didSlice = true;
               continue;

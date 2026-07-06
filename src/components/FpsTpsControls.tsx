@@ -68,6 +68,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   const [autoRouteNoClip, setAutoRouteNoClip] = useState(false);
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
+  const tpsOverlayRef = useRef<HTMLCanvasElement | null>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
   const bgImageElementCacheRef = useRef<{ [url: string]: HTMLImageElement } | null>(null);
   const canvasScale = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
@@ -75,6 +76,23 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   useEffect(() => {
     onFreeCamModeChange?.(!!freeCamMode);
   }, [freeCamMode, onFreeCamModeChange]);
+
+  // Resize overlay canvas to container display size
+  useEffect(() => {
+    const resize = () => {
+      const ov = tpsOverlayRef.current;
+      if (!ov || !freeCamMode) return;
+      const p = ov.parentElement;
+      if (!p) return;
+      const r = p.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      ov.width = Math.round(r.width * dpr);
+      ov.height = Math.round(r.height * dpr);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [freeCamMode]);
 
   const captureLatestBgImageData = useCallback(() => {
     const bgUrl = customBg || PRESET_MAPS_META[floor]?.path;
@@ -352,6 +370,14 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           className="fps-overlay"
         />
         <canvas
+          ref={tpsOverlayRef}
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            pointerEvents: 'none', zIndex: 3,
+          }}
+        />
+        <canvas
           ref={minimapCanvasRef}
           width={280}
           height={280}
@@ -417,6 +443,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteElapsed={autoRouteElapsed}
             autoRouteTiming={autoRouteTiming}
             autoRouteNoClip={autoRouteNoClip}
+            imageOverlayCanvasRef={tpsOverlayRef}
           />
         )}
         {/* Mobile touch controls */}
