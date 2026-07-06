@@ -3069,6 +3069,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerWidth = drawerWidth;
               updated.drawerHeight = drawerHeight;
             }
+            if (m.type === 'tps') {
+              updated.mediaItems = tpsImageUrl ? [{ type: 'image' as const, url: tpsImageUrl }] : [];
+            }
             return updated;
           }
           return m;
@@ -5702,6 +5705,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
                 />
               </div>
+            </div>
+          )}
+          {activeNoteMarker.type === 'tps' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 136, 0, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像URL')}</div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
+                  placeholder="https://example.com/image.png"
+                  value={tpsImageUrl}
+                  onChange={(e) => setTpsImageUrl(e.target.value)}
+                />
+                <button className="btn-cyber" style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap' }}
+                  onClick={async () => {
+                    try {
+                      if (!navigator.clipboard?.read) return;
+                      const items = await navigator.clipboard.read();
+                      for (const item of items) {
+                        const imgType = item.types.find(t => t.startsWith('image/'));
+                        if (!imgType) continue;
+                        const blob = await item.getType(imgType);
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const url = ev.target?.result as string;
+                          if (url) setTpsImageUrl(url);
+                        };
+                        reader.readAsDataURL(blob);
+                      }
+                    } catch {}
+                  }}
+                >{t('📋 貼付け')}</button>
+              </div>
+              {tpsImageUrl && (
+                <img src={tpsImageUrl} alt="preview" style={{ maxWidth: '100%', maxHeight: '120px', borderRadius: '4px', marginTop: '4px' }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
             </div>
           )}
 

@@ -1,67 +1,80 @@
-// にくきゅう大強盗 Service Worker — オフラインキャッシュ
-const CACHE_NAME = 'heist-route-v1';
+const CACHE_NAME = 'heist-route-v2';
 
-// インストール時にアプリシェルをキャッシュ
+const PRECACHE_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './favicon.svg',
+  './favicon.ico',
+  './icons.svg',
+  './nikukyu_map.webp',
+  './user-dict.json',
+  './maps/lg1_1.png',
+  './maps/lg1_2.png',
+  './maps/lg1_3_left.png',
+  './maps/lg1_3_right.png',
+  './maps/lg1_4.png',
+  './maps/lg2_1.png',
+  './maps/lg2_2.png',
+  './maps/lg3_boss.png',
+  './maps/lg3_main.png',
+  './global_markers.json',
+  './global_walls.json',
+  './global_spawns.json',
+  './global_help.json',
+  './global_defaults.json',
+  './global_sim_defaults.json',
+  './global_sim_pools.json',
+  './default_preset.json',
+  './presets.json',
+];
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([
-        './',
-        './index.html',
-        './manifest.json',
-        './favicon.svg',
-        './favicon.ico',
-      ]).catch(() => {
-        // 一部のリソースが取得できなくてもインストール自体は成功させる
-        console.warn('[SW] Some resources failed to cache during install');
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(PRECACHE_ASSETS).catch((err) =>
+        console.warn('[SW] Precache failed:', err)
+      )
+    )
   );
   self.skipWaiting();
 });
 
-// 古いキャッシュをクリーンアップ
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
+    ).then(() => {
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) =>
+          client.postMessage({ type: 'CACHE_UPDATED' })
+        );
+      });
     })
   );
   self.clients.claim();
 });
 
-// ネットワークファースト: オンラインなら最新を取得、オフラインならキャッシュから
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // API リクエストやPOSTはキャッシュしない
   if (event.request.method !== 'GET') return;
-  if (url.pathname.startsWith('/api/')) return;
+  if (new URL(event.request.url).pathname.startsWith('/api/')) return;
 
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // 成功レスポンスをキャッシュに保存
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      })
-      .catch(() => {
-        // オフライン時はキャッシュから返す
-        return caches.match(event.request).then((cached) => {
-          if (cached) return cached;
-          // HTMLリクエストはindex.htmlにフォールバック (SPA)
-          if (event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('./index.html');
-          }
-          return new Response('Offline', { status: 503 });
-        });
-      })
+      });
+    }).catch(() => {
+      return caches.match('./index.html');
+    })
   );
 });

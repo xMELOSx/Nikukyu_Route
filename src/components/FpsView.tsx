@@ -70,7 +70,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (nearby && nearby.teleportAngle !== undefined) {
       return (nearby.teleportAngle * Math.PI) / 180;
     }
-    return 0;
+    return -Math.PI / 2;
   };
 
   const playerRef = useRef<PlayerState>({

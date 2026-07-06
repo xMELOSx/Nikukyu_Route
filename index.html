@@ -14,10 +14,35 @@
   <script type="module" src="/src/main.tsx"></script>
   <script>
     if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/Nikukyu_Route/sw.js')
-          .then(reg => console.log('[SW] Registered:', reg.scope))
-          .catch(err => console.error('[SW] Registration failed:', err));
+      navigator.serviceWorker.register('/Nikukyu_Route/sw.js').then(reg => {
+        console.log('[SW] Registered:', reg.scope);
+
+      }).catch(err => console.error('[SW] Registration failed:', err));
+
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'CACHE_UPDATED') {
+          const div = document.createElement('div');
+          div.id = 'sw-update-banner';
+          div.textContent = '📦 データが更新されました。ページを再読み込みしてください。';
+          Object.assign(div.style, {
+            position: 'fixed', top: '0', left: '0', right: '0', zIndex: '99999',
+            padding: '10px 16px', background: '#00f0ff', color: '#000',
+            fontFamily: 'system-ui, sans-serif', fontSize: '13px', fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            boxShadow: '0 2px 8px rgba(0,240,255,0.4)',
+          });
+          const btn = document.createElement('button');
+          btn.textContent = '再読み込み';
+          Object.assign(btn.style, {
+            padding: '5px 14px', border: 'none', borderRadius: '4px',
+            background: '#000', color: '#00f0ff', fontSize: '12px',
+            fontWeight: 600, cursor: 'pointer',
+          });
+          btn.onclick = () => window.location.reload();
+          div.appendChild(btn);
+          document.body.prepend(div);
+          setTimeout(() => { div.style.opacity = '0'; div.style.transition = 'opacity 0.5s'; }, 10000);
+        }
       });
     }
   </script>
