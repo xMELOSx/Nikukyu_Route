@@ -182,7 +182,7 @@ function renderWalls(
   const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays, args.playerDist);
   const lw = args.lockedWalls;
   const lockedHits = lw && lw.length > 0
-    ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, lw, fov, numRays, args.playerDist)
+    ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, lw, fov, numRays)
     : null;
   const colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[] = [];
 
@@ -466,7 +466,7 @@ export function renderFpsView(
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
   wallFadeRadius?: number
-): { top: number; bottom: number; perpDist: number }[] {
+): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   return renderWalls({
     ctx, canvas,
     origin: { x: player.x, y: player.y },
@@ -800,7 +800,7 @@ export function renderTpsView(
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
   wallFadeRadius?: number
-): { top: number; bottom: number; perpDist: number }[] {
+): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   const actualCamDistance = camDistance;
 
   const camX = player.x - Math.cos(player.angle) * actualCamDistance;

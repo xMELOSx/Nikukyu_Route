@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Point, HeistMarker, FloorType, LockedWallSegment } from '../utils/DataManager';
+import type { RouteSegment } from '../utils/AutoRoute';
 import { MARKER_META, PRESET_MAPS_META } from '../utils/DataManager';
 import FpsView from './FpsView';
 
@@ -28,7 +29,7 @@ interface FpsTpsControlsProps {
   onFreeCamModeChange?: (active: boolean) => void;
   onToggleNearestPhone?: () => void;
   autoRouteActive?: boolean;
-  autoRouteSegments?: { start: Point; end: Point; distance: number; stopDuration: number }[];
+  autoRouteSegments?: RouteSegment[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
 }
@@ -322,10 +323,9 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       )}
 
       <div style={{
-        display: freeCamMode ? 'flex' : 'none',
+        display: freeCamMode ? 'block' : 'none',
         position: 'absolute', inset: 0, zIndex: 9999,
-        background: '#000', overflow: 'hidden',
-        alignItems: 'center', justifyContent: 'center'
+        background: '#000', overflow: 'hidden'
       }}>
         <canvas
           ref={fpsCanvasRef}

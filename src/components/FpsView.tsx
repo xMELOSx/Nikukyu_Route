@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Point, HeistMarker, LockedWallSegment } from '../utils/DataManager';
+import type { RouteSegment } from '../utils/AutoRoute';
 import {
   type PlayerState,
   normalizeAngle,
@@ -30,7 +31,7 @@ interface FpsViewProps {
   onToggleNearestPhone?: () => void;
   onToggleMode?: () => void;
   autoRouteActive?: boolean;
-  autoRouteSegments?: { start: Point; end: Point; distance: number; stopDuration: number }[];
+  autoRouteSegments?: RouteSegment[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
@@ -461,7 +462,7 @@ const FpsView: React.FC<FpsViewProps> = ({
 
       const actualCamDist = TPS_CAM_DISTANCE;
 
-      let colHeights: { top: number; bottom: number; perpDist: number }[];
+      let colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[];
       const LOCKED_WALL_COLOR = '#cc9900';
       const LOCKED_WALL_COLOR_DARK = '#664400';
       const closedLockedForRender = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
@@ -515,29 +516,6 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (aaActive2 && aaSegs2.length > 0 && aaTiming2) {
         const routeMarkers: { x: number; y: number; type: string; infoLabel?: string }[] = [];
         const speed = aaTiming2.speed;
-        let remaining = aaElapsed2;
-        let currentX = aaSegs2[0]?.start.x ?? 0;
-        let currentY = aaSegs2[0]?.start.y ?? 0;
-
-        for (const seg of aaSegs2) {
-          if (seg.distance === 0 && seg.stopDuration === 0) continue;
-          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
-          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-          if (remaining > 0) {
-            if (remaining < travelTime) {
-              const t = remaining / travelTime;
-              currentX = seg.start.x + (seg.end.x - seg.start.x) * t;
-              currentY = seg.start.y + (seg.end.y - seg.start.y) * t;
-              remaining = 0;
-            } else {
-              currentX = seg.end.x;
-              currentY = seg.end.y;
-              remaining -= travelTime;
-              if (remaining < seg.stopDuration) remaining = 0;
-              else remaining -= seg.stopDuration;
-            }
-          }
-        }
 
         let pathRemaining = aaElapsed2;
         const stepInterval = 80;
@@ -632,7 +610,6 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.moveTo(canvas.width - 10 - bracket, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10); ctx.lineTo(canvas.width - 10, canvas.height - 10 - bracket);
       ctx.stroke();
 
-      const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
       const coordText = `X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
       ctx.textAlign = 'start';
       ctx.font = 'bold 16px monospace';

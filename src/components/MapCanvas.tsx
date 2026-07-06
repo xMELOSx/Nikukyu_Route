@@ -224,7 +224,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   pickyMarkerIds = {},
   onPickyMarkerChange,
   textPinPassThrough = true,
-  drawerPinPassThrough = true,
   showPhoneCompass = false,
   showPhoneBoxHud = false,
   phoneBoxHudOpen = false,
@@ -1328,70 +1327,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         cacheCtx.lineCap = 'round';
         cacheCtx.lineJoin = 'round';
 
-        if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
-          // Cache dashed/temporary strokes for auto-route mode
-          strokes.forEach(stroke => {
-            const isDashed = stroke.type === 'dashed';
-            const isTemporary = stroke.type === 'temporary';
-            if ((!isDashed && !isTemporary) || (isDashed && hideBranchLines)) return;
-            cacheCtx.strokeStyle = stroke.color;
+        // Cache all strokes
+        strokes.forEach(stroke => {
+          const isDashed = stroke.type === 'dashed';
+          const isTemporary = stroke.type === 'temporary';
+          if (isDashed && hideBranchLines) return;
+          if (!isDashed && !isTemporary && hideRouteLines) return;
+          cacheCtx.strokeStyle = stroke.color;
+          if (isTemporary) {
+            cacheCtx.globalAlpha = 0.4;
+            cacheCtx.lineWidth = stroke.width;
+            cacheCtx.setLineDash([6, 4]);
+          } else if (isDashed) {
             cacheCtx.lineWidth = branchLines1px ? 1 : stroke.width;
-            cacheCtx.setLineDash(isTemporary ? [6, 4] : [8, 6]);
-            if (isTemporary) cacheCtx.globalAlpha = 0.4;
-            cacheCtx.beginPath();
-            stroke.points.forEach((pt, idx) => {
-              if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
-              else cacheCtx.lineTo(pt.x, pt.y);
-            });
-            cacheCtx.stroke();
-            if (isTemporary) cacheCtx.globalAlpha = 1;
-          });
-
-          // Cache last stroke overlay for auto-route mode
-          if (strokes.length > 0) {
-            const last = strokes[strokes.length - 1];
-            if (last && last.points && last.points.length >= 2 && last.type === 'solid') {
-              cacheCtx.globalAlpha = 0.5;
-              cacheCtx.strokeStyle = last.color;
-              cacheCtx.lineWidth = routeLines1px ? 1 : last.width;
-              cacheCtx.setLineDash([]);
-              cacheCtx.beginPath();
-              last.points.forEach((pt, idx) => {
-                if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
-                else cacheCtx.lineTo(pt.x, pt.y);
-              });
-              cacheCtx.stroke();
-              cacheCtx.globalAlpha = 1;
-            }
+            cacheCtx.setLineDash([8, 6]);
+          } else {
+            cacheCtx.lineWidth = routeLines1px ? 1 : stroke.width;
+            cacheCtx.setLineDash([]);
           }
-        } else {
-          // Cache all strokes
-          strokes.forEach(stroke => {
-            const isDashed = stroke.type === 'dashed';
-            const isTemporary = stroke.type === 'temporary';
-            if (isDashed && hideBranchLines) return;
-            if (!isDashed && !isTemporary && hideRouteLines) return;
-            cacheCtx.strokeStyle = stroke.color;
-            if (isTemporary) {
-              cacheCtx.globalAlpha = 0.4;
-              cacheCtx.lineWidth = stroke.width;
-              cacheCtx.setLineDash([6, 4]);
-            } else if (isDashed) {
-              cacheCtx.lineWidth = branchLines1px ? 1 : stroke.width;
-              cacheCtx.setLineDash([8, 6]);
-            } else {
-              cacheCtx.lineWidth = routeLines1px ? 1 : stroke.width;
-              cacheCtx.setLineDash([]);
-            }
-            cacheCtx.beginPath();
-            stroke.points.forEach((pt, idx) => {
-              if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
-              else cacheCtx.lineTo(pt.x, pt.y);
-            });
-            cacheCtx.stroke();
-            if (isTemporary) cacheCtx.globalAlpha = 1;
+          cacheCtx.beginPath();
+          stroke.points.forEach((pt, idx) => {
+            if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
+            else cacheCtx.lineTo(pt.x, pt.y);
           });
-        }
+          cacheCtx.stroke();
+          if (isTemporary) cacheCtx.globalAlpha = 1;
+        });
       }
     }
 
@@ -1412,14 +1373,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
+        const width = routeLines1px ? 1 : 3;
+
+        // --- 1. Draw Past (Passed) Segments with Solid Color (Alpha 1.0) ---
+        ctx.save();
         ctx.strokeStyle = '#ff0055';
-        ctx.lineWidth = routeLines1px ? 1 : 3;
+        ctx.lineWidth = width;
+        ctx.globalAlpha = 1.0;
         ctx.setLineDash([]);
         ctx.beginPath();
-
+        
         let lastX: number | null = null;
         let lastY: number | null = null;
-        const addLineToPath = (x1: number, y1: number, x2: number, y2: number) => {
+        const addLineToPathPast = (x1: number, y1: number, x2: number, y2: number) => {
           if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
             ctx.moveTo(x1, y1);
           }
@@ -1428,30 +1394,79 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           lastY = y2;
         };
 
+        let tempRemaining = autoRouteElapsed;
         autoRouteSegments.forEach(seg => {
           const isWarp = seg.distance === 0 && seg.stopDuration === 0;
           if (isWarp) return;
           const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-          if (remaining > 0) {
-            if (remaining < travelTime) {
-              const t = remaining / travelTime;
-              const startPt = {
+          
+          if (tempRemaining > 0) {
+            if (tempRemaining < travelTime) {
+              const t = tempRemaining / travelTime;
+              const midPt = {
                 x: seg.start.x + (seg.end.x - seg.start.x) * t,
                 y: seg.start.y + (seg.end.y - seg.start.y) * t
               };
-              addLineToPath(startPt.x, startPt.y, seg.end.x, seg.end.y);
-              remaining = 0;
+              addLineToPathPast(seg.start.x, seg.start.y, midPt.x, midPt.y);
+              tempRemaining = 0;
             } else {
-              remaining -= travelTime;
-              if (remaining < seg.stopDuration) { remaining = 0; }
-              else { remaining -= seg.stopDuration; }
+              addLineToPathPast(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
+              tempRemaining -= travelTime;
+              if (tempRemaining < seg.stopDuration) { tempRemaining = 0; }
+              else { tempRemaining -= seg.stopDuration; }
             }
-          } else {
-            addLineToPath(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
           }
         });
         ctx.stroke();
+        ctx.restore();
+
+        // --- 2. Draw Future (Remaining) Segments with Translucent Color (Alpha 0.35) ---
+        ctx.save();
+        ctx.strokeStyle = '#ff0055';
+        ctx.lineWidth = width;
+        ctx.globalAlpha = 0.35;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+
+        lastX = null;
+        lastY = null;
+        const addLineToPathFuture = (x1: number, y1: number, x2: number, y2: number) => {
+          if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
+            ctx.moveTo(x1, y1);
+          }
+          ctx.lineTo(x2, y2);
+          lastX = x2;
+          lastY = y2;
+        };
+
+        tempRemaining = autoRouteElapsed;
+        autoRouteSegments.forEach(seg => {
+          const isWarp = seg.distance === 0 && seg.stopDuration === 0;
+          if (isWarp) return;
+          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+
+          if (tempRemaining > 0) {
+            if (tempRemaining < travelTime) {
+              const t = tempRemaining / travelTime;
+              const midPt = {
+                x: seg.start.x + (seg.end.x - seg.start.x) * t,
+                y: seg.start.y + (seg.end.y - seg.start.y) * t
+              };
+              addLineToPathFuture(midPt.x, midPt.y, seg.end.x, seg.end.y);
+              tempRemaining = 0;
+            } else {
+              tempRemaining -= travelTime;
+              if (tempRemaining < seg.stopDuration) { tempRemaining = 0; }
+              else { tempRemaining -= seg.stopDuration; }
+            }
+          } else {
+            addLineToPathFuture(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
+          }
+        });
+        ctx.stroke();
+        ctx.restore();
       }
     }
 

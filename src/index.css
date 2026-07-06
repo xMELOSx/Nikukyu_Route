@@ -1527,10 +1527,10 @@ select.input-cyber {
 
 /* FPS overlay canvas fills its container */
 .fps-overlay {
+  width: 100%;
+  height: 100%;
   display: block;
   image-rendering: pixelated;
   cursor: crosshair;
-  height: 100%;
-  width: auto;
-  margin: 0 auto;
+  object-fit: contain;
 }
