@@ -276,6 +276,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     }
     setFreeCamMode(mode);
 
+    if (autoRouteActive) return; // 自動案内中はマウスキャプチャ不要 (効果が解放する)
+
     const c = fpsCanvasRef.current;
     if (c) {
       try {
@@ -284,7 +286,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         console.error("Pointer lock failed on button click:", e);
       }
     }
-  }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId]);
+  }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId, autoRouteActive]);
 
   const handlePlayerChange = useCallback((pos: Point) => {
     onPositionChange(pos);
@@ -368,7 +370,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 ✕ 終了
               </span>
             </div>
-            <div style={{ position: 'absolute', bottom: '225px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
+            <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
               [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [ESC]終了
             </div>
           </div>

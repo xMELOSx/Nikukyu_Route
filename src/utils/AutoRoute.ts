@@ -747,7 +747,8 @@ export function interpolateRoute(
     if (seg.distance === 0 && seg.stopDuration === 0) {
       continue;
     }
-    const travelTime = seg.distance / Math.max(speed, 0.0001);
+    const segSpeed = seg.speed !== undefined ? seg.speed : speed;
+    const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
     if (remaining <= travelTime) {
       const t = seg.distance > 0 ? remaining / travelTime : 1;
       const x = seg.start.x + (seg.end.x - seg.start.x) * t;

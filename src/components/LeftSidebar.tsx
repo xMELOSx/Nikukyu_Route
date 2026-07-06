@@ -509,16 +509,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                       type="checkbox"
-                      checked={drawerPinPassThrough}
-                      onChange={(e) => setDrawerPinPassThrough(e.target.checked)}
-                      style={{ accentColor: '#cd853f', cursor: 'pointer' }}
-                    />
-                    {t('🗄 表示モードで引出マーカーのクリックを透過')}
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
                       checked={showPhoneCompass}
                       onChange={(e) => setShowPhoneCompass(e.target.checked)}
                       style={{ accentColor: '#ff00ff', cursor: 'pointer' }}

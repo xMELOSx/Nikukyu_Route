@@ -722,7 +722,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (redrawStrokesRef.current) redrawStrokesRef.current(elapsed);
     },
-    onStart: onAutoRouteStart
+    onStart: () => {
+      // オート案内開始時に鍵を全て閉める
+      if (lockedWalls.length > 0 && onLockedWallsChange) {
+        onLockedWallsChange(lockedWalls.map(w => ({ ...w, isOpen: false })));
+      }
+      onAutoRouteStart?.();
+    }
   });
 
   // Pre-calculate passed marker IDs to optimize performance from O(N*M) to O(N+M)

@@ -321,7 +321,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         for (let si = 0; si < aaSegs.length; si++) {
           const seg = aaSegs[si];
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
-          const segSpeed = speed;
+          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
           if (remaining <= travelTime) {
             const t = seg.distance > 0 ? remaining / travelTime : 1;
@@ -367,7 +367,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           const spd = aaTiming.speed;
           for (const seg of aaSegs) {
             if (seg.stopDuration > 0 && seg.markerId) {
-              const stopEnd = seg.cumulativeDistance / Math.max(spd, 0.0001) + seg.cumulativeStopTime;
+              const segSpd = seg.speed !== undefined && seg.speed > 0 ? seg.speed : spd;
+              const stopEnd = seg.cumulativeDistance / Math.max(segSpd, 0.0001) + seg.cumulativeStopTime;
               if (prevElapsed < stopEnd && aaElapsed >= stopEnd) {
                 const ulw = lockedWallsRef.current;
                 const curP = playerRef.current;
@@ -520,7 +521,7 @@ const FpsView: React.FC<FpsViewProps> = ({
 
         for (const seg of aaSegs2) {
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
-          const segSpeed = speed;
+          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
           if (remaining > 0) {
             if (remaining < travelTime) {
@@ -538,13 +539,11 @@ const FpsView: React.FC<FpsViewProps> = ({
           }
         }
 
-        routeMarkers.push({ x: currentX, y: currentY, type: 'start', infoLabel: '' });
-
         let pathRemaining = aaElapsed2;
         const stepInterval = 80;
         for (const seg of aaSegs2) {
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
-          const segSpeed = speed;
+          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
           let segElapsed = 0;
           if (pathRemaining > 0) {

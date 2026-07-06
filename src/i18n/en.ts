@@ -117,7 +117,6 @@ export const en: Locale = {
     '🏷️ マーカー表示設定': '🏷️ Marker display settings',
     '🏷️ ラベル表示': '🏷️ Show labels',
     '🖱️ 表示モードでテキストピンのクリックを透過': '🖱️ Pass through text pin clicks in view mode',
-    '🗄 表示モードで引出マーカーのクリックを透過': '🗄 Pass through drawer marker clicks in view mode',
     '📌 ピン・ラベル倍率:': '📌 Pin / label scale:',
     '最小 (30%)': 'Min (30%)',
     '最大 (200%)': 'Max (200%)',
