@@ -175,7 +175,7 @@ function renderWalls(
   const W = canvas.width;
   const H = canvas.height;
   const numRays = W;
-  const yOffset = -50; // 地平線を上にずらして見下ろしパースにする
+  const yOffset = -50 * (H / 240); // 地平線を上にずらして見下ろしパースにする (解像度に応じてスケーリング)
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
 
@@ -671,7 +671,7 @@ export function renderMarkers3D(
   if (markers.length === 0) return;
   const W = canvas.width;
   const H = canvas.height;
-  const yOffset = -50;
+  const yOffset = -50 * (H / 240);
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
   const halfFov = fov / 2;
@@ -823,7 +823,7 @@ export function renderTpsView(
   // Render player billboard
   const W = canvas.width;
   const H = canvas.height;
-  const yOffset = -50; // 地平線を上にずらして見下ろしパースにする
+  const yOffset = -50 * (H / 240); // 地平線を上にずらして見下ろしパースにする (解像度に応じてスケーリング)
   const halfH = H / 2 + yOffset;
   const distPlane = (W / 2) / Math.tan(fov / 2);
 

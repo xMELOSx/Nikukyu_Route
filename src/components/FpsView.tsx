@@ -40,7 +40,6 @@ interface FpsViewProps {
 const FOV = Math.PI * 0.45;
 const MOVE_SPEED = 1.5;
 const ROTATE_SPEED = 0.0045;
-const TPS_CAM_DISTANCE = 60;
 
 const FLOOR_COLOR_1 = '#0a0f1c';
 const FLOOR_COLOR_2 = '#0d1424';
@@ -78,6 +77,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     y: playerPos.y,
     angle: getInitialAngle()
   });
+  const tpsCamDistanceRef = useRef<number>(60);
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
@@ -251,6 +251,19 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (mode === 'tps') {
+        e.preventDefault();
+        const zoomStep = 10;
+        if (e.deltaY > 0) {
+          tpsCamDistanceRef.current = Math.min(150, tpsCamDistanceRef.current + zoomStep);
+        } else if (e.deltaY < 0) {
+          tpsCamDistanceRef.current = Math.max(30, tpsCamDistanceRef.current - zoomStep);
+        }
+      }
+    };
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
 
     const loop = (time: number) => {
       const dt = prevTimeRef.current ? Math.min((time - prevTimeRef.current) / 16.667, 2) : 1;
@@ -460,7 +473,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         }
       }
 
-      const actualCamDist = TPS_CAM_DISTANCE;
+      const actualCamDist = tpsCamDistanceRef.current;
 
       let colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[];
       const LOCKED_WALL_COLOR = '#cc9900';
@@ -704,6 +717,7 @@ const FpsView: React.FC<FpsViewProps> = ({
 
     return () => {
       cancelAnimationFrame(rafRef.current);
+      canvas.removeEventListener('wheel', handleWheel);
     };
   }, [mode, canvasRef]);
 
