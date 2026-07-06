@@ -27,6 +27,10 @@ interface FpsTpsControlsProps {
   mapSnapshotCanvas?: HTMLCanvasElement | null;
   onFreeCamModeChange?: (active: boolean) => void;
   onToggleNearestPhone?: () => void;
+  autoRouteActive?: boolean;
+  autoRouteSegments?: { start: Point; end: Point; distance: number; stopDuration: number }[];
+  autoRouteElapsed?: number;
+  autoRouteTiming?: { totalTime: number; speed: number };
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -55,7 +59,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   currentPosition, onPositionChange,
   hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = [],
   strokes = {}, spawnItems = [], mapSnapshotCanvas,
-  onFreeCamModeChange, onToggleNearestPhone
+  onFreeCamModeChange, onToggleNearestPhone,
+  autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -278,6 +283,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     onPositionChange(pos);
   }, [onPositionChange]);
 
+  const handleToggleMode = useCallback(() => {
+    setFreeCamMode(prev => prev === 'tps' ? 'fps' : 'tps');
+  }, []);
+
   return (
     <>
       {!hideButtons && (
@@ -294,19 +303,11 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         }}>
           <button
             className="zoom-btn"
-            onClick={() => handleStart('fps')}
-            title="FPSモード: 一人称でマップ上を歩く"
-            style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
-          >
-            🎮 FPS
-          </button>
-          <button
-            className="zoom-btn"
             onClick={() => handleStart('tps')}
-            title="TPSモード: 三人称でマップ上を歩く"
+            title="ストリートビュー: TPSモードでマップ上を歩く (TキーでFPS切替)"
             style={{ width: 'auto', padding: '0 8px', fontSize: '10px', gap: '4px', display: 'flex', alignItems: 'center', textTransform: 'none' }}
           >
-            🏃 TPS
+            🏃 ストリートビュー
           </button>
         </div>
       )}
@@ -356,7 +357,61 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             hiddenMarkerTypes={hiddenMarkerTypes}
             mapSnapshotCanvas={mapSnapshotCanvas ?? null}
             onToggleNearestPhone={onToggleNearestPhone}
+            onToggleMode={handleToggleMode}
+            autoRouteActive={autoRouteActive}
+            autoRouteSegments={autoRouteSegments}
+            autoRouteElapsed={autoRouteElapsed}
+            autoRouteTiming={autoRouteTiming}
           />
+        )}
+        {/* Mobile touch controls */}
+        {freeCamMode && (
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            height: '120px', zIndex: 10, pointerEvents: 'none',
+            display: 'flex', justifyContent: 'space-between', padding: '0 20px 20px'
+          }}>
+            {/* D-pad: movement (cross layout) */}
+            <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', alignSelf: 'flex-end' }}>
+              <button
+                style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', keyCode: 87 })); }}
+                onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'w', keyCode: 87 })); }}
+              >▲</button>
+              <div style={{ display: 'flex', gap: '2px' }}>
+                <button
+                  style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                  onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65 })); }}
+                  onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', keyCode: 65 })); }}
+                >◀</button>
+                <button
+                  style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                  onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', keyCode: 83 })); }}
+                  onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 's', keyCode: 83 })); }}
+                >▼</button>
+                <button
+                  style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                  onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', keyCode: 68 })); }}
+                  onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'd', keyCode: 68 })); }}
+                >▶</button>
+              </div>
+            </div>
+            {/* Action buttons (vertical stack) */}
+            <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-end' }}>
+              <button
+                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,50,50,0.3)', border: '1px solid rgba(255,50,50,0.5)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', keyCode: 82 })); }}
+              >📞 R</button>
+              <button
+                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(0,240,255,0.2)', border: '1px solid rgba(0,240,255,0.4)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); const ev = new KeyboardEvent('keydown', { key: 't', keyCode: 84 }); window.dispatchEvent(ev); }}
+              >切替 T</button>
+              <button
+                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'escape', keyCode: 27 })); }}
+              >終了</button>
+            </div>
+          </div>
         )}
       </div>
     </>

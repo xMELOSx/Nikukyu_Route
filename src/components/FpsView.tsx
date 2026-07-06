@@ -28,12 +28,16 @@ interface FpsViewProps {
   hiddenMarkerTypes?: string[];
   mapSnapshotCanvas?: HTMLCanvasElement | null;
   onToggleNearestPhone?: () => void;
+  onToggleMode?: () => void;
+  autoRouteActive?: boolean;
+  autoRouteSegments?: { start: Point; end: Point; distance: number; stopDuration: number }[];
+  autoRouteElapsed?: number;
+  autoRouteTiming?: { totalTime: number; speed: number };
 }
 
 const FOV = Math.PI * 0.45;
 const MOVE_SPEED = 1.5;
 const ROTATE_SPEED = 0.0045;
-const PLAYER_RADIUS = 6;
 const TPS_CAM_DISTANCE = 60;
 
 const FLOOR_COLOR_1 = '#0a0f1c';
@@ -46,7 +50,11 @@ const PLAYER_COLOR = '#39ff14';
 
 const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
-  hiddenMarkers = [], hiddenMarkerTypes = [], mapSnapshotCanvas, onToggleNearestPhone
+  hiddenMarkers = [], hiddenMarkerTypes = [],
+  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming,
+  mapSnapshotCanvas,
+  onToggleNearestPhone,
+  onToggleMode
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -162,7 +170,10 @@ const FpsView: React.FC<FpsViewProps> = ({
     if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
       onToggleNearestPhone?.();
     }
-  }, [onLockedWallsChange, onToggleNearestPhone]);
+    if ((e.key === 't' || e.key === 'T') && !e.repeat) {
+      onToggleMode?.();
+    }
+  }, [onLockedWallsChange, onToggleNearestPhone, onToggleMode]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -350,7 +361,9 @@ const FpsView: React.FC<FpsViewProps> = ({
           bgImageDataRef.current,
           closedLockedForRender,
           LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
-          0.3
+          0.3,
+          { x: playerRef.current.x, y: playerRef.current.y },
+          30
         );
       } else {
         colHeights = renderFpsView(
@@ -364,7 +377,9 @@ const FpsView: React.FC<FpsViewProps> = ({
           bgImageDataRef.current,
           closedLockedForRender,
           LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
-          0.3
+          0.3,
+          { x: playerRef.current.x, y: playerRef.current.y },
+          30
         );
       }
 
@@ -373,6 +388,68 @@ const FpsView: React.FC<FpsViewProps> = ({
         ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
         : { x: playerRef.current.x, y: playerRef.current.y };
       renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
+
+      // 自動ルート案内マーカーを3D描画
+      if (autoRouteActive && autoRouteSegments.length > 0 && autoRouteTiming) {
+        const routeMarkers: { x: number; y: number; type: string; infoLabel?: string }[] = [];
+        const speed = autoRouteTiming.speed;
+        let remaining = autoRouteElapsed;
+        let currentX = autoRouteSegments[0]?.start.x ?? 0;
+        let currentY = autoRouteSegments[0]?.start.y ?? 0;
+
+        for (const seg of autoRouteSegments) {
+          if (seg.distance === 0 && seg.stopDuration === 0) continue;
+          const segSpeed = speed;
+          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+          if (remaining > 0) {
+            if (remaining < travelTime) {
+              const t = remaining / travelTime;
+              currentX = seg.start.x + (seg.end.x - seg.start.x) * t;
+              currentY = seg.start.y + (seg.end.y - seg.start.y) * t;
+              remaining = 0;
+            } else {
+              currentX = seg.end.x;
+              currentY = seg.end.y;
+              remaining -= travelTime;
+              if (remaining < seg.stopDuration) remaining = 0;
+              else remaining -= seg.stopDuration;
+            }
+          }
+        }
+
+        // 現在位置マーカー（赤い大きなドット）
+        routeMarkers.push({ x: currentX, y: currentY, type: 'start', infoLabel: '' });
+
+        // ルートパス上に小さな案内マーカーを等間隔で配置
+        let pathRemaining = autoRouteElapsed;
+        const stepInterval = 80;
+        for (const seg of autoRouteSegments) {
+          if (seg.distance === 0 && seg.stopDuration === 0) continue;
+          const segSpeed = speed;
+          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+          let segElapsed = 0;
+          if (pathRemaining > 0) {
+            segElapsed = Math.min(pathRemaining, travelTime);
+            pathRemaining -= segElapsed;
+            if (pathRemaining < seg.stopDuration) pathRemaining = 0;
+            else pathRemaining -= seg.stopDuration;
+          }
+          const segProgress = seg.distance > 0 ? segElapsed / travelTime : 1;
+          const stepsOnSeg = Math.floor(seg.distance / stepInterval);
+          for (let s = 1; s <= stepsOnSeg; s++) {
+            const frac = s / stepsOnSeg;
+            if (frac <= segProgress) continue;
+            routeMarkers.push({
+              x: seg.start.x + (seg.end.x - seg.start.x) * frac,
+              y: seg.start.y + (seg.end.y - seg.start.y) * frac,
+              type: 'checkpoint',
+              infoLabel: '',
+            });
+          }
+        }
+
+        renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, routeMarkers);
+      }
 
       const minimapCvs = minimapCanvasRef.current;
       if (minimapCvs) {
@@ -438,21 +515,34 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.stroke();
 
       const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
-      const hudL = `${modeLabel}  X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
+      const hudL = `X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
       const hudR = `ESC: 終了`;
 
-      ctx.font = '10px monospace';
+      // Mode indicator (larger, top-right area)
+      const modeColor = mode === 'tps' ? 'rgba(255, 200, 50, 0.9)' : 'rgba(0, 240, 255, 0.9)';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'right';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(modeLabel, canvas.width - 10, 20);
+      ctx.fillStyle = modeColor;
+      ctx.fillText(modeLabel, canvas.width - 10, 20);
 
-      // Outline
+      ctx.textAlign = 'start';
+      ctx.font = '10px monospace';
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
       ctx.lineWidth = 3;
       ctx.strokeText(hudL, 10, canvas.height - 10);
       ctx.strokeText(hudR, canvas.width - 80, canvas.height - 10);
-
-      // Fill
       ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
       ctx.fillText(hudL, 10, canvas.height - 10);
       ctx.fillText(hudR, canvas.width - 80, canvas.height - 10);
+
+      // Key hints
+      const hintY = canvas.height - 24;
+      ctx.font = '8px monospace';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillText('[WASD]移動 [R]電話 [T]切替 [ESC]終了', 10, hintY);
 
       // Phone compass: nearest ACTIVE phone direction & status
       const activePhoneMarkers = lm.filter(m => m.type === 'phone' && m.phoneActive && !m.phoneLocked);

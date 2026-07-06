@@ -169,6 +169,8 @@ interface WallRenderArgs {
   lockedWallColor?: string;
   lockedWallColorDark?: string;
   lockedWallHeightFrac?: number;
+  playerPos?: { x: number; y: number };
+  wallFadeRadius?: number;
 }
 
 function renderWalls(
@@ -271,6 +273,51 @@ function renderWalls(
     colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
 
     // 1. Render Ceiling / background wall to buffer
+    const renderFloorGap = (yStart: number, yEnd: number) => {
+      const bg = args.bgImageData;
+      const cosRay = Math.cos(rayAngle);
+      const sinRay = Math.sin(rayAngle);
+      const cosBeta = Math.cos(rayAngle - originAngle);
+      const camHeight = 24;
+      for (let y = yStart; y < yEnd; y++) {
+        const idx = (y * W + i) * 4;
+        const denom = y - halfH;
+        if (denom <= 0) {
+          // 地平線より上 → 天井色
+          const cc = i % 2 === 0 ? c1 : c2;
+          buf[idx] = cc.r;
+          buf[idx + 1] = cc.g;
+          buf[idx + 2] = cc.b;
+          buf[idx + 3] = 255;
+          continue;
+        }
+        if (bg) {
+          const perpDistFloor = (camHeight * distPlane) / denom;
+          const straightDist = perpDistFloor / cosBeta;
+          const wx = origin.x + cosRay * straightDist;
+          const wy = origin.y + sinRay * straightDist;
+          const tx = Math.floor(wx);
+          const ty = Math.floor(wy);
+          let fr = 13, fg = 20, fb = 36;
+          if (tx >= 0 && tx < bg.width && ty >= 0 && ty < bg.height) {
+            const bIdx = (ty * bg.width + tx) * 4;
+            fr = bg.data[bIdx];
+            fg = bg.data[bIdx + 1];
+            fb = bg.data[bIdx + 2];
+          }
+          buf[idx] = fr;
+          buf[idx + 1] = fg;
+          buf[idx + 2] = fb;
+        } else {
+          const fcol = i % 2 === 0 ? f1 : f2;
+          buf[idx] = fcol.r;
+          buf[idx + 1] = fcol.g;
+          buf[idx + 2] = fcol.b;
+        }
+        buf[idx + 3] = 255;
+      }
+    };
+
     if (isLocked && hit.distance < Infinity && bgWallTop < wallTop) {
       // 鍵壁の上に通常壁が見える部分を描画
       const bgShade = Math.min(1, 4 / bgPerpDist);
@@ -295,17 +342,13 @@ function renderWalls(
         buf[idx + 2] = cc.b;
         buf[idx + 3] = 255;
       }
-      // 壁と床の間 (背景壁の下端〜鍵壁の上端)
+      // 壁と床の間 (背景壁の下端〜鍵壁の上端) を床テクスチャで描画
       if (bgWallBottom < wallTop) {
-        for (let y = bgWallBottom; y < wallTop; y++) {
-          const idx = (y * W + i) * 4;
-          const fcol = i % 2 === 0 ? f1 : f2;
-          buf[idx] = fcol.r;
-          buf[idx + 1] = fcol.g;
-          buf[idx + 2] = fcol.b;
-          buf[idx + 3] = 255;
-        }
+        renderFloorGap(bgWallBottom, wallTop);
       }
+    } else if (isLocked) {
+      // 背後に壁がない／見えない鍵壁 → 壁の上は床テクスチャ
+      renderFloorGap(0, wallTop);
     } else {
       for (let y = 0; y < wallTop; y++) {
         const idx = (y * W + i) * 4;
@@ -317,18 +360,40 @@ function renderWalls(
       }
     }
 
-    // 2. Render Wall to buffer
+    // 2. Render Wall to buffer (with player proximity fade)
     const shade = Math.min(1, 4 / perpDist);
-    const colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * shade));
-    const colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * shade));
-    const colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * shade));
+    let colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * shade));
+    let colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * shade));
+    let colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * shade));
+
+    // プレイヤー近距離フェード: 壁がプレイヤーに近いほど背景色に近づける
+    let wallFade = 1.0;
+    if (args.playerPos && args.wallFadeRadius && hit.wallIndex >= 0 && !isLocked) {
+      const w = walls[hit.wallIndex];
+      const pDist = pointToSegmentDist(args.playerPos.x, args.playerPos.y, w[0].x, w[0].y, w[1].x, w[1].y);
+      if (pDist < args.wallFadeRadius) {
+        wallFade = Math.max(0, pDist / args.wallFadeRadius);
+      }
+    }
 
     for (let y = wallTop; y < wallBottom; y++) {
       const idx = (y * W + i) * 4;
-      buf[idx] = colR;
-      buf[idx + 1] = colG;
-      buf[idx + 2] = colB;
-      buf[idx + 3] = 255;
+      if (wallFade < 1) {
+        // 天井/床色にブレンドしてフェード
+        const isTopHalf = y < halfH;
+        const bgR = isTopHalf ? c1.r : f1.r;
+        const bgG = isTopHalf ? c1.g : f1.g;
+        const bgB = isTopHalf ? c1.b : f1.b;
+        buf[idx] = Math.round(colR * wallFade + bgR * (1 - wallFade));
+        buf[idx + 1] = Math.round(colG * wallFade + bgG * (1 - wallFade));
+        buf[idx + 2] = Math.round(colB * wallFade + bgB * (1 - wallFade));
+        buf[idx + 3] = 255;
+      } else {
+        buf[idx] = colR;
+        buf[idx + 1] = colG;
+        buf[idx + 2] = colB;
+        buf[idx + 3] = 255;
+      }
     }
 
     // 3. Render Floor to buffer (Floor Casting)
@@ -379,35 +444,6 @@ function renderWalls(
       }
     }
 
-    // 4. Render Front Translucent Wall Overlay (normal walls only)
-    const frontHit = castRay({ x: origin.x, y: origin.y }, rayAngle, walls);
-    const frontDist = frontHit.distance;
-    const frontPerpDist = frontDist * Math.cos(rayAngle - originAngle);
-
-    let diff = rayAngle - originAngle;
-    if (diff > Math.PI) diff -= Math.PI * 2;
-    if (diff < -Math.PI) diff += Math.PI * 2;
-    const isCenterRay = Math.abs(diff) < 0.4;
-
-    if (args.playerDist !== undefined && frontDist < (args.playerDist + 20)) {
-      const frontWallHeight = frontPerpDist > 0.1 ? (halfH / frontPerpDist) * distPlane : H;
-      const frontWallTop = Math.max(0, Math.floor(halfH - frontWallHeight * (1 - camHeightFrac)));
-      const frontWallBottom = Math.min(H, Math.floor(halfH + frontWallHeight * camHeightFrac));
-
-      const alpha = 0.35; // 35% opacity for front walls
-      const invAlpha = 1 - alpha;
-      const fShade = Math.min(1, 4 / frontPerpDist);
-      const fR = Math.round(darkR + (r - darkR) * fShade);
-      const fG = Math.round(darkG + (g - darkG) * fShade);
-      const fB = Math.round(darkB + (b - darkB) * fShade);
-
-      for (let y = frontWallTop; y < frontWallBottom; y++) {
-        const idx = (y * W + i) * 4;
-        buf[idx] = Math.round(buf[idx] * invAlpha + fR * alpha);
-        buf[idx + 1] = Math.round(buf[idx + 1] * invAlpha + fG * alpha);
-        buf[idx + 2] = Math.round(buf[idx + 2] * invAlpha + fB * alpha);
-      }
-    }
   }
 
   // Draw buffer to canvas in 1 draw call!
@@ -432,7 +468,9 @@ export function renderFpsView(
   lockedWalls?: [Point, Point][],
   lockedWallColor?: string,
   lockedWallColorDark?: string,
-  lockedWallHeightFrac?: number
+  lockedWallHeightFrac?: number,
+  playerPos?: { x: number; y: number },
+  wallFadeRadius?: number
 ): { top: number; bottom: number; perpDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -443,7 +481,8 @@ export function renderFpsView(
     floorColor1, floorColor2,
     ceilingColor1, ceilingColor2,
     bgImageData,
-    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac
+    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
+    playerPos, wallFadeRadius
   }).colHeights;
 }
 
@@ -763,7 +802,9 @@ export function renderTpsView(
   lockedWalls?: [Point, Point][],
   lockedWallColor?: string,
   lockedWallColorDark?: string,
-  lockedWallHeightFrac?: number
+  lockedWallHeightFrac?: number,
+  playerPos?: { x: number; y: number },
+  wallFadeRadius?: number
 ): { top: number; bottom: number; perpDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -780,7 +821,8 @@ export function renderTpsView(
     ceilingColor1, ceilingColor2,
     bgImageData,
     playerDist: actualCamDistance,
-    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac
+    lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
+    playerPos, wallFadeRadius
   });
 
   // Render player billboard

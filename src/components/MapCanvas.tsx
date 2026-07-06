@@ -646,7 +646,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dist = Math.hypot(m.x - currentPosition.x, m.y - currentPosition.y);
       if (dist < minDistance) { minDistance = dist; closestPhone = m; }
     });
-    if (closestPhone && !closestPhone.phoneLocked) {
+    if (closestPhone && !(closestPhone as HeistMarker).phoneLocked) {
       onMarkersChange(
         markers.map(mk => mk.id === closestPhone!.id ? { ...mk, phoneActive: !mk.phoneActive } : mk),
         true
@@ -2282,7 +2282,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
 
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
-          const merged = wallAutoSnap ? mergeWalls([...activeWalls, [p1, p2]], [p1, p2]) : [...walls, [p1, p2]];
+          const merged = wallAutoSnap ? mergeWalls([...activeWalls, [p1, p2] as [Point, Point]], [p1, p2]) : [...walls, [p1, p2] as [Point, Point]];
           onWallsChange?.(merged);
         }
       }
@@ -5607,7 +5607,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 {/* Teleport Angle Config (Entering Direction) */}
                 <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '8px' }}>
                   <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>🧭 進入後のプレイヤーの向き (度数: 0-359):</span>
+                    <span>🧭 ストリートビュー進入時の向き (度数: 0-359):</span>
                     {activeNoteMarker.teleportAngle !== undefined && (
                       <span
                         style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
@@ -5657,7 +5657,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             activeNoteMarker.teleportAngle >= 45 && activeNoteMarker.teleportAngle < 135 ? '南(↓)' :
                             activeNoteMarker.teleportAngle >= 135 && activeNoteMarker.teleportAngle < 225 ? '西(←)' : '北(↑)'
                           })`
-                        : '現在の向きを維持'
+                        : '現在の地図上の向きを維持'
                       }
                     </span>
                   </div>
@@ -5873,6 +5873,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         mapSnapshotCanvas={miniMapSource}
         onFreeCamModeChange={handleFreeCamModeChange}
         onToggleNearestPhone={handleToggleNearestPhone}
+        autoRouteActive={autoRouteActive}
+        autoRouteSegments={autoRouteSegments}
+        autoRouteElapsed={autoRouteElapsed}
+        autoRouteTiming={autoRouteTiming}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}
