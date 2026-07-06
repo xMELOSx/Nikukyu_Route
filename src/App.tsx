@@ -309,56 +309,61 @@ export default function App() {
   }, [lockedWalls, isLocal, lockedWallsLoaded]);
 
   useEffect(() => {
-    if (!isLocal) return;
-    fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`)
-      .then(res => {
-        if (res.ok) return res.json();
-      })
-      .then(data => {
-        if (data && typeof data === 'object' && !Array.isArray(data)) {
-          let hasAnyGate = false;
-          const out: GlobalLockedWalls = {};
-          for (const floor of ['main', 'second', 'third', 'fourth']) {
-            out[floor] = [];
-            if (Array.isArray(data[floor])) {
-              for (const seg of data[floor]) {
-                if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
-                  out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
-                  hasAnyGate = true;
-                }
-              }
+    let cancelled = false;
+
+    const loadGates = async () => {
+      // 1. 開発用APIエンドポイントの試行 (isLocal の場合のみ)
+      if (isLocal) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+              if (cancelled) return;
+              applyLockedWallsData(data);
+              return;
             }
           }
-          if (hasAnyGate) {
-            setLockedWalls(out);
-          } else {
-            // サーバー側が空だが、ローカルストレージに有効な鍵扉データがある場合は上書きせずアップロードする
-            const saved = localStorage.getItem('heist_global_locked_walls');
-            if (saved) {
-              try {
-                const parsed = JSON.parse(saved);
-                let hasLocalGate = false;
-                for (const floor of ['main', 'second', 'third', 'fourth']) {
-                  if (Array.isArray(parsed[floor]) && parsed[floor].length > 0) {
-                    hasLocalGate = true;
-                  }
-                }
-                if (hasLocalGate) {
-                  fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: saved
-                  }).catch(() => {});
-                }
-              } catch {}
+        } catch {}
+      }
+
+      // 2. 静的ファイルのフォールバック試行 (isLocal === false または API呼び出しが失敗した際)
+      try {
+        const fileRes = await fetch(`${import.meta.env.BASE_URL}global_locked_walls.json`);
+        if (fileRes.ok) {
+          const data = await fileRes.json();
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            if (cancelled) return;
+            applyLockedWallsData(data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load global locked walls from static file:', err);
+      }
+    };
+
+    const applyLockedWallsData = (data: any) => {
+      const out: GlobalLockedWalls = {};
+      for (const floor of ['main', 'second', 'third', 'fourth']) {
+        out[floor] = [];
+        if (Array.isArray(data[floor])) {
+          for (const seg of data[floor]) {
+            if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
+              out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
             }
           }
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setLockedWallsLoaded(true); // 成功・失敗にかかわらずロード完了とする
-      });
+      }
+      setLockedWalls(out);
+    };
+
+    loadGates().finally(() => {
+      if (!cancelled) setLockedWallsLoaded(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isLocal]);
 
   const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked'>(() => {
