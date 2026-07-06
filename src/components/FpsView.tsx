@@ -139,11 +139,11 @@ const FpsView: React.FC<FpsViewProps> = ({
   mapSnapshotRef.current = mapSnapshotCanvas ?? null;
 
   const wallsRef = useRef(walls);
-  wallsRef.current = walls;
+  useEffect(() => { wallsRef.current = walls; }, [walls]);
   const lockedWallsRef = useRef(lockedWalls);
-  lockedWallsRef.current = lockedWalls;
+  useEffect(() => { lockedWallsRef.current = lockedWalls; }, [lockedWalls]);
   const markersRef = useRef(activeMarkers);
-  markersRef.current = activeMarkers;
+  useEffect(() => { markersRef.current = activeMarkers; }, [activeMarkers]);
 
   const lastTeleportTimeRef = useRef<number>(0);
   const prevAutoElapsedRef = useRef<number>(-1);

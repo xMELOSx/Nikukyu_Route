@@ -58,6 +58,13 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/global-locked-walls
+        if (isPathMatch(urlPath, '/api/global-locked-walls')) {
+          if (req.method === 'GET') return handleGet(req, res, 'global_locked_walls.json', '{}')
+          if (req.method === 'POST') return handlePost(req, res, 'global_locked_walls.json')
+          return next()
+        }
+
         // /api/global-spawns
         if (isPathMatch(urlPath, '/api/global-spawns')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_spawns.json', JSON.stringify([]))

@@ -286,9 +286,80 @@ export default function App() {
     } catch {}
     return { main: [], second: [], third: [], fourth: [] };
   });
+  const [lockedWallsLoaded, setLockedWallsLoaded] = useState(!isLocal);
+  const persistLockedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (!lockedWallsLoaded) return; // サーバーからの読み込み完了前は絶対に上書き保存しない！！！
+
     localStorage.setItem('heist_global_locked_walls', JSON.stringify(lockedWalls));
-  }, [lockedWalls]);
+    if (!isLocal) return;
+
+    if (persistLockedTimerRef.current) clearTimeout(persistLockedTimerRef.current);
+    persistLockedTimerRef.current = setTimeout(() => {
+      fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lockedWalls)
+      }).catch(err => console.error('Failed to persist global locked walls:', err));
+    }, 150);
+
+    return () => {
+      if (persistLockedTimerRef.current) clearTimeout(persistLockedTimerRef.current);
+    };
+  }, [lockedWalls, isLocal, lockedWallsLoaded]);
+
+  useEffect(() => {
+    if (!isLocal) return;
+    fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`)
+      .then(res => {
+        if (res.ok) return res.json();
+      })
+      .then(data => {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          let hasAnyGate = false;
+          const out: GlobalLockedWalls = {};
+          for (const floor of ['main', 'second', 'third', 'fourth']) {
+            out[floor] = [];
+            if (Array.isArray(data[floor])) {
+              for (const seg of data[floor]) {
+                if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
+                  out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
+                  hasAnyGate = true;
+                }
+              }
+            }
+          }
+          if (hasAnyGate) {
+            setLockedWalls(out);
+          } else {
+            // サーバー側が空だが、ローカルストレージに有効な鍵扉データがある場合は上書きせずアップロードする
+            const saved = localStorage.getItem('heist_global_locked_walls');
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                let hasLocalGate = false;
+                for (const floor of ['main', 'second', 'third', 'fourth']) {
+                  if (Array.isArray(parsed[floor]) && parsed[floor].length > 0) {
+                    hasLocalGate = true;
+                  }
+                }
+                if (hasLocalGate) {
+                  fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: saved
+                  }).catch(() => {});
+                }
+              } catch {}
+            }
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLockedWallsLoaded(true); // 成功・失敗にかかわらずロード完了とする
+      });
+  }, [isLocal]);
 
   const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked'>(() => {
     const saved = localStorage.getItem('heist_wall_locked_sub_mode');
@@ -1059,9 +1130,11 @@ export default function App() {
     getRoute: () => routeApi.route,
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
     getWalls: () => globalWallsRef.current as any,
+    getLockedWalls: () => lockedWalls,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
+    replaceLockedWalls: (next) => setLockedWalls(next),
     persistGlobalMarkers: (markers) => {
       if (Array.isArray(markers) && markers.length > 0) {
         localStorage.setItem('heist_global_markers', JSON.stringify(markers));
@@ -2256,7 +2329,8 @@ export default function App() {
             bulkColor,
             showItemModal,
             showEditModal,
-            rightTab
+            rightTab,
+            lockedWalls
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach
