@@ -107,6 +107,8 @@ export interface HeistMarker {
   drawerExpanded?: boolean;
 }
 
+export type WallSegment = [Point, Point] | [Point, Point, string];
+
 export interface RouteData {
   id: string;
   title: string;
@@ -118,7 +120,7 @@ export interface RouteData {
   renderCache: string;
   strokes: { [key in FloorType]: DrawingStroke[] };
   markers: HeistMarker[];
-  walls?: { [key in FloorType]: [Point, Point][] };
+  walls?: { [key in FloorType]: WallSegment[] };
   customBg: { [key in FloorType]: string | null };
   bgOffset?: { x: number; y: number };
   bgScale?: { x: number; y: number };

@@ -10,6 +10,7 @@ import {
   type SpawnPoint,
   type RegisteredItem,
   type LockedWallSegment,
+  type WallSegment,
   MARKER_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
@@ -32,10 +33,11 @@ interface MapCanvasProps {
   bgOffset?: { x: number; y: number };
   bgScale?: { x: number; y: number };
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
-  walls?: [Point, Point][];
-  onWallsChange?: (walls: [Point, Point][]) => void;
-  wallSubMode?: 'draw' | 'erase';
+  walls?: WallSegment[];
+  onWallsChange?: (walls: WallSegment[]) => void;
+  wallSubMode?: 'draw' | 'erase' | 'texture';
   wallAutoSnap?: boolean;
+  selectedTexture?: string;
   lockedWalls?: LockedWallSegment[];
   onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   wallLockedSubMode?: 'normal' | 'locked';
@@ -187,6 +189,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onWallsChange,
   wallSubMode = 'draw',
   wallAutoSnap = false,
+  selectedTexture = '',
   lockedWalls = [],
   onLockedWallsChange,
   wallLockedSubMode = 'normal',
@@ -473,7 +476,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd'].includes(type);
+  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd', 'tps'].includes(type);
   const isDrawer = (type: string) => type === 'drawer';
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
@@ -2016,6 +2019,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    const applyTextureToWallAtPoint = (pt: Point) => {
+      if (!onWallsChange || !walls || walls.length === 0) return;
+      let bestDist = 12; // 検出閾値 12px
+      let bestIndex = -1;
+
+      for (let i = 0; i < walls.length; i++) {
+        const [p1, p2] = walls[i];
+        const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+        let t = 0;
+        if (l2 > 0) {
+          t = ((pt.x - p1.x) * (p2.x - p1.x) + (pt.y - p1.y) * (p2.y - p1.y)) / l2;
+          t = Math.max(0, Math.min(1, t));
+        }
+        const projX = p1.x + t * (p2.x - p1.x);
+        const projY = p1.y + t * (p2.y - p1.y);
+        const dist = Math.hypot(pt.x - projX, pt.y - projY);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIndex = i;
+        }
+      }
+
+      if (bestIndex !== -1) {
+        const nextWalls = [...walls];
+        const target = nextWalls[bestIndex];
+        const currentTex = target[2];
+        
+        if (currentTex === selectedTexture) {
+          nextWalls[bestIndex] = [target[0], target[1]];
+        } else {
+          nextWalls[bestIndex] = [target[0], target[1], selectedTexture];
+        }
+        onWallsChange(nextWalls);
+      }
+    };
+
     if (toolMode === 'erase') {
       unifiedEraseAtPoint(coords, e.altKey);
       setIsDrawing(true);
@@ -2025,6 +2064,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (toolMode === 'wall' && wallSubMode === 'draw') {
       setIsDrawing(true);
       setCurrentPoints([coords]);
+      return;
+    }
+
+    if (toolMode === 'wall' && wallSubMode === 'texture') {
+      applyTextureToWallAtPoint(coords);
       return;
     }
 
@@ -2500,9 +2544,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
-  const mergeWalls = (rawWalls: [Point, Point][], newestWall?: [Point, Point]): [Point, Point][] => {
+  const mergeWalls = (rawWalls: WallSegment[], newestWall?: WallSegment): WallSegment[] => {
     if (rawWalls.length < 2) return rawWalls;
-    const list = rawWalls.map(w => [{ ...w[0] }, { ...w[1] }] as [Point, Point]);
+    const list: WallSegment[] = rawWalls.map(w => {
+      return typeof w[2] === 'string'
+        ? [{ ...w[0] }, { ...w[1] }, w[2]]
+        : [{ ...w[0] }, { ...w[1] }];
+    });
     const priorityPoints: Point[] = newestWall ? [newestWall[0], newestWall[1]] : [];
     let merged = true;
     while (merged) {
@@ -2511,6 +2559,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         for (let j = i + 1; j < list.length; j++) {
           const w1 = list[i];
           const w2 = list[j];
+          // テクスチャが異なる壁セグメント同士はマージしない
+          if (w1[2] !== w2[2]) continue;
+
           const matchThreshold = 1.5; // allow tiny snaps
           let pStart = w1[0];
           let pMid1 = w1[1];
@@ -2550,7 +2601,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               };
               const finalStart = snapToPriority(pStart);
               const finalEnd = snapToPriority(pEnd);
-              list[i] = [finalStart, finalEnd];
+              if (w1[2]) {
+                list[i] = [finalStart, finalEnd, w1[2]];
+              } else {
+                list[i] = [finalStart, finalEnd];
+              }
               list.splice(j, 1);
               merged = true;
               break;
@@ -2999,9 +3054,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleSaveNote = (closePanel = true) => {
     if (activeNoteMarkerId) {
-      // 個人編集モード: グローバルマーカーの内容変更を保存しない
+      // 個人編集モード: グローバルマーカーの内容変更を保存しない (tpsは例外)
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) {
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') {
         if (closePanel) setActiveNoteMarkerId(null);
         return;
       }
@@ -3299,18 +3354,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
           >
-            {walls.map((w, idx) => (
-              <line
-                key={`wall-${idx}`}
-                x1={w[0].x}
-                y1={w[0].y}
-                x2={w[1].x}
-                y2={w[1].y}
-                stroke="rgba(255, 85, 0, 0.85)"
-                strokeWidth={5}
-                strokeDasharray="6,4"
-              />
-            ))}
+            {walls.map((w, idx) => {
+              const hasTex = typeof w[2] === 'string' && w[2];
+              const midX = (w[0].x + w[1].x) / 2;
+              const midY = (w[0].y + w[1].y) / 2;
+              return (
+                <g key={`wall-${idx}`}>
+                  <line
+                    x1={w[0].x}
+                    y1={w[0].y}
+                    x2={w[1].x}
+                    y2={w[1].y}
+                    stroke={hasTex ? "rgba(0, 255, 136, 0.95)" : "rgba(255, 85, 0, 0.85)"}
+                    strokeWidth={5}
+                    strokeDasharray={hasTex ? undefined : "6,4"}
+                  />
+                  {hasTex && (
+                    <text
+                      x={midX}
+                      y={midY - 6}
+                      fill="#00ff88"
+                      fontSize="9px"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      style={{ paintOrder: 'stroke', stroke: '#000000', strokeWidth: '3px', strokeLinejoin: 'round' }}
+                    >
+                      🖼️ {w[2]}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
             {lockedWalls.map((w, idx) => (
               <line
                 key={`lwall-${idx}`}
@@ -6484,7 +6558,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               <img ref={tpsCropImgRef} src={tpsCropSource} onLoad={(e) => {
                 const nw = e.currentTarget.naturalWidth, nh = e.currentTarget.naturalHeight;
                 setTpsCropImgSize({ w: nw, h: nh });
-                setTpsCropRect(p => ({ x: Math.round(nw * 0.1), y: Math.round(nh * 0.1), w: Math.round(nw * 0.8), h: Math.round(nh * 0.8) }));
+                setTpsCropRect(() => ({ x: Math.round(nw * 0.1), y: Math.round(nh * 0.1), w: Math.round(nw * 0.8), h: Math.round(nh * 0.8) }));
               }} style={{ display: 'block', maxWidth: '70vw', maxHeight: '60vh', objectFit: 'contain', pointerEvents: 'none' }} />
               {tpsCropImgSize.w > 0 && tpsCropImgRef.current && (() => {
                 const img = tpsCropImgRef.current;

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { type Point } from '../utils/DataManager';
+import { type Point, type WallSegment } from '../utils/DataManager';
 
-export type GlobalWalls = { [key: string]: [Point, Point][] };
+export type GlobalWalls = { [key: string]: WallSegment[] };
 
 const LOCAL_WALLS_KEY = 'heist_global_walls';
 const FLOORS = ['main', 'second', 'third', 'fourth'] as const;
@@ -17,7 +17,7 @@ function sanitizeWalls(raw: unknown): GlobalWalls {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const [floor, segs] of Object.entries(raw as Record<string, unknown>)) {
     if (!Array.isArray(segs)) continue;
-    const cleaned: [Point, Point][] = [];
+    const cleaned: WallSegment[] = [];
     for (const seg of segs) {
       if (!Array.isArray(seg) || seg.length < 2) continue;
       const a = seg[0] as Point;
@@ -27,7 +27,12 @@ function sanitizeWalls(raw: unknown): GlobalWalls {
         typeof a.x !== 'number' || typeof a.y !== 'number' ||
         typeof b.x !== 'number' || typeof b.y !== 'number'
       ) continue;
-      cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+      const tex = typeof seg[2] === 'string' ? seg[2] : undefined;
+      if (tex) {
+        cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex]);
+      } else {
+        cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+      }
     }
     out[floor] = cleaned;
   }

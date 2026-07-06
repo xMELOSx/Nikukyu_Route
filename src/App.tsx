@@ -233,13 +233,31 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
-  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase'>(() => {
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture'>(() => {
     const saved = localStorage.getItem('heist_wall_sub_mode');
     return (saved as any) || 'draw';
   });
   useEffect(() => {
     localStorage.setItem('heist_wall_sub_mode', wallSubMode);
   }, [wallSubMode]);
+
+  const [selectedTexture, setSelectedTexture] = useState<string>('');
+  const [texturesList, setTexturesList] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!isLocal) return;
+    fetch(`${import.meta.env.BASE_URL}api/textures`)
+      .then(res => { if (res.ok) return res.json(); })
+      .then(data => {
+        if (Array.isArray(data)) {
+          setTexturesList(data);
+          if (data.length > 0) {
+            setSelectedTexture(data[0]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [isLocal]);
 
   const [wallAutoSnap, setWallAutoSnap] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_wall_auto_snap');
@@ -2098,6 +2116,9 @@ export default function App() {
           setLockedWalls={setLockedWalls}
           wallLockedSubMode={wallLockedSubMode}
           setWallLockedSubMode={setWallLockedSubMode}
+          selectedTexture={selectedTexture}
+          setSelectedTexture={setSelectedTexture}
+          texturesList={texturesList}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2110,6 +2131,7 @@ export default function App() {
               bgOffset={routeApi.route.bgOffset ?? { x: 0, y: 0 }}
               bgScale={routeApi.route.bgScale ?? { x: 1, y: 1 }}
               toolMode={toolMode}
+              selectedTexture={selectedTexture}
               activeMarkerType={activeMarkerType}
               strokeColor={strokeColor}
               strokeWidth={strokeWidth}
@@ -2335,7 +2357,8 @@ export default function App() {
             showItemModal,
             showEditModal,
             rightTab,
-            lockedWalls
+            lockedWalls,
+            selectedTexture
           ])}
           {/* Sidebar collapse buttons — zIndex 300 keeps them above the
               mobile overlay panes (zIndex 200) so users can always reach

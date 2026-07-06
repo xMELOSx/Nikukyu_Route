@@ -1,4 +1,4 @@
-import type { Point } from '../utils/DataManager';
+import type { WallSegment } from '../utils/DataManager';
 
 const TAU = Math.PI * 2;
 
@@ -11,6 +11,7 @@ export interface PlayerState {
 export interface RayHit {
   distance: number;
   wallIndex: number;
+  wallOffsetPercent: number;
 }
 
 export function normalizeAngle(a: number): number {
@@ -20,13 +21,14 @@ export function normalizeAngle(a: number): number {
 export function castRay(
   origin: { x: number; y: number },
   angle: number,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   playerDist?: number
 ): RayHit {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
   let minDist = Infinity;
   let hitWallIndex = -1;
+  let minDistOffset = 0;
 
   for (let i = 0; i < walls.length; i++) {
     const [a, b] = walls[i];
@@ -45,17 +47,18 @@ export function castRay(
       if (t < minDist) {
         minDist = t;
         hitWallIndex = i;
+        minDistOffset = s;
       }
     }
   }
 
-  return { distance: minDist, wallIndex: hitWallIndex };
+  return { distance: minDist, wallIndex: hitWallIndex, wallOffsetPercent: minDistOffset };
 }
 
 /** Like castRays but returns the N nearest hits per ray (for nested locked doors). */
 export function castRays(
   player: PlayerState,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   fov: number,
   numRays: number,
   playerDist?: number
@@ -82,7 +85,7 @@ export function pointToSegmentDist(px: number, py: number, ax: number, ay: numbe
 function movePlayerCommon(
   player: PlayerState,
   dx: number, dy: number,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   radius: number
 ): PlayerState {
   let nx = player.x + dx;
@@ -119,7 +122,7 @@ export function movePlayer(
   player: PlayerState,
   forward: number,
   strafe: number,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   speed: number,
   radius: number
 ): PlayerState {
@@ -135,7 +138,7 @@ export function movePlayerTps(
   forward: number,
   strafe: number,
   camAngle: number,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   speed: number,
   radius: number
 ): PlayerState {
@@ -151,7 +154,7 @@ interface WallRenderArgs {
   canvas: HTMLCanvasElement;
   origin: { x: number; y: number };
   originAngle: number;
-  walls: [Point, Point][];
+  walls: WallSegment[];
   fov: number;
   wallColor: string;
   wallColorDark: string;
@@ -161,12 +164,13 @@ interface WallRenderArgs {
   ceilingColor2: string;
   bgImageData?: ImageData | null;
   playerDist?: number;
-  lockedWalls?: [Point, Point][];
+  lockedWalls?: WallSegment[];
   lockedWallColor?: string;
   lockedWallColorDark?: string;
   lockedWallHeightFrac?: number;
   playerPos?: { x: number; y: number };
   wallFadeRadius?: number;
+  wallTexturesData?: Record<string, ImageData>;
 }
 
 function renderWalls(
@@ -437,22 +441,44 @@ function renderWalls(
       }
     }
 
+    const hitWall = (hit.wallIndex >= 0) ? walls[hit.wallIndex] : null;
+    const texName = (hitWall && typeof hitWall[2] === 'string') ? hitWall[2] : null;
+    const texData = texName ? args.wallTexturesData?.[texName] : null;
+
     for (let y = wallTop; y < wallBottom; y++) {
       const idx = (y * W + i) * 4;
+      let r = colR;
+      let g = colG;
+      let b = colB;
+
+      if (texData) {
+        // 横方向U座標 (s は壁の長さに対する交点割合 0〜1)
+        const texU = Math.floor(hit.wallOffsetPercent * (texData.width - 1));
+        // 縦方向V座標 (yStart 〜 yEnd として、全パース高さに対する現在の縦割合)
+        const vy = (y - wallTopFull) / (wallBottomFull - wallTopFull);
+        const texV = Math.floor(Math.max(0, Math.min(1, vy)) * (texData.height - 1));
+
+        const texIdx = (texV * texData.width + texU) * 4;
+        const light = 0.25 + 0.75 * shade; // 最低輝度 25% のアンビエント光を保証して黒沈みを解消
+        r = Math.round(texData.data[texIdx] * light);
+        g = Math.round(texData.data[texIdx + 1] * light);
+        b = Math.round(texData.data[texIdx + 2] * light);
+      }
+
       if (wallFade < 1) {
         // 天井/床色にブレンドしてフェード
         const isTopHalf = y < halfH;
         const bgR = isTopHalf ? c1.r : f1.r;
         const bgG = isTopHalf ? c1.g : f1.g;
         const bgB = isTopHalf ? c1.b : f1.b;
-        buf[idx] = Math.round(colR * wallFade + bgR * (1 - wallFade));
-        buf[idx + 1] = Math.round(colG * wallFade + bgG * (1 - wallFade));
-        buf[idx + 2] = Math.round(colB * wallFade + bgB * (1 - wallFade));
+        buf[idx] = Math.round(r * wallFade + bgR * (1 - wallFade));
+        buf[idx + 1] = Math.round(g * wallFade + bgG * (1 - wallFade));
+        buf[idx + 2] = Math.round(b * wallFade + bgB * (1 - wallFade));
         buf[idx + 3] = 255;
       } else {
-        buf[idx] = colR;
-        buf[idx + 1] = colG;
-        buf[idx + 2] = colB;
+        buf[idx] = r;
+        buf[idx + 1] = g;
+        buf[idx + 2] = b;
         buf[idx + 3] = 255;
       }
     }
@@ -517,7 +543,7 @@ export function renderFpsView(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   player: PlayerState,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   fov: number,
   wallColor: string,
   wallColorDark: string,
@@ -526,12 +552,13 @@ export function renderFpsView(
   ceilingColor1: string,
   ceilingColor2: string,
   bgImageData?: ImageData | null,
-  lockedWalls?: [Point, Point][],
+  lockedWalls?: WallSegment[],
   lockedWallColor?: string,
   lockedWallColorDark?: string,
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
-  wallFadeRadius?: number
+  wallFadeRadius?: number,
+  wallTexturesData?: Record<string, ImageData>
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -543,7 +570,7 @@ export function renderFpsView(
     ceilingColor1, ceilingColor2,
     bgImageData,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
-    playerPos, wallFadeRadius
+    playerPos, wallFadeRadius, wallTexturesData
   }).colHeights;
 }
 
@@ -555,7 +582,7 @@ const MINIMAP_RANGE = 500;
 export function renderMinimap(
   ctx: CanvasRenderingContext2D,
   player: PlayerState,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   markers: { x: number; y: number; type: string }[],
   bgImage?: HTMLCanvasElement | HTMLImageElement | null
 ): void {
@@ -732,7 +759,7 @@ export function renderMarkers3D(
   originAngle: number,
   fov: number,
   colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[],
-  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean; image?: HTMLImageElement }[]
+  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean; image_loaded?: HTMLImageElement }[]
 ): void {
   if (markers.length === 0) return;
   const W = canvas.width;
@@ -783,15 +810,43 @@ export function renderMarkers3D(
   const drawnLabels: { x: number; y: number; halfW: number; h: number }[] = [];
 
   for (const v of visible) {
-    if (v.type === 'tps') {
-      // TPS projection: draw image at marker position on wall
-      continue;
-    }
     const glow = v.color + '30';
     ctx.fillStyle = glow;
     ctx.fillRect(v.screenX - v.pw - 1, v.pTop - 1, v.pw * 2 + 2, v.ph + 2);
     ctx.fillStyle = v.color;
     ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
+  }
+
+  // Render TPS marker images (column-based wall decal with perspective)
+  const tpsList = markers.filter(m => m.type === 'tps' && m.image_loaded);
+  if (tpsList.length > 0) {
+    const m = tpsList[0];
+    const img = m.image_loaded!;
+    const dx = m.x - origin.x, dy = m.y - origin.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= 1) {
+      const angleToMarker = Math.atan2(dy, dx);
+      let relAngle = normalizeAngle(angleToMarker - originAngle);
+      if (relAngle > Math.PI) relAngle -= TAU;
+      if (Math.abs(relAngle) <= halfFov) {
+        const screenX = ((relAngle + halfFov) / fov) * (W - 1);
+        const perpDist = dist * Math.cos(relAngle);
+        if (perpDist >= 1) {
+          const maxH = Math.min(canvas.height * 0.4, Math.round((12 * distPlane * 3) / perpDist));
+          const maxW = Math.round(maxH * img.width / img.height);
+          if (maxW >= 4) {
+            const bottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
+            const baseH = Math.round((12 * distPlane * 3) / perpDist);
+            const fullW = Math.round(baseH * img.width / img.height);
+            const fullH = baseH;
+            ctx.save();
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(img, screenX - fullW / 2, bottom - fullH - 8, fullW, fullH);
+            ctx.restore();
+          }
+        }
+      }
+    }
   }
 
   // Render labels for markers that have infoLabel or note
@@ -853,7 +908,7 @@ export function renderTpsView(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   player: PlayerState,
-  walls: [Point, Point][],
+  walls: WallSegment[],
   fov: number,
   camDistance: number,
   wallColor: string,
@@ -864,13 +919,14 @@ export function renderTpsView(
   ceilingColor2: string,
   playerColor: string,
   bgImageData?: ImageData | null,
-  lockedWalls?: [Point, Point][],
+  lockedWalls?: WallSegment[],
   lockedWallColor?: string,
   lockedWallColorDark?: string,
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
   wallFadeRadius?: number,
-  heroImage?: HTMLImageElement | null
+  heroImage?: HTMLImageElement | null,
+  wallTexturesData?: Record<string, ImageData>
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -888,7 +944,7 @@ export function renderTpsView(
     bgImageData,
     playerDist: actualCamDistance,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
-    playerPos, wallFadeRadius
+    playerPos, wallFadeRadius, wallTexturesData
   });
 
   // Render player billboard

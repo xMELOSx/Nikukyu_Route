@@ -6,7 +6,7 @@ import { EraserSubMenu } from './EraserSubMenu';
 import { MeasureSubMenu } from './MeasureSubMenu';
 import { MapCanvas } from './MapCanvas';
 import {
-  Undo, Redo, Move, Ruler, Paintbrush, Eraser, EyeOff, Star, Wand2, Fence, RotateCcw, ChevronLeft, ChevronRight
+  Undo, Redo, Move, Ruler, Paintbrush, Eraser, EyeOff, Star, Wand2, Fence, RotateCcw, ChevronLeft, ChevronRight, Image, Scissors
 } from 'lucide-react';
 import {
   MARKER_META, TEXTCOLOR_OPTIONS, TEXTCOLOR_META, SPAWN_CATEGORIES, PRESET_MAPS_META,
@@ -201,6 +201,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     wallAutoSnap, setWallAutoSnap,
     lockedWalls, setLockedWalls,
     wallLockedSubMode, setWallLockedSubMode,
+    selectedTexture, setSelectedTexture, texturesList,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1054,7 +1055,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 描く/消す toggle */}
+                {/* 描く/消す/テクスチャ toggle */}
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
@@ -1064,6 +1065,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Fence size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('描く')}</span>
                   </button>
                   <button
+                    className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('texture')}
+                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                  >
+                    <Image size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('テクスチャ')}</span>
+                  </button>
+                  <button
                     className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('erase')}
                     style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
@@ -1071,6 +1079,33 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
                   </button>
                 </div>
+                {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
+                {wallSubMode === 'texture' && (
+                  <div style={{ marginBottom: '6px' }}>
+                    <select
+                      value={selectedTexture}
+                      onChange={(e) => setSelectedTexture(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: '#161925',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '4px',
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        outline: 'none'
+                      }}
+                    >
+                      {texturesList.length === 0 ? (
+                        <option value="">{t('(画像なし - public/texture/に入れます)')}</option>
+                      ) : (
+                        texturesList.map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                )}
                 {/* 通常壁/鍵付き扉 toggle (描くモード時のみ) */}
                 {wallSubMode === 'draw' && (
                   <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>

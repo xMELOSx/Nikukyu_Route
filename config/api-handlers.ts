@@ -65,6 +65,22 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/textures
+        if (isPathMatch(urlPath, '/api/textures')) {
+          if (req.method === 'GET') {
+            const textureDir = path.resolve(__dirname, '../public/texture')
+            if (!fs.existsSync(textureDir)) {
+              fs.mkdirSync(textureDir, { recursive: true })
+            }
+            const files = fs.readdirSync(textureDir)
+            const textures = files.filter(f => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify(textures))
+            return
+          }
+          return next()
+        }
+
         // /api/global-spawns
         if (isPathMatch(urlPath, '/api/global-spawns')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_spawns.json', JSON.stringify([]))

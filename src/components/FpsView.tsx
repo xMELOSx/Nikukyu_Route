@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Point, HeistMarker, LockedWallSegment } from '../utils/DataManager';
+import type { Point, HeistMarker, LockedWallSegment, WallSegment } from '../utils/DataManager';
 import type { RouteSegment } from '../utils/AutoRoute';
 import heroImg from '../assets/hero.png';
 import {
@@ -9,13 +9,13 @@ import {
   movePlayerTps,
   renderFpsView,
   renderTpsView,
-  renderMinimapView,
+  renderMinimap,
   renderMarkers3D,
   pointToSegmentDist
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
-  walls: [Point, Point][];
+  walls: WallSegment[];
   lockedWalls: LockedWallSegment[];
   markers: HeistMarker[];
   playerPos: { x: number; y: number };
@@ -36,7 +36,6 @@ interface FpsViewProps {
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
-  imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
 }
 
 const FOV = Math.PI * 0.45;
@@ -55,7 +54,6 @@ const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
   autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
-  imageOverlayCanvasRef,
   mapSnapshotCanvas,
   onToggleNearestPhone,
   onToggleMode
@@ -165,6 +163,45 @@ const FpsView: React.FC<FpsViewProps> = ({
 
   const wallsRef = useRef(walls);
   useEffect(() => { wallsRef.current = walls; }, [walls]);
+
+  // 壁テクスチャ画像のロード・キャッシュ管理
+  const wallTexturesRef = useRef<Record<string, ImageData>>({});
+  const loadedTextureNamesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // 現在の壁の中で設定されているすべてのテクスチャ名を抽出
+    const needed = new Set<string>();
+    for (const w of walls) {
+      if (w[2] && typeof w[2] === 'string') {
+        needed.add(w[2]);
+      }
+    }
+
+    needed.forEach(texName => {
+      if (loadedTextureNamesRef.current.has(texName)) return;
+      loadedTextureNamesRef.current.add(texName); // ロード中/ロード済みにマーク
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.naturalWidth || img.width || 512;
+        tempCanvas.height = img.naturalHeight || img.height || 512;
+        const tempCtx = tempCanvas.getContext('2d');
+        if (tempCtx) {
+          try {
+            tempCtx.drawImage(img, 0, 0);
+            const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            wallTexturesRef.current[texName] = imgData;
+          } catch (e) {
+            console.error("Failed to load wall texture ImageData:", texName, e);
+          }
+        }
+      };
+      img.src = `${import.meta.env.BASE_URL}texture/${texName}`;
+    });
+  }, [walls]);
+
   const lockedWallsRef = useRef(lockedWalls);
   useEffect(() => { lockedWallsRef.current = lockedWalls; }, [lockedWalls]);
   const markersRef = useRef(activeMarkers);
@@ -532,7 +569,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           0.3,
           { x: playerRef.current.x, y: playerRef.current.y },
           30,
-          heroImageRef.current
+          heroImageRef.current,
+          wallTexturesRef.current
         );
       } else {
         colHeights = renderFpsView(
@@ -548,7 +586,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
           0.3,
           { x: playerRef.current.x, y: playerRef.current.y },
-          30
+          30,
+          wallTexturesRef.current
         );
       }
 
@@ -556,8 +595,10 @@ const FpsView: React.FC<FpsViewProps> = ({
       const camPos = mode === 'tps'
         ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
         : { x: playerRef.current.x, y: playerRef.current.y };
-      const tpsImgs = tpsImagesRef.current;
-      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
+      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm.map(m => ({
+        ...m,
+        image_loaded: m.type === 'tps' ? tpsImagesRef.current[m.id] : undefined
+      })));
 
       // 自動ルート案内マーカーを3D描画
       const aaActive2 = autoRouteActiveRef.current;
@@ -602,7 +643,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (minimapCvs) {
         const mctx = minimapCvs.getContext('2d');
         if (mctx) {
-          renderMinimapView(mctx, playerRef.current, mapSnapshotRef.current || bgImageRef.current);
+          renderMinimap(mctx, playerRef.current, lw, lm, mapSnapshotRef.current || bgImageRef.current);
           // Overlay phone status dots on minimap (active=green, inactive=red, locked=gray)
           const mw = minimapCvs.width; // 280
           const mRange = 250;
@@ -747,56 +788,6 @@ const FpsView: React.FC<FpsViewProps> = ({
       }
       ctx.fillText(`Radius:6 Nearest:${minDist < 10000 ? minDist.toFixed(1) : '-'}`, canvas.width - 120, 14);
       ctx.fillText(`Walls:${lw.length} Locked:${closedLockedArr.length}`, canvas.width - 120, 24);
-
-      // TPS画像オーバーレイ (高画質・回転対応)
-      const overlayCanvas = imageOverlayCanvasRef?.current;
-      if (overlayCanvas) {
-        const octx = overlayCanvas.getContext('2d');
-        if (octx) {
-          octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-          const tpsImgs = tpsImagesRef.current;
-          const W = canvas.width, H = canvas.height;
-          const halfFov = FOV / 2;
-          const yOffset = -50 * (H / 240);
-          const halfH = H / 2 + yOffset;
-          const distPlane = (W / 2) / Math.tan(FOV / 2);
-          const maxImgW = W * 0.4;
-          for (const m of lm) {
-            if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
-            const img = tpsImgs[m.id];
-            const dx = m.x - camPos.x, dy = m.y - camPos.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < 1) continue;
-            const angleToMarker = Math.atan2(dy, dx);
-            let relAngle = normalizeAngle(angleToMarker - playerRef.current.angle);
-            if (relAngle > Math.PI) relAngle -= Math.PI * 2;
-            if (Math.abs(relAngle) > halfFov) continue;
-            const screenX = Math.round(((relAngle + halfFov) / FOV) * (W - 1));
-            if (screenX < 0 || screenX >= W) continue;
-            const perpDist = dist * Math.cos(relAngle);
-            if (perpDist < 1) continue;
-            if (colHeights[screenX].perpDist < perpDist) continue;
-            const imgW = Math.min(maxImgW, Math.max(20, Math.round((200 * distPlane) / perpDist)));
-            const imgH = Math.round(imgW * img.height / img.width);
-            const wallTop = colHeights[screenX].top;
-            const wallBot = colHeights[screenX].bottom;
-            const yCenter = (wallTop + wallBot) / 2;
-            const drawTop = Math.max(wallTop, Math.round(yCenter - imgH / 2));
-            const drawBot = Math.min(wallBot, Math.round(yCenter + imgH / 2));
-            if (drawTop >= drawBot) continue;
-            octx.save();
-            octx.imageSmoothingEnabled = true;
-            octx.imageSmoothingQuality = 'high';
-            const cx = screenX, cy = (drawTop + drawBot) / 2;
-            octx.translate(cx, cy);
-            if (m.teleportAngle !== undefined) {
-              octx.rotate((m.teleportAngle * Math.PI) / 180);
-            }
-            octx.drawImage(img, -imgW / 2, -(drawBot - drawTop) / 2, imgW, drawBot - drawTop);
-            octx.restore();
-          }
-        }
-      }
 
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(loop);
