@@ -35,7 +35,7 @@ interface MapCanvasProps {
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
   walls?: WallSegment[];
   onWallsChange?: (walls: WallSegment[]) => void;
-  wallSubMode?: 'draw' | 'erase' | 'texture';
+  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice';
   wallAutoSnap?: boolean;
   selectedTexture?: string;
   lockedWalls?: LockedWallSegment[];
@@ -2078,6 +2078,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (toolMode === 'wall' && wallSubMode === 'slice') {
+      setIsDrawing(true);
+      setCurrentPoints([coords]);
+      return;
+    }
+
     if (toolMode === 'toggle-vis') {
       toggledIdsRef.current = new Set();
       toggleVisibilityAtPoint(coords);
@@ -2136,6 +2142,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (toolMode === 'wall' && wallSubMode === 'erase') {
         eraseWallsAtPoint(coords);
+        return;
+      }
+      if (toolMode === 'wall' && wallSubMode === 'slice') {
+        setCurrentPoints([currentPoints[0], coords]);
         return;
       }
       if (toolMode === 'toggle-vis') {
@@ -2401,6 +2411,53 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
           const newSeg: LockedWallSegment = { p1, p2, isOpen: false };
           onLockedWallsChange?.([...lockedWalls, newSeg]);
+        }
+      }
+      if (toolMode === 'wall' && wallSubMode === 'slice' && currentPoints.length === 2) {
+        const s1 = currentPoints[0];
+        const s2 = currentPoints[1];
+
+        const getLineIntersectionLocal = (a: Point, b: Point, c: Point, d: Point): Point | null => {
+          const denom = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y);
+          if (Math.abs(denom) < 1e-10) return null;
+
+          const ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denom;
+          const ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denom;
+
+          if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+            return {
+              x: a.x + ua * (b.x - a.x),
+              y: a.y + ua * (b.y - a.y)
+            };
+          }
+          return null;
+        };
+
+        let newWalls: WallSegment[] = [];
+        let didSlice = false;
+
+        for (const w of walls) {
+          const intersect = getLineIntersectionLocal(s1, s2, w[0], w[1]);
+          if (intersect) {
+            const dStart = Math.hypot(w[0].x - intersect.x, w[0].y - intersect.y);
+            const dEnd = Math.hypot(w[1].x - intersect.x, w[1].y - intersect.y);
+            if (dStart > 2 && dEnd > 2) {
+              const part1: WallSegment = [w[0], intersect];
+              const part2: WallSegment = [intersect, w[1]];
+              if (w[2]) {
+                part1[2] = w[2];
+                part2[2] = w[2];
+              }
+              newWalls.push(part1, part2);
+              didSlice = true;
+              continue;
+            }
+          }
+          newWalls.push(w);
+        }
+
+        if (didSlice) {
+          onWallsChange?.(newWalls);
         }
       }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
@@ -3406,6 +3463,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 stroke={wallLockedSubMode === 'locked' ? '#ffcc00' : '#ff5500'}
                 strokeWidth={5}
                 strokeDasharray="6,4"
+              />
+            )}
+            {wallSubMode === 'slice' && isDrawing && currentPoints.length === 2 && (
+              <line
+                x1={currentPoints[0].x}
+                y1={currentPoints[0].y}
+                x2={currentPoints[1].x}
+                y2={currentPoints[1].y}
+                stroke="#ff0055"
+                strokeWidth={3}
+                strokeDasharray="4,4"
               />
             )}
           </svg>

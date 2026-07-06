@@ -1072,6 +1072,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Image size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('テクスチャ')}</span>
                   </button>
                   <button
+                    className={`tool-btn ${wallSubMode === 'slice' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('slice')}
+                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    title={t('壁をドラッグ線で切断します')}
+                  >
+                    <Scissors size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('スライス')}</span>
+                  </button>
+                  <button
                     className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('erase')}
                     style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
