@@ -3119,7 +3119,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (activeNoteMarkerId) {
       // 個人編集モード: グローバルマーカーの内容変更を保存しない (tpsは例外)
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') {
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) {
         if (closePanel) setActiveNoteMarkerId(null);
         return;
       }
@@ -3284,7 +3284,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (activeNoteMarkerId) {
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') return;
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
       const wrapper = wrapperRef.current;
       const vw = wrapper ? wrapper.clientWidth : undefined;
       const vh = wrapper ? wrapper.clientHeight : undefined;

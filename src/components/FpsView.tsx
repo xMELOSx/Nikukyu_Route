@@ -100,7 +100,10 @@ const FpsView: React.FC<FpsViewProps> = ({
       const imgUrl = m.mediaItems?.[0]?.url;
       if (!imgUrl) continue;
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // data: URL の場合は crossOrigin を設定しない（設定すると読み込みに失敗する）
+      if (!imgUrl.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.src = imgUrl;
       img.onload = () => { imgCache[m.id] = img; };
     }
