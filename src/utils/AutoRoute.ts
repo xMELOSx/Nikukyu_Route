@@ -744,15 +744,11 @@ export function interpolateRoute(
 
   let remaining = elapsed;
   for (const seg of segments) {
-    // Warp segment: instant teleportation, 0 travel time
     if (seg.distance === 0 && seg.stopDuration === 0) {
       continue;
     }
-    // Use the segment's per-segment speed if set, otherwise the global speed
-    const segSpeed = seg.speed !== undefined ? seg.speed : speed;
-    const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+    const travelTime = seg.distance / Math.max(speed, 0.0001);
     if (remaining <= travelTime) {
-      // Inside this segment's travel phase
       const t = seg.distance > 0 ? remaining / travelTime : 1;
       const x = seg.start.x + (seg.end.x - seg.start.x) * t;
       const y = seg.start.y + (seg.end.y - seg.start.y) * t;
@@ -760,13 +756,11 @@ export function interpolateRoute(
     }
     remaining -= travelTime;
     if (remaining <= seg.stopDuration) {
-      // Inside this segment's stop phase
       return { position: { ...seg.end }, segment: seg, segmentProgress: 1 };
     }
     remaining -= seg.stopDuration;
   }
 
-  // Should not reach here
   const last = segments[segments.length - 1];
   return { position: { ...last.end }, segment: last, segmentProgress: 1 };
 }

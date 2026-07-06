@@ -134,6 +134,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   markersRef.current = activeMarkers;
 
   const lastTeleportTimeRef = useRef<number>(0);
+  const prevAutoElapsedRef = useRef<number>(-1);
   const teleportEffectTimerRef = useRef<number>(0);
   const teleportEffectColorRef = useRef<string>('rgba(255,0,255,0.3)');
   const lastTeleportedPortalIdRef = useRef<string | null>(null);
@@ -142,6 +143,17 @@ const FpsView: React.FC<FpsViewProps> = ({
   exitRef.current = onExit;
   const playerChangeRef = useRef(onPlayerChange);
   playerChangeRef.current = onPlayerChange;
+  const unlockedWallsChangeRef = useRef(onLockedWallsChange);
+  unlockedWallsChangeRef.current = onLockedWallsChange;
+
+  const autoRouteActiveRef = useRef(autoRouteActive);
+  autoRouteActiveRef.current = autoRouteActive;
+  const autoRouteSegmentsRef = useRef(autoRouteSegments);
+  autoRouteSegmentsRef.current = autoRouteSegments;
+  const autoRouteElapsedRef = useRef(autoRouteElapsed);
+  autoRouteElapsedRef.current = autoRouteElapsed;
+  const autoRouteTimingRef = useRef(autoRouteTiming);
+  autoRouteTimingRef.current = autoRouteTiming;
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     keysRef.current.add(e.key.toLowerCase());
@@ -191,6 +203,8 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
 
     if (hasLockedRef.current && !document.pointerLockElement) {
+      // 自動案内中はマウスキャプチャ解除で終了しない
+      if (autoRouteActiveRef.current) return;
       requestAnimationFrame(() => {
         if (!document.pointerLockElement) {
           exitRef.current();
@@ -257,42 +271,55 @@ const FpsView: React.FC<FpsViewProps> = ({
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
-        const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
-        if (mode === 'tps') {
-          const newPlayer = movePlayerTps(
-            playerRef.current,
-            forward,
-            strafe,
-            playerRef.current.angle,
-            collisionWalls,
-            MOVE_SPEED * dt,
-            6 // PLAYER_RADIUS → 6 に固定（ユーザー変更しやすいよう定数化）
-          );
-          playerRef.current = newPlayer;
+        if (autoRouteNoClip) {
+          // 壁抜けON: 衝突判定なしで直接移動
+          const cosA = Math.cos(playerRef.current.angle);
+          const sinA = Math.sin(playerRef.current.angle);
+          playerRef.current.x += (cosA * forward - sinA * strafe) * MOVE_SPEED * dt;
+          playerRef.current.y += (sinA * forward + cosA * strafe) * MOVE_SPEED * dt;
         } else {
-          const newPlayer = movePlayer(
-            playerRef.current,
-            forward,
-            strafe,
-            collisionWalls,
-            MOVE_SPEED * dt,
-            6
-          );
-          playerRef.current = newPlayer;
+          const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
+          if (mode === 'tps') {
+            const newPlayer = movePlayerTps(
+              playerRef.current,
+              forward,
+              strafe,
+              playerRef.current.angle,
+              collisionWalls,
+              MOVE_SPEED * dt,
+              6
+            );
+            playerRef.current = newPlayer;
+          } else {
+            const newPlayer = movePlayer(
+              playerRef.current,
+              forward,
+              strafe,
+              collisionWalls,
+              MOVE_SPEED * dt,
+              6
+            );
+            playerRef.current = newPlayer;
+          }
         }
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
       }
 
-      // Auto-walk along route in street view
-      if (autoRouteActive && autoRouteSegments.length > 0 && autoRouteTiming) {
-        const speed = autoRouteTiming.speed;
-        let remaining = autoRouteElapsed;
-        let targetX = autoRouteSegments[0]?.start.x ?? playerRef.current.x;
-        let targetY = autoRouteSegments[0]?.start.y ?? playerRef.current.y;
-        let dirX = 0;
-        let dirY = 0;
+      // Auto-walk along route in street view (壁を無視、進行方向を向く)
+      const aaActive = autoRouteActiveRef.current;
+      const aaSegs = autoRouteSegmentsRef.current;
+      const aaElapsed = autoRouteElapsedRef.current;
+      const aaTiming = autoRouteTimingRef.current;
+      if (aaActive && aaSegs.length > 0 && aaTiming) {
+        const speed = aaTiming.speed;
+        let remaining = aaElapsed;
+        let targetX = aaSegs[0]?.start.x ?? playerRef.current.x;
+        let targetY = aaSegs[0]?.start.y ?? playerRef.current.y;
+        let faceX = 0;
+        let faceY = 0;
 
-        for (const seg of autoRouteSegments) {
+        for (let si = 0; si < aaSegs.length; si++) {
+          const seg = aaSegs[si];
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
           const segSpeed = speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
@@ -300,48 +327,74 @@ const FpsView: React.FC<FpsViewProps> = ({
             const t = seg.distance > 0 ? remaining / travelTime : 1;
             targetX = seg.start.x + (seg.end.x - seg.start.x) * t;
             targetY = seg.start.y + (seg.end.y - seg.start.y) * t;
-            dirX = seg.end.x - seg.start.x;
-            dirY = seg.end.y - seg.start.y;
+            faceX = seg.end.x - seg.start.x;
+            faceY = seg.end.y - seg.start.y;
             remaining = 0;
           } else {
             targetX = seg.end.x;
             targetY = seg.end.y;
-            dirX = seg.end.x - seg.start.x;
-            dirY = seg.end.y - seg.start.y;
             remaining -= travelTime;
-            if (remaining <= seg.stopDuration) { remaining = 0; }
-            else { remaining -= seg.stopDuration; }
+            if (remaining <= seg.stopDuration) {
+              const nextSeg = aaSegs.slice(si + 1).find(s => !(s.distance === 0 && s.stopDuration === 0));
+              if (nextSeg) {
+                faceX = nextSeg.end.x - nextSeg.start.x;
+                faceY = nextSeg.end.y - nextSeg.start.y;
+              } else {
+                faceX = seg.end.x - seg.start.x;
+                faceY = seg.end.y - seg.start.y;
+              }
+              remaining = 0;
+            } else {
+              remaining -= seg.stopDuration;
+              faceX = seg.end.x - seg.start.x;
+              faceY = seg.end.y - seg.start.y;
+              continue;
+            }
           }
           if (remaining <= 0) break;
         }
 
-        const dx = targetX - playerRef.current.x;
-        const dy = targetY - playerRef.current.y;
-        const dist = Math.hypot(dx, dy);
+        playerRef.current.x = targetX;
+        playerRef.current.y = targetY;
 
-        if (dist > 0.1) {
-          const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
-          if (autoRouteNoClip) {
-            playerRef.current.x = targetX;
-            playerRef.current.y = targetY;
-          } else {
-            const moveAngle = Math.atan2(dy, dx);
-            const newPlayer = movePlayer(
-              { x: playerRef.current.x, y: playerRef.current.y, angle: moveAngle },
-              1, 0,
-              collisionWalls,
-              Math.min(dist, MOVE_SPEED * dt * 5),
-              6
-            );
-            playerRef.current.x = newPlayer.x;
-            playerRef.current.y = newPlayer.y;
-          }
-        }
-
-        if (dirX !== 0 || dirY !== 0) {
-          playerRef.current.angle = Math.atan2(dirY, dirX);
+        if (faceX !== 0 || faceY !== 0) {
+          playerRef.current.angle = Math.atan2(faceY, faceX);
         }
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
+
+        const prevElapsed = prevAutoElapsedRef.current;
+        if (prevElapsed >= 0 && aaTiming) {
+          const spd = aaTiming.speed;
+          for (const seg of aaSegs) {
+            if (seg.stopDuration > 0 && seg.markerId) {
+              const stopEnd = seg.cumulativeDistance / Math.max(spd, 0.0001) + seg.cumulativeStopTime;
+              if (prevElapsed < stopEnd && aaElapsed >= stopEnd) {
+                const ulw = lockedWallsRef.current;
+                const curP = playerRef.current;
+                let nearestIdx = -1;
+                let nearestDist = 20;
+                for (let wi = 0; wi < ulw.length; wi++) {
+                  const wseg = ulw[wi];
+                  const wcx = (wseg.p1.x + wseg.p2.x) / 2;
+                  const wcy = (wseg.p1.y + wseg.p2.y) / 2;
+                  const wd = Math.hypot(wcx - curP.x, wcy - curP.y);
+                  if (wd < nearestDist) {
+                    nearestDist = wd;
+                    nearestIdx = wi;
+                  }
+                }
+                if (nearestIdx >= 0) {
+                  const unlockFn = unlockedWallsChangeRef.current;
+                  if (unlockFn) {
+                    const next = ulw.map((s, idx) => idx === nearestIdx ? { ...s, isOpen: true } : s);
+                    unlockFn(next);
+                  }
+                }
+              }
+            }
+          }
+        }
+        prevAutoElapsedRef.current = aaElapsed;
       }
 
       const now = Date.now();
@@ -454,14 +507,18 @@ const FpsView: React.FC<FpsViewProps> = ({
       renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
 
       // 自動ルート案内マーカーを3D描画
-      if (autoRouteActive && autoRouteSegments.length > 0 && autoRouteTiming) {
+      const aaActive2 = autoRouteActiveRef.current;
+      const aaSegs2 = autoRouteSegmentsRef.current;
+      const aaElapsed2 = autoRouteElapsedRef.current;
+      const aaTiming2 = autoRouteTimingRef.current;
+      if (aaActive2 && aaSegs2.length > 0 && aaTiming2) {
         const routeMarkers: { x: number; y: number; type: string; infoLabel?: string }[] = [];
-        const speed = autoRouteTiming.speed;
-        let remaining = autoRouteElapsed;
-        let currentX = autoRouteSegments[0]?.start.x ?? 0;
-        let currentY = autoRouteSegments[0]?.start.y ?? 0;
+        const speed = aaTiming2.speed;
+        let remaining = aaElapsed2;
+        let currentX = aaSegs2[0]?.start.x ?? 0;
+        let currentY = aaSegs2[0]?.start.y ?? 0;
 
-        for (const seg of autoRouteSegments) {
+        for (const seg of aaSegs2) {
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
           const segSpeed = speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
@@ -481,13 +538,11 @@ const FpsView: React.FC<FpsViewProps> = ({
           }
         }
 
-        // 現在位置マーカー（赤い大きなドット）
         routeMarkers.push({ x: currentX, y: currentY, type: 'start', infoLabel: '' });
 
-        // ルートパス上に小さな案内マーカーを等間隔で配置
-        let pathRemaining = autoRouteElapsed;
+        let pathRemaining = aaElapsed2;
         const stepInterval = 80;
-        for (const seg of autoRouteSegments) {
+        for (const seg of aaSegs2) {
           if (seg.distance === 0 && seg.stopDuration === 0) continue;
           const segSpeed = speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
@@ -579,34 +634,14 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.stroke();
 
       const modeLabel = mode === 'tps' ? 'TPS' : 'FPS';
-      const hudL = `X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
-      const hudR = `ESC: 終了`;
-
-      // Mode indicator (larger, top-right area)
-      const modeColor = mode === 'tps' ? 'rgba(255, 200, 50, 0.9)' : 'rgba(0, 240, 255, 0.9)';
-      ctx.font = 'bold 14px monospace';
-      ctx.textAlign = 'right';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(modeLabel, canvas.width - 10, 20);
-      ctx.fillStyle = modeColor;
-      ctx.fillText(modeLabel, canvas.width - 10, 20);
-
+      const coordText = `X:${Math.round(playerRef.current.x)} Y:${Math.round(playerRef.current.y)}`;
       ctx.textAlign = 'start';
-      ctx.font = '10px monospace';
+      ctx.font = 'bold 16px monospace';
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(hudL, 10, canvas.height - 10);
-      ctx.strokeText(hudR, canvas.width - 80, canvas.height - 10);
+      ctx.lineWidth = 4;
+      ctx.strokeText(coordText, 10, canvas.height - 10);
       ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
-      ctx.fillText(hudL, 10, canvas.height - 10);
-      ctx.fillText(hudR, canvas.width - 80, canvas.height - 10);
-
-      // Key hints
-      const hintY = canvas.height - 24;
-      ctx.font = '8px monospace';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.fillText('[WASD]移動 [R]電話 [T]切替 [ESC]終了', 10, hintY);
+      ctx.fillText(coordText, 10, canvas.height - 10);
 
       // Phone compass: nearest ACTIVE phone direction & status
       const activePhoneMarkers = lm.filter(m => m.type === 'phone' && m.phoneActive && !m.phoneLocked);

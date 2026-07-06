@@ -39,6 +39,7 @@ export interface LeftSidebarProps {
   showMarkerLabels: boolean; setShowMarkerLabels: (v: boolean) => void;
   markerScale: number; setMarkerScale: (v: number) => void;
   textPinPassThrough: boolean; setTextPinPassThrough: (v: boolean) => void;
+  drawerPinPassThrough: boolean; setDrawerPinPassThrough: (v: boolean) => void;
   showPhoneCompass: boolean; setShowPhoneCompass: (v: boolean) => void;
   showPhoneBoxHud: boolean; setShowPhoneBoxHud: (v: boolean) => void;
   phoneBoxHudSize: number; setPhoneBoxHudSize: (v: number) => void;
@@ -135,6 +136,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     showMarkerLabels, setShowMarkerLabels,
     markerScale, setMarkerScale,
     textPinPassThrough, setTextPinPassThrough,
+    drawerPinPassThrough, setDrawerPinPassThrough,
     showPhoneCompass, setShowPhoneCompass,
     showPhoneBoxHud, setShowPhoneBoxHud,
     phoneBoxHudSize, setPhoneBoxHudSize,
@@ -193,6 +195,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     handleItemSave, handleBulkImport, handleItemImageUpload,
     warpColor, stairsColor, memoizedStrokes,
     leftSidebarCollapsed, isMobile,
+    activeMarkerType, setActiveMarkerType,
     spawnUndoRef, spawnRedoRef,
     wallSubMode, setWallSubMode,
     wallAutoSnap, setWallAutoSnap,
@@ -501,6 +504,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
                     />
                     {t('🖱️ 表示モードでテキストピンのクリックを透過')}
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={drawerPinPassThrough}
+                      onChange={(e) => setDrawerPinPassThrough(e.target.checked)}
+                      style={{ accentColor: '#cd853f', cursor: 'pointer' }}
+                    />
+                    {t('🗄 表示モードで引出マーカーのクリックを透過')}
                   </label>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>

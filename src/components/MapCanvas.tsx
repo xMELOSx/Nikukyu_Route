@@ -80,6 +80,7 @@ interface MapCanvasProps {
   pickyMarkerIds?: { [markerId: string]: boolean };
   onPickyMarkerChange?: (markerId: string, picky: boolean) => void;
   textPinPassThrough?: boolean;
+  drawerPinPassThrough?: boolean;
   showPhoneCompass?: boolean;
   showPhoneBoxHud?: boolean;
   phoneBoxHudOpen?: boolean;
@@ -223,6 +224,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   pickyMarkerIds = {},
   onPickyMarkerChange,
   textPinPassThrough = true,
+  drawerPinPassThrough = true,
   showPhoneCompass = false,
   showPhoneBoxHud = false,
   phoneBoxHudOpen = false,
@@ -639,8 +641,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
-  const [drawerCount, setDrawerCount] = useState(3);
-  const [drawerDirection, setDrawerDirection] = useState<'vertical' | 'horizontal'>('vertical');
+  const [drawerRows, setDrawerRows] = useState(3);
+  const [drawerCols, setDrawerCols] = useState(1);
+  const [drawerAngle, setDrawerAngle] = useState(0);
   const [drawerWidth, setDrawerWidth] = useState(60);
   const [drawerHeight, setDrawerHeight] = useState(70);
 
@@ -1893,8 +1896,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.note = '';
       }
       if (activeMarkerType === 'drawer') {
-        newMarker.drawerCount = 3;
-        newMarker.drawerDirection = 'vertical';
+        newMarker.drawerRows = 3;
+        newMarker.drawerCols = 1;
+        newMarker.drawerAngle = 0;
         newMarker.drawerWidth = 60;
         newMarker.drawerHeight = 70;
         newMarker.drawerExpanded = false;
@@ -1930,8 +1934,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setSkillCdSeconds(0);
       setSkillCdPerSecondRate(0);
       if (activeMarkerType === 'drawer') {
-        setDrawerCount(3);
-        setDrawerDirection('vertical');
+        setDrawerRows(3);
+        setDrawerCols(1);
+        setDrawerAngle(0);
         setDrawerWidth(60);
         setDrawerHeight(70);
       }
@@ -2896,8 +2901,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setSkillCdSeconds(m.skillCdSeconds !== undefined ? m.skillCdSeconds : 0);
     setSkillCdPerSecondRate(m.skillPerSecondCd !== undefined ? m.skillPerSecondCd : 0);
 
-    setDrawerCount(m.drawerCount !== undefined ? m.drawerCount : 3);
-    setDrawerDirection(m.drawerDirection || 'vertical');
+    setDrawerRows(m.drawerRows !== undefined ? m.drawerRows : 3);
+    setDrawerCols(m.drawerCols !== undefined ? m.drawerCols : 1);
+    setDrawerAngle(m.drawerAngle !== undefined ? m.drawerAngle : 0);
     setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
 
@@ -3034,8 +3040,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.skillPerSecondCd = skillCdPerSecondRate;
             }
             if (m.type === 'drawer') {
-              updated.drawerCount = drawerCount;
-              updated.drawerDirection = drawerDirection;
+              updated.drawerRows = drawerRows;
+              updated.drawerCols = drawerCols;
+              updated.drawerAngle = drawerAngle;
               updated.drawerWidth = drawerWidth;
               updated.drawerHeight = drawerHeight;
             }
@@ -3670,30 +3677,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 );
               }
               if (isDrawer(m.type)) {
-                const dc = m.drawerCount ?? 3;
-                const dd = m.drawerDirection || 'vertical';
+                const rows = Math.max(1, m.drawerRows ?? 3);
+                const cols = Math.max(1, m.drawerCols ?? 1);
+                const angle = m.drawerAngle ?? 0;
                 const dw = (m.drawerWidth ?? 60) * scaleMultiplier;
                 const dh = (m.drawerHeight ?? 70) * scaleMultiplier;
-                const drawerPassThrough = !isEditMode;
+                const isPlacingDrawer = toolMode === 'add-marker' && activeMarkerType === 'drawer';
+                const drawerPassThrough = !isPlacingDrawer;
                 const dividerBaseStyle: React.CSSProperties = {
                   position: 'absolute',
                   background: meta.color,
                   opacity: 0.35,
                   pointerEvents: 'none'
                 };
-                const dividers: React.ReactNode[] = [];
-                const count = Math.max(1, dc);
-                for (let i = 1; i < count; i++) {
-                  const pct = i / count;
-                  if (dd === 'vertical') {
-                    dividers.push(
-                      <div key={i} style={{ ...dividerBaseStyle, left: 0, top: `${pct * 100}%`, width: '100%', height: '1px' }} />
-                    );
-                  } else {
-                    dividers.push(
-                      <div key={i} style={{ ...dividerBaseStyle, left: `${pct * 100}%`, top: 0, width: '1px', height: '100%' }} />
-                    );
-                  }
+                const lines: React.ReactNode[] = [];
+                for (let r = 1; r < rows; r++) {
+                  const pct = r / rows;
+                  lines.push(
+                    <div key={`hr-${r}`} style={{ ...dividerBaseStyle, left: 0, top: `${pct * 100}%`, width: '100%', height: '1px' }} />
+                  );
+                }
+                for (let c = 1; c < cols; c++) {
+                  const pct = c / cols;
+                  lines.push(
+                    <div key={`vc-${c}`} style={{ ...dividerBaseStyle, left: `${pct * 100}%`, top: 0, width: '1px', height: '100%' }} />
+                  );
                 }
                 return (
                   <div
@@ -3703,25 +3711,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       position: 'absolute',
                       left: `${m.x}px`,
                       top: `${m.y}px`,
-                      transform: 'translate(-50%, -50%)',
+                      transform: `translate(-50%, -50%) rotate(${angle}deg)`,
                       width: `${dw}px`,
                       height: `${dh}px`,
                       border: `${1.5 * scaleMultiplier}px solid ${meta.color}`,
                       borderRadius: `${3 * scaleMultiplier}px`,
-                      background: 'rgba(10, 15, 28, 0.7)',
+                      background: 'transparent',
                       boxShadow: zoom < 0.25 ? 'none' : `0 0 ${8 * scaleMultiplier}px ${meta.color}40`,
                       pointerEvents: drawerPassThrough ? 'none' : 'auto',
                       opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                       filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
                       zIndex: 20,
                       cursor: isEditMode ? 'move' : 'default',
-                      overflow: 'hidden',
+                      overflow: 'visible',
                       userSelect: 'none'
                     } as React.CSSProperties}
                     onMouseDown={drawerPassThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
                     onClick={drawerPassThrough ? undefined : (e) => handleMarkerClick(e, m)}
                   >
-                    {dividers}
+                    {lines}
                     {showMarkerLabels && zoom >= 0.25 && (m.note || '').trim() && (
                       <div style={{
                         position: 'absolute',
@@ -4503,14 +4511,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-                            <span style={{ color: '#b0b0b0' }}>{t('引出数:')}</span>
-                            <span style={{ color: meta.color, fontWeight: 'bold' }}>{m.drawerCount ?? 3}</span>
+                            <span style={{ color: '#b0b0b0' }}>{t('行:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>{m.drawerRows ?? 3}</span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-                            <span style={{ color: '#b0b0b0' }}>{t('方向:')}</span>
-                            <span style={{ color: meta.color, fontWeight: 'bold' }}>
-                              {(m.drawerDirection || 'vertical') === 'vertical' ? t('縦') : t('横')}
-                            </span>
+                            <span style={{ color: '#b0b0b0' }}>{t('列:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>{m.drawerCols ?? 1}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span style={{ color: '#b0b0b0' }}>{t('角度:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>{m.drawerAngle ?? 0}°</span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
                             <span style={{ color: '#b0b0b0' }}>{t('サイズ:')}</span>
@@ -5596,40 +5606,48 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               <div style={{ fontSize: '10px', color: '#cd853f', fontWeight: 'bold' }}>{t('引出設定:')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
-                  <span>{t('引出数:')}</span>
-                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerCount}</span>
+                  <span>{t('行:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerRows}</span>
                 </div>
                 <input
                   type="range"
                   min={1}
-                  max={10}
+                  max={20}
                   step={1}
-                  value={drawerCount}
-                  onChange={(e) => setDrawerCount(parseInt(e.target.value))}
+                  value={drawerRows}
+                  onChange={(e) => setDrawerRows(parseInt(e.target.value))}
                   style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#b0b0b0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="drawer-direction"
-                    checked={drawerDirection === 'vertical'}
-                    onChange={() => setDrawerDirection('vertical')}
-                    style={{ accentColor: '#cd853f', cursor: 'pointer' }}
-                  />
-                  {t('縦')}
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="drawer-direction"
-                    checked={drawerDirection === 'horizontal'}
-                    onChange={() => setDrawerDirection('horizontal')}
-                    style={{ accentColor: '#cd853f', cursor: 'pointer' }}
-                  />
-                  {t('横')}
-                </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('列:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerCols}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={drawerCols}
+                  onChange={(e) => setDrawerCols(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('角度:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerAngle}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={1}
+                  value={drawerAngle}
+                  onChange={(e) => setDrawerAngle(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>

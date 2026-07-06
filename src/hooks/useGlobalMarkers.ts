@@ -13,8 +13,9 @@ function backfillDefaults(m: HeistMarker): HeistMarker {
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (updated.longPickingDurationSeconds === undefined) updated.longPickingDurationSeconds = 8;
   } else if (m.type === 'drawer') {
-    if (updated.drawerCount === undefined) updated.drawerCount = 3;
-    if (updated.drawerDirection === undefined) updated.drawerDirection = 'vertical';
+    if (updated.drawerRows === undefined) updated.drawerRows = 3;
+    if (updated.drawerCols === undefined) updated.drawerCols = 1;
+    if (updated.drawerAngle === undefined) updated.drawerAngle = 0;
     if (updated.drawerWidth === undefined) updated.drawerWidth = 60;
     if (updated.drawerHeight === undefined) updated.drawerHeight = 70;
   }

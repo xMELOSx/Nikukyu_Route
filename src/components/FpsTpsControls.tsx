@@ -254,14 +254,20 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
 
   useEffect(() => {
     if (freeCamMode) {
+      // 自動案内中はマウスキャプチャ不要
+      if (autoRouteActive) {
+        if (document.pointerLockElement) {
+          document.exitPointerLock();
+        }
+        return;
+      }
       const c = fpsCanvasRef.current;
       if (c) {
         const tryLock = () => { try { c.requestPointerLock(); } catch {} };
-        // requestPointerLock は要素が可視になってからでないと失敗する場合がある
         requestAnimationFrame(() => requestAnimationFrame(tryLock));
       }
     }
-  }, [freeCamMode]);
+  }, [freeCamMode, autoRouteActive]);
 
   const handleStart = useCallback((mode: 'fps' | 'tps') => {
     captureLatestBgImageData();
@@ -341,6 +347,32 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             zIndex: 1,
           }}
         />
+        {/* HUD overlay (screen-resolution key hints, not canvas-rendered) */}
+        {freeCamMode && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+            fontSize: '24px', fontFamily: 'monospace', color: 'rgba(0, 240, 255, 0.85)',
+            textShadow: '0 0 4px #000, 0 0 8px #000, 0 0 12px #000'
+          }}>
+            <div style={{ position: 'absolute', top: '12px', left: '14px', fontWeight: 'bold', fontSize: '32px' }}>
+              {freeCamMode === 'tps' ? (
+                <span style={{ color: 'rgba(255, 200, 50, 0.9)' }}>TPS</span>
+              ) : (
+                <span style={{ color: 'rgba(0, 240, 255, 0.9)' }}>FPS</span>
+              )}
+            </div>
+            <div style={{ position: 'absolute', top: '14px', right: '14px', pointerEvents: 'auto', cursor: 'pointer' }}
+              onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 })); }}
+            >
+              <span style={{ background: 'rgba(200, 50, 50, 0.85)', color: '#fff', padding: '6px 16px', borderRadius: '4px', fontSize: '22px', border: '1px solid rgba(255, 100, 100, 0.9)', textShadow: 'none', fontWeight: 'bold' }}>
+                ✕ 終了
+              </span>
+            </div>
+            <div style={{ position: 'absolute', bottom: '225px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
+              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [ESC]終了
+            </div>
+          </div>
+        )}
         {freeCamMode && currentPosition && (
           <FpsView
             walls={walls}
@@ -414,10 +446,6 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                   onClick={() => setAutoRouteNoClip(v => !v)}
                 >壁抜け<br/>{(autoRouteNoClip ? 'ON' : 'OFF')}</button>
               )}
-              <button
-                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
-                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 })); }}
-              >終了</button>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <button
                   style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}

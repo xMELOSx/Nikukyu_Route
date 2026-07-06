@@ -99,8 +99,9 @@ export interface HeistMarker {
   skillMode?: SkillCdMode;
   skillCdSeconds?: number;
   skillPerSecondCd?: number;
-  drawerCount?: number;
-  drawerDirection?: 'vertical' | 'horizontal';
+  drawerRows?: number;
+  drawerCols?: number;
+  drawerAngle?: number;
   drawerWidth?: number;
   drawerHeight?: number;
   drawerExpanded?: boolean;

@@ -504,6 +504,14 @@ export default function App() {
     localStorage.setItem('heist_text_pin_pass_through', String(textPinPassThrough));
   }, [textPinPassThrough]);
 
+  const [drawerPinPassThrough, setDrawerPinPassThrough] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_drawer_pin_pass_through');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_drawer_pin_pass_through', String(drawerPinPassThrough));
+  }, [drawerPinPassThrough]);
+
   // 最寄り起動中 ReroRero電話ボックス の方向コンパス (default: オフ)
   const [showPhoneCompass, setShowPhoneCompass] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_phone_compass');
@@ -1853,6 +1861,8 @@ export default function App() {
           setMarkerScale={setMarkerScale}
           textPinPassThrough={textPinPassThrough}
           setTextPinPassThrough={setTextPinPassThrough}
+          drawerPinPassThrough={drawerPinPassThrough}
+          setDrawerPinPassThrough={setDrawerPinPassThrough}
           showPhoneCompass={showPhoneCompass}
           setShowPhoneCompass={setShowPhoneCompass}
           showPhoneBoxHud={showPhoneBoxHud}
@@ -1870,6 +1880,8 @@ export default function App() {
           blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
           setBlockMarkerClicksDuringTools={setBlockMarkerClicksDuringTools}
           isAltPressed={isAltPressed}
+          activeMarkerType={activeMarkerType}
+          setActiveMarkerType={setActiveMarkerType}
           measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
           setMeasureSelectedStrokeIdxs={setMeasureSelectedStrokeIdxs}
           eraseTarget={eraseTarget}
@@ -2069,6 +2081,7 @@ export default function App() {
               hideBranchLines={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther) ? true : hideBranchLines}
               branchLines1px={branchLines1px}
               textPinPassThrough={textPinPassThrough}
+              drawerPinPassThrough={drawerPinPassThrough}
               showPhoneCompass={showPhoneCompass}
               showPhoneBoxHud={showPhoneBoxHud}
               phoneBoxHudOpen={phoneBoxHudOpen}

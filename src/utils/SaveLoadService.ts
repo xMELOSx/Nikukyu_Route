@@ -37,8 +37,9 @@ function backfillMarker(m: HeistMarker): HeistMarker {
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 8;
   } else if (m.type === 'drawer') {
-    if (m.drawerCount === undefined) m.drawerCount = 3;
-    if (m.drawerDirection === undefined) m.drawerDirection = 'vertical';
+    if (m.drawerRows === undefined) m.drawerRows = 3;
+    if (m.drawerCols === undefined) m.drawerCols = 1;
+    if (m.drawerAngle === undefined) m.drawerAngle = 0;
     if (m.drawerWidth === undefined) m.drawerWidth = 60;
     if (m.drawerHeight === undefined) m.drawerHeight = 70;
   }
