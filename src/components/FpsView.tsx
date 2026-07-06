@@ -36,6 +36,7 @@ interface FpsViewProps {
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
+  imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
 }
 
 const FOV = Math.PI * 0.45;
@@ -54,6 +55,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
   autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
+  imageOverlayCanvasRef,
   mapSnapshotCanvas,
   onToggleNearestPhone,
   onToggleMode
@@ -555,11 +557,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
         : { x: playerRef.current.x, y: playerRef.current.y };
       const tpsImgs = tpsImagesRef.current;
-      const lmWithImages = lm.map(m => ({
-        ...m,
-        image: m.type === 'tps' ? tpsImgs[m.id] : undefined
-      }));
-      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lmWithImages);
+      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
 
       // 自動ルート案内マーカーを3D描画
       const aaActive2 = autoRouteActiveRef.current;
@@ -749,6 +747,56 @@ const FpsView: React.FC<FpsViewProps> = ({
       }
       ctx.fillText(`Radius:6 Nearest:${minDist < 10000 ? minDist.toFixed(1) : '-'}`, canvas.width - 120, 14);
       ctx.fillText(`Walls:${lw.length} Locked:${closedLockedArr.length}`, canvas.width - 120, 24);
+
+      // TPS画像オーバーレイ (高画質・回転対応)
+      const overlayCanvas = imageOverlayCanvasRef?.current;
+      if (overlayCanvas) {
+        const octx = overlayCanvas.getContext('2d');
+        if (octx) {
+          octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          const tpsImgs = tpsImagesRef.current;
+          const W = canvas.width, H = canvas.height;
+          const halfFov = FOV / 2;
+          const yOffset = -50 * (H / 240);
+          const halfH = H / 2 + yOffset;
+          const distPlane = (W / 2) / Math.tan(FOV / 2);
+          const maxImgW = W * 0.4;
+          for (const m of lm) {
+            if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
+            const img = tpsImgs[m.id];
+            const dx = m.x - camPos.x, dy = m.y - camPos.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 1) continue;
+            const angleToMarker = Math.atan2(dy, dx);
+            let relAngle = normalizeAngle(angleToMarker - playerRef.current.angle);
+            if (relAngle > Math.PI) relAngle -= Math.PI * 2;
+            if (Math.abs(relAngle) > halfFov) continue;
+            const screenX = Math.round(((relAngle + halfFov) / FOV) * (W - 1));
+            if (screenX < 0 || screenX >= W) continue;
+            const perpDist = dist * Math.cos(relAngle);
+            if (perpDist < 1) continue;
+            if (colHeights[screenX].perpDist < perpDist) continue;
+            const imgW = Math.min(maxImgW, Math.max(20, Math.round((200 * distPlane) / perpDist)));
+            const imgH = Math.round(imgW * img.height / img.width);
+            const wallTop = colHeights[screenX].top;
+            const wallBot = colHeights[screenX].bottom;
+            const yCenter = (wallTop + wallBot) / 2;
+            const drawTop = Math.max(wallTop, Math.round(yCenter - imgH / 2));
+            const drawBot = Math.min(wallBot, Math.round(yCenter + imgH / 2));
+            if (drawTop >= drawBot) continue;
+            octx.save();
+            octx.imageSmoothingEnabled = true;
+            octx.imageSmoothingQuality = 'high';
+            const cx = screenX, cy = (drawTop + drawBot) / 2;
+            octx.translate(cx, cy);
+            if (m.teleportAngle !== undefined) {
+              octx.rotate((m.teleportAngle * Math.PI) / 180);
+            }
+            octx.drawImage(img, -imgW / 2, -(drawBot - drawTop) / 2, imgW, drawBot - drawTop);
+            octx.restore();
+          }
+        }
+      }
 
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(loop);

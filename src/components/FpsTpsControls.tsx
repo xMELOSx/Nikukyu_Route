@@ -67,6 +67,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
   const [autoRouteNoClip, setAutoRouteNoClip] = useState(false);
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fpsImageOverlayRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
   const bgImageElementCacheRef = useRef<{ [url: string]: HTMLImageElement } | null>(null);
@@ -352,6 +353,17 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           className="fps-overlay"
         />
         <canvas
+          ref={fpsImageOverlayRef}
+          width={Math.round(424 * canvasScale)}
+          height={Math.round(240 * canvasScale)}
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            pointerEvents: 'none',
+            zIndex: 3,
+          }}
+        />
+        <canvas
           ref={minimapCanvasRef}
           width={280}
           height={280}
@@ -417,6 +429,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteElapsed={autoRouteElapsed}
             autoRouteTiming={autoRouteTiming}
             autoRouteNoClip={autoRouteNoClip}
+            imageOverlayCanvasRef={fpsImageOverlayRef}
           />
         )}
         {/* Mobile touch controls */}

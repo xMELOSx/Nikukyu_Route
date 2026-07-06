@@ -794,33 +794,6 @@ export function renderMarkers3D(
     ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
   }
 
-  // Render TPS marker images (separate pass for image drawing)
-  for (const m of markers) {
-    if (m.type !== 'tps' || !m.image) continue;
-    const dx = m.x - origin.x;
-    const dy = m.y - origin.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 1) continue;
-    const angleToMarker = Math.atan2(dy, dx);
-    let relAngle = normalizeAngle(angleToMarker - originAngle);
-    if (relAngle > Math.PI) relAngle -= TAU;
-    if (Math.abs(relAngle) > halfFov) continue;
-    const screenX = Math.round(((relAngle + halfFov) / fov) * (W - 1));
-    const perpDist = dist * Math.cos(relAngle);
-    if (perpDist < 1 || screenX < 0 || screenX >= W) continue;
-    if (colHeights[screenX].perpDist < perpDist) continue;
-
-    const imgW = Math.round((60 * distPlane) / perpDist);
-    const imgH = Math.round((60 * distPlane) / perpDist * (m.image.height / m.image.width));
-    const wallTop = colHeights[screenX].top;
-    const wallBot = colHeights[screenX].bottom;
-    const yCenter = (wallTop + wallBot) / 2;
-    const drawTop = Math.max(wallTop, Math.round(yCenter - imgH / 2));
-    const drawBot = Math.min(wallBot, Math.round(yCenter + imgH / 2));
-    if (drawTop >= drawBot) continue;
-    ctx.drawImage(m.image, screenX - imgW / 2, drawTop, imgW, drawBot - drawTop);
-  }
-
   // Render labels for markers that have infoLabel or note
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';

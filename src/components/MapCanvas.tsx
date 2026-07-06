@@ -635,6 +635,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
   const [tpsImageUrl, setTpsImageUrl] = useState<string>('');
+  const [tpsCropSource, setTpsCropSource] = useState<string | null>(null);
+  const [tpsShowCrop, setTpsShowCrop] = useState(false);
+  const [tpsCropRect, setTpsCropRect] = useState<{ x: number; y: number; w: number; h: number }>({ x: 10, y: 10, w: 200, h: 60 });
+  const [tpsCropImgSize, setTpsCropImgSize] = useState({ w: 0, h: 0 });
+  const tpsCropImgRef = useRef<HTMLImageElement>(null);
+  const tpsCropDragRef = useRef<{ dragging: boolean; type: string; sx: number; sy: number; ix: number; iy: number; iw: number; ih: number } | null>(null);
+  const [tpsCropHoverEdge, setTpsCropHoverEdge] = useState<string | null>(null);
   const [popupOffset, setPopupOffset] = useState<Point>({ x: 0, y: -100 });
   const [isDraggingPopup, setIsDraggingPopup] = useState(false);
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
@@ -5728,19 +5735,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         const reader = new FileReader();
                         reader.onload = (ev) => {
                           const url = ev.target?.result as string;
-                          if (url) setTpsImageUrl(url);
+                          if (!url) return;
+                          setTpsCropSource(url);
+                          setTpsShowCrop(true);
                         };
                         reader.readAsDataURL(blob);
                       }
-                    } catch {}
+                    } catch {
+                      // fallback: paste event on input
+                      alert(t('画像をコピーした状態でCtrl+VをURL欄に押してください'));
+                    }
                   }}
                 >{t('📋 貼付け')}</button>
               </div>
-              {tpsImageUrl && (
+              {tpsImageUrl && !tpsShowCrop && (
                 <img src={tpsImageUrl} alt="preview" style={{ maxWidth: '100%', maxHeight: '120px', borderRadius: '4px', marginTop: '4px' }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               )}
+            </div>
+          )}
+          {activeNoteMarker.type === 'tps' && (
+            <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255, 136, 0, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像の回転(度)')}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input type="range" min={0} max={360} step={1}
+                  value={activeNoteMarker.teleportAngle ?? 0}
+                  onChange={(e) => {
+                    const deg = parseInt(e.target.value);
+                    onMarkersChange(markers.map(m => m.id === activeNoteMarker.id ? { ...m, teleportAngle: deg } : m));
+                  }}
+                  style={{ flex: 1, accentColor: '#ff8800', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '11px', color: '#ff8800', minWidth: '32px', textAlign: 'right' }}>{activeNoteMarker.teleportAngle ?? 0}°</span>
+              </div>
             </div>
           )}
 
@@ -6370,6 +6398,139 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* Media lightbox — click on image/video to enlarge */}
       <MediaLightbox media={zoomedMedia} onClose={() => setZoomedMedia(null)} />
+
+      {ReactDOM.createPortal(tpsShowCrop && tpsCropSource && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999999, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onMouseMove={(e) => {
+            const dr = tpsCropDragRef.current;
+            const img = tpsCropImgRef.current;
+            if (!img || !tpsCropSource) return;
+            const rect = img.getBoundingClientRect();
+            const nw = img.naturalWidth, nh = img.naturalHeight;
+            const contAspect = rect.width / rect.height;
+            const imgAspect = nw / nh;
+            const dispW = imgAspect > contAspect ? rect.width : rect.height * imgAspect;
+            const dispH = imgAspect > contAspect ? rect.width / imgAspect : rect.height;
+            const offX = imgAspect > contAspect ? 0 : (rect.width - dispW) / 2;
+            const offY = imgAspect > contAspect ? (rect.height - dispH) / 2 : 0;
+            const mx = Math.max(0, Math.min(nw, (e.clientX - rect.left - offX) / dispW * nw));
+            const my = Math.max(0, Math.min(nh, (e.clientY - rect.top - offY) / dispH * nh));
+            if (!dr) {
+              const eg = Math.max(5, 24 / Math.max(1, nw / dispW));
+              const r = tpsCropRect;
+              let edge = null;
+              if (Math.abs(mx - r.x) <= eg && Math.abs(my - r.y) <= eg) edge = 'nw';
+              else if (Math.abs(mx - r.x - r.w) <= eg && Math.abs(my - r.y) <= eg) edge = 'ne';
+              else if (Math.abs(mx - r.x) <= eg && Math.abs(my - r.y - r.h) <= eg) edge = 'sw';
+              else if (Math.abs(mx - r.x - r.w) <= eg && Math.abs(my - r.y - r.h) <= eg) edge = 'se';
+              else if (Math.abs(mx - r.x) <= eg && my >= r.y && my <= r.y + r.h) edge = 'w';
+              else if (Math.abs(mx - r.x - r.w) <= eg && my >= r.y && my <= r.y + r.h) edge = 'e';
+              else if (Math.abs(my - r.y) <= eg && mx >= r.x && mx <= r.x + r.w) edge = 'n';
+              else if (Math.abs(my - r.y - r.h) <= eg && mx >= r.x && mx <= r.x + r.w) edge = 's';
+              if (!edge && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) edge = 'move';
+              setTpsCropHoverEdge(edge);
+              return;
+            }
+            const dx = mx - dr.sx, dy = my - dr.sy;
+            let nx = dr.ix, ny = dr.iy, nw2 = dr.iw, nh2 = dr.ih;
+            if (dr.type === 'move') {
+              nx = Math.max(0, Math.min(tpsCropImgSize.w - dr.iw, dr.ix + dx));
+              ny = Math.max(0, Math.min(tpsCropImgSize.h - dr.ih, dr.iy + dy));
+            } else {
+              if (dr.type.includes('w')) { nx = Math.min(dr.ix + dr.iw - 10, dr.ix + dx); nw2 = dr.iw + (dr.ix - nx); }
+              if (dr.type.includes('e')) { nw2 = Math.max(10, dr.iw + dx); }
+              if (dr.type.includes('n')) { ny = Math.min(dr.iy + dr.ih - 10, dr.iy + dy); nh2 = dr.ih + (dr.iy - ny); }
+              if (dr.type.includes('s')) { nh2 = Math.max(10, dr.ih + dy); }
+            }
+            setTpsCropRect({ x: nx, y: ny, w: Math.max(1, nw2), h: Math.max(1, nh2) });
+          }}
+          onMouseUp={() => { tpsCropDragRef.current = null; }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ background: '#111', borderRadius: '8px', padding: '16px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontSize: '12px', color: '#ff8800', fontWeight: 'bold' }}>🖼 画像切り取り</div>
+            <div style={{ position: 'relative', cursor: tpsCropHoverEdge ? (tpsCropHoverEdge === 'move' ? 'move' : tpsCropHoverEdge + '-resize') : 'default', userSelect: 'none' }}
+              onMouseDown={(e) => {
+                const img = tpsCropImgRef.current;
+                if (!img || !tpsCropSource) return;
+                const rect = img.getBoundingClientRect();
+                const nw = img.naturalWidth, nh = img.naturalHeight;
+                const contAspect = rect.width / rect.height;
+                const imgAspect = nw / nh;
+                let dispW, dispH, offX, offY;
+                if (imgAspect > contAspect) {
+                  dispW = rect.width; dispH = dispW / imgAspect;
+                  offX = 0; offY = (rect.height - dispH) / 2;
+                } else {
+                  dispH = rect.height; dispW = dispH * imgAspect;
+                  offX = (rect.width - dispW) / 2; offY = 0;
+                }
+                const sx = Math.max(0, Math.min(nw, (e.clientX - rect.left - offX) / dispW * nw));
+                const sy = Math.max(0, Math.min(nh, (e.clientY - rect.top - offY) / dispH * nh));
+                let edge = null;
+                const r = tpsCropRect;
+                const eg = Math.max(5, 24 / Math.max(1, nw / dispW));
+                if (Math.abs(sx - r.x) <= eg && Math.abs(sy - r.y) <= eg) edge = 'nw';
+                else if (Math.abs(sx - r.x - r.w) <= eg && Math.abs(sy - r.y) <= eg) edge = 'ne';
+                else if (Math.abs(sx - r.x) <= eg && Math.abs(sy - r.y - r.h) <= eg) edge = 'sw';
+                else if (Math.abs(sx - r.x - r.w) <= eg && Math.abs(sy - r.y - r.h) <= eg) edge = 'se';
+                else if (Math.abs(sx - r.x) <= eg && sy >= r.y && sy <= r.y + r.h) edge = 'w';
+                else if (Math.abs(sx - r.x - r.w) <= eg && sy >= r.y && sy <= r.y + r.h) edge = 'e';
+                else if (Math.abs(sy - r.y) <= eg && sx >= r.x && sx <= r.x + r.w) edge = 'n';
+                else if (Math.abs(sy - r.y - r.h) <= eg && sx >= r.x && sx <= r.x + r.w) edge = 's';
+                if (!edge && sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) edge = 'move';
+                if (edge) { e.preventDefault(); tpsCropDragRef.current = { dragging: true, type: edge, sx, sy, ix: r.x, iy: r.y, iw: r.w, ih: r.h }; }
+              }}
+            >
+              <img ref={tpsCropImgRef} src={tpsCropSource} onLoad={(e) => {
+                const nw = e.currentTarget.naturalWidth, nh = e.currentTarget.naturalHeight;
+                setTpsCropImgSize({ w: nw, h: nh });
+                setTpsCropRect(p => ({ x: Math.round(nw * 0.1), y: Math.round(nh * 0.1), w: Math.round(nw * 0.8), h: Math.round(nh * 0.8) }));
+              }} style={{ display: 'block', maxWidth: '70vw', maxHeight: '60vh', objectFit: 'contain', pointerEvents: 'none' }} />
+              {tpsCropImgSize.w > 0 && tpsCropImgRef.current && (() => {
+                const img = tpsCropImgRef.current;
+                const r = img.getBoundingClientRect();
+                const nw = tpsCropImgSize.w, nh = tpsCropImgSize.h;
+                const ca = r.width / r.height, ia = nw / nh;
+                const dw = ia > ca ? r.width : r.height * ia;
+                const dh = ia > ca ? r.width / ia : r.height;
+                const ox = ia > ca ? 0 : (r.width - dw) / 2;
+                const oy = ia > ca ? (r.height - dh) / 2 : 0;
+                const rw = dw / nw, rh = dh / nh;
+                const l = tpsCropRect.x * rw + ox, t = tpsCropRect.y * rh + oy, w = tpsCropRect.w * rw, h = tpsCropRect.h * rh;
+                return (
+                  <>
+                    <div style={{ position: 'absolute', left: l, top: t, width: w, height: h, border: '2px solid #ff8800', boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)', pointerEvents: 'none' }} />
+                    {['nw', 'ne', 'sw', 'se'].map(c => (
+                      <div key={c} style={{ position: 'absolute', left: l + (c.includes('e') ? w : 0) - 4, top: t + (c.includes('s') ? h : 0) - 4, width: 8, height: 8, background: '#ff8800', borderRadius: '50%', pointerEvents: 'none' }} />
+                    ))}
+                  </>
+                );
+              })()}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+              <span style={{ fontSize: '10px', color: '#888', flex: 1, alignSelf: 'center' }}>{tpsCropRect.w}×{tpsCropRect.h}</span>
+              <button className="btn-cyber" style={{ padding: '3px 12px', fontSize: '10px' }} onClick={() => { setTpsShowCrop(false); setTpsCropSource(null); }}>{t('キャンセル')}</button>
+              <button className="btn-cyber" style={{ padding: '3px 12px', fontSize: '10px', borderColor: '#ff8800', color: '#ff8800' }}
+                onClick={() => {
+                  const img = tpsCropImgRef.current;
+                  if (!img || !tpsCropSource) return;
+                  const canvas = document.createElement('canvas');
+                  canvas.width = tpsCropRect.w;
+                  canvas.height = tpsCropRect.h;
+                  const ctx = canvas.getContext('2d');
+                  if (!ctx) return;
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                  ctx.drawImage(img, tpsCropRect.x, tpsCropRect.y, tpsCropRect.w, tpsCropRect.h, 0, 0, tpsCropRect.w, tpsCropRect.h);
+                  setTpsImageUrl(canvas.toDataURL('image/png'));
+                  setTpsShowCrop(false);
+                  setTpsCropSource(null);
+                }}
+              >{t('適用')}</button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
     </div>
   );
 };
