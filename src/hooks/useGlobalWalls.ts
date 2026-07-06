@@ -28,7 +28,10 @@ function sanitizeWalls(raw: unknown): GlobalWalls {
         typeof b.x !== 'number' || typeof b.y !== 'number'
       ) continue;
       const tex = typeof seg[2] === 'string' ? seg[2] : undefined;
-      if (tex) {
+      const rep = typeof seg[3] === 'number' ? seg[3] : undefined;
+      if (tex && rep !== undefined) {
+        cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex, rep]);
+      } else if (tex) {
         cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex]);
       } else {
         cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
@@ -134,7 +137,12 @@ export function useGlobalWalls({ isLocal }: UseGlobalWallsOptions): UseGlobalWal
           for (const w of segs) {
             const sig = `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`;
             if (!sigs.has(sig)) {
-              existing.push([{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }]);
+              const copy: WallSegment = (w[2] && w[3] !== undefined)
+                ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], w[3]]
+                : w[2]
+                ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2]]
+                : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }];
+              existing.push(copy);
               sigs.add(sig);
             }
           }
@@ -217,7 +225,12 @@ export function useGlobalWalls({ isLocal }: UseGlobalWallsOptions): UseGlobalWal
         for (const w of segs) {
           const sig = `${w[0].x},${w[0].y}-${w[1].x},${w[1].y}`;
           if (!sigs.has(sig)) {
-            existing.push([{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }]);
+            const copy: WallSegment = (w[2] && w[3] !== undefined)
+              ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], w[3]]
+              : w[2]
+              ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2]]
+              : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }];
+            existing.push(copy);
             sigs.add(sig);
           }
         }

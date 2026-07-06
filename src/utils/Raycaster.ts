@@ -173,6 +173,40 @@ interface WallRenderArgs {
   wallTexturesData?: Record<string, ImageData>;
 }
 
+function sampleBilinear(texData: ImageData, u: number, v: number): { r: number; g: number; b: number } {
+  const width = texData.width;
+  const height = texData.height;
+
+  const x = u * (width - 1);
+  const y = v * (height - 1);
+
+  const x1 = Math.floor(x);
+  const y1 = Math.floor(y);
+  const x2 = Math.min(width - 1, x1 + 1);
+  const y2 = Math.min(height - 1, y1 + 1);
+
+  const dx = x - x1;
+  const dy = y - y1;
+
+  const idx11 = (y1 * width + x1) * 4;
+  const idx12 = (y1 * width + x2) * 4;
+  const idx21 = (y2 * width + x1) * 4;
+  const idx22 = (y2 * width + x2) * 4;
+
+  const data = texData.data;
+
+  const r = (1 - dy) * ((1 - dx) * data[idx11]     + dx * data[idx12]) +
+                 dy  * ((1 - dx) * data[idx21]     + dx * data[idx22]);
+
+  const g = (1 - dy) * ((1 - dx) * data[idx11 + 1] + dx * data[idx12 + 1]) +
+                 dy  * ((1 - dx) * data[idx21 + 1] + dx * data[idx22 + 1]);
+
+  const b = (1 - dy) * ((1 - dx) * data[idx11 + 2] + dx * data[idx12 + 2]) +
+                 dy  * ((1 - dx) * data[idx21 + 2] + dx * data[idx22 + 2]);
+
+  return { r: Math.round(r), g: Math.round(g), b: Math.round(b) };
+}
+
 function renderWalls(
   args: WallRenderArgs
 ): { colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[] } {
@@ -426,10 +460,11 @@ function renderWalls(
     }
 
     // 2. Render Wall to buffer (with player proximity fade)
-    const shade = Math.min(1, 4 / perpDist);
-    let colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * shade));
-    let colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * shade));
-    let colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * shade));
+    const shade = Math.min(1, 10 / perpDist);
+    const lightShade = 0.45 + 0.55 * shade;
+    let colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * lightShade));
+    let colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * lightShade));
+    let colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * lightShade));
 
     // プレイヤー近距離フェード: 壁がプレイヤーに近いほど背景色に近づける
     let wallFade = 1.0;
@@ -444,6 +479,7 @@ function renderWalls(
     const hitWall = (hit.wallIndex >= 0) ? walls[hit.wallIndex] : null;
     const texName = (hitWall && typeof hitWall[2] === 'string') ? hitWall[2] : null;
     const texData = texName ? args.wallTexturesData?.[texName] : null;
+    const repeatCount = (hitWall && typeof hitWall[3] === 'number') ? hitWall[3] : 1;
 
     for (let y = wallTop; y < wallBottom; y++) {
       const idx = (y * W + i) * 4;
@@ -452,17 +488,17 @@ function renderWalls(
       let b = colB;
 
       if (texData) {
-        // 横方向U座標 (s は壁の長さに対する交点割合 0〜1)
-        const texU = Math.floor(hit.wallOffsetPercent * (texData.width - 1));
+        // 横方向U座標 (リピート回数を掛けて mod 1.0 でループ)
+        const rawU = (hit.wallOffsetPercent * repeatCount) % 1.0;
+        const u = rawU < 0 ? rawU + 1.0 : rawU;
         // 縦方向V座標 (yStart 〜 yEnd として、全パース高さに対する現在の縦割合)
         const vy = (y - wallTopFull) / (wallBottomFull - wallTopFull);
-        const texV = Math.floor(Math.max(0, Math.min(1, vy)) * (texData.height - 1));
+        const v = Math.max(0, Math.min(1, vy));
 
-        const texIdx = (texV * texData.width + texU) * 4;
-        const light = 0.25 + 0.75 * shade; // 最低輝度 25% のアンビエント光を保証して黒沈みを解消
-        r = Math.round(texData.data[texIdx] * light);
-        g = Math.round(texData.data[texIdx + 1] * light);
-        b = Math.round(texData.data[texIdx + 2] * light);
+        const pixel = sampleBilinear(texData, u, v);
+        r = Math.round(pixel.r * lightShade);
+        g = Math.round(pixel.g * lightShade);
+        b = Math.round(pixel.b * lightShade);
       }
 
       if (wallFade < 1) {
@@ -815,38 +851,6 @@ export function renderMarkers3D(
     ctx.fillRect(v.screenX - v.pw - 1, v.pTop - 1, v.pw * 2 + 2, v.ph + 2);
     ctx.fillStyle = v.color;
     ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
-  }
-
-  // Render TPS marker images (column-based wall decal with perspective)
-  const tpsList = markers.filter(m => m.type === 'tps' && m.image_loaded);
-  if (tpsList.length > 0) {
-    const m = tpsList[0];
-    const img = m.image_loaded!;
-    const dx = m.x - origin.x, dy = m.y - origin.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist >= 1) {
-      const angleToMarker = Math.atan2(dy, dx);
-      let relAngle = normalizeAngle(angleToMarker - originAngle);
-      if (relAngle > Math.PI) relAngle -= TAU;
-      if (Math.abs(relAngle) <= halfFov) {
-        const screenX = ((relAngle + halfFov) / fov) * (W - 1);
-        const perpDist = dist * Math.cos(relAngle);
-        if (perpDist >= 1) {
-          const maxH = Math.min(canvas.height * 0.4, Math.round((12 * distPlane * 3) / perpDist));
-          const maxW = Math.round(maxH * img.width / img.height);
-          if (maxW >= 4) {
-            const bottom = Math.round(halfH + (camHeight * distPlane) / perpDist);
-            const baseH = Math.round((12 * distPlane * 3) / perpDist);
-            const fullW = Math.round(baseH * img.width / img.height);
-            const fullH = baseH;
-            ctx.save();
-            ctx.imageSmoothingEnabled = true;
-            ctx.drawImage(img, screenX - fullW / 2, bottom - fullH - 8, fullW, fullH);
-            ctx.restore();
-          }
-        }
-      }
-    }
   }
 
   // Render labels for markers that have infoLabel or note

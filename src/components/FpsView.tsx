@@ -790,29 +790,55 @@ const FpsView: React.FC<FpsViewProps> = ({
       ctx.fillText(`Radius:6 Nearest:${minDist < 10000 ? minDist.toFixed(1) : '-'}`, canvas.width - 120, 14);
       ctx.fillText(`Walls:${lw.length} Locked:${closedLockedArr.length}`, canvas.width - 120, 24);
 
-      // TPS画像: 高画質2Dオーバーレイ（マーカー接近時に画面中央固定表示）
+      // TPS画像: マーカー3D位置に追従する高画質オーバーレイ
       const ovCanvas = imageOverlayCanvasRef?.current;
       if (ovCanvas && mode === 'tps') {
         const octx = ovCanvas.getContext('2d');
         if (octx) {
           octx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
           const tpsImgs = tpsImagesRef.current;
+          const cr = canvas.getBoundingClientRect();
+          const or = ovCanvas.getBoundingClientRect();
+          const pxX = ovCanvas.width / cr.width;
+          const pxY = ovCanvas.height / cr.height;
+          const offX = ((cr.left - or.left) / cr.width) * ovCanvas.width;
+          const offY = ((cr.top - or.top) / cr.height) * ovCanvas.height;
+          const halfFov = FOV / 2;
+          const distPlane = (canvas.width / 2) / Math.tan(FOV / 2);
           for (const m of lm) {
             if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
-            const dist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
-            if (dist > 200) continue;
             const img = tpsImgs[m.id];
-            const maxW = ovCanvas.width * 0.5;
-            const maxH = ovCanvas.height * 0.5;
-            let dispW = maxW;
-            let dispH = dispW * img.height / img.width;
-            if (dispH > maxH) { dispH = maxH; dispW = dispH * img.width / img.height; }
-            const cx = (ovCanvas.width - dispW) / 2;
-            const cy = (ovCanvas.height - dispH) / 3;
+            // 看板的な近接表示: マーカーからの距離が近いときだけ表示
+            const worldDist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
+            if (worldDist > 120) continue;
+            const dx = m.x - camPos.x, dy = m.y - camPos.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 1) continue;
+            const angleToMarker = Math.atan2(dy, dx);
+            let relAngle = normalizeAngle(angleToMarker - playerRef.current.angle);
+            if (relAngle > Math.PI) relAngle -= Math.PI * 2;
+            if (Math.abs(relAngle) > halfFov) continue;
+            const screenX = ((relAngle + halfFov) / FOV) * (canvas.width - 1);
+            if (screenX < 0 || screenX >= canvas.width) continue;
+            const perpDist = dist * Math.cos(relAngle);
+            if (perpDist < 1) continue;
+            if (colHeights[Math.round(screenX)].perpDist < perpDist) continue;
+            const ph = Math.max(2, Math.round((12 * distPlane) / perpDist));
+            const pBottom = Math.round(canvas.height / 2 - 50 + (24 * distPlane) / perpDist);
+            const pTop = pBottom - ph;
+            const imgW = Math.round(ph * 3);
+            const imgH = Math.round(imgW * img.height / img.width);
+            const drawTop = pTop - imgH - 8;
+            const drawLeft = screenX - imgW / 2;
+            // Convert to overlay canvas coordinates
+            const sx = (drawLeft / canvas.width) * cr.width * pxX + offX;
+            const sy = (drawTop / canvas.height) * cr.height * pxY + offY;
+            const sw = (imgW / canvas.width) * cr.width * pxX;
+            const sh = (imgH / canvas.height) * cr.height * pxY;
             octx.save();
             octx.imageSmoothingEnabled = true;
             octx.imageSmoothingQuality = 'high';
-            octx.drawImage(img, cx, cy, dispW, dispH);
+            octx.drawImage(img, sx, sy, sw, sh);
             octx.restore();
             break;
           }

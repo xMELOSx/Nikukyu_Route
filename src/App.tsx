@@ -233,7 +233,7 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
-  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture'>(() => {
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice'>(() => {
     const saved = localStorage.getItem('heist_wall_sub_mode');
     return (saved as any) || 'draw';
   });
@@ -242,6 +242,7 @@ export default function App() {
   }, [wallSubMode]);
 
   const [selectedTexture, setSelectedTexture] = useState<string>('');
+  const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
   const [texturesList, setTexturesList] = useState<string[]>([]);
 
   useEffect(() => {
@@ -2118,6 +2119,8 @@ export default function App() {
           setWallLockedSubMode={setWallLockedSubMode}
           selectedTexture={selectedTexture}
           setSelectedTexture={setSelectedTexture}
+          selectedRepeat={selectedRepeat}
+          setSelectedRepeat={setSelectedRepeat}
           texturesList={texturesList}
         />
         {/* Map area */}
@@ -2132,6 +2135,7 @@ export default function App() {
               bgScale={routeApi.route.bgScale ?? { x: 1, y: 1 }}
               toolMode={toolMode}
               selectedTexture={selectedTexture}
+              selectedRepeat={selectedRepeat}
               activeMarkerType={activeMarkerType}
               strokeColor={strokeColor}
               strokeWidth={strokeWidth}

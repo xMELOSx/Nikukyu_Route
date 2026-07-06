@@ -107,7 +107,7 @@ export interface HeistMarker {
   drawerExpanded?: boolean;
 }
 
-export type WallSegment = [Point, Point] | [Point, Point, string];
+export type WallSegment = [Point, Point] | [Point, Point, string] | [Point, Point, string, number];
 
 export interface RouteData {
   id: string;

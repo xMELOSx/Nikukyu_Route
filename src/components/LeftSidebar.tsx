@@ -201,7 +201,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     wallAutoSnap, setWallAutoSnap,
     lockedWalls, setLockedWalls,
     wallLockedSubMode, setWallLockedSubMode,
-    selectedTexture, setSelectedTexture, texturesList,
+    selectedTexture, setSelectedTexture, texturesList, selectedRepeat, setSelectedRepeat,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1089,30 +1089,52 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 </div>
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
                 {wallSubMode === 'texture' && (
-                  <div style={{ marginBottom: '6px' }}>
-                    <select
-                      value={selectedTexture}
-                      onChange={(e) => setSelectedTexture(e.target.value)}
-                      style={{
-                        width: '100%',
-                        background: '#161925',
-                        color: '#fff',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        outline: 'none'
-                      }}
-                    >
-                      {texturesList.length === 0 ? (
-                        <option value="">{t('(画像なし - public/texture/に入れます)')}</option>
-                      ) : (
-                        texturesList.map(t => (
+                  <>
+                    <div style={{ marginBottom: '6px' }}>
+                      <select
+                        value={selectedTexture}
+                        onChange={(e) => setSelectedTexture(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: '#161925',
+                          color: '#fff',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '4px',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          outline: 'none'
+                        }}
+                      >
+                        <option value="">{t('❌ テクスチャ解除')}</option>
+                        {texturesList.map(t => (
                           <option key={t} value={t}>{t}</option>
-                        ))
-                      )}
-                    </select>
-                  </div>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedTexture !== '' && (
+                      <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap' }}>{t('リピート数')}:</span>
+                        <select
+                          value={selectedRepeat}
+                          onChange={(e) => setSelectedRepeat(parseInt(e.target.value))}
+                          style={{
+                            flex: 1,
+                            background: '#161925',
+                            color: '#fff',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '4px',
+                            padding: '3px 6px',
+                            fontSize: '11px',
+                            outline: 'none'
+                          }}
+                        >
+                          {[1, 2, 3, 4, 5].map(n => (
+                            <option key={n} value={n}>{n}倍</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
                 )}
                 {/* 通常壁/鍵付き扉 toggle (描くモード時のみ) */}
                 {wallSubMode === 'draw' && (

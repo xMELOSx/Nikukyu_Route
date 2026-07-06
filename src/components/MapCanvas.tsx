@@ -38,6 +38,7 @@ interface MapCanvasProps {
   wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice';
   wallAutoSnap?: boolean;
   selectedTexture?: string;
+  selectedRepeat?: number;
   lockedWalls?: LockedWallSegment[];
   onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   wallLockedSubMode?: 'normal' | 'locked';
@@ -190,6 +191,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   wallSubMode = 'draw',
   wallAutoSnap = false,
   selectedTexture = '',
+  selectedRepeat = 1,
   lockedWalls = [],
   onLockedWallsChange,
   wallLockedSubMode = 'normal',
@@ -2046,10 +2048,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const target = nextWalls[bestIndex];
         const currentTex = target[2];
         
-        if (currentTex === selectedTexture) {
+        if (selectedTexture === '' || currentTex === selectedTexture) {
           nextWalls[bestIndex] = [target[0], target[1]];
         } else {
-          nextWalls[bestIndex] = [target[0], target[1], selectedTexture];
+          const rep = selectedRepeat;
+          if (rep > 1) {
+            nextWalls[bestIndex] = [target[0], target[1], selectedTexture, rep];
+          } else {
+            nextWalls[bestIndex] = [target[0], target[1], selectedTexture];
+          }
         }
         onWallsChange(nextWalls);
       }
@@ -3432,7 +3439,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       textAnchor="middle"
                       style={{ paintOrder: 'stroke', stroke: '#000000', strokeWidth: '3px', strokeLinejoin: 'round' }}
                     >
-                      🖼️ {w[2]}
+                      🖼️ {w[2]}{w[3] && w[3] > 1 ? ` (${w[3]}x)` : ''}
                     </text>
                   )}
                 </g>
