@@ -6683,19 +6683,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   ctx.imageSmoothingQuality = 'high';
                   ctx.drawImage(img, tpsCropRect.x, tpsCropRect.y, tpsCropRect.w, tpsCropRect.h, 0, 0, tpsCropRect.w, tpsCropRect.h);
                   const upload = async () => {
-                    if (isLocal) {
-                      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
-                      if (blob) {
-                        const fd = new FormData();
-                        fd.append('file', blob, `tps_crop_${Date.now()}.png`);
-                        try {
-                          const res = await fetch(`${import.meta.env.BASE_URL}api/upload-media`, { method: 'POST', body: fd });
-                          if (res.ok) {
-                            const data = await res.json();
-                            return data.url;
-                          }
-                        } catch {}
-                      }
+                    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
+                    if (blob) {
+                      const fd = new FormData();
+                      fd.append('file', blob, `tps_crop_${Date.now()}.png`);
+                      try {
+                        const res = await fetch(`${import.meta.env.BASE_URL}api/upload-media`, { method: 'POST', body: fd });
+                        if (res.ok) {
+                          const data = await res.json();
+                          return data.url;
+                        }
+                      } catch {}
                     }
                     return canvas.toDataURL('image/png');
                   };

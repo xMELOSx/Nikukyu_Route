@@ -160,26 +160,38 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
 
       if (cancelled) return;
 
-      // ファイルを一次ソースとし、localStorage のユーザー編集（スクロール位置・表示状態など）を
-      // オーバーレイとしてマージする。両モード同一ロジック。
-      if (fileMarkers.length > 0) {
-        setGlobalMarkers(fileMarkers);
-      } else {
-        setGlobalMarkers([]);
-        localStorage.setItem('heist_global_markers', '[]');
-      }
-      const local = loadFromLocalStorage();
-      if (local && local.length > 0) {
-        setGlobalMarkers(prev => {
-          const localById = new Map(local.map(m => [m.id, m]));
-          const existingIds = new Set(prev.map(m => m.id));
-          const merged = prev.map(m => {
-            const localM = localById.get(m.id);
-            return localM ? { ...m, ...localM } : m;
+      // ファイルデータにも scrollConfig マイグレーションを適用し、localStorage と値を揃える
+      fileMarkers = fixScrollConfig(fileMarkers);
+
+      if (isLocalRef.current) {
+        // ローカルモード: ファイルを一次ソースとし、localStorage を
+        // ユーザー編集のオーバーレイとしてマージする。
+        if (fileMarkers.length > 0) {
+          setGlobalMarkers(fileMarkers);
+        } else {
+          setGlobalMarkers([]);
+          localStorage.setItem('heist_global_markers', '[]');
+        }
+        const local = loadFromLocalStorage();
+        if (local && local.length > 0) {
+          setGlobalMarkers(prev => {
+            const localById = new Map(local.map(m => [m.id, m]));
+            const existingIds = new Set(prev.map(m => m.id));
+            const merged = prev.map(m => {
+              const localM = localById.get(m.id);
+              return localM ? { ...m, ...localM } : m;
+            });
+            const newOnes = local.filter(m => !existingIds.has(m.id));
+            return newOnes.length > 0 ? [...merged, ...newOnes] : merged;
           });
-          const newOnes = local.filter(m => !existingIds.has(m.id));
-          return newOnes.length > 0 ? [...merged, ...newOnes] : merged;
-        });
+        }
+      } else {
+        // 疑似本番/個人モード: ファイルデータのみ信頼。localStorage は参照しない。
+        if (fileMarkers.length > 0) {
+          setGlobalMarkers(fileMarkers);
+        } else {
+          setGlobalMarkers([]);
+        }
       }
     };
 
