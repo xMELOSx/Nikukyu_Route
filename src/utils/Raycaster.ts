@@ -39,7 +39,7 @@ export function castRay(
     const s = ((a.x - origin.x) * dy - (a.y - origin.y) * dx) / denom;
 
     if (t > 0.1 && s >= 0 && s <= 1) {
-      if (playerDist !== undefined && t < (playerDist - 12)) {
+      if (playerDist !== undefined && t < playerDist) {
         continue;
       }
       if (t < minDist) {
@@ -65,12 +65,7 @@ export function castRays(
     const frac = numRays > 1 ? i / (numRays - 1) : 0.5;
     const angle = player.angle - halfFov + frac * fov;
 
-    let diff = angle - player.angle;
-    if (diff > Math.PI) diff -= Math.PI * 2;
-    if (diff < -Math.PI) diff += Math.PI * 2;
-    const isCenterRay = Math.abs(diff) < 0.25;
-
-    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls, isCenterRay ? playerDist : undefined));
+    hits.push(castRay({ x: player.x, y: player.y }, normalizeAngle(angle), walls, playerDist));
   }
   return hits;
 }
@@ -175,7 +170,7 @@ interface WallRenderArgs {
 
 function renderWalls(
   args: WallRenderArgs
-): { colHeights: { top: number; bottom: number; perpDist: number }[] } {
+): { colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[] } {
   const { ctx, canvas, origin, originAngle, walls, fov } = args;
   const W = canvas.width;
   const H = canvas.height;
@@ -189,7 +184,7 @@ function renderWalls(
   const lockedHits = lw && lw.length > 0
     ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, lw, fov, numRays, args.playerDist)
     : null;
-  const colHeights: { top: number; bottom: number; perpDist: number }[] = [];
+  const colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[] = [];
 
   // Create screen pixel buffer
   const imgData = ctx.createImageData(W, H);
@@ -270,7 +265,7 @@ function renderWalls(
       }
     }
 
-    colHeights.push({ top: wallTop, bottom: wallBottom, perpDist });
+    colHeights.push({ top: wallTop, bottom: wallBottom, perpDist, rawDist: effectiveDist });
 
     // 1. Render Ceiling / background wall to buffer
     const renderFloorGap = (yStart: number, yEnd: number) => {
@@ -670,7 +665,7 @@ export function renderMarkers3D(
   origin: { x: number; y: number },
   originAngle: number,
   fov: number,
-  colHeights: { top: number; bottom: number; perpDist: number }[],
+  colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[],
   markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean }[]
 ): void {
   if (markers.length === 0) return;
@@ -867,7 +862,7 @@ export function renderTpsView(
     const bodyH = Math.round(pBottom - pTop);
     const bodyTop = Math.round(pTop + bodyH * 0.1 * (1 - thickness));
 
-    if (colHeights[i].perpDist > playerDist) {
+    if (colHeights[i].rawDist > playerDist) {
       const shade = 0.6 + 0.4 * thickness;
       ctx.fillStyle = `rgb(${Math.round(pr * shade)},${Math.round(pg * shade)},${Math.round(pb * shade)})`;
       ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);

@@ -263,8 +263,8 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (keys.has('s') || keys.has('arrowdown')) forward = -1;
       if (keys.has('a') || keys.has('arrowleft')) strafe = -1;
       if (keys.has('d') || keys.has('arrowright')) strafe = 1;
-      if (keys.has('q')) playerRef.current.angle = normalizeAngle(playerRef.current.angle - ROTATE_SPEED * 60 * dt);
-      if (keys.has('e')) playerRef.current.angle = normalizeAngle(playerRef.current.angle + ROTATE_SPEED * 60 * dt);
+      if (keys.has('q')) playerRef.current.angle = normalizeAngle(playerRef.current.angle - ROTATE_SPEED * 30 * dt);
+      if (keys.has('e')) playerRef.current.angle = normalizeAngle(playerRef.current.angle + ROTATE_SPEED * 30 * dt);
       const lw = wallsRef.current;
       const llw = lockedWallsRef.current;
       const closedLockedArr = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);

@@ -322,9 +322,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       )}
 
       <div style={{
-        display: freeCamMode ? 'block' : 'none',
+        display: freeCamMode ? 'flex' : 'none',
         position: 'absolute', inset: 0, zIndex: 9999,
-        background: '#000', overflow: 'hidden'
+        background: '#000', overflow: 'hidden',
+        alignItems: 'center', justifyContent: 'center'
       }}>
         <canvas
           ref={fpsCanvasRef}
