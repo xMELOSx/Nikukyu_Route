@@ -238,7 +238,9 @@ function renderWalls(
     const rayAngle = normalizeAngle(originAngle - fov / 2 + (i / (numRays - 1)) * fov);
     const perpDist = effectiveDist * Math.cos(rayAngle - originAngle);
 
-    let fullWallHeight = perpDist > 0.1 ? (halfH / perpDist) * distPlane : H;
+    const scale = H / 240;
+    const halfHRef = halfH / scale;
+    let fullWallHeight = perpDist > 0.1 ? (halfHRef / perpDist) * distPlane : H;
     // カメラの高さ比率を 0.375 とし、目線を少し下げて床面とパースを完全に合わせる
     const camHeightFrac = 0.375;
     const wallTopFull = Math.max(0, Math.floor(halfH - fullWallHeight * (1 - camHeightFrac))); // 天井側（遠い）
@@ -259,7 +261,7 @@ function renderWalls(
       if (hit.distance < Infinity) {
         const bgDist = hit.distance;
         bgPerpDist = bgDist * Math.cos(rayAngle - originAngle);
-        const bgH = bgPerpDist > 0.1 ? (halfH / bgPerpDist) * distPlane : H;
+        const bgH = bgPerpDist > 0.1 ? (halfHRef / bgPerpDist) * distPlane : H;
         bgWallTop = Math.max(0, Math.floor(halfH - bgH * (1 - camHeightFrac)));
         bgWallBottom = Math.min(H, Math.floor(halfH + bgH * camHeightFrac));
       }

@@ -414,22 +414,26 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                 onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', keyCode: 87 })); }}
                 onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'w', keyCode: 87 })); }}
+                onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'w', keyCode: 87 })); }}
               >▲</button>
               <div style={{ display: 'flex', gap: '2px' }}>
                 <button
                   style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', keyCode: 65 })); }}
+                  onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', keyCode: 65 })); }}
                 >◀</button>
                 <button
                   style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', keyCode: 83 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 's', keyCode: 83 })); }}
+                  onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 's', keyCode: 83 })); }}
                 >▼</button>
                 <button
                   style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', keyCode: 68 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'd', keyCode: 68 })); }}
+                  onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'd', keyCode: 68 })); }}
                 >▶</button>
               </div>
             </div>
@@ -458,11 +462,13 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                   style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', keyCode: 81 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'q', keyCode: 81 })); }}
+                  onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'q', keyCode: 81 })); }}
                 >↺</button>
                 <button
                   style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', keyCode: 69 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'e', keyCode: 69 })); }}
+                  onTouchCancel={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'e', keyCode: 69 })); }}
                 >↻</button>
               </div>
             </div>
