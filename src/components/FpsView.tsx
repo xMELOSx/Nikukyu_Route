@@ -80,6 +80,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   });
   const tpsCamDistanceRef = useRef<number>(60);
   const heroImageRef = useRef<HTMLImageElement | null>(null);
+  const tpsImagesRef = useRef<{ [markerId: string]: HTMLImageElement }>({});
 
   useEffect(() => {
     const img = new Image();
@@ -88,6 +89,21 @@ const FpsView: React.FC<FpsViewProps> = ({
       heroImageRef.current = img;
     };
   }, []);
+
+  // Load TPS marker images
+  useEffect(() => {
+    const imgCache = tpsImagesRef.current;
+    for (const m of activeMarkers) {
+      if (m.type !== 'tps') continue;
+      if (imgCache[m.id]) continue;
+      const imgUrl = m.mediaItems?.[0]?.url;
+      if (!imgUrl) continue;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = imgUrl;
+      img.onload = () => { imgCache[m.id] = img; };
+    }
+  }, [activeMarkers]);
 
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
@@ -538,7 +554,12 @@ const FpsView: React.FC<FpsViewProps> = ({
       const camPos = mode === 'tps'
         ? { x: playerRef.current.x - Math.cos(playerRef.current.angle) * actualCamDist, y: playerRef.current.y - Math.sin(playerRef.current.angle) * actualCamDist }
         : { x: playerRef.current.x, y: playerRef.current.y };
-      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm);
+      const tpsImgs = tpsImagesRef.current;
+      const lmWithImages = lm.map(m => ({
+        ...m,
+        image: m.type === 'tps' ? tpsImgs[m.id] : undefined
+      }));
+      renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lmWithImages);
 
       // 自動ルート案内マーカーを3D描画
       const aaActive2 = autoRouteActiveRef.current;

@@ -634,6 +634,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
+  const [tpsImageUrl, setTpsImageUrl] = useState<string>('');
   const [popupOffset, setPopupOffset] = useState<Point>({ x: 0, y: -100 });
   const [isDraggingPopup, setIsDraggingPopup] = useState(false);
   const [popupDragStart, setPopupDragStart] = useState<Point>({ x: 0, y: 0 });
@@ -2927,6 +2928,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setDrawerAngle(m.drawerAngle !== undefined ? m.drawerAngle : 0);
     setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
+    setTpsImageUrl(m.mediaItems?.[0]?.url || '');
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300));

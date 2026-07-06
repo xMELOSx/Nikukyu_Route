@@ -286,6 +286,34 @@ function renderWalls(
         bgDist = hit.distance;
         bgIsLocked = false;
       }
+      // hit.distance が同じ鍵扉自身（FPSモード）の場合、全壁から探す
+      if (bgDist === Infinity && walls.length > 0) {
+        let minBgDist = Infinity;
+        let minBgIsLocked = false;
+        const rCos = Math.cos(rayAngle);
+        const rSin = Math.sin(rayAngle);
+        for (let wi = 0; wi < walls.length; wi++) {
+          const [wa, wb] = walls[wi];
+          const sdx = wb.x - wa.x;
+          const sdy = wb.y - wa.y;
+          const denom = rCos * sdy - rSin * sdx;
+          if (Math.abs(denom) < 1e-10) continue;
+          const t = ((wa.x - origin.x) * sdy - (wa.y - origin.y) * sdx) / denom;
+          const s = ((wa.x - origin.x) * rSin - (wa.y - origin.y) * rCos) / denom;
+          if (t > lockedDist + 0.1 && s >= 0 && s <= 1 && t < minBgDist) {
+            minBgDist = t;
+            // 鍵付き壁かどうかを lw と突き合わせる
+            minBgIsLocked = lw ? lw.some(lwSeg =>
+              Math.abs(lwSeg[0].x - wa.x) < 0.5 && Math.abs(lwSeg[0].y - wa.y) < 0.5 &&
+              Math.abs(lwSeg[1].x - wb.x) < 0.5 && Math.abs(lwSeg[1].y - wb.y) < 0.5
+            ) : false;
+          }
+        }
+        if (minBgDist < Infinity) {
+          bgDist = minBgDist;
+          bgIsLocked = minBgIsLocked;
+        }
+      }
 
       if (bgDist < Infinity) {
         bgPerpDist = bgDist * Math.cos(rayAngle - originAngle);
@@ -349,7 +377,11 @@ function renderWalls(
       const bgR = Math.round(bgIsLocked ? (lDarkR + (lr - lDarkR) * bgShade) : (darkR + (r - darkR) * bgShade));
       const bgG = Math.round(bgIsLocked ? (lDarkG + (lg - lDarkG) * bgShade) : (darkG + (g - darkG) * bgShade));
       const bgB = Math.round(bgIsLocked ? (lDarkB + (lb - lDarkB) * bgShade) : (darkB + (b - darkB) * bgShade));
-      const renderTop = Math.max(0, bgWallTop);
+      // 奥の壁も鍵付き扉なら高さ制限: 見える範囲は底部 lhf のみ
+      const bgCutoffTop = bgIsLocked
+        ? Math.max(bgWallTop, Math.floor(bgWallBottom - (bgWallBottom - bgWallTop) * lhf))
+        : bgWallTop;
+      const renderTop = bgCutoffTop;
       const renderBot = Math.min(wallTop, bgWallBottom);
       for (let y = renderTop; y < renderBot; y++) {
         const idx = (y * W + i) * 4;
@@ -366,6 +398,10 @@ function renderWalls(
         buf[idx + 1] = cc.g;
         buf[idx + 2] = cc.b;
         buf[idx + 3] = 255;
+      }
+      // 奥の鍵扉の上部 (1-lhf) は透過 → 床/天井テクスチャで奥の部屋を見せる
+      if (bgIsLocked && bgCutoffTop > bgWallTop) {
+        renderFloorGap(bgWallTop, bgCutoffTop);
       }
       // 壁と床の間 (背景壁の下端〜鍵壁の上端) を床テクスチャで描画
       if (bgWallBottom < wallTop) {
@@ -696,7 +732,7 @@ export function renderMarkers3D(
   originAngle: number,
   fov: number,
   colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[],
-  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean }[]
+  markers: { x: number; y: number; type: string; infoLabel?: string; note?: string; phoneActive?: boolean; phoneLocked?: boolean; image?: HTMLImageElement }[]
 ): void {
   if (markers.length === 0) return;
   const W = canvas.width;
@@ -747,11 +783,42 @@ export function renderMarkers3D(
   const drawnLabels: { x: number; y: number; halfW: number; h: number }[] = [];
 
   for (const v of visible) {
+    if (v.type === 'tps') {
+      // TPS projection: draw image at marker position on wall
+      continue;
+    }
     const glow = v.color + '30';
     ctx.fillStyle = glow;
     ctx.fillRect(v.screenX - v.pw - 1, v.pTop - 1, v.pw * 2 + 2, v.ph + 2);
     ctx.fillStyle = v.color;
     ctx.fillRect(v.screenX - v.pw, v.pTop, v.pw * 2, v.ph);
+  }
+
+  // Render TPS marker images (separate pass for image drawing)
+  for (const m of markers) {
+    if (m.type !== 'tps' || !m.image) continue;
+    const dx = m.x - origin.x;
+    const dy = m.y - origin.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) continue;
+    const angleToMarker = Math.atan2(dy, dx);
+    let relAngle = normalizeAngle(angleToMarker - originAngle);
+    if (relAngle > Math.PI) relAngle -= TAU;
+    if (Math.abs(relAngle) > halfFov) continue;
+    const screenX = Math.round(((relAngle + halfFov) / fov) * (W - 1));
+    const perpDist = dist * Math.cos(relAngle);
+    if (perpDist < 1 || screenX < 0 || screenX >= W) continue;
+    if (colHeights[screenX].perpDist < perpDist) continue;
+
+    const imgW = Math.round((60 * distPlane) / perpDist);
+    const imgH = Math.round((60 * distPlane) / perpDist * (m.image.height / m.image.width));
+    const wallTop = colHeights[screenX].top;
+    const wallBot = colHeights[screenX].bottom;
+    const yCenter = (wallTop + wallBot) / 2;
+    const drawTop = Math.max(wallTop, Math.round(yCenter - imgH / 2));
+    const drawBot = Math.min(wallBot, Math.round(yCenter + imgH / 2));
+    if (drawTop >= drawBot) continue;
+    ctx.drawImage(m.image, screenX - imgW / 2, drawTop, imgW, drawBot - drawTop);
   }
 
   // Render labels for markers that have infoLabel or note
