@@ -95,12 +95,19 @@ const FpsView: React.FC<FpsViewProps> = ({
 
   const [bgImageData, setBgImageData] = useState<ImageData | null>(null);
 
+  const lastBgImageRef = useRef<HTMLCanvasElement | HTMLImageElement | null>(null);
   useEffect(() => {
     const canvas = bgImage;
     if (!canvas) {
       setBgImageData(null);
+      lastBgImageRef.current = null;
       return;
     }
+    // 同一インスタンスなら、無駄なgetImageDataを完全にスキップして爆速化！
+    if (lastBgImageRef.current === canvas && bgImageData) {
+      return;
+    }
+    lastBgImageRef.current = canvas;
 
     if (canvas instanceof HTMLCanvasElement) {
       const ctx = canvas.getContext('2d');
@@ -127,7 +134,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         }
       }
     }
-  }, [bgImage]);
+  }, [bgImage, bgImageData]);
 
   const bgImageDataRef = useRef<ImageData | null>(null);
   bgImageDataRef.current = bgImageData;

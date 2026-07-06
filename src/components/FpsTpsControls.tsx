@@ -69,6 +69,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
+  const bgImageElementCacheRef = useRef<{ [url: string]: HTMLImageElement } | null>(null);
   const canvasScale = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
 
   useEffect(() => {
@@ -94,9 +95,12 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
       return;
     }
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
+    if (!bgImageElementCacheRef.current) {
+      bgImageElementCacheRef.current = {};
+    }
+
+    const cachedImg = bgImageElementCacheRef.current[bgUrl];
+    const drawCanvasWithImg = (img: HTMLImageElement) => {
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = 1600;
       tempCanvas.height = 4550;
@@ -229,6 +233,20 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         bgCacheRef.current = { key: cacheKey, canvas: tempCanvas };
         setBgImage(tempCanvas);
       }
+    };
+
+    if (cachedImg && cachedImg.complete) {
+      drawCanvasWithImg(cachedImg);
+      return;
+    }
+
+    const img = cachedImg || new Image();
+    if (!cachedImg) {
+      img.crossOrigin = "anonymous";
+      bgImageElementCacheRef.current[bgUrl] = img;
+    }
+    img.onload = () => {
+      drawCanvasWithImg(img);
     };
     img.onerror = () => {
       setBgImage(null);

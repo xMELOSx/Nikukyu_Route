@@ -52,6 +52,7 @@ export function castRay(
   return { distance: minDist, wallIndex: hitWallIndex };
 }
 
+/** Like castRays but returns the N nearest hits per ray (for nested locked doors). */
 export function castRays(
   player: PlayerState,
   walls: [Point, Point][],
@@ -229,7 +230,7 @@ function renderWalls(
     let lockedDist = dist;
     if (lockedHits) {
       const lHit = lockedHits[i];
-      if (lHit.distance < dist) {
+      if (lHit.distance <= dist) {
         lockedDist = lHit.distance;
         isLocked = true;
       }
@@ -252,14 +253,41 @@ function renderWalls(
     let bgWallTop = wallTopFull;
     let bgWallBottom = wallBottomFull;
     let bgPerpDist = perpDist;
+    let bgDist = Infinity;
+    let bgIsLocked = false;
     if (isLocked) {
       // 鍵付き壁は地面から lhf の高さまで描画（浮かせず地面設置）
       const lockedH = (wallBottomFull - wallTopFull) * lhf;
       wallTop = Math.max(0, Math.floor(wallBottomFull - lockedH));
       wallBottom = wallBottomFull;
-      // 後ろにある通常壁の位置を計算
-      if (hit.distance < Infinity) {
-        const bgDist = hit.distance;
+      bgDist = Infinity;
+      bgIsLocked = false;
+      if (lw && lw.length > 0) {
+        const rCos = Math.cos(rayAngle);
+        const rSin = Math.sin(rayAngle);
+        for (let j = 0; j < lw.length; j++) {
+          const [wa, wb] = lw[j];
+          const sdx = wb.x - wa.x;
+          const sdy = wb.y - wa.y;
+          const denom = rCos * sdy - rSin * sdx;
+          if (Math.abs(denom) < 1e-10) continue;
+          const t = ((wa.x - origin.x) * sdy - (wa.y - origin.y) * sdx) / denom;
+          const s = ((wa.x - origin.x) * rSin - (wa.y - origin.y) * rCos) / denom;
+          if (t > lockedDist + 0.1 && s >= 0 && s <= 1) {
+            if (t < bgDist) {
+              bgDist = t;
+              bgIsLocked = true;
+            }
+          }
+        }
+      }
+      // 通常壁の方が近ければそれも候補にする
+      if (hit.distance < bgDist && hit.distance > lockedDist + 0.1) {
+        bgDist = hit.distance;
+        bgIsLocked = false;
+      }
+
+      if (bgDist < Infinity) {
         bgPerpDist = bgDist * Math.cos(rayAngle - originAngle);
         const bgH = bgPerpDist > 0.1 ? (halfHRef / bgPerpDist) * distPlane : H;
         bgWallTop = Math.max(0, Math.floor(halfH - bgH * (1 - camHeightFrac)));
@@ -315,12 +343,12 @@ function renderWalls(
       }
     };
 
-    if (isLocked && hit.distance < Infinity && bgWallTop < wallTop) {
-      // 鍵壁の上に通常壁が見える部分を描画
+    if (isLocked && bgDist < Infinity && bgWallTop < wallTop) {
+      // 鍵壁の上に通常壁/奥の鍵壁が見える部分を描画
       const bgShade = Math.min(1, 4 / bgPerpDist);
-      const bgR = Math.round(darkR + (r - darkR) * bgShade);
-      const bgG = Math.round(darkG + (g - darkG) * bgShade);
-      const bgB = Math.round(darkB + (b - darkB) * bgShade);
+      const bgR = Math.round(bgIsLocked ? (lDarkR + (lr - lDarkR) * bgShade) : (darkR + (r - darkR) * bgShade));
+      const bgG = Math.round(bgIsLocked ? (lDarkG + (lg - lDarkG) * bgShade) : (darkG + (g - darkG) * bgShade));
+      const bgB = Math.round(bgIsLocked ? (lDarkB + (lb - lDarkB) * bgShade) : (darkB + (b - darkB) * bgShade));
       const renderTop = Math.max(0, bgWallTop);
       const renderBot = Math.min(wallTop, bgWallBottom);
       for (let y = renderTop; y < renderBot; y++) {
