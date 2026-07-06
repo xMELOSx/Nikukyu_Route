@@ -243,6 +243,22 @@ export default function App() {
 
   const [selectedTexture, setSelectedTexture] = useState<string>('');
   const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
+  const [fpsResolutionScale, setFpsResolutionScale] = useState<number>(() => {
+    const saved = localStorage.getItem('heist_fps_resolution_scale');
+    return saved !== null ? parseFloat(saved) : 2.0;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_fps_resolution_scale', String(fpsResolutionScale));
+  }, [fpsResolutionScale]);
+
+  const [aspectFitCut, setAspectFitCut] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_aspect_fit_cut');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_aspect_fit_cut', String(aspectFitCut));
+  }, [aspectFitCut]);
+
   const [texturesList, setTexturesList] = useState<string[]>([]);
 
   useEffect(() => {
@@ -2123,6 +2139,10 @@ export default function App() {
           setSelectedTexture={setSelectedTexture}
           selectedRepeat={selectedRepeat}
           setSelectedRepeat={setSelectedRepeat}
+          fpsResolutionScale={fpsResolutionScale}
+          setFpsResolutionScale={setFpsResolutionScale}
+          aspectFitCut={aspectFitCut}
+          setAspectFitCut={setAspectFitCut}
           texturesList={texturesList}
         />
         {/* Map area */}
@@ -2138,6 +2158,7 @@ export default function App() {
               toolMode={toolMode}
               selectedTexture={selectedTexture}
               selectedRepeat={selectedRepeat}
+              aspectFitCut={aspectFitCut}
               activeMarkerType={activeMarkerType}
               strokeColor={strokeColor}
               strokeWidth={strokeWidth}

@@ -809,7 +809,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             const img = tpsImgs[m.id];
             // 看板的な近接表示: マーカーに接近したときだけ表示
             const worldDist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
-            if (worldDist > 60) continue;
+            if (worldDist > 35) continue;
             const dx = m.x - camPos.x, dy = m.y - camPos.y;
             const dist = Math.hypot(dx, dy);
             if (dist < 1) continue;
@@ -825,9 +825,10 @@ const FpsView: React.FC<FpsViewProps> = ({
             const ph = Math.max(2, Math.round((12 * distPlane) / perpDist));
             const pBottom = Math.round(canvas.height / 2 - 50 + (24 * distPlane) / perpDist);
             const pTop = pBottom - ph;
-            const imgW = Math.round(ph * 3);
+            const imgW = Math.round(ph * 2);
             const imgH = Math.round(imgW * img.height / img.width);
-            const drawTop = pTop - imgH - 8;
+            // マーカー位置を中心に看板表示（上下中央揃え）
+            const drawTop = pTop + Math.round((ph - imgH) / 2);
             const drawLeft = screenX - imgW / 2;
             // Convert to overlay canvas coordinates
             const sx = (drawLeft / canvas.width) * cr.width * pxX + offX;
