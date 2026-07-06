@@ -64,6 +64,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
+  const [autoRouteNoClip, setAutoRouteNoClip] = useState(false);
   const fpsCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
@@ -362,13 +363,14 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteSegments={autoRouteSegments}
             autoRouteElapsed={autoRouteElapsed}
             autoRouteTiming={autoRouteTiming}
+            autoRouteNoClip={autoRouteNoClip}
           />
         )}
         {/* Mobile touch controls */}
         {freeCamMode && (
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0,
-            height: '120px', zIndex: 10, pointerEvents: 'none',
+            height: '220px', zIndex: 10, pointerEvents: 'none',
             display: 'flex', justifyContent: 'space-between', padding: '0 20px 20px'
           }}>
             {/* D-pad: movement (cross layout) */}
@@ -385,7 +387,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', keyCode: 65 })); }}
                 >◀</button>
                 <button
-                  style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
+                  style={{ width: 44, height: 44, fontSize: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                   onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', keyCode: 83 })); }}
                   onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 's', keyCode: 83 })); }}
                 >▼</button>
@@ -396,7 +398,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 >▶</button>
               </div>
             </div>
-            {/* Action buttons (vertical stack) */}
+            {/* Action buttons (vertical stack) + rotation */}
             <div style={{ pointerEvents: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-end' }}>
               <button
                 style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,50,50,0.3)', border: '1px solid rgba(255,50,50,0.5)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
@@ -406,10 +408,28 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(0,240,255,0.2)', border: '1px solid rgba(0,240,255,0.4)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                 onTouchStart={e => { e.preventDefault(); const ev = new KeyboardEvent('keydown', { key: 't', keyCode: 84 }); window.dispatchEvent(ev); }}
               >切替 T</button>
+              {autoRouteActive && (
+                <button
+                  style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(255,255,255,0.08)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(255,255,255,0.2)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : 'rgba(255,255,255,0.6)', touchAction: 'none', lineHeight: 1.2 }}
+                  onClick={() => setAutoRouteNoClip(v => !v)}
+                >壁抜け<br/>{(autoRouteNoClip ? 'ON' : 'OFF')}</button>
+              )}
               <button
                 style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
-                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'escape', keyCode: 27 })); }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 })); }}
               >終了</button>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
+                  onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', keyCode: 81 })); }}
+                  onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'q', keyCode: 81 })); }}
+                >↺</button>
+                <button
+                  style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
+                  onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', keyCode: 69 })); }}
+                  onTouchEnd={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'e', keyCode: 69 })); }}
+                >↻</button>
+              </div>
             </div>
           </div>
         )}

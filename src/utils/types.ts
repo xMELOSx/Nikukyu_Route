@@ -15,7 +15,7 @@ export function generateId(prefix: string = ''): string {
 
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd' | 'drawer';
 
 export interface Point {
   x: number;
@@ -99,6 +99,11 @@ export interface HeistMarker {
   skillMode?: SkillCdMode;
   skillCdSeconds?: number;
   skillPerSecondCd?: number;
+  drawerCount?: number;
+  drawerDirection?: 'vertical' | 'horizontal';
+  drawerWidth?: number;
+  drawerHeight?: number;
+  drawerExpanded?: boolean;
 }
 
 export interface RouteData {

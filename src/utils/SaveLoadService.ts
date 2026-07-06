@@ -19,7 +19,7 @@ import {
 const GLOBAL_TYPES = new Set([
   'eh', 'rare', 'cardkey', 'vault', 'boss', 'phone',
   'warp', 'stairs', 'info', 'note', 'text', 'room',
-  'gbattle', 'gpicking', 'glong_picking'
+  'gbattle', 'gpicking', 'glong_picking', 'drawer'
 ]);
 
 function isGlobalType(t: string): boolean {
@@ -36,6 +36,11 @@ function backfillMarker(m: HeistMarker): HeistMarker {
     if (m.pickingDurationSeconds === undefined) m.pickingDurationSeconds = 5;
   } else if (m.type === 'long_picking' || m.type === 'glong_picking') {
     if (m.longPickingDurationSeconds === undefined) m.longPickingDurationSeconds = 8;
+  } else if (m.type === 'drawer') {
+    if (m.drawerCount === undefined) m.drawerCount = 3;
+    if (m.drawerDirection === undefined) m.drawerDirection = 'vertical';
+    if (m.drawerWidth === undefined) m.drawerWidth = 60;
+    if (m.drawerHeight === undefined) m.drawerHeight = 70;
   }
   return m;
 }

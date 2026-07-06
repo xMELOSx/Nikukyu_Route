@@ -293,7 +293,7 @@ function renderWalls(
         }
         if (bg) {
           const perpDistFloor = (camHeight * distPlane) / denom;
-          const straightDist = perpDistFloor / cosBeta;
+          const straightDist = Math.min(perpDistFloor / cosBeta, 800);
           const wx = origin.x + cosRay * straightDist;
           const wy = origin.y + sinRay * straightDist;
           const tx = Math.floor(wx);
@@ -412,7 +412,7 @@ function renderWalls(
           continue;
         }
         const perpDistFloor = (camHeight * distPlane) / denom;
-        const straightDist = perpDistFloor / cosBeta;
+        const straightDist = Math.min(perpDistFloor / cosBeta, 800);
 
         const wx = origin.x + cosRay * straightDist;
         const wy = origin.y + sinRay * straightDist;

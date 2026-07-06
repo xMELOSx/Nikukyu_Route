@@ -99,7 +99,8 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   itext: { emoji: 'T', label: 'I-TEXT', color: '#ffffff' },
   start: { emoji: '🐾', label: 'START', color: '#39ff14' },
   checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' },
-  skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' }
+  skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' },
+  drawer: { emoji: '🗄', label: 'DRAWER', color: '#cd853f' }
 };
 
 export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; label: string } } = {

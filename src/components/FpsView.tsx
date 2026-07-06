@@ -33,6 +33,7 @@ interface FpsViewProps {
   autoRouteSegments?: { start: Point; end: Point; distance: number; stopDuration: number }[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
+  autoRouteNoClip?: boolean;
 }
 
 const FOV = Math.PI * 0.45;
@@ -51,7 +52,7 @@ const PLAYER_COLOR = '#39ff14';
 const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
-  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming,
+  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
   mapSnapshotCanvas,
   onToggleNearestPhone,
   onToggleMode
@@ -248,6 +249,8 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (keys.has('s') || keys.has('arrowdown')) forward = -1;
       if (keys.has('a') || keys.has('arrowleft')) strafe = -1;
       if (keys.has('d') || keys.has('arrowright')) strafe = 1;
+      if (keys.has('q')) playerRef.current.angle = normalizeAngle(playerRef.current.angle - ROTATE_SPEED * 60 * dt);
+      if (keys.has('e')) playerRef.current.angle = normalizeAngle(playerRef.current.angle + ROTATE_SPEED * 60 * dt);
       const lw = wallsRef.current;
       const llw = lockedWallsRef.current;
       const closedLockedArr = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
@@ -276,6 +279,67 @@ const FpsView: React.FC<FpsViewProps> = ({
             6
           );
           playerRef.current = newPlayer;
+        }
+        playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
+      }
+
+      // Auto-walk along route in street view
+      if (autoRouteActive && autoRouteSegments.length > 0 && autoRouteTiming) {
+        const speed = autoRouteTiming.speed;
+        let remaining = autoRouteElapsed;
+        let targetX = autoRouteSegments[0]?.start.x ?? playerRef.current.x;
+        let targetY = autoRouteSegments[0]?.start.y ?? playerRef.current.y;
+        let dirX = 0;
+        let dirY = 0;
+
+        for (const seg of autoRouteSegments) {
+          if (seg.distance === 0 && seg.stopDuration === 0) continue;
+          const segSpeed = speed;
+          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+          if (remaining <= travelTime) {
+            const t = seg.distance > 0 ? remaining / travelTime : 1;
+            targetX = seg.start.x + (seg.end.x - seg.start.x) * t;
+            targetY = seg.start.y + (seg.end.y - seg.start.y) * t;
+            dirX = seg.end.x - seg.start.x;
+            dirY = seg.end.y - seg.start.y;
+            remaining = 0;
+          } else {
+            targetX = seg.end.x;
+            targetY = seg.end.y;
+            dirX = seg.end.x - seg.start.x;
+            dirY = seg.end.y - seg.start.y;
+            remaining -= travelTime;
+            if (remaining <= seg.stopDuration) { remaining = 0; }
+            else { remaining -= seg.stopDuration; }
+          }
+          if (remaining <= 0) break;
+        }
+
+        const dx = targetX - playerRef.current.x;
+        const dy = targetY - playerRef.current.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 0.1) {
+          const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
+          if (autoRouteNoClip) {
+            playerRef.current.x = targetX;
+            playerRef.current.y = targetY;
+          } else {
+            const moveAngle = Math.atan2(dy, dx);
+            const newPlayer = movePlayer(
+              { x: playerRef.current.x, y: playerRef.current.y, angle: moveAngle },
+              1, 0,
+              collisionWalls,
+              Math.min(dist, MOVE_SPEED * dt * 5),
+              6
+            );
+            playerRef.current.x = newPlayer.x;
+            playerRef.current.y = newPlayer.y;
+          }
+        }
+
+        if (dirX !== 0 || dirY !== 0) {
+          playerRef.current.angle = Math.atan2(dirY, dirX);
         }
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
       }

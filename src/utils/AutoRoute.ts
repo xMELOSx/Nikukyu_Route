@@ -21,6 +21,9 @@ export interface RouteSegment {
   // route completes in exactly targetDuration. Recomputed at the last
   // checkpoint so the final arrival matches the target.
   speed?: number;
+  // Fraction along the original segment a→b where the marker was detected.
+  // Used by passedMarkerIds timing to compensate for the midpoint split.
+  _markerFraction?: number;
 }
 
 const DEFAULT_CONFIG: AutoRouteConfig = {
@@ -294,8 +297,10 @@ export function buildAutoRoute(
         visitedMarkerIds.add(m.id);
       }
       const clampedT = Math.max(0, Math.min(1, hit.t));
-      const segDist = Math.hypot(b.x - a.x, b.y - a.y) * clampedT;
-      cumulativeDistance += segDist;
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const midDist = Math.hypot(midX - a.x, midY - a.y);
+      cumulativeDistance += midDist;
 
       // スキルCDマーカー: 「スキル使用チェック」
       // - 1回目の通過: CDタイマーを開始 (=consumedAtに記録)。stopDuration=0 (チェックのみ、通過する)
@@ -334,8 +339,8 @@ export function buildAutoRoute(
       let checkpointOnTime: boolean | undefined;
       const seg: RouteSegment = {
         start: { ...a },
-        end: { x: m.x, y: m.y },
-        distance: segDist,
+        end: { x: midX, y: midY },
+        distance: midDist,
         stopDuration: stopDur,
         markerId: m.id,
         markerType: m.type,
@@ -343,6 +348,7 @@ export function buildAutoRoute(
         cumulativeStopTime,
         checkpointOnTime
       };
+      (seg as any)._markerFraction = clampedT;
       if (isCheckpointMarker(m.type)) {
         (seg as any)._checkpointTarget = m.checkpointTargetTime ?? 0;
         // _checkpointConflicted は computeRouteTiming で後付けする
@@ -351,7 +357,7 @@ export function buildAutoRoute(
         (seg as any)._skillCdConsumed = true;
       }
       segments.push(seg);
-      currentPos = { x: m.x, y: m.y };
+      currentPos = { x: midX, y: midY };
 
       // Warp? If it succeeds, break out. If it fails (at last warp dest),
       // just advance past the marker.
@@ -361,19 +367,22 @@ export function buildAutoRoute(
         }
       }
 
-      // Advance to next polyline point. The next warp (if any) will be
-      // allowed immediately as long as it's a different pair.
-      i++;
+      // Continue from midpoint to the current polyline point (no skip)
+      // so the route stays on the original path without back-tracking.
     }
 
     visitedStrokeIndices.add(idx);
   }
 
   // スタートマーカーでの停止 (cfg.startStopSeconds, デフォルト 3秒) を
-  // 先頭に挿入する。位置は startMarker 上、距離 0、cumulativeStopTime に加算。
+  // 先頭に挿入する。位置は startMarker 上、距離 0。
+  // 既存セグメントの cumulativeStopTime にも加算する。
   const startStopSeconds = Math.max(0, cfg.startStopSeconds ?? 0);
   if (startStopSeconds > 0) {
     cumulativeStopTime += startStopSeconds;
+    for (const seg of segments) {
+      seg.cumulativeStopTime += startStopSeconds;
+    }
     segments.unshift({
       start: { x: startMarker.x, y: startMarker.y },
       end: { x: startMarker.x, y: startMarker.y },

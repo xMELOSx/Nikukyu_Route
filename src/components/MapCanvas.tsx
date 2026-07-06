@@ -295,8 +295,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const redrawStrokesRef = useRef<((overrideElapsed?: number) => void) | null>(null);
   const lastRedrawnElapsedRef = useRef<number>(-999);
   const lastRedrawnStrokesLengthRef = useRef<number>(-1);
-  const runnerDotRef = useRef<HTMLDivElement>(null);
+
   const isDrawingRef = useRef(false);
+  const cachedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cacheKeyRef = useRef('');
+  const runnerDotRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
   const freeCamModeRef = useRef(false);
@@ -470,6 +473,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Helper function to check if marker is individual
   const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd'].includes(type);
+  const isDrawer = (type: string) => type === 'drawer';
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -635,6 +639,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupOffsetStart, setPopupOffsetStart] = useState<Point>({ x: 0, y: -100 });
   const [currentPosition, setCurrentPosition] = useState<Point | null>(null);
   const [noteSettingsExpanded, setNoteSettingsExpanded] = useState(false);
+  const [drawerCount, setDrawerCount] = useState(3);
+  const [drawerDirection, setDrawerDirection] = useState<'vertical' | 'horizontal'>('vertical');
+  const [drawerWidth, setDrawerWidth] = useState(60);
+  const [drawerHeight, setDrawerHeight] = useState(70);
 
   const handleToggleNearestPhone = useCallback(() => {
     if (!currentPosition) return;
@@ -722,8 +730,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     autoRouteSegments.forEach(seg => {
       if (seg.markerId) {
         const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
-        const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-        const passedTime = seg.cumulativeDistance / Math.max(segSpeed, 0.0001) + seg.cumulativeStopTime + travelTime;
+        const markerFrac = (seg as any)._markerFraction as number | undefined;
+        let cumAtMarker: number;
+        if (markerFrac !== undefined && markerFrac > 0.5) {
+          cumAtMarker = seg.cumulativeDistance + (markerFrac - 0.5) * 2 * seg.distance;
+        } else {
+          cumAtMarker = seg.cumulativeDistance;
+        }
+        const passedTime = cumAtMarker / Math.max(segSpeed, 0.0001) + seg.cumulativeStopTime;
         if (autoRouteElapsed >= passedTime) {
           passed.add(seg.markerId);
         }
@@ -791,7 +805,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   useEffect(() => {
     setActiveNoteMarkerId(null);
     const hasExpanded = markers.some(
-      m => m.infoExpanded || m.noteExpanded || m.bossExpanded || m.battleExpanded || m.pickingExpanded || m.checkpointExpanded
+      m => m.infoExpanded || m.noteExpanded || m.bossExpanded || m.battleExpanded || m.pickingExpanded || m.checkpointExpanded || m.drawerExpanded
     );
     if (hasExpanded) {
       onMarkersChange(
@@ -803,6 +817,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           battleExpanded: false,
           pickingExpanded: false,
           checkpointExpanded: false,
+          drawerExpanded: false,
         }))
       );
     }
@@ -1286,6 +1301,92 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     lastRedrawnElapsedRef.current = remaining;
     lastRedrawnStrokesLengthRef.current = strokes.length;
 
+    // --- Off-screen cache for static stroke layer ---
+    const totalPoints = strokes.reduce((sum, s) => sum + s.points.length, 0);
+    const cacheKey = `${strokes.length}-${totalPoints}-${hideRouteLines}-${hideBranchLines}-${routeLines1px}-${branchLines1px}-${!!autoRouteActive}-${!!fuseMode}`;
+
+    if (!cachedCanvasRef.current) {
+      cachedCanvasRef.current = document.createElement('canvas');
+      cachedCanvasRef.current.width = 1600;
+      cachedCanvasRef.current.height = 4550;
+    }
+
+    if (cacheKeyRef.current !== cacheKey) {
+      cacheKeyRef.current = cacheKey;
+      const cacheCtx = cachedCanvasRef.current.getContext('2d');
+      if (cacheCtx) {
+        cacheCtx.clearRect(0, 0, 1600, 4550);
+        cacheCtx.lineCap = 'round';
+        cacheCtx.lineJoin = 'round';
+
+        if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
+          // Cache dashed/temporary strokes for auto-route mode
+          strokes.forEach(stroke => {
+            const isDashed = stroke.type === 'dashed';
+            const isTemporary = stroke.type === 'temporary';
+            if ((!isDashed && !isTemporary) || (isDashed && hideBranchLines)) return;
+            cacheCtx.strokeStyle = stroke.color;
+            cacheCtx.lineWidth = branchLines1px ? 1 : stroke.width;
+            cacheCtx.setLineDash(isTemporary ? [6, 4] : [8, 6]);
+            if (isTemporary) cacheCtx.globalAlpha = 0.4;
+            cacheCtx.beginPath();
+            stroke.points.forEach((pt, idx) => {
+              if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
+              else cacheCtx.lineTo(pt.x, pt.y);
+            });
+            cacheCtx.stroke();
+            if (isTemporary) cacheCtx.globalAlpha = 1;
+          });
+
+          // Cache last stroke overlay for auto-route mode
+          if (strokes.length > 0) {
+            const last = strokes[strokes.length - 1];
+            if (last && last.points && last.points.length >= 2 && last.type === 'solid') {
+              cacheCtx.globalAlpha = 0.5;
+              cacheCtx.strokeStyle = last.color;
+              cacheCtx.lineWidth = routeLines1px ? 1 : last.width;
+              cacheCtx.setLineDash([]);
+              cacheCtx.beginPath();
+              last.points.forEach((pt, idx) => {
+                if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
+                else cacheCtx.lineTo(pt.x, pt.y);
+              });
+              cacheCtx.stroke();
+              cacheCtx.globalAlpha = 1;
+            }
+          }
+        } else {
+          // Cache all strokes
+          strokes.forEach(stroke => {
+            const isDashed = stroke.type === 'dashed';
+            const isTemporary = stroke.type === 'temporary';
+            if (isDashed && hideBranchLines) return;
+            if (!isDashed && !isTemporary && hideRouteLines) return;
+            cacheCtx.strokeStyle = stroke.color;
+            if (isTemporary) {
+              cacheCtx.globalAlpha = 0.4;
+              cacheCtx.lineWidth = stroke.width;
+              cacheCtx.setLineDash([6, 4]);
+            } else if (isDashed) {
+              cacheCtx.lineWidth = branchLines1px ? 1 : stroke.width;
+              cacheCtx.setLineDash([8, 6]);
+            } else {
+              cacheCtx.lineWidth = routeLines1px ? 1 : stroke.width;
+              cacheCtx.setLineDash([]);
+            }
+            cacheCtx.beginPath();
+            stroke.points.forEach((pt, idx) => {
+              if (idx === 0) cacheCtx.moveTo(pt.x, pt.y);
+              else cacheCtx.lineTo(pt.x, pt.y);
+            });
+            cacheCtx.stroke();
+            if (isTemporary) cacheCtx.globalAlpha = 1;
+          });
+        }
+      }
+    }
+
+    // --- Main canvas: copy cache then draw dynamic overlays ---
     ctx.clearRect(0, 0, 1600, 4550);
     ctx.globalAlpha = 1;
 
@@ -1294,139 +1395,55 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (cachedCanvasRef.current) {
+      ctx.drawImage(cachedCanvasRef.current, 0, 0);
+    }
+
+    // Dynamic: auto-route path
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
-
         ctx.strokeStyle = '#ff0055';
         ctx.lineWidth = routeLines1px ? 1 : 3;
         ctx.setLineDash([]);
         ctx.beginPath();
 
-      let lastX: number | null = null;
-      let lastY: number | null = null;
-      const addLineToPath = (x1: number, y1: number, x2: number, y2: number) => {
-        if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
-          ctx.moveTo(x1, y1);
-        }
-        ctx.lineTo(x2, y2);
-        lastX = x2;
-        lastY = y2;
-      };
+        let lastX: number | null = null;
+        let lastY: number | null = null;
+        const addLineToPath = (x1: number, y1: number, x2: number, y2: number) => {
+          if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
+            ctx.moveTo(x1, y1);
+          }
+          ctx.lineTo(x2, y2);
+          lastX = x2;
+          lastY = y2;
+        };
 
-      autoRouteSegments.forEach(seg => {
-        const isWarp = seg.distance === 0 && seg.stopDuration === 0;
-        if (isWarp) return;
-
-        const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
-        const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-
-        if (remaining > 0) {
-          if (remaining < travelTime) {
-            const t = remaining / travelTime;
-            const startPt = {
-              x: seg.start.x + (seg.end.x - seg.start.x) * t,
-              y: seg.start.y + (seg.end.y - seg.start.y) * t
-            };
-            addLineToPath(startPt.x, startPt.y, seg.end.x, seg.end.y);
-            remaining = 0;
-          } else {
-            remaining -= travelTime;
-            if (remaining < seg.stopDuration) {
+        autoRouteSegments.forEach(seg => {
+          const isWarp = seg.distance === 0 && seg.stopDuration === 0;
+          if (isWarp) return;
+          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
+          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
+          if (remaining > 0) {
+            if (remaining < travelTime) {
+              const t = remaining / travelTime;
+              const startPt = {
+                x: seg.start.x + (seg.end.x - seg.start.x) * t,
+                y: seg.start.y + (seg.end.y - seg.start.y) * t
+              };
+              addLineToPath(startPt.x, startPt.y, seg.end.x, seg.end.y);
               remaining = 0;
             } else {
-              remaining -= seg.stopDuration;
+              remaining -= travelTime;
+              if (remaining < seg.stopDuration) { remaining = 0; }
+              else { remaining -= seg.stopDuration; }
             }
+          } else {
+            addLineToPath(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
           }
-        } else {
-          addLineToPath(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
-        }
-      });
-        ctx.stroke();
-      }
-
-      // Also draw branch lines (dashed) during auto-route playback unless hidden
-      strokes.forEach(stroke => {
-        const isDashed = stroke.type === 'dashed';
-        const isTemporary = stroke.type === 'temporary';
-        if ((!isDashed && !isTemporary) || (isDashed && hideBranchLines)) return;
-
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = branchLines1px ? 1 : stroke.width;
-        ctx.setLineDash([8, 6]);
-
-        if (isTemporary) {
-          ctx.globalAlpha = 0.4;
-          ctx.setLineDash([6, 4]);
-        }
-
-        ctx.beginPath();
-        stroke.points.forEach((pt, idx) => {
-          if (idx === 0) ctx.moveTo(pt.x, pt.y);
-          else ctx.lineTo(pt.x, pt.y);
         });
         ctx.stroke();
-
-        if (isTemporary) {
-          ctx.globalAlpha = 1;
-        }
-      });
-
-      // ルート案内中 (fuseMode) はメインルート以外 (実線) は描画されないため、
-      // その間に新規描画した線 (= strokes の末尾) を半透明で再描画して
-      // 「書きかけ」が消えないようにする。
-      // - 直前に draw ツールで描いて追加された線を対象とする
-      // - 編集中の線は不透明度 1 で扱う (途中の編集がルート案内の影響を受けて薄くなるのを避ける)
-      if (strokes.length > 0) {
-        const last = strokes[strokes.length - 1];
-        if (last && last.points && last.points.length >= 2 && last.type === 'solid') {
-          ctx.save();
-          ctx.globalAlpha = 0.5;
-          ctx.strokeStyle = last.color;
-          ctx.lineWidth = routeLines1px ? 1 : last.width;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          last.points.forEach((pt, idx) => {
-            if (idx === 0) ctx.moveTo(pt.x, pt.y);
-            else ctx.lineTo(pt.x, pt.y);
-          });
-          ctx.stroke();
-          ctx.restore();
-        }
       }
-    } else {
-      strokes.forEach(stroke => {
-        const isDashed = stroke.type === 'dashed';
-        const isTemporary = stroke.type === 'temporary';
-
-        if (isDashed && hideBranchLines) return;
-        if (!isDashed && !isTemporary && hideRouteLines) return;
-
-        ctx.strokeStyle = stroke.color;
-
-        if (isTemporary) {
-          ctx.globalAlpha = 0.4;
-          ctx.lineWidth = stroke.width;
-          ctx.setLineDash([6, 4]);
-        } else if (isDashed) {
-          ctx.lineWidth = branchLines1px ? 1 : stroke.width;
-          ctx.setLineDash([8, 6]);
-        } else {
-          ctx.lineWidth = routeLines1px ? 1 : stroke.width;
-          ctx.setLineDash([]);
-        }
-
-        ctx.beginPath();
-        stroke.points.forEach((pt, idx) => {
-          if (idx === 0) ctx.moveTo(pt.x, pt.y);
-          else ctx.lineTo(pt.x, pt.y);
-        });
-        ctx.stroke();
-
-        if (isTemporary) {
-          ctx.globalAlpha = 1;
-        }
-      });
     }
 
     // ハイライト描画 (measure と edit-stroke 共通)
@@ -1875,6 +1892,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.skillPerSecondCd = 0;
         newMarker.note = '';
       }
+      if (activeMarkerType === 'drawer') {
+        newMarker.drawerCount = 3;
+        newMarker.drawerDirection = 'vertical';
+        newMarker.drawerWidth = 60;
+        newMarker.drawerHeight = 70;
+        newMarker.drawerExpanded = false;
+        newMarker.note = '';
+      }
       onMarkersChange([...markers, newMarker], true);
       // If a real start marker is placed, remove the auto-placed dummy
       if (activeMarkerType === 'start' && autoStartMarker && onAutoStartMarkerChange) {
@@ -1904,6 +1929,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setSkillCdMode('fixed');
       setSkillCdSeconds(0);
       setSkillCdPerSecondRate(0);
+      if (activeMarkerType === 'drawer') {
+        setDrawerCount(3);
+        setDrawerDirection('vertical');
+        setDrawerWidth(60);
+        setDrawerHeight(70);
+      }
       return;
     }
 
@@ -2739,6 +2770,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         );
         return;
       }
+      // Drawer info toggle in presentation mode
+      if (m.type === 'drawer') {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, drawerExpanded: !mk.drawerExpanded } : mk)
+        );
+        return;
+      }
       // Warp/stairs navigation: use partner's scrollConfig if available (manual setting priority)
       const isLinkable = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
       if (isLinkable && m.linkedWarpId) {
@@ -2787,12 +2825,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isNote = isNoteType(m.type);
       if (isInfo || isNote || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle'
         || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'
-        || m.type === 'checkpoint' || m.type === 'phone') {
+        || m.type === 'checkpoint' || m.type === 'phone' || m.type === 'drawer') {
         const field = isInfo ? 'infoExpanded' : isNote ? 'noteExpanded'
           : m.type === 'boss' ? 'bossExpanded'
           : m.type === 'battle' || m.type === 'gbattle' ? 'battleExpanded'
           : m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' ? 'pickingExpanded'
           : m.type === 'phone' ? 'phoneActive'
+          : m.type === 'drawer' ? 'drawerExpanded'
           : 'checkpointExpanded';
         if (m.type === 'phone' && m.phoneLocked) return;
         onMarkersChange(markers.map(mk => mk.id === m.id ? toggleExpanded(field) : mk));
@@ -2857,8 +2896,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setSkillCdSeconds(m.skillCdSeconds !== undefined ? m.skillCdSeconds : 0);
     setSkillCdPerSecondRate(m.skillPerSecondCd !== undefined ? m.skillPerSecondCd : 0);
 
+    setDrawerCount(m.drawerCount !== undefined ? m.drawerCount : 3);
+    setDrawerDirection(m.drawerDirection || 'vertical');
+    setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
+    setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
+
     setPopupDirection(m.popupDirection || 'top');
-    setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') ? 280 : 300));
+    setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300));
     setPopupHeight(m.popupHeight || 0);
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
   };
@@ -2988,6 +3032,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.skillMode = skillCdMode;
               updated.skillCdSeconds = skillCdSeconds;
               updated.skillPerSecondCd = skillCdPerSecondRate;
+            }
+            if (m.type === 'drawer') {
+              updated.drawerCount = drawerCount;
+              updated.drawerDirection = drawerDirection;
+              updated.drawerWidth = drawerWidth;
+              updated.drawerHeight = drawerHeight;
             }
             return updated;
           }
@@ -3616,6 +3666,77 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       if (ja[note]) return ja[note];
                       return tNote(m.note) || note;
                     })()}
+                  </div>
+                );
+              }
+              if (isDrawer(m.type)) {
+                const dc = m.drawerCount ?? 3;
+                const dd = m.drawerDirection || 'vertical';
+                const dw = (m.drawerWidth ?? 60) * scaleMultiplier;
+                const dh = (m.drawerHeight ?? 70) * scaleMultiplier;
+                const drawerPassThrough = !isEditMode;
+                const dividerBaseStyle: React.CSSProperties = {
+                  position: 'absolute',
+                  background: meta.color,
+                  opacity: 0.35,
+                  pointerEvents: 'none'
+                };
+                const dividers: React.ReactNode[] = [];
+                const count = Math.max(1, dc);
+                for (let i = 1; i < count; i++) {
+                  const pct = i / count;
+                  if (dd === 'vertical') {
+                    dividers.push(
+                      <div key={i} style={{ ...dividerBaseStyle, left: 0, top: `${pct * 100}%`, width: '100%', height: '1px' }} />
+                    );
+                  } else {
+                    dividers.push(
+                      <div key={i} style={{ ...dividerBaseStyle, left: `${pct * 100}%`, top: 0, width: '1px', height: '100%' }} />
+                    );
+                  }
+                }
+                return (
+                  <div
+                    key={m.id}
+                    className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${m.x}px`,
+                      top: `${m.y}px`,
+                      transform: 'translate(-50%, -50%)',
+                      width: `${dw}px`,
+                      height: `${dh}px`,
+                      border: `${1.5 * scaleMultiplier}px solid ${meta.color}`,
+                      borderRadius: `${3 * scaleMultiplier}px`,
+                      background: 'rgba(10, 15, 28, 0.7)',
+                      boxShadow: zoom < 0.25 ? 'none' : `0 0 ${8 * scaleMultiplier}px ${meta.color}40`,
+                      pointerEvents: drawerPassThrough ? 'none' : 'auto',
+                      opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
+                      filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
+                      zIndex: 20,
+                      cursor: isEditMode ? 'move' : 'default',
+                      overflow: 'hidden',
+                      userSelect: 'none'
+                    } as React.CSSProperties}
+                    onMouseDown={drawerPassThrough ? undefined : (e) => handleMarkerMouseDown(e, m)}
+                    onClick={drawerPassThrough ? undefined : (e) => handleMarkerClick(e, m)}
+                  >
+                    {dividers}
+                    {showMarkerLabels && zoom >= 0.25 && (m.note || '').trim() && (
+                      <div style={{
+                        position: 'absolute',
+                        left: '50%',
+                        bottom: `${-16 * scaleMultiplier}px`,
+                        transform: 'translateX(-50%)',
+                        fontSize: `${9 * scaleMultiplier}px`,
+                        color: meta.color,
+                        whiteSpace: 'nowrap',
+                        textShadow: '0 0 3px rgba(0,0,0,0.9)',
+                        pointerEvents: 'none'
+                      }}>
+                        {tNote(m.note)}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -4339,9 +4460,71 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       </div>
                     </div>
                     )}
-                </React.Fragment>
-              );
-            })}
+
+                  {/* Drawer info popup */}
+                  {((!isEditMode && m.type === 'drawer' && m.drawerExpanded) || 
+                    (isEditMode && activeNoteMarkerId === m.id && m.type === 'drawer')) && (
+                    <div 
+                      className="info-marker-popup"
+                      style={getPopupStyle(
+                        m,
+                        isEditMode && activeNoteMarkerId === m.id ? popupOffset : (m.popupOffset || { x: 0, y: -100 }),
+                        isEditMode && activeNoteMarkerId === m.id ? popupWidth : (m.popupWidth || 220),
+                        isEditMode && activeNoteMarkerId === m.id ? popupHeight : (m.popupHeight || 0),
+                        meta.color
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div 
+                        className="info-popup-header"
+                        onMouseDown={(e) => handlePopupMouseDown(e)}
+                      >
+                        <span className="info-popup-title" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>{meta.emoji}</span> {m.note.trim() ? tNote(m.note) : meta.label}
+                          {isEditMode && <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '4px' }}>{'(ヘッダーをドラッグで移動)'}</span>}
+                        </span>
+                        <button 
+                          className="info-popup-close"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeNoteMarkerId === m.id) setActiveNoteMarkerId(null);
+                            onMarkersChange(
+                              markers.map(mk => mk.id === m.id ? { ...mk, drawerExpanded: false } : mk)
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="info-popup-content">
+                        <div style={{ fontSize: '11px', color: '#b0b0b0', marginBottom: '6px' }}>
+                          {t('DRAWER')} {t('設定')}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span style={{ color: '#b0b0b0' }}>{t('引出数:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>{m.drawerCount ?? 3}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span style={{ color: '#b0b0b0' }}>{t('方向:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>
+                              {(m.drawerDirection || 'vertical') === 'vertical' ? t('縦') : t('横')}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                            <span style={{ color: '#b0b0b0' }}>{t('サイズ:')}</span>
+                            <span style={{ color: meta.color, fontWeight: 'bold' }}>
+                              {m.drawerWidth ?? 60}×{m.drawerHeight ?? 70}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                 </React.Fragment>
+               );
+             })}
 
           {/* 線分編集モード: ラバーバンド矩形 (選択プレビュー) */}
           {toolMode === 'edit-stroke' && editRect && (
@@ -5404,6 +5587,80 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               {activeNoteMarker.skillPresetId
                 ? <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ プリセットの名称と色が反映。色は個別変更可。使用秒数/CD秒数も上書き可。</div>
                 : <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>※ 上の「メモ」がスキル名。先頭1文字がアイコン。</div>}
+            </div>
+          )}
+
+          {/* Drawer marker: count, direction, size editing */}
+          {activeNoteMarker.type === 'drawer' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(205, 133, 63, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#cd853f', fontWeight: 'bold' }}>{t('引出設定:')}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('引出数:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerCount}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={drawerCount}
+                  onChange={(e) => setDrawerCount(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#b0b0b0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="drawer-direction"
+                    checked={drawerDirection === 'vertical'}
+                    onChange={() => setDrawerDirection('vertical')}
+                    style={{ accentColor: '#cd853f', cursor: 'pointer' }}
+                  />
+                  {t('縦')}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="drawer-direction"
+                    checked={drawerDirection === 'horizontal'}
+                    onChange={() => setDrawerDirection('horizontal')}
+                    style={{ accentColor: '#cd853f', cursor: 'pointer' }}
+                  />
+                  {t('横')}
+                </label>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('幅:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={200}
+                  step={5}
+                  value={drawerWidth}
+                  onChange={(e) => setDrawerWidth(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('高さ:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{drawerHeight}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={200}
+                  step={5}
+                  value={drawerHeight}
+                  onChange={(e) => setDrawerHeight(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
             </div>
           )}
 

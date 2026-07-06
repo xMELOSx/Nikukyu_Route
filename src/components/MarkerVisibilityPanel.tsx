@@ -26,13 +26,13 @@ const MarkerVisibilityPanel: React.FC<MarkerVisibilityPanelProps> = (props) => {
           <div style={{ fontSize: '12px', color: '#7ec8e3', fontWeight: 'bold' }}>GLOBAL:</div>
           <div style={{ display: 'flex', gap: '3px' }}>
             <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
-              onClick={() => { const c = routeApi.route.hiddenMarkerTypes || []; const t = ['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text']; const n = c.filter(x => !t.includes(x)); if (n.length===c.length) return; routeApi.setRoute(p => ({...p, hiddenMarkerTypes: n})); }}>ALL ON</button>
+              onClick={() => { const c = routeApi.route.hiddenMarkerTypes || []; const t = ['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text','drawer']; const n = c.filter(x => !t.includes(x)); if (n.length===c.length) return; routeApi.setRoute(p => ({...p, hiddenMarkerTypes: n})); }}>ALL ON</button>
             <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
-              onClick={() => { const c = routeApi.route.hiddenMarkerTypes || []; const t = ['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text']; const a = t.filter(x => !c.includes(x)); if (a.length===0) return; const n = [...new Set([...c,...a])]; routeApi.setRoute(p => ({...p, hiddenMarkerTypes: n})); }}>ALL OFF</button>
+              onClick={() => { const c = routeApi.route.hiddenMarkerTypes || []; const t = ['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text','drawer']; const a = t.filter(x => !c.includes(x)); if (a.length===0) return; const n = [...new Set([...c,...a])]; routeApi.setRoute(p => ({...p, hiddenMarkerTypes: n})); }}>ALL OFF</button>
           </div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-          {(['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text'] as MarkerType[]).map(t2 => {
+          {(['eh','rare','cardkey','vault','boss','gbattle','gpicking','glong_picking','phone','warp','stairs','info','note','text','drawer'] as MarkerType[]).map(t2 => {
             const meta = MARKER_META[t2];
             const isHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t2);
             return (<button key={t2} className="btn-cyber" style={{ padding: '2px 6px', fontSize: '10px', clipPath: 'none', opacity: isHidden ? 0.4 : 1, borderColor: isHidden ? '#555' : meta.color, color: isHidden ? '#555' : meta.color }}

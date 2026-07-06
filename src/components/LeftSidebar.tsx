@@ -602,7 +602,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#0f0', color: '#0f0' }}
                         onClick={() => {
                           const current = routeApi.route.hiddenMarkerTypes || [];
-                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
+                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'drawer'];
                           const next = current.filter(t => !targetTypes.includes(t as string));
                           if (next.length === current.length) return;
                           const nextHidden = routeApi.route.hiddenMarkers || [];
@@ -612,7 +612,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       <button className="btn-cyber" style={{ padding: '1px 5px', fontSize: '9px', clipPath: 'none', borderColor: '#f55', color: '#f55' }}
                         onClick={() => {
                           const current = routeApi.route.hiddenMarkerTypes || [];
-                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'];
+                          const targetTypes = ['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'drawer'];
                           const additions = targetTypes.filter(t => !current.includes(t));
                           if (additions.length === 0) return;
                           const next = Array.from(new Set([...current, ...additions]));
@@ -623,7 +623,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'warp', 'stairs', 'info', 'note', 'text', 'drawer'] as MarkerType[]).map(t => {
                       const meta = MARKER_META[t];
                       const isTypeHidden = (routeApi.route.hiddenMarkerTypes || []).includes(t);
                       return (
@@ -1973,7 +1973,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 </button>
                 {globalMarkerListExpanded && (
                   <div className="marker-list" style={{ marginTop: '6px' }}>
-                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text'] as MarkerType[]).map(t => {
+                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text', 'drawer'] as MarkerType[]).map(t => {
                       const meta = MARKER_META[t];
                       return (
                         <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
