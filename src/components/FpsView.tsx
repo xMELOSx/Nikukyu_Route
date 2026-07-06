@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Point, HeistMarker, LockedWallSegment } from '../utils/DataManager';
 import type { RouteSegment } from '../utils/AutoRoute';
+import heroImg from '../assets/hero.png';
 import {
   type PlayerState,
   normalizeAngle,
@@ -78,6 +79,16 @@ const FpsView: React.FC<FpsViewProps> = ({
     angle: getInitialAngle()
   });
   const tpsCamDistanceRef = useRef<number>(60);
+  const heroImageRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = heroImg;
+    img.onload = () => {
+      heroImageRef.current = img;
+    };
+  }, []);
+
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const prevTimeRef = useRef<number>(0);
@@ -495,7 +506,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           LOCKED_WALL_COLOR, LOCKED_WALL_COLOR_DARK,
           0.3,
           { x: playerRef.current.x, y: playerRef.current.y },
-          30
+          30,
+          heroImageRef.current
         );
       } else {
         colHeights = renderFpsView(

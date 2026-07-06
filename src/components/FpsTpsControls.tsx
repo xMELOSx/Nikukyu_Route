@@ -443,6 +443,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(0,240,255,0.2)', border: '1px solid rgba(0,240,255,0.4)', borderRadius: 8, color: '#fff', touchAction: 'none' }}
                 onTouchStart={e => { e.preventDefault(); const ev = new KeyboardEvent('keydown', { key: 't', keyCode: 84 }); window.dispatchEvent(ev); }}
               >切替 T</button>
+              <button
+                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,200,0,0.25)', border: '1px solid rgba(255,200,0,0.5)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', keyCode: 70 })); }}
+              >🔑 鍵 F</button>
               {autoRouteActive && (
                 <button
                   style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(255,255,255,0.08)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(255,255,255,0.2)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : 'rgba(255,255,255,0.6)', touchAction: 'none', lineHeight: 1.2 }}

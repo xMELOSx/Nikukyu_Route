@@ -799,7 +799,8 @@ export function renderTpsView(
   lockedWallColorDark?: string,
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
-  wallFadeRadius?: number
+  wallFadeRadius?: number,
+  heroImage?: HTMLImageElement | null
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -840,13 +841,17 @@ export function renderTpsView(
 
   const pCol = Math.round(((relAngle + halfFov) / fov) * (W - 1));
   const pAngularWidth = Math.atan2(PLAYER_WIDTH / 2, playerDist);
-  const pHalfWidth = Math.max(1, Math.round((pAngularWidth / fov) * W));
   const pPerpDist = playerDist * Math.cos(relAngle);
   const pScreenHeight = Math.round((PLAYER_HEIGHT * distPlane) / pPerpDist);
 
-  // アバターの足元をその距離の床面（camHeight = 30）の射影位置に正確に接地させ、手前に15px寄せる
+  const hasImage = heroImage && heroImage.complete && heroImage.width > 0;
+  const pHalfWidth = hasImage
+    ? Math.max(1, Math.round((pScreenHeight * (heroImage!.width / heroImage!.height)) / 2))
+    : Math.max(1, Math.round((pAngularWidth / fov) * W));
+
+  // アバターの足元をその距離の床面（camHeight = 30）の射影位置に正確に接地させる (ズレ防止のため +15px オフセットを完全撤廃)
   const camHeight = 30;
-  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist) + 15;
+  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist);
   const pTop = pBottom - pScreenHeight;
 
   const pr = parseInt(playerColor.slice(1, 3), 16);
@@ -858,19 +863,30 @@ export function renderTpsView(
     const distFromCenter = Math.abs(relI) / pHalfWidth;
     if (distFromCenter > 1) continue;
 
-    const thickness = 1 - distFromCenter;
-    const bodyH = Math.round(pBottom - pTop);
-    const bodyTop = Math.round(pTop + bodyH * 0.1 * (1 - thickness));
-
     if (colHeights[i].rawDist > playerDist) {
-      const shade = 0.6 + 0.4 * thickness;
-      ctx.fillStyle = `rgb(${Math.round(pr * shade)},${Math.round(pg * shade)},${Math.round(pb * shade)})`;
-      ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
+      if (hasImage) {
+        const imgW = heroImage!.width;
+        const imgH = heroImage!.height;
+        const totalWidth = pHalfWidth * 2 || 1;
+        const srcX = Math.max(0, Math.min(imgW - 1, Math.round(((i - (pCol - pHalfWidth)) / totalWidth) * imgW)));
+        ctx.drawImage(
+          heroImage!,
+          srcX, 0, 1, imgH, // slice from image
+          i, pTop, 1, pScreenHeight // draw on canvas
+        );
+      } else {
+        const thickness = 1 - distFromCenter;
+        const bodyH = Math.round(pBottom - pTop);
+        const bodyTop = Math.round(pTop + bodyH * 0.1 * (1 - thickness));
+        const shade = 0.6 + 0.4 * thickness;
+        ctx.fillStyle = `rgb(${Math.round(pr * shade)},${Math.round(pg * shade)},${Math.round(pb * shade)})`;
+        ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
 
-      // head circle
-      const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
-      const headY = Math.round(bodyTop - headSize * 1.2);
-      ctx.fillRect(i, headY, 1, headSize);
+        // head circle
+        const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
+        const headY = Math.round(bodyTop - headSize * 1.2);
+        ctx.fillRect(i, headY, 1, headSize);
+      }
     }
   }
   return colHeights;
