@@ -38,8 +38,8 @@ function filterLegacyAndClean(markers: HeistMarker[]): HeistMarker[] {
     });
 }
 
-function persist(markers: HeistMarker[], isLocal: boolean) {
-  if (!isLocal || !Array.isArray(markers) || markers.length === 0) return;
+function persist(markers: HeistMarker[]) {
+  if (!Array.isArray(markers) || markers.length === 0) return;
   try {
     const json = JSON.stringify(markers);
     localStorage.setItem('heist_global_markers', json);
@@ -225,7 +225,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     if (!Array.isArray(globalMarkers) || globalMarkers.length === 0) return;
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
-      persist(globalMarkers, isLocalRef.current);
+      persist(globalMarkers);
     }, 50);
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current);

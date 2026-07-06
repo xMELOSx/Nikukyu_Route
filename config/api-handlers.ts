@@ -23,11 +23,15 @@ function handleGet(_req: any, res: any, file: string, fallback: string): void {
   res.end(data ?? fallback)
 }
 
-function handlePost(req: any, res: any, file: string): void {
+function handlePost(req: any, res: any, file: string, copyToPublicFile?: string): void {
   let body = ''
   req.on('data', (chunk: string) => { body += chunk })
   req.on('end', () => {
     writeJson(file, body)
+    if (copyToPublicFile) {
+      const publicPath = path.resolve(__dirname, '../public', copyToPublicFile)
+      fs.writeFileSync(publicPath, body, 'utf-8')
+    }
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ success: true }))
   })
@@ -54,14 +58,14 @@ export function apiMiddleware(): Plugin {
         // /api/global-walls
         if (isPathMatch(urlPath, '/api/global-walls')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_walls.json', '{}')
-          if (req.method === 'POST') return handlePost(req, res, 'global_walls.json')
+          if (req.method === 'POST') return handlePost(req, res, 'global_walls.json', 'global_walls.json')
           return next()
         }
 
         // /api/global-locked-walls
         if (isPathMatch(urlPath, '/api/global-locked-walls')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_locked_walls.json', '{}')
-          if (req.method === 'POST') return handlePost(req, res, 'global_locked_walls.json')
+          if (req.method === 'POST') return handlePost(req, res, 'global_locked_walls.json', 'global_locked_walls.json')
           return next()
         }
 
@@ -74,8 +78,11 @@ export function apiMiddleware(): Plugin {
             }
             const files = fs.readdirSync(textureDir)
             const textures = files.filter(f => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
+            const jsonBody = JSON.stringify(textures)
+            const listFile = path.resolve(__dirname, '../public/textures.json')
+            fs.writeFileSync(listFile, jsonBody, 'utf-8')
             res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify(textures))
+            res.end(jsonBody)
             return
           }
           return next()

@@ -246,8 +246,10 @@ export default function App() {
   const [texturesList, setTexturesList] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!isLocal) return;
-    fetch(`${import.meta.env.BASE_URL}api/textures`)
+    const url = isLocal
+      ? `${import.meta.env.BASE_URL}api/textures`
+      : `${import.meta.env.BASE_URL}textures.json`;
+    fetch(url)
       .then(res => { if (res.ok) return res.json(); })
       .then(data => {
         if (Array.isArray(data)) {

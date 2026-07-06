@@ -183,7 +183,6 @@ const FpsView: React.FC<FpsViewProps> = ({
       loadedTextureNamesRef.current.add(texName); // ロード中/ロード済みにマーク
 
       const img = new Image();
-      img.crossOrigin = 'anonymous';
       img.onload = () => {
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = img.naturalWidth || img.width || 512;
@@ -808,9 +807,9 @@ const FpsView: React.FC<FpsViewProps> = ({
           for (const m of lm) {
             if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
             const img = tpsImgs[m.id];
-            // 看板的な近接表示: マーカーからの距離が近いときだけ表示
+            // 看板的な近接表示: マーカーに接近したときだけ表示
             const worldDist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
-            if (worldDist > 120) continue;
+            if (worldDist > 60) continue;
             const dx = m.x - camPos.x, dy = m.y - camPos.y;
             const dist = Math.hypot(dx, dy);
             if (dist < 1) continue;

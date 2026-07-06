@@ -6025,9 +6025,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             return rest;
                           }
                           return m;
-                        }),
-                        true
-                      );
+        }),
+        true
+      );
                     }}>
                       Remove Target
                     </button>
