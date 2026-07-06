@@ -51,7 +51,7 @@ export function apiMiddleware(): Plugin {
         // /api/global-markers
         if (isPathMatch(urlPath, '/api/global-markers')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_markers.json', '[]')
-          if (req.method === 'POST') return handlePost(req, res, 'global_markers.json')
+          if (req.method === 'POST') return handlePost(req, res, 'global_markers.json', 'global_markers.json')
           return next()
         }
 

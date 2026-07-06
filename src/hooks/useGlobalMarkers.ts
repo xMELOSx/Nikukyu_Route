@@ -38,6 +38,26 @@ function filterLegacyAndClean(markers: HeistMarker[]): HeistMarker[] {
     });
 }
 
+// scrollConfig マイグレーション: v2 位置倍化後に scrollConfig を補正する。
+// localStorage とファイルデータの両方に適用し、環境間の値の食い違いを防ぐ。
+function fixScrollConfig(markers: HeistMarker[]): HeistMarker[] {
+  return markers.map(m => {
+    if (!m.scrollConfig) return m;
+    const sc = m.scrollConfig;
+    const wasV3Applied = localStorage.getItem('heist_global_markers_scroll_fixed_v3') === 'true';
+    const alreadyFixed = localStorage.getItem('heist_global_markers_scroll_fixed_v4') === 'true';
+    if (alreadyFixed) return m;
+    return {
+      ...m,
+      scrollConfig: {
+        x: wasV3Applied ? 2 * sc.x + m.x * (sc.zoom - 0.5) : sc.x - m.x / 2,
+        y: wasV3Applied ? 2 * sc.y + m.y * (sc.zoom - 0.5) : sc.y - m.y / 2,
+        zoom: sc.zoom
+      }
+    };
+  });
+}
+
 function persist(markers: HeistMarker[]) {
   if (!Array.isArray(markers) || markers.length === 0) return;
   try {
@@ -70,9 +90,6 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
   isLocalRef.current = isLocal;
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 初回マウント時に共通データ（グローバルマーカー）を読み込む。
-  // ファイル（API → 静的ファイル）を一次ソースとし、localStorage はユーザー状態の
-  // オーバーレイとしてマージする。両モードで同一のロジック。
   useEffect(() => {
     let cancelled = false;
 
@@ -119,7 +136,6 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     const loadData = async () => {
       let fileMarkers: HeistMarker[] = [];
 
-      // 1. 開発用API（ローカルモードのみ有効）
       try {
         const apiRes = await fetch(`${import.meta.env.BASE_URL}api/global-markers`);
         if (apiRes.ok) {
@@ -130,7 +146,6 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
         }
       } catch {}
 
-      // 2. 静的ファイル（本番/疑似本番のフォールバック、API空の場合も）
       if (fileMarkers.length === 0) {
         try {
           const fileRes = await fetch(`${import.meta.env.BASE_URL}global_markers.json`);
@@ -145,15 +160,14 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
 
       if (cancelled) return;
 
-      // 3. ファイルデータを一次ソースとして設定
+      // ファイルを一次ソースとし、localStorage のユーザー編集（スクロール位置・表示状態など）を
+      // オーバーレイとしてマージする。両モード同一ロジック。
       if (fileMarkers.length > 0) {
         setGlobalMarkers(fileMarkers);
       } else {
         setGlobalMarkers([]);
         localStorage.setItem('heist_global_markers', '[]');
       }
-
-      // 4. localStorage をオーバーレイとしてマージ（ユーザー編集・表示状態の保持）
       const local = loadFromLocalStorage();
       if (local && local.length > 0) {
         setGlobalMarkers(prev => {

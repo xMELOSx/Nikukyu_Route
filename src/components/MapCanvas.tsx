@@ -640,6 +640,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
   const [tpsImageUrl, setTpsImageUrl] = useState<string>('');
+  const tpsImageUrlRef = useRef<string>('');
   const [tpsCropSource, setTpsCropSource] = useState<string | null>(null);
   const [tpsShowCrop, setTpsShowCrop] = useState(false);
   const [tpsCropRect, setTpsCropRect] = useState<{ x: number; y: number; w: number; h: number }>({ x: 10, y: 10, w: 200, h: 60 });
@@ -3053,7 +3054,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setDrawerAngle(m.drawerAngle !== undefined ? m.drawerAngle : 0);
     setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
-    setTpsImageUrl(m.mediaItems?.[0]?.url || (m.note && m.note.startsWith('tpsimg:') ? m.note.slice(7) : ''));
+    const imgUrl = m.mediaItems?.[0]?.url || '';
+    setTpsImageUrl(imgUrl);
+    tpsImageUrlRef.current = imgUrl;
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300));
@@ -3195,12 +3198,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerHeight = drawerHeight;
             }
             if (m.type === 'tps') {
-              if (tpsImageUrl) {
-                updated.mediaItems = [{ type: 'image' as const, url: tpsImageUrl }];
-                // バックアップ: routeデータにも保存 (noteフィールドを間借り)
-                if (!updated.note || updated.note.startsWith('tpsimg:')) {
-                  updated.note = 'tpsimg:' + tpsImageUrl;
-                }
+              const url = tpsImageUrlRef.current;
+              if (url) {
+                updated.mediaItems = [{ type: 'image' as const, url }];
               } else if (m.mediaItems && m.mediaItems.length > 0) {
                 updated.mediaItems = m.mediaItems;
               } else {
@@ -3283,8 +3283,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleSetScrollTarget = () => {
     if (activeNoteMarkerId) {
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
+      // TPS マーカーはカメラ位置保存のために例外
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') return;
       const wrapper = wrapperRef.current;
       const vw = wrapper ? wrapper.clientWidth : undefined;
       const vh = wrapper ? wrapper.clientHeight : undefined;
@@ -3301,8 +3302,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleClearScrollTarget = () => {
     if (activeNoteMarkerId) {
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
+      // TPS マーカーはカメラ位置保存のために例外
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type)) return;
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') return;
       onMarkersChange(
         markers.map(m => {
           if (m.id === activeNoteMarkerId) {
@@ -5879,7 +5881,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <input type="text" className="input-cyber" style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
                   placeholder="https://example.com/image.png"
                   value={tpsImageUrl}
-                  onChange={(e) => setTpsImageUrl(e.target.value)}
+                  onChange={(e) => { setTpsImageUrl(e.target.value); tpsImageUrlRef.current = e.target.value; }}
                 />
                 <button className="btn-cyber" style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap' }}
                   onClick={async () => {
@@ -6680,7 +6682,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   ctx.imageSmoothingEnabled = true;
                   ctx.imageSmoothingQuality = 'high';
                   ctx.drawImage(img, tpsCropRect.x, tpsCropRect.y, tpsCropRect.w, tpsCropRect.h, 0, 0, tpsCropRect.w, tpsCropRect.h);
-                  setTpsImageUrl(canvas.toDataURL('image/png'));
+                  const upload = async () => {
+                    if (isLocal) {
+                      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
+                      if (blob) {
+                        const fd = new FormData();
+                        fd.append('file', blob, `tps_crop_${Date.now()}.png`);
+                        try {
+                          const res = await fetch(`${import.meta.env.BASE_URL}api/upload-media`, { method: 'POST', body: fd });
+                          if (res.ok) {
+                            const data = await res.json();
+                            return data.url;
+                          }
+                        } catch {}
+                      }
+                    }
+                    return canvas.toDataURL('image/png');
+                  };
+                  upload().then(url => {
+                    setTpsImageUrl(url);
+                    tpsImageUrlRef.current = url;
+                  });
                   setTpsShowCrop(false);
                   setTpsCropSource(null);
                 }}
