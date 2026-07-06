@@ -3053,7 +3053,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setDrawerAngle(m.drawerAngle !== undefined ? m.drawerAngle : 0);
     setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
-    setTpsImageUrl(m.mediaItems?.[0]?.url || '');
+    setTpsImageUrl(m.mediaItems?.[0]?.url || (m.note && m.note.startsWith('tpsimg:') ? m.note.slice(7) : ''));
 
     setPopupDirection(m.popupDirection || 'top');
     setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300));
@@ -3195,7 +3195,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerHeight = drawerHeight;
             }
             if (m.type === 'tps') {
-              updated.mediaItems = tpsImageUrl ? [{ type: 'image' as const, url: tpsImageUrl }] : [];
+              if (tpsImageUrl) {
+                updated.mediaItems = [{ type: 'image' as const, url: tpsImageUrl }];
+                // バックアップ: routeデータにも保存 (noteフィールドを間借り)
+                if (!updated.note || updated.note.startsWith('tpsimg:')) {
+                  updated.note = 'tpsimg:' + tpsImageUrl;
+                }
+              } else if (m.mediaItems && m.mediaItems.length > 0) {
+                updated.mediaItems = m.mediaItems;
+              } else {
+                updated.mediaItems = [];
+              }
             }
             return updated;
           }
