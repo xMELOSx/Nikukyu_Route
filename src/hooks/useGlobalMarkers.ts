@@ -261,15 +261,11 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       const updated = prev.map(m => {
         const next = incomingById.get(m.id);
         if (!next) return m;
-        // Only override fields that are actually present in next (not undefined)
-        // to avoid wiping fields (like mediaItems) that only exist in prev.
-        const merged: any = { ...m };
-        for (const key of Object.keys(next)) {
-          if ((next as any)[key] !== undefined) {
-            merged[key] = (next as any)[key];
-          }
-        }
-        return merged as HeistMarker;
+        // { ...m, ...next } is correct: next always comes from the current
+        // markers array which already has all fields; undefined fields from
+        // JSON.parse are simply absent from Object.keys so they won't
+        // overwrite existing values.
+        return { ...m, ...next };
       });
       const existingIds = new Set(prev.map(m => m.id));
       const newOnes = incoming.filter(m => !existingIds.has(m.id));
