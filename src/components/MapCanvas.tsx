@@ -478,7 +478,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd', 'tps'].includes(type);
+  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd'].includes(type);
   const isDrawer = (type: string) => type === 'drawer';
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
@@ -1937,6 +1937,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.drawerHeight = 70;
         newMarker.drawerExpanded = false;
         newMarker.note = '';
+      }
+      if (activeMarkerType === 'tps') {
+        newMarker.mediaItems = [];
       }
       onMarkersChange([...markers, newMarker], true);
       // If a real start marker is placed, remove the auto-placed dummy

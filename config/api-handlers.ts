@@ -313,6 +313,24 @@ export function apiMiddleware(): Plugin {
           fs.copyFileSync(path.join(uploadsSrcDir, entry.name), path.join(uploadsDestDir, entry.name))
         }
       }
+
+      // public/texture/ → dist/texture/
+      const texSrcDir = path.resolve(__dirname, '..', 'public', 'texture')
+      const texDestDir = path.resolve(__dirname, '..', 'dist', 'texture')
+      if (fs.existsSync(texSrcDir)) {
+        if (!fs.existsSync(texDestDir)) fs.mkdirSync(texDestDir, { recursive: true })
+        for (const entry of fs.readdirSync(texSrcDir, { withFileTypes: true })) {
+          if (!entry.isFile()) continue
+          fs.copyFileSync(path.join(texSrcDir, entry.name), path.join(texDestDir, entry.name))
+        }
+      }
+
+      // public/textures.json → dist/textures.json
+      const texListSrc = path.resolve(__dirname, '..', 'public', 'textures.json')
+      const texListDest = path.resolve(__dirname, '..', 'dist', 'textures.json')
+      if (fs.existsSync(texListSrc)) {
+        fs.copyFileSync(texListSrc, texListDest)
+      }
     }
   }
 }
