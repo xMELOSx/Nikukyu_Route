@@ -484,8 +484,10 @@ export class GlobalDataService {
         this._loadPresets()
       ]);
 
-      this._mergeMarkersFromLocalStorage();
-      this._mergeDefaultsFromLocalStorage();
+      if (this._isLocal) {
+        this._mergeMarkersFromLocalStorage();
+        this._mergeDefaultsFromLocalStorage();
+      }
 
       this._loaded = true;
       this._loading = false;
@@ -516,7 +518,7 @@ export class GlobalDataService {
         this._loadPresets()
       ]);
 
-      if (includeLocalOverrides) {
+      if (includeLocalOverrides && this._isLocal) {
         this._mergeMarkersFromLocalStorage();
         this._mergeDefaultsFromLocalStorage();
       } else {
@@ -567,12 +569,14 @@ export class GlobalDataService {
   saveMarkers(markers: HeistMarker[]): void {
     this._markers = markers;
     this._save(() => {
-      saveLocalJSON(LOCAL_MARKERS_KEY, markers);
-      if (this._isLocal && markers.length > 0) {
-        this._postAPI('api/global-markers', markers);
+      if (this._isLocal) {
+        saveLocalJSON(LOCAL_MARKERS_KEY, markers);
+        if (markers.length > 0) {
+          this._postAPI('api/global-markers', markers);
+        }
         this._emit({ operation: 'save', type: 'markers', source: 'localStorage+api', success: true });
       } else {
-        this._emit({ operation: 'save', type: 'markers', source: 'localStorage', success: true });
+        this._emit({ operation: 'save', type: 'markers', source: 'memory', success: true, detail: 'session only' });
       }
       this._notify();
     });

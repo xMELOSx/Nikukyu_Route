@@ -702,7 +702,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [shelfRowGapSize, setShelfRowGapSize] = useState(1);
   const [shelfAngle, setShelfAngle] = useState(0);
 
-  const [shelfEditTick, setShelfEditTick] = useState(0);
+  const [, setShelfEditTick] = useState(0);
   // Per-shelf modal position — stored per marker, not shared
   const shelfDragOffsetRef = useRef<Point>({ x: 0, y: 0 }); // delta during active drag
   const shelfDraggedIdRef = useRef<string | null>(null); // which shelf is being dragged
@@ -3548,7 +3548,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.shelfRowGapSize = shelfRowGapSize;
               updated.shelfAngle = shelfAngle;
               if (updated.shelfSpawns) {
-                const validSpawns = updated.shelfSpawns.filter(sp => sp.row < shelfRows && sp.col < shelfCols);
+                const validSpawns = updated.shelfSpawns.filter((sp: any) => sp.row < shelfRows && sp.col < shelfCols);
                 if (validSpawns.length !== updated.shelfSpawns.length) {
                   updated.shelfSpawns = validSpawns;
                 }
@@ -4408,8 +4408,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const sh = (m.shelfHeight ?? 24) * scaleMultiplier;
                 const shelfSpawns = (m.shelfSpawns || []);
                 const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
-                const cellW = sw / cols;
-                const cellH = sh / rows;
+
                 // Gap: real space between cell groups
                 const colGapEvery = m.shelfColGapEvery ?? 8;
                 const colGapSize = m.shelfColGapSize ?? 2;
@@ -4469,17 +4468,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {tNote(m.note)}
                         </div>
                       )}
-                      {/* Spawn overlays on collapsed shelf — pixel position within shelf rect */}
+                      {/* Spawn overlays on collapsed shelf */}
                       {shelfSpawns.length > 0 && shelfSpawns.map(sp => {
                         const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
                         const im2 = new Map((spawnItems||[]).map(i=>[i.id,i]));
                         const rR2:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                         let spColor='#888'; let bestR=-1;
                         if(spPt)for(const si of spPt.items){const it=im2.get(si.itemId);if(it){const r=rR2[it.textColor]??-1;if(r>bestR){bestR=r;spColor=rarityColor[it.textColor]||'#888';}}}
+                        // Highlight filter
+                        const hiSet2 = spawnHighlightItemIds&&spawnHighlightItemIds.length>0?new Set(spawnHighlightItemIds):null;
+                        const hcSet2 = spawnHighlightCategories&&spawnHighlightCategories.length>0?new Set(spawnHighlightCategories):null;
+                        const filtering2 = hiSet2||hcSet2;
+                        let isHL2 = true;
+                        if(filtering2&&spPt){
+                          isHL2 = (hiSet2?spPt.items.some(ci=>hiSet2.has(ci.itemId)):true) && (hcSet2?(hcSet2.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet2.has(spPt.category))):true);
+                        }
+                        if(filtering2&&!isHL2) return null;
                         const spX = ((sp.col + 0.5) / cols) * sw;
                         const spY = ((sp.row + 0.5) / rows) * sh;
                         return (
-                          <div key={sp.id} style={{
+                          <div key={`${sp.row}-${sp.col}`} style={{
                             position: 'absolute',
                             left: `${spX}px`,
                             top: `${spY}px`,
@@ -4590,16 +4598,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             }
                             return <>{els}</>;
                           })()}
-                          {/* Spawn dots — color from referenced SpawnPoint */}
+                          {/* Spawn dots — color from referenced SpawnPoint, respects highlight filter */}
                           {shelfSpawns.map((sp, si) => {
                             const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
                             const im = new Map((spawnItems||[]).map(i=>[i.id,i]));
                             const rr:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                             let dc='#888';let br=-1;
                             if(spPt)for(const si2 of spPt.items){const it=im.get(si2.itemId);if(it){const r=rr[it.textColor]??-1;if(r>br){br=r;dc=rarityColor[it.textColor]||'#888';}}}
+                            // Highlight filter check
+                            const hiSet = spawnHighlightItemIds&&spawnHighlightItemIds.length>0?new Set(spawnHighlightItemIds):null;
+                            const hcSet = spawnHighlightCategories&&spawnHighlightCategories.length>0?new Set(spawnHighlightCategories):null;
+                            const filtering = hiSet||hcSet;
+                            let isHighlighted = true;
+                            if(filtering&&spPt){
+                              const hasItemMatch = hiSet?spPt.items.some(ci=>hiSet.has(ci.itemId)):true;
+                              const hasCatMatch = hcSet?(hcSet.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet.has(spPt.category))):true;
+                              isHighlighted = hasItemMatch&&hasCatMatch;
+                            }
                             const l=cellPos(sp.col,colGapEvery,colGapSize,totalW)+(100/totalW)/2;
                             const t=cellPos(sp.row,rowGapEvery,rowGapSize,totalH)+(100/totalH)/2;
-                            return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:10,height:10,borderRadius:'50%',background:dc,boxShadow:'0 0 8px '+dc,pointerEvents:'none'}} />;
+                            if(filtering&&!isHighlighted){
+                              return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:6,height:6,borderRadius:'50%',background:'#444',pointerEvents:'none',opacity:0.15}} />;
+                            }
+                            return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:filtering?14:10,height:filtering?14:10,borderRadius:'50%',background:dc,boxShadow:filtering?'0 0 16px '+dc:'0 0 8px '+dc,pointerEvents:'none'}} />;
                           })}
                           {/* Clickable cells */}
                           {Array.from({ length: rows }, (_, r) => (

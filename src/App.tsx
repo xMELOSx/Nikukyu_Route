@@ -1415,7 +1415,10 @@ export default function App() {
       for (const sm of deletedShelfMarkers) {
         if (sm.shelfSpawns) {
           for (const ss of sm.shelfSpawns) {
-            if (ss.spawnId) handleSpawnPointDelete(ss.spawnId);
+            if (ss.spawnId) {
+              pushSpawnHistory();
+              spawnApi.removePoint(ss.spawnId);
+            }
           }
         }
       }
