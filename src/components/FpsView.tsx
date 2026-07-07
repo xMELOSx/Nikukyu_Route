@@ -82,7 +82,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     y: playerPos.y,
     angle: getInitialAngle()
   });
-  const tpsCamDistanceRef = useRef<number>(60);
+  const tpsCamDistanceRef = useRef<number>(30);
   const heroImageRef = useRef<HTMLImageElement | null>(null);
   const tpsImagesRef = useRef<{ [markerId: string]: HTMLImageElement }>({});
 
@@ -342,6 +342,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     const handleWheel = (e: WheelEvent) => {
       if (mode === 'tps') {
         e.preventDefault();
+        e.stopPropagation();
         const zoomStep = 10;
         if (e.deltaY > 0) {
           tpsCamDistanceRef.current = Math.min(150, tpsCamDistanceRef.current + zoomStep);
