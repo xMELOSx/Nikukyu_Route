@@ -710,6 +710,7 @@ export default function App() {
   // useGlobalSpawns, useGlobalDefaults, lockedWalls inline, fetchHelpData)
   const globalData = useGlobalData({
     onEvent: (event) => {
+      if (!isLocal && (event.operation === 'load' || event.operation === 'merge')) return;
       const emoji = { load: '📂', merge: '📂', save: '💾', reset: '🔄' }[event.operation] || '📋';
       const detail = event.detail ? ` (${event.detail})` : '';
       notification.show(`${emoji} ${event.type} ${event.operation}d: ${event.source}${detail}`, 2500);

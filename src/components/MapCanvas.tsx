@@ -320,6 +320,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const movingWallIndexRef = useRef<number | null>(null);
   const movingWallStartPositions = useRef<[Point, Point] | null>(null);
   const moveWallStartMouse = useRef<Point>({ x: 0, y: 0 });
+  const [wallMoveDraft, setWallMoveDraft] = useState<{ idx: number; p1: Point; p2: Point } | null>(null);
+
   const runnerDotRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
@@ -1514,6 +1516,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (idx < 0 || idx >= strokes.length) continue;
         const hs = strokes[idx];
         if (!hs || !hs.points || hs.points.length < 2) continue;
+        if (hs.type === 'temporary') continue;
         const baseColor = hs.color || '#00ff00';
         // 1. アウターハロー (白・半透明) — 黄色の線でも見えるよう白でコントラスト確保
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
@@ -1531,6 +1534,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.shadowBlur = 12;
         ctx.strokeStyle = baseColor;
         ctx.lineWidth = (hs.width || 3) + 2;
+        ctx.beginPath();
+        hs.points.forEach((pt, i) => {
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+        // 3. 元の線を上書き: 点線・透明度は元の線に準じる
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth = hs.width || 3;
+        if (hs.type === 'dashed') {
+          ctx.setLineDash([8, 6]);
+        } else {
+          ctx.setLineDash([]);
+        }
         ctx.beginPath();
         hs.points.forEach((pt, i) => {
           if (i === 0) ctx.moveTo(pt.x, pt.y);
@@ -2077,40 +2096,46 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const img = new Image();
           img.onload = () => {
             const aspect = img.naturalWidth / img.naturalHeight;
-            const repeat = selectedRepeat;
-            // 3Dでの壁の高さ(36)を基準にした必要長さ
-            const targetLength = (36 * aspect) * repeat;
+            // 3Dでの壁の高さ(36)を基準とした1リピートの長さ
+            const unitLen = 36 * aspect;
 
             const dx = target[1].x - target[0].x;
             const dy = target[1].y - target[0].y;
             const actualLength = Math.hypot(dx, dy);
+            const nx = dx / actualLength, ny = dy / actualLength;
 
-            if (actualLength > targetLength + 2) {
-              const ratio = targetLength / actualLength;
-              const cutPt: Point = {
-                x: Math.round(target[0].x + dx * ratio),
-                y: Math.round(target[0].y + dy * ratio)
-              };
-
-              const part1: WallSegment = [target[0], cutPt, selectedTexture, repeat];
-              const part2: WallSegment = [cutPt, target[1]];
-
-              const nextWalls: WallSegment[] = [];
-              for (let i = 0; i < walls.length; i++) {
-                if (i === bestIndex) {
-                  nextWalls.push(part1, part2);
-                } else {
-                  nextWalls.push(walls[i]);
+            // Divide into segments of unitLen each, all textured with repeat=1
+            const segCount = Math.floor(actualLength / unitLen);
+            const nextWalls: WallSegment[] = [];
+            for (let i = 0; i < walls.length; i++) {
+              if (i === bestIndex) {
+                for (let s = 0; s < segCount; s++) {
+                  const p1: Point = {
+                    x: Math.round(target[0].x + nx * s * unitLen),
+                    y: Math.round(target[0].y + ny * s * unitLen)
+                  };
+                  const p2: Point = {
+                    x: Math.round(target[0].x + nx * (s + 1) * unitLen),
+                    y: Math.round(target[0].y + ny * (s + 1) * unitLen)
+                  };
+                  nextWalls.push(selectedRepeat > 1
+                    ? [p1, p2, selectedTexture, selectedRepeat]
+                    : [p1, p2, selectedTexture]);
                 }
+                // Remainder wall (untextured)
+                if (segCount * unitLen < actualLength - 1) {
+                  const remStart: Point = {
+                    x: Math.round(target[0].x + nx * segCount * unitLen),
+                    y: Math.round(target[0].y + ny * segCount * unitLen)
+                  };
+                  nextWalls.push(remStart.x === target[1].x && remStart.y === target[1].y
+                    ? [] : [remStart, target[1]]);
+                }
+              } else {
+                nextWalls.push(walls[i]);
               }
-              onWallsChange(nextWalls);
-            } else {
-              const nextWalls = [...walls];
-              nextWalls[bestIndex] = selectedRepeat > 1
-                ? [target[0], target[1], selectedTexture, selectedRepeat]
-                : [target[0], target[1], selectedTexture];
-              onWallsChange(nextWalls);
             }
+            onWallsChange(nextWalls.filter(w => w.length > 0) as WallSegment[]);
           };
           img.src = `${import.meta.env.BASE_URL}texture/${selectedTexture}`;
         } else {
@@ -2142,49 +2167,69 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (toolMode === 'wall' && wallSubMode === 'erase') {
       setIsDrawing(true);
-      eraseWallsAtPoint(coords);
+      eraseWallsAtPoint(coords, e.altKey);
       return;
     }
 
     if (toolMode === 'wall' && wallSubMode === 'slice') {
-      const halfLen = 30;
-      const p1: Point = { x: coords.x - halfLen, y: coords.y };
-      const p2: Point = { x: coords.x + halfLen, y: coords.y };
-      const newWall: WallSegment = [p1, p2];
-      onWallsChange?.([...walls, newWall]);
+      setIsDrawing(true);
+      isDrawingRef.current = true;
+      setCurrentPoints([coords]);
       return;
     }
 
     if (toolMode === 'wall' && wallSubMode === 'vertex') {
+      if (walls.length === 0) return;
       const VERTEX_THRESHOLD = 10;
-      const allEndpoints: { pt: Point; wallIdx: number; endIdx: number }[] = [];
-      for (let i = 0; i < walls.length; i++) {
-        allEndpoints.push({ pt: walls[i][0], wallIdx: i, endIdx: 0 });
-        allEndpoints.push({ pt: walls[i][1], wallIdx: i, endIdx: 1 });
+      // Collect all unique endpoints
+      const seen = new Set<string>();
+      const allEndpoints: Point[] = [];
+      for (const w of walls) {
+        const k1 = `${w[0].x},${w[0].y}`, k2 = `${w[1].x},${w[1].y}`;
+        if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w[0].x, y: w[0].y }); }
+        if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w[1].x, y: w[1].y }); }
       }
-      let bestPt: Point | null = null;
+      // Find nearest endpoint to click
+      let clickedPt: Point | null = null;
       let bestDist = VERTEX_THRESHOLD;
       for (const ep of allEndpoints) {
-        const d = Math.hypot(ep.pt.x - coords.x, ep.pt.y - coords.y);
-        if (d < bestDist) { bestDist = d; bestPt = ep.pt; }
+        const d = Math.hypot(ep.x - coords.x, ep.y - coords.y);
+        if (d < bestDist) { bestDist = d; clickedPt = ep; }
       }
+      if (!clickedPt) { setVertexWallStart(null); vertexWallStartRef.current = null; return; }
+
       const start = vertexWallStartRef.current;
       if (start) {
-        // Second click: connect if we hit an endpoint, else cancel
-        if (bestPt && (Math.hypot(bestPt.x - start.x, bestPt.y - start.y) > 2)) {
-          if (Math.hypot(start.x - bestPt.x, start.y - bestPt.y) > 1) {
-            const merged = [...walls, [start, bestPt] as WallSegment];
-            onWallsChange?.(merged);
+        // Second click
+        const isSamePt = clickedPt.x === start.x && clickedPt.y === start.y;
+        if (isSamePt) {
+          // Same vertex clicked twice → connect to nearest other endpoint
+          let nearestPt: Point | null = null;
+          let nearestDist = Infinity;
+          for (const ep of allEndpoints) {
+            if (ep.x === start.x && ep.y === start.y) continue;
+            const d = Math.hypot(ep.x - start.x, ep.y - start.y);
+            if (d > 0 && d < nearestDist) { nearestDist = d; nearestPt = ep; }
+          }
+          if (nearestPt) {
+            const exists = walls.some(w =>
+              (Math.hypot(w[0].x - start.x, w[0].y - start.y) < 1 && Math.hypot(w[1].x - nearestPt!.x, w[1].y - nearestPt!.y) < 1) ||
+              (Math.hypot(w[0].x - nearestPt!.x, w[0].y - nearestPt!.y) < 1 && Math.hypot(w[1].x - start.x, w[1].y - start.y) < 1)
+            );
+            if (!exists) onWallsChange?.([...walls, [start, nearestPt] as WallSegment]);
+          }
+        } else {
+          // Different vertex → connect start → clickedPt
+          if (Math.hypot(start.x - clickedPt.x, start.y - clickedPt.y) > 2) {
+            onWallsChange?.([...walls, [start, clickedPt] as WallSegment]);
           }
         }
         setVertexWallStart(null);
         vertexWallStartRef.current = null;
       } else {
-        // First click: set start if we hit an endpoint
-        if (bestPt) {
-          setVertexWallStart(bestPt);
-          vertexWallStartRef.current = bestPt;
-        }
+        // First click: remember start
+        setVertexWallStart(clickedPt);
+        vertexWallStartRef.current = clickedPt;
       }
       return;
     }
@@ -2227,19 +2272,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dy = coords.y - moveWallStartMouse.current.y;
       const newP1: Point = { x: Math.round(startPos[0].x + dx), y: Math.round(startPos[0].y + dy) };
       const newP2: Point = { x: Math.round(startPos[1].x + dx), y: Math.round(startPos[1].y + dy) };
-      const nextWalls = [...walls];
-      const tex = nextWalls[idx][2];
-      if (tex) {
-        const repeat = nextWalls[idx][3];
-        if (repeat) {
-          nextWalls[idx] = [newP1, newP2, tex as string, repeat as number];
-        } else {
-          nextWalls[idx] = [newP1, newP2, tex as string];
-        }
-      } else {
-        nextWalls[idx] = [newP1, newP2];
-      }
-      onWallsChange?.(nextWalls);
+      setWallMoveDraft({ idx, p1: newP1, p2: newP2 });
       return;
     }
 
@@ -2287,8 +2320,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setCurrentPoints([currentPoints[0], effectiveCoords]);
         return;
       }
+      if (toolMode === 'wall' && wallSubMode === 'slice') {
+        if (currentPoints.length > 0) setCurrentPoints([currentPoints[0], coords]);
+        return;
+      }
       if (toolMode === 'wall' && wallSubMode === 'erase') {
-        eraseWallsAtPoint(coords);
+        eraseWallsAtPoint(coords, e.altKey);
         return;
       }
 
@@ -2461,9 +2498,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
     if (toolMode === 'wall' && wallSubMode === 'move') {
+      if (wallMoveDraft) {
+        const nextWalls = [...walls];
+        const tex = nextWalls[wallMoveDraft.idx][2];
+        const rep = nextWalls[wallMoveDraft.idx][3];
+        if (tex) {
+          nextWalls[wallMoveDraft.idx] = rep
+            ? [wallMoveDraft.p1, wallMoveDraft.p2, tex as string, rep as number]
+            : [wallMoveDraft.p1, wallMoveDraft.p2, tex as string];
+        } else {
+          nextWalls[wallMoveDraft.idx] = [wallMoveDraft.p1, wallMoveDraft.p2];
+        }
+        onWallsChange?.(nextWalls);
+      }
+      setWallMoveDraft(null);
       movingWallIndexRef.current = null;
       movingWallStartPositions.current = null;
       setMovingWallIndex(null);
+      return;
     }
 
     if (isDrawing) {
@@ -2625,6 +2677,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         };
         onStrokesChange([...strokes, newStroke]);
       }
+      if (toolMode === 'wall' && wallSubMode === 'slice' && currentPoints.length === 2) {
+        // Slice: split walls that intersect the drawn line
+        const a = currentPoints[0], b = currentPoints[1];
+        const splitWalls: WallSegment[] = [];
+        for (const w of walls) {
+          const c = w[0], d = w[1];
+          const denom = (d.x - c.x) * (b.y - a.y) - (d.y - c.y) * (b.x - a.x);
+          if (Math.abs(denom) < 0.001) { splitWalls.push(w); continue; }
+          const t = ((a.x - c.x) * (b.y - a.y) - (a.y - c.y) * (b.x - a.x)) / denom;
+          const u = ((a.x - c.x) * (d.y - c.y) - (a.y - c.y) * (d.x - c.x)) / denom;
+          if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            const ix = Math.round(a.x + u * (b.x - a.x));
+            const iy = Math.round(a.y + u * (b.y - a.y));
+            const d1 = Math.hypot(ix - c.x, iy - c.y);
+            const d2 = Math.hypot(ix - d.x, iy - d.y);
+            if (d1 > 2 && d2 > 2) {
+              const tex = w[2] as string | undefined;
+              const rep = w[3] as number | undefined;
+              const push = (p1: Point, p2: Point) => {
+                if (tex) splitWalls.push(rep ? [p1, p2, tex, rep] : [p1, p2, tex]);
+                else splitWalls.push([p1, p2]);
+              };
+              push(c, { x: ix, y: iy });
+              push({ x: ix, y: iy }, d);
+            } else {
+              splitWalls.push(w); // split too close to endpoint, keep whole
+            }
+          } else {
+            splitWalls.push(w);
+          }
+        }
+        if (splitWalls.length !== walls.length) {
+          // Don't use mergeWalls here — it would re-merge collinear split fragments
+          onWallsChange?.(splitWalls);
+        }
+      }
       setCurrentPoints([]);
       const ctx = ctxRef.current;
       if (ctx) {
@@ -2779,13 +2867,70 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return list;
   };
 
-  const eraseWallsAtPoint = (pt: Point) => {
-    const r = eraseSize;
-    const remaining = walls.filter(w => {
-      return getDistanceToSegment(pt, w[0], w[1]) > r;
-    });
-    if (remaining.length !== walls.length) {
-      onWallsChange?.(mergeWalls(remaining));
+  const eraseWallsAtPoint = (pt: Point, isAltPressed: boolean = false) => {
+    // Scale hit radius by zoom so the cursor visual (always eraseSize px on screen)
+    // matches the true canvas-coordinate hit area
+    const r = eraseSize / zoom;
+    if (isAltPressed) {
+      // Alt+click: erase a section (radius r) centered at the projection point, splitting wall into two
+      let changed = false;
+      const nextWalls: WallSegment[] = [];
+      for (const w of walls) {
+        const d = getDistanceToSegment(pt, w[0], w[1]);
+        if (d <= r) {
+          const dx = w[1].x - w[0].x;
+          const dy = w[1].y - w[0].y;
+          const len2 = dx * dx + dy * dy;
+          if (len2 > 0) {
+            const len = Math.sqrt(len2);
+            let t = ((pt.x - w[0].x) * dx + (pt.y - w[0].y) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+            const halfArc = r / len; // erased interval half-length in parameter space
+            const t0 = Math.max(0, t - halfArc);
+            const t1 = Math.min(1, t + halfArc);
+            const tex = w[2] as string | undefined;
+            const repeat = w[3] as number | undefined;
+            const pushSeg = (a: Point, b: Point) => {
+              if (tex) nextWalls.push(repeat ? [a, b, tex, repeat] : [a, b, tex]);
+              else nextWalls.push([a, b]);
+            };
+            if (t0 > 0 && t1 < 1) {
+              // Both ends remain → two separate walls
+              pushSeg(
+                w[0],
+                t0 <= 0 ? w[0] : { x: Math.round(w[0].x + t0 * dx), y: Math.round(w[0].y + t0 * dy) }
+              );
+              pushSeg(
+                t1 >= 1 ? w[1] : { x: Math.round(w[0].x + t1 * dx), y: Math.round(w[0].y + t1 * dy) },
+                w[1]
+              );
+            } else if (t0 <= 0 && t1 < 1) {
+              // Erased from start to t1 → keep end portion
+              const p1: Point = { x: Math.round(w[0].x + t1 * dx), y: Math.round(w[0].y + t1 * dy) };
+              if (Math.hypot(p1.x - w[1].x, p1.y - w[1].y) > 3) pushSeg(p1, w[1]);
+            } else if (t0 > 0 && t1 >= 1) {
+              // Erased from t0 to end → keep start portion
+              const p0: Point = { x: Math.round(w[0].x + t0 * dx), y: Math.round(w[0].y + t0 * dy) };
+              if (Math.hypot(p0.x - w[0].x, p0.y - w[0].y) > 3) pushSeg(w[0], p0);
+            }
+            // else t0<=0 && t1>=1 → entire wall erased, do nothing
+            changed = true;
+          } else {
+            nextWalls.push(w);
+          }
+        } else {
+          nextWalls.push(w);
+        }
+      }
+      if (changed) onWallsChange?.(mergeWalls(nextWalls));
+    } else {
+      // Normal erase: remove walls within radius
+      const remaining = walls.filter(w => {
+        return getDistanceToSegment(pt, w[0], w[1]) > r;
+      });
+      if (remaining.length !== walls.length) {
+        onWallsChange?.(mergeWalls(remaining));
+      }
     }
     const remainingLocked = lockedWalls.filter(w => {
       const d1 = getDistanceToSegment(pt, w.p1, w.p2);
@@ -3416,22 +3561,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const activeNoteMarker = markers.find(m => m.id === activeNoteMarkerId);
 
-  // 距離計測: ハイライト中の全線の計測値を算出 (補正後・接続前のポイント列で計算)
+  // 距離計測: ハイライト中の全線 + 常に一時線の計測値を算出 (補正後・接続前のポイント列で計算)
   const measureInfos = useMemo(() => {
-    if (highlightedStrokeIdxs.size === 0) return [] as {
-      strokeIdx: number;
-      lengthPx: number;
-      labelX: number;
-      labelY: number;
-    }[];
     const result: {
       strokeIdx: number;
       lengthPx: number;
       labelX: number;
       labelY: number;
     }[] = [];
+    // 常に一時線を含める
+    const allIdxs = new Set(highlightedStrokeIdxs);
+    strokes.forEach((s, i) => {
+      if (s.type === 'temporary') allIdxs.add(i);
+    });
+    if (allIdxs.size === 0) return result;
     // 安定した表示順を確保するためインデックス昇順で処理
-    const sortedIdxs = Array.from(highlightedStrokeIdxs).sort((a, b) => a - b);
+    const sortedIdxs = Array.from(allIdxs).sort((a, b) => a - b);
     for (const idx of sortedIdxs) {
       if (idx < 0 || idx >= strokes.length) continue;
       const hs = strokes[idx];
@@ -3591,37 +3736,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 strokeDasharray="4,4"
               />
             )}
-            {wallSubMode === 'vertex' && walls.length > 0 && (() => {
-              const endpoints = new Set<string>();
+            {(wallSubMode === 'vertex' || wallSubMode === 'slice') && walls.length > 0 && (() => {
+              const seen = new Set<string>();
               const pts: Point[] = [];
               for (const w of walls) {
                 const k1 = `${w[0].x},${w[0].y}`;
                 const k2 = `${w[1].x},${w[1].y}`;
-                if (!endpoints.has(k1)) { endpoints.add(k1); pts.push(w[0]); }
-                if (!endpoints.has(k2)) { endpoints.add(k2); pts.push(w[1]); }
+                if (!seen.has(k1)) { seen.add(k1); pts.push(w[0]); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push(w[1]); }
               }
-              return (
-                <>
-                  {pts.map((pt, i) => (
-                    <circle
-                      key={`vtx-${i}`}
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={5}
-                      fill={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#ffcc00' : 'rgba(255, 85, 0, 0.6)'}
-                      stroke={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#fff' : 'rgba(255, 85, 0, 0.9)'}
-                      strokeWidth={1.5}
-                    />
-                  ))}
-                </>
-              );
+              return pts.map((pt, i) => (
+                <circle
+                  key={`vtx-${i}`}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={5}
+                  fill={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#ffcc00' : 'rgba(255, 85, 0, 0.6)'}
+                  stroke={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#fff' : 'rgba(255, 85, 0, 0.9)'}
+                  strokeWidth={1.5}
+                />
+              ));
             })()}
-            {wallSubMode === 'move' && movingWallIndex !== null && (
+            {wallSubMode === 'move' && (wallMoveDraft || movingWallIndex !== null) && (
               <line
-                x1={walls[movingWallIndex]?.[0]?.x ?? 0}
-                y1={walls[movingWallIndex]?.[0]?.y ?? 0}
-                x2={walls[movingWallIndex]?.[1]?.x ?? 0}
-                y2={walls[movingWallIndex]?.[1]?.y ?? 0}
+                x1={wallMoveDraft?.p1?.x ?? walls[movingWallIndex ?? -1]?.[0]?.x ?? 0}
+                y1={wallMoveDraft?.p1?.y ?? walls[movingWallIndex ?? -1]?.[0]?.y ?? 0}
+                x2={wallMoveDraft?.p2?.x ?? walls[movingWallIndex ?? -1]?.[1]?.x ?? 0}
+                y2={wallMoveDraft?.p2?.y ?? walls[movingWallIndex ?? -1]?.[1]?.y ?? 0}
                 stroke="#00ccff"
                 strokeWidth={7}
                 strokeDasharray="4,4"
@@ -4881,8 +5022,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             />
           )}
 
-          {/* 距離計測モード: ハイライト中の各線の左下に距離ラベルを表示 */}
-          {toolMode === 'measure' && measureInfos.map((info, infoIdx) => (
+          {/* 距離ラベル: ハイライト中の線 + 常に一時線の左下に表示 */}
+          {measureInfos
+            .filter(info => toolMode === 'measure' || strokes[info.strokeIdx]?.type === 'temporary')
+            .map((info, infoIdx) => (
             <div
               key={`measure-label-${info.strokeIdx}-${infoIdx}`}
               className="measure-label"
