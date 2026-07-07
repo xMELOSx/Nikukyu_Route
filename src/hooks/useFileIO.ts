@@ -10,11 +10,11 @@ import {
   importPNG as unifiedImportPNG,
 } from '../utils/SaveLoadService';
 import type { UseRouteApi } from './useRoute';
-import type { UseGlobalMarkersApi } from './useGlobalMarkers';
+import type { GlobalMarkersStore } from '../utils/GlobalDataService';
 
 export interface UseFileIOOptions {
   routeApi: UseRouteApi;
-  globalMarkersStore: UseGlobalMarkersApi;
+  globalMarkersStore: GlobalMarkersStore;
   markerScale: number;
   showNotification: (msg: string, ms?: number) => void;
   /** Called at the start of any import (JSON / PNG) that overwrites the

@@ -17,16 +17,15 @@ import type {
   FloorType, MarkerType, DrawingStroke, HeistMarker, RouteData,
   SpawnPoint, RegisteredItem,
 } from '../utils/DataManager';
-import type { UseGlobalMarkersApi } from '../hooks/useGlobalMarkers';
-import type { GlobalWalls } from '../hooks/useGlobalWalls';
-import type { UseGlobalSpawnsApi } from '../hooks/useGlobalSpawns';
+import type { GlobalMarkersStore, GlobalWalls } from '../utils/GlobalDataService';
+import type { SpawnStore } from '../utils/GlobalDataService';
 import type { UseHistoryApi } from '../hooks/useHistory';
 
 export interface LeftSidebarProps {
   routeApi: any;
-  globalMarkersStore: UseGlobalMarkersApi;
+  globalMarkersStore: GlobalMarkersStore;
   historyApi: UseHistoryApi;
-  spawnApi: UseGlobalSpawnsApi;
+  spawnApi: SpawnStore;
   globalWalls: GlobalWalls;
   notification: { show: (msg: string, ms?: number) => void };
   canvasRef: any;

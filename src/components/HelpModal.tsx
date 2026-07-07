@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
 import { MARKER_META, APP_VERSION, APP_DISPLAY_VERSION, type HeistMarker, type RouteData, type SkillCdPreset } from '../utils/DataManager';
-import { HELP_TABS, saveHelpData } from '../utils/HelpDataManager';
+import { HELP_TABS } from '../utils/GlobalDataService';
 import { t } from '../i18n';
 import { DictionaryEditor } from './DictionaryEditor';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -121,7 +121,6 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   const setCurrentText = (!isDebugTab && !isSettingsTab && isLocal) ? (val: string) => {
     const next = { ...helpTexts, [currentTabData.id]: val };
     setHelpTexts(next);
-    saveHelpData(next);
   } : undefined;
 
   return (

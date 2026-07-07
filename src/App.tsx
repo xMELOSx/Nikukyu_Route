@@ -38,12 +38,9 @@ import {
   savePresetBody,
   migrateLoadedRoute
 } from './utils/DataManager';
-import { type HelpData, fetchHelpData } from './utils/HelpDataManager';
 import { useNotifications } from './hooks/useNotifications';
-import { useGlobalDefaults, type GlobalDefaults } from './hooks/useGlobalDefaults';
-import { useGlobalMarkers } from './hooks/useGlobalMarkers';
-import { useGlobalWalls } from './hooks/useGlobalWalls';
-import { useGlobalSpawns } from './hooks/useGlobalSpawns';
+import { useGlobalData } from './hooks/useGlobalData';
+import { GlobalDataService } from './utils/GlobalDataService';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
@@ -81,9 +78,7 @@ import LeftSidebar from './components/LeftSidebar';
 
 
 export default function App() {
-  const isLocal = window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname === '::1';
+  const isLocal = GlobalDataService.getInstance().isLocal;
 
   const currentFloor: FloorType = 'main';
 
@@ -195,7 +190,6 @@ export default function App() {
     localStorage.setItem('heist_threshold_skill_cd', String(clamped));
     postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], stopMarkerThreshold, movementMarkerThreshold, warpMarkerThreshold, clamped);
   };
-  const [helpTexts, setHelpTexts] = useState<HelpData>({});
   const [showMarkerLabels, setShowMarkerLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_show_labels');
     return saved !== null ? saved === 'true' : true;
@@ -301,107 +295,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_hide_markers_during_walls', String(hideMarkersDuringWalls));
   }, [hideMarkersDuringWalls]);
-
-  const [lockedWalls, setLockedWalls] = useState<GlobalLockedWalls>(() => {
-    try {
-      const saved = localStorage.getItem('heist_global_locked_walls');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const out: GlobalLockedWalls = {};
-        for (const floor of ['main', 'second', 'third', 'fourth']) {
-          out[floor] = [];
-          if (Array.isArray(parsed[floor])) {
-            for (const seg of parsed[floor]) {
-              if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
-                out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
-              }
-            }
-          }
-        }
-        return out;
-      }
-    } catch {}
-    return { main: [], second: [], third: [], fourth: [] };
-  });
-  const [lockedWallsLoaded, setLockedWallsLoaded] = useState(!isLocal);
-  const persistLockedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!lockedWallsLoaded) return; // サーバーからの読み込み完了前は絶対に上書き保存しない！！！
-
-    localStorage.setItem('heist_global_locked_walls', JSON.stringify(lockedWalls));
-    if (!isLocal) return;
-
-    if (persistLockedTimerRef.current) clearTimeout(persistLockedTimerRef.current);
-    persistLockedTimerRef.current = setTimeout(() => {
-      fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(lockedWalls)
-      }).catch(err => console.error('Failed to persist global locked walls:', err));
-    }, 150);
-
-    return () => {
-      if (persistLockedTimerRef.current) clearTimeout(persistLockedTimerRef.current);
-    };
-  }, [lockedWalls, isLocal, lockedWallsLoaded]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadGates = async () => {
-      // 1. 開発用APIエンドポイントの試行 (isLocal の場合のみ)
-      if (isLocal) {
-        try {
-          const res = await fetch(`${import.meta.env.BASE_URL}api/global-locked-walls`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && typeof data === 'object' && !Array.isArray(data)) {
-              if (cancelled) return;
-              applyLockedWallsData(data);
-              return;
-            }
-          }
-        } catch {}
-      }
-
-      // 2. 静的ファイルのフォールバック試行 (isLocal === false または API呼び出しが失敗した際)
-      try {
-        const fileRes = await fetch(`${import.meta.env.BASE_URL}global_locked_walls.json`);
-        if (fileRes.ok) {
-          const data = await fileRes.json();
-          if (data && typeof data === 'object' && !Array.isArray(data)) {
-            if (cancelled) return;
-            applyLockedWallsData(data);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load global locked walls from static file:', err);
-      }
-    };
-
-    const applyLockedWallsData = (data: any) => {
-      const out: GlobalLockedWalls = {};
-      for (const floor of ['main', 'second', 'third', 'fourth']) {
-        out[floor] = [];
-        if (Array.isArray(data[floor])) {
-          for (const seg of data[floor]) {
-            if (seg && seg.p1 && seg.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
-              out[floor].push({ p1: seg.p1, p2: seg.p2, isOpen: false }); // 起動時はすべて閉じる
-            }
-          }
-        }
-      }
-      setLockedWalls(out);
-    };
-
-    loadGates().finally(() => {
-      if (!cancelled) setLockedWallsLoaded(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLocal]);
 
   const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked'>(() => {
     const saved = localStorage.getItem('heist_wall_locked_sub_mode');
@@ -803,16 +696,92 @@ export default function App() {
   // --- Hooks (in dependency order) ---
   const notification = useNotifications(2000);
 
-  // Global-defaults ref is created here so both useRoute (for applying
-  // defaults on setRouteWithGlobalDefaults) and useGlobalDefaults (for
-  // loading + setters) share the same instance.
+  // Unified Global Data Service (replaces useGlobalMarkers, useGlobalWalls,
+  // useGlobalSpawns, useGlobalDefaults, lockedWalls inline, fetchHelpData)
+  const globalData = useGlobalData({
+    onEvent: (event) => {
+      const emoji = { load: '📂', merge: '📂', save: '💾', reset: '🔄' }[event.operation] || '📋';
+      const detail = event.detail ? ` (${event.detail})` : '';
+      notification.show(`${emoji} ${event.type} ${event.operation}d: ${event.source}${detail}`, 2500);
+    },
+    onDefaultsLoaded: (gd) => {
+      if (gd.stopMarkerThreshold !== undefined) setStopMarkerThresholdState(gd.stopMarkerThreshold);
+      if (gd.movementMarkerThreshold !== undefined) setMovementMarkerThresholdState(gd.movementMarkerThreshold);
+      if (gd.warpMarkerThreshold !== undefined) setWarpMarkerThresholdState(gd.warpMarkerThreshold);
+      if (gd.skillCdThreshold !== undefined) setSkillCdThresholdState(gd.skillCdThreshold);
+    }
+  });
+
+  // helpTexts synced from global data (must be after useGlobalData)
+  const [helpTexts, setHelpTexts] = useState<HelpData>(() => ({}));
+  useEffect(() => {
+    if (globalData.help && Object.keys(globalData.help).length > 0) {
+      setHelpTexts(globalData.help);
+    }
+  }, [globalData.help]);
+
+  // lockedWalls managed by GlobalDataService
+  const lockedWalls = globalData.lockedWalls;
+
+  // Backward compat: globalDefaultsRef for useRoute
   const globalDefaultsRef = useRef<GlobalDefaults>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
+  globalDefaultsRef.current = globalData.defaults || globalDefaultsRef.current;
 
-  const globalMarkersStore = useGlobalMarkers({ isLocal });
+  // Backward compat: globalMarkersStore adapter for useRoute/useFileIO/scattered code
+  const globalMarkersStore = useMemo(() => {
+    const markers = globalData.markers;
+    const setMarkers = globalData.setMarkers;
+    return {
+      get globalMarkers() { return markers; },
+      setGlobalMarkers: (m: HeistMarker[] | ((prev: HeistMarker[]) => HeistMarker[])) => {
+        setMarkers(typeof m === 'function' ? m(markers) : m);
+      },
+      replace: (m: HeistMarker[]) => setMarkers(m),
+      mergeFromImport: (incoming: HeistMarker[]) => {
+        const existingIds = new Set(markers.map(x => x.id));
+        const newOnes = incoming.filter(x => !existingIds.has(x.id));
+        if (newOnes.length > 0) setMarkers([...markers, ...newOnes]);
+      },
+      mergeOrUpdate: (incoming: HeistMarker[]) => {
+        if (incoming.length === 0) return;
+        const byId = new Map(incoming.map(m => [m.id, m]));
+        const updated = markers.map(m => { const n = byId.get(m.id); return n ? { ...m, ...n } : m; });
+        const existingIds = new Set(markers.map(m => m.id));
+        const newOnes = incoming.filter(m => !existingIds.has(m.id));
+        if (newOnes.length > 0 || updated.some((m, i) => m !== markers[i])) {
+          setMarkers([...updated, ...newOnes]);
+        }
+      },
+    };
+  }, [globalData.markers, globalData.setMarkers]);
 
-  // Global Spawn Records
-  const spawnApi = useGlobalSpawns();
-  const setSpawnPoints = spawnApi.setPoints;
+  // Backward compat: spawnApi adapter for existing event handlers
+  const [spawnPoints, setSpawnPoints] = useState<SpawnPoint[]>(globalData.spawnPoints);
+  const [spawnItems, setSpawnItems] = useState<RegisteredItem[]>(globalData.spawnItems);
+  useEffect(() => {
+    setSpawnPoints(globalData.spawnPoints);
+    setSpawnItems(globalData.spawnItems);
+  }, [globalData.spawnPoints, globalData.spawnItems]);
+  const spawnApi = useMemo(() => ({
+    points: spawnPoints, items: spawnItems,
+    setPoints: (p: SpawnPoint[]) => { setSpawnPoints(p); globalData.setSpawns(p, spawnItems); },
+    addPoint: (p: SpawnPoint) => { const n = [...spawnPoints, p]; setSpawnPoints(n); globalData.setSpawns(n, spawnItems); },
+    updatePoint: (id: string, u: Partial<SpawnPoint>) => { const n = spawnPoints.map(pt => pt.id === id ? { ...pt, ...u } : pt); setSpawnPoints(n); globalData.setSpawns(n, spawnItems); },
+    removePoint: (id: string) => { const n = spawnPoints.filter(pt => pt.id !== id); setSpawnPoints(n); globalData.setSpawns(n, spawnItems); },
+    addItem: (item: RegisteredItem) => { const n = [...spawnItems, item]; setSpawnItems(n); globalData.setSpawns(spawnPoints, n); },
+    updateItem: (id: string, u: Partial<RegisteredItem>) => { const n = spawnItems.map(i => i.id === id ? { ...i, ...u } : i); setSpawnItems(n); globalData.setSpawns(spawnPoints, n); },
+    removeItem: (id: string) => { const n = spawnItems.filter(i => i.id !== id); setSpawnItems(n); globalData.setSpawns(spawnPoints, n); },
+    moveItem: (id: string, dir: -1 | 1) => {
+      const idx = spawnItems.findIndex(i => i.id === id);
+      if (idx < 0) return;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= spawnItems.length) return;
+      const n = [...spawnItems]; [n[idx], n[newIdx]] = [n[newIdx], n[idx]];
+      setSpawnItems(n); globalData.setSpawns(spawnPoints, n);
+    },
+  }), [spawnPoints, spawnItems, globalData.setSpawns]);
+
+  // setSpawnPoints is now the local useState setter from the adapter above
 
   // スポーンツールのサブモード
   const [spawnToolMode, setSpawnToolMode] = useState<'place' | 'edit' | 'erase' | 'manage'>('place');
@@ -863,13 +832,10 @@ export default function App() {
   // デバッグメニュートグル → サーバーの global_defaults.json を書き換え
   const handleSpawnFeatureToggle = useCallback((enabled: boolean) => {
     setSpawnServerEnabled(enabled);
-    globalDefaultsRef.current = { ...globalDefaultsRef.current, spawnFeatureEnabled: enabled };
-    fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...globalDefaultsRef.current, spawnFeatureEnabled: enabled })
-    }).catch(() => { });
-  }, []);
+    const updated = { ...(globalData.defaults || {} as GlobalDefaults), spawnFeatureEnabled: enabled };
+    globalDefaultsRef.current = updated;
+    globalData.setDefaults(updated, globalData.skillCdPresets);
+  }, [globalData.setDefaults, globalData.skillCdPresets]);
   const [spawnVisible, setSpawnVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_spawn_visible');
     return saved === null ? true : saved === 'true';
@@ -1048,23 +1014,18 @@ export default function App() {
     if (imported > 0) setBulkInput('');
   }, [bulkInput, bulkColor, spawnApi]);
 
-  // Global Walls — shared across all plans AND all users. The hook loads from
-  // the `/api/global-walls` endpoint (with the static `global_walls.json` as
-  // a build-time fallback for static hosts) and persists edits back to the
-  // same file. `localStorage` is used as a tiny client-side cache so the
-  // first paint can show walls before the network round-trip resolves, but
-  // the server is the source of truth.
-  const globalWallsStore = useGlobalWalls({ isLocal });
-  const globalWalls = globalWallsStore.walls;
+  // Global Walls — managed by GlobalDataService
+  const globalWalls = globalData.walls;
   const globalWallsRef = useRef(globalWalls);
   globalWallsRef.current = globalWalls;
-  const updateGlobalWalls = (next: Record<string, any>) => {
-    globalWallsStore.replace(next as any);
+  const updateGlobalWalls = (next: GlobalWalls) => {
+    globalData.setWalls(next);
   };
 
   const handleLockedWallsChange = useCallback((newLocked: LockedWallSegment[]) => {
-    setLockedWalls(prev => ({ ...prev, [currentFloor]: newLocked }));
-  }, [currentFloor]);
+    const next = { ...globalData.lockedWalls, [currentFloor]: newLocked };
+    globalData.setLockedWalls(next);
+  }, [currentFloor, globalData.lockedWalls, globalData.setLockedWalls]);
 
   const historyApiRef = useRef<any>(null);
 
@@ -1141,27 +1102,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeApi.route.id]);
 
-  const globalDefaults = useGlobalDefaults(globalDefaultsRef, (gd) => {
-    setDefaultsLoaded(true);
-    routeApi.setRouteWithGlobalDefaults(prev => ({
-      ...prev,
-      hiddenMarkers: [...new Set([...(prev.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
-      hiddenMarkerTypes: [...new Set([...(prev.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])]
-    }));
-    if (gd.stopMarkerThreshold !== undefined) {
-      setStopMarkerThresholdState(gd.stopMarkerThreshold);
+  const globalsLoaded = !globalData.loading;
+
+  // Sync defaults to route on load
+  useEffect(() => {
+    if (globalData.defaults && routeApi.route.hiddenMarkers) {
+      const gd = globalData.defaults;
+      routeApi.setRouteWithGlobalDefaults(prev => ({
+        ...prev,
+        hiddenMarkers: [...new Set([...(prev.hiddenMarkers || []), ...(gd.hiddenMarkers || [])])],
+        hiddenMarkerTypes: [...new Set([...(prev.hiddenMarkerTypes || []), ...(gd.hiddenMarkerTypes || [])])]
+      }));
     }
-    if (gd.movementMarkerThreshold !== undefined) {
-      setMovementMarkerThresholdState(gd.movementMarkerThreshold);
-    }
-    if (gd.warpMarkerThreshold !== undefined) {
-      setWarpMarkerThresholdState(gd.warpMarkerThreshold);
-    }
-    if (gd.skillCdThreshold !== undefined) {
-      setSkillCdThresholdState(gd.skillCdThreshold);
-    }
-  }, { isLocal });
-  const globalsLoaded = globalDefaults.loaded;
+  }, [globalData.defaults]);
 
   const memoizedStrokes = useMemo(
     () => normalizeStrokes(routeApi.route.strokes[currentFloor]),
@@ -1172,14 +1125,14 @@ export default function App() {
     getRoute: () => routeApi.route,
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
     getWalls: () => globalWallsRef.current as any,
-    getLockedWalls: () => lockedWalls,
+    getLockedWalls: () => globalData.lockedWalls,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
-    replaceLockedWalls: (next) => setLockedWalls(next),
+    replaceLockedWalls: (next) => globalData.setLockedWalls(next),
     persistGlobalMarkers: (markers) => {
       if (Array.isArray(markers) && markers.length > 0) {
-        localStorage.setItem('heist_global_markers', JSON.stringify(markers));
+        globalData.setMarkers(markers);
         if (isLocal) {
           fetch(`${import.meta.env.BASE_URL}api/global-markers`, {
             method: 'POST',
@@ -1478,8 +1431,8 @@ export default function App() {
     const wTh = warpTh !== undefined ? warpTh : warpMarkerThreshold;
     const skTh = skillTh !== undefined ? skillTh : skillCdThreshold;
 
-    globalDefaultsRef.current = {
-      ...globalDefaultsRef.current,
+    const updated: GlobalDefaults = {
+      ...(globalData.defaults || {} as GlobalDefaults),
       hiddenMarkers,
       hiddenMarkerTypes,
       stopMarkerThreshold: sTh,
@@ -1487,22 +1440,8 @@ export default function App() {
       warpMarkerThreshold: wTh,
       skillCdThreshold: skTh
     };
-
-    if (isLocal) {
-      fetch(`${import.meta.env.BASE_URL}api/global-defaults`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hiddenMarkers,
-          hiddenMarkerTypes,
-          startupFocusMarkerId: globalDefaultsRef.current.startupFocusMarkerId,
-          stopMarkerThreshold: sTh,
-          movementMarkerThreshold: mTh,
-          warpMarkerThreshold: wTh,
-          skillCdThreshold: skTh
-        })
-      });
-    }
+    globalDefaultsRef.current = updated;
+    globalData.setDefaults(updated, globalData.skillCdPresets);
   };
 
   const handleHideGlobalMarker = (markerId: string) => {
@@ -1559,7 +1498,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_global_markers_migrated_v2', 'true');
     routeApi.refreshSavesList();
-    fetchHelpData().then(data => setHelpTexts(data));
+    // help data loaded by GlobalDataService
 
     if (autoLoadLastRoute) {
       const lastId = localStorage.getItem('heist_last_used_route_id');
@@ -1885,8 +1824,7 @@ export default function App() {
     }
     setNewPlanConfirm(false);
     stopAutoRouteIfActive();
-    globalMarkersStore.reload();
-    routeApi.createNewPlan();
+    globalData.resetToGlobal().then(() => routeApi.createNewPlan());
   };
 
   // Quick-add current save as a preset
@@ -2133,7 +2071,7 @@ export default function App() {
           wallAutoSnap={wallAutoSnap}
           setWallAutoSnap={setWallAutoSnap}
           lockedWalls={lockedWalls}
-          setLockedWalls={setLockedWalls}
+          setLockedWalls={(walls: any) => globalData.setLockedWalls(typeof walls === 'function' ? walls(globalData.service.getLockedWalls()) : walls)}
           wallLockedSubMode={wallLockedSubMode}
           setWallLockedSubMode={setWallLockedSubMode}
           selectedTexture={selectedTexture}
@@ -2232,7 +2170,7 @@ export default function App() {
               warpMarkerThreshold={warpMarkerThreshold}
               skillCdThreshold={skillCdThreshold}
               showDetectionRanges={showDetectionRanges}
-              startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
+              startupFocusMarkerId={globalData.defaults?.startupFocusMarkerId}
               hiddenMarkers={routeApi.route.hiddenMarkers || []}
               hiddenMarkerTypes={routeApi.route.hiddenMarkerTypes || []}
               onHideGlobalMarker={handleHideGlobalMarker}
@@ -2257,7 +2195,7 @@ export default function App() {
               stairsColor={stairsColor}
               fuseMode={autoRoute.fuseMode}
               inactiveMarkersMode={autoRoute.inactiveMarkersMode}
-              skillCdPresets={globalDefaults.skillCdPresets}
+               skillCdPresets={globalData.skillCdPresets}
               onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
               onAutoRouteStart={() => {
                 const updated = globalMarkersStore.globalMarkers.map(m =>
@@ -2353,7 +2291,7 @@ export default function App() {
             stairsColor,
             autoRoute.fuseMode,
             autoRoute.inactiveMarkersMode,
-            globalDefaults.skillCdPresets,
+            globalData.skillCdPresets,
             globalDefaultsRef.current.startupFocusMarkerId,
             spawnApi.points,
             spawnApi.items,
@@ -3497,7 +3435,7 @@ export default function App() {
         helpActiveTab={helpActiveTab}
         setHelpActiveTab={setHelpActiveTab}
         helpTexts={helpTexts}
-        setHelpTexts={setHelpTexts}
+        setHelpTexts={(texts: HelpData) => { setHelpTexts(texts); globalData.setHelp(texts); }}
         isHelpPreviewMode={isHelpPreviewMode}
         setIsHelpPreviewMode={setIsHelpPreviewMode}
         bgFileInputRef={fileIO.bgFileInputRef}
@@ -3509,7 +3447,7 @@ export default function App() {
         onHideGlobalMarker={handleHideGlobalMarker}
         onShowGlobalMarker={handleShowGlobalMarker}
         startupFocusMarkerId={globalDefaultsRef.current.startupFocusMarkerId}
-        onSetStartupFocus={(markerId) => globalDefaults.setStartupFocusMarkerId(markerId || null)}
+        onSetStartupFocus={(markerId) => { globalData.service.getDefaults(); /* trigger re-read */ if (globalData.defaults) { globalData.setDefaults({ ...globalData.defaults, startupFocusMarkerId: markerId || undefined }, globalData.skillCdPresets); } }}
         onClearOriginalAuthor={() => {
           // 原作者名を「意図的に No name として設定」する。 メモリ上は AUTHOR_DEFAULT_PLAIN
           // 文字列 (= 'No name') として保持。 保存時に 'No name' の暗号文 (= AUTHOR_UNKNOWN_MARKER
@@ -3537,10 +3475,10 @@ export default function App() {
         onShowOcrDebug={() => setShowOcrDebugModal(true)}
         spawnFeatureEnabled={spawnServerEnabled}
         onSpawnFeatureEnabledChange={handleSpawnFeatureToggle}
-        skillCdPresets={globalDefaults.skillCdPresets}
-        onAddSkillCdPreset={globalDefaults.addSkillCdPreset}
-        onUpdateSkillCdPreset={globalDefaults.updateSkillCdPreset}
-        onRemoveSkillCdPreset={globalDefaults.removeSkillCdPreset}
+        skillCdPresets={globalData.skillCdPresets}
+        onAddSkillCdPreset={globalData.addSkillCdPreset}
+        onUpdateSkillCdPreset={globalData.updateSkillCdPreset}
+        onRemoveSkillCdPreset={globalData.removeSkillCdPreset}
       />
 
       <HistoryModal

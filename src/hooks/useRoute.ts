@@ -24,8 +24,7 @@ import {
   removePresetBody,
   generateId
 } from '../utils/DataManager';
-import type { GlobalDefaults } from './useGlobalDefaults';
-import type { UseGlobalMarkersApi } from './useGlobalMarkers';
+import type { GlobalDefaults } from '../utils/GlobalDataService';
 
 // Route は DISPLAY STATE のみを保持する: indiv マーカー + hidden リスト + 線
 // + メタ情報。グローバルマーカーの実体は globalMarkersStore が保持する。
@@ -57,7 +56,7 @@ export interface UseRouteOptions {
   /** Global defaults ref, kept in sync by useGlobalDefaults. */
   globalDefaultsRef: React.MutableRefObject<GlobalDefaults>;
   /** Global-marker store, used by PNG/JSON import to merge in global markers. */
-  globalMarkersStore: UseGlobalMarkersApi;
+  globalMarkersStore: import('../utils/GlobalDataService').GlobalMarkersStore;
   /** Show a transient notification banner. */
   showNotification: (msg: string, ms?: number) => void;
   /** Marker scale (persisted separately). The route carries a snapshot for
