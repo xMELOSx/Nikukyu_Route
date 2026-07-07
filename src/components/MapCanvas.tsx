@@ -2147,8 +2147,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'wall' && wallSubMode === 'slice') {
-      setIsDrawing(true);
-      setCurrentPoints([coords]);
+      const halfLen = 30;
+      const p1: Point = { x: coords.x - halfLen, y: coords.y };
+      const p2: Point = { x: coords.x + halfLen, y: coords.y };
+      const newWall: WallSegment = [p1, p2];
+      onWallsChange?.([...walls, newWall]);
       return;
     }
 
@@ -2288,10 +2291,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         eraseWallsAtPoint(coords);
         return;
       }
-      if (toolMode === 'wall' && wallSubMode === 'slice') {
-        setCurrentPoints([currentPoints[0], coords]);
-        return;
-      }
+
       if (toolMode === 'toggle-vis') {
         toggleVisibilityAtPoint(coords);
         return;
@@ -2563,49 +2563,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           onLockedWallsChange?.([...lockedWalls, newSeg]);
         }
       }
-      if (toolMode === 'wall' && wallSubMode === 'slice' && currentPoints.length === 2) {
-        const s1 = currentPoints[0];
-        const s2 = currentPoints[1];
 
-        const getLineIntersectionLocal = (a: Point, b: Point, c: Point, d: Point): Point | null => {
-          const denom = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y);
-          if (Math.abs(denom) < 1e-10) return null;
-
-          const ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denom;
-          const ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denom;
-
-          if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
-            return {
-              x: a.x + ua * (b.x - a.x),
-              y: a.y + ua * (b.y - a.y)
-            };
-          }
-          return null;
-        };
-
-        let newWalls: WallSegment[] = [];
-        let didSlice = false;
-
-        for (const w of walls) {
-          const intersect = getLineIntersectionLocal(s1, s2, w[0], w[1]);
-          if (intersect) {
-            const dStart = Math.hypot(w[0].x - intersect.x, w[0].y - intersect.y);
-            const dEnd = Math.hypot(w[1].x - intersect.x, w[1].y - intersect.y);
-            if (dStart > 2 && dEnd > 2) {
-              const part1: WallSegment = w[2] ? [w[0], intersect, w[2]] : [w[0], intersect];
-              const part2: WallSegment = w[2] ? [intersect, w[1], w[2]] : [intersect, w[1]];
-              newWalls.push(part1, part2);
-              didSlice = true;
-              continue;
-            }
-          }
-          newWalls.push(w);
-        }
-
-        if (didSlice) {
-          onWallsChange?.(newWalls);
-        }
-      }
       if (toolMode === 'draw' && currentPoints.length >= 2) {
         let points = currentPoints;
         

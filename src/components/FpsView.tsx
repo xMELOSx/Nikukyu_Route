@@ -820,7 +820,7 @@ const FpsView: React.FC<FpsViewProps> = ({
           const offX = (ovCanvas.width - canvas.width * scale) / 2;
           const offY = (ovCanvas.height - canvas.height * scale) / 2;
           const halfFov = FOV / 2;
-          const distPlane = (canvas.width / 2) / Math.tan(FOV / 2);
+          const distPlane = (canvas.height / 2) / Math.tan(FOV / 2);
           for (const m of lm) {
             if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
             const img = tpsImgs[m.id];

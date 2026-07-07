@@ -216,7 +216,7 @@ function renderWalls(
   const numRays = W;
   const yOffset = -50 * (H / 240); // 地平線を上にずらして見下ろしパースにする (解像度に応じてスケーリング)
   const halfH = H / 2 + yOffset;
-  const distPlane = (W / 2) / Math.tan(fov / 2);
+  const distPlane = (H / 2) / Math.tan(fov / 2);
 
   const hits = castRays({ x: origin.x, y: origin.y, angle: originAngle }, walls, fov, numRays, args.playerDist);
   const lw = args.lockedWalls;
@@ -802,7 +802,7 @@ export function renderMarkers3D(
   const H = canvas.height;
   const yOffset = -50 * (H / 240);
   const halfH = H / 2 + yOffset;
-  const distPlane = (W / 2) / Math.tan(fov / 2);
+  const distPlane = (H / 2) / Math.tan(fov / 2);
   const halfFov = fov / 2;
   const camHeight = 24;
   const MARKER_WORLD_HEIGHT = 12;
@@ -956,7 +956,7 @@ export function renderTpsView(
   const H = canvas.height;
   const yOffset = -50 * (H / 240); // 地平線を上にずらして見下ろしパースにする (解像度に応じてスケーリング)
   const halfH = H / 2 + yOffset;
-  const distPlane = (W / 2) / Math.tan(fov / 2);
+  const distPlane = (H / 2) / Math.tan(fov / 2);
 
   const dx = player.x - camX;
   const dy = player.y - camY;
