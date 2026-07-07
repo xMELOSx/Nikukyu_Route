@@ -2732,7 +2732,7 @@ export default function App() {
                             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>X:{m.x} Y:{m.y}</span>
                             {isEditMode && (historyDeleteConfirmId === m.id ? (
                               <>
-                                <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); routeApi.setRoute(prev => ({ ...prev, markers: prev.markers.filter(x => x.id !== m.id) })); globalMarkersStore.setGlobalMarkers(prev => prev.filter(x => x.id !== m.id)); setHistoryDeleteConfirmId(null); notification.show(t('マーカーを削除しました')); }}>{t('削除する')}</button>
+                                <button className="btn-cyber danger" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); const combined = [...routeApi.route.markers, ...globalMarkersStore.globalMarkers].filter(x => x.id !== m.id); updateMarkers(combined, true, { isDelete: true }); setHistoryDeleteConfirmId(null); notification.show(t('マーカーを削除しました')); }}>{t('削除する')}</button>
                                 <button className="btn-cyber" style={{ fontSize: '8px', padding: '1px 4px', clipPath: 'none', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setHistoryDeleteConfirmId(null); }}>×</button>
                               </>
                             ) : (

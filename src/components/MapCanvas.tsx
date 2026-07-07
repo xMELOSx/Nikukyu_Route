@@ -1324,10 +1324,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const cols = m.shelfCols||3, rows = m.shelfRows||3;
       const sw2 = (m.shelfWidth||60) * smScale, sh2 = (m.shelfHeight||24) * smScale;
       const a = (m.shelfAngle||0) * Math.PI / 180;
+      const colGapEvery = m.shelfColGapEvery ?? 8;
+      const colGapSize = m.shelfColGapSize ?? 2;
+      const rowGapEvery = m.shelfRowGapEvery ?? 7;
+      const rowGapSize = m.shelfRowGapSize ?? 1;
+      const cGaps = colGapEvery > 0 && cols > colGapEvery ? Math.floor((cols - 1) / colGapEvery) : 0;
+      const rGaps = rowGapEvery > 0 && rows > rowGapEvery ? Math.floor((rows - 1) / rowGapEvery) : 0;
+      const totalW = cols + cGaps * colGapSize;
+      const totalH = rows + rGaps * rowGapSize;
       for(const ss of m.shelfSpawns) {
         if(!ss.spawnId) continue;
-        const dx = ((ss.col+0.5)/cols - 0.5) * sw2;
-        const dy = ((ss.row+0.5)/rows - 0.5) * sh2;
+        const lFrac = (ss.col + (cGaps > 0 ? Math.floor(ss.col / colGapEvery) * colGapSize : 0) + 0.5) / totalW;
+        const tFrac = (ss.row + (rGaps > 0 ? Math.floor(ss.row / rowGapEvery) * rowGapSize : 0) + 0.5) / totalH;
+        const dx = (lFrac - 0.5) * sw2;
+        const dy = (tFrac - 0.5) * sh2;
         hiddenShelfSpawnPos.set(ss.spawnId, {
           x: m.x + dx*Math.cos(a) - dy*Math.sin(a),
           y: m.y + dx*Math.sin(a) + dy*Math.cos(a)
