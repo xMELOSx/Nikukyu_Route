@@ -1071,22 +1071,6 @@ export default function App() {
   };
 
 
-  // Migration: if globalWalls is empty but route has walls, migrate them
-  useEffect(() => {
-    const gw = globalWallsRef.current;
-    const hasGlobalWalls = Object.values(gw).some((arr: any) => Array.isArray(arr) && arr.length > 0);
-    if (!hasGlobalWalls) {
-      const routeWalls = routeApi.route.walls;
-      if (routeWalls) {
-        const hasRouteWalls = Object.values(routeWalls).some((arr: any) => Array.isArray(arr) && arr.length > 0);
-        if (hasRouteWalls) {
-          console.log('[Walls Migration] Migrating walls from route to global:', routeWalls);
-          updateGlobalWalls(routeWalls as any);
-        }
-      }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ロードモーダルを開いた時にプリセットをメモリにロード、
   // 閉じた時にメモリから破棄する (= プリセットの routeData が巨大なので
   // 必要な時だけ展開することでメモリを節約する)

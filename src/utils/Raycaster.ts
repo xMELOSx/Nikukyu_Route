@@ -282,8 +282,10 @@ function renderWalls(
     let fullWallHeight = perpDist > 0.1 ? (halfHRef / perpDist) * distPlane : H;
     // カメラの高さ比率を 0.375 とし、目線を少し下げて床面とパースを完全に合わせる
     const camHeightFrac = 0.375;
-    const wallTopFull = Math.max(0, Math.floor(halfH - fullWallHeight * (1 - camHeightFrac))); // 天井側（遠い）
-    const wallBottomFull = Math.min(H, Math.floor(halfH + fullWallHeight * camHeightFrac));    // 床側（近い）
+    const wallTopFullRaw = Math.floor(halfH - fullWallHeight * (1 - camHeightFrac));
+    const wallBottomFullRaw = Math.floor(halfH + fullWallHeight * camHeightFrac);
+    const wallTopFull = Math.max(0, wallTopFullRaw); // 天井側（遠い）
+    const wallBottomFull = Math.min(H, wallBottomFullRaw);    // 床側（近い）
 
     let wallTop = wallTopFull;
     let wallBottom = wallBottomFull;
@@ -492,7 +494,7 @@ function renderWalls(
         const rawU = (hit.wallOffsetPercent * repeatCount) % 1.0;
         const u = rawU < 0 ? rawU + 1.0 : rawU;
         // 縦方向V座標 (yStart 〜 yEnd として、全パース高さに対する現在の縦割合)
-        const vy = (y - wallTopFull) / (wallBottomFull - wallTopFull);
+        const vy = (y - wallTopFullRaw) / (wallBottomFullRaw - wallTopFullRaw);
         const v = Math.max(0, Math.min(1, vy));
 
         const pixel = sampleBilinear(texData, u, v);

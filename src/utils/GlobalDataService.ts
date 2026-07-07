@@ -70,9 +70,7 @@ export const HELP_TABS: HelpTab[] = [
 const BASE = () => (typeof import.meta !== 'undefined' ? import.meta.env.BASE_URL : '/');
 const EMPTY_WALLS: GlobalWalls = { main: [], second: [], third: [], fourth: [] };
 const FLOORS = ['main', 'second', 'third', 'fourth'] as const;
-const LOCAL_WALLS_KEY = 'heist_global_walls';
 const LOCAL_MARKERS_KEY = 'heist_global_markers';
-const LOCAL_LOCKED_WALLS_KEY = 'heist_global_locked_walls';
 const SKILL_CD_PRESETS_CACHE_KEY = 'heist_skill_cd_presets_v1';
 const STORAGE_LIMIT_KEY = 'heist_storage_limit_bytes_v1';
 const STORAGE_LIMIT_DEFAULT_BYTES = 10 * 1024 * 1024;
@@ -311,28 +309,6 @@ export class GlobalDataService {
     }
   }
 
-  private _mergeWallsFromLocalStorage(): void {
-    const local = loadLocalJSON<GlobalWalls>(LOCAL_WALLS_KEY);
-    if (!local || typeof local !== 'object') {
-      this._emit({ operation: 'merge', type: 'walls', source: 'localStorage', success: true, detail: 'skipped (empty)' });
-      return;
-    }
-    const sanitized = sanitizeWalls(local);
-    const total = Object.values(sanitized).reduce((s, a) => s + a.length, 0);
-    if (total === 0) {
-      this._emit({ operation: 'merge', type: 'walls', source: 'localStorage', success: true, detail: 'skipped (empty)' });
-      return;
-    }
-    const merged = mergeWalls(this._walls, sanitized);
-    const diff = Object.entries(merged).reduce((s, [f, segs]) => s + segs.length - (this._walls[f]?.length || 0), 0);
-    if (diff > 0) {
-      this._walls = merged;
-      this._emit({ operation: 'merge', type: 'walls', source: 'localStorage', success: true, detail: `${diff} local segments added` });
-    } else {
-      this._emit({ operation: 'merge', type: 'walls', source: 'localStorage', success: true, detail: 'no new segments' });
-    }
-  }
-
   private async _loadLockedWalls(): Promise<void> {
     if (this._isLocal) {
       const fromAPI = await this._fetchJSON<GlobalLockedWalls>('api/global-locked-walls');
@@ -349,16 +325,6 @@ export class GlobalDataService {
     } else {
       this._emit({ operation: 'load', type: 'lockedWalls', source: 'static', success: false, detail: 'no data' });
     }
-  }
-
-  private _mergeLockedWallsFromLocalStorage(): void {
-    const local = loadLocalJSON<GlobalLockedWalls>(LOCAL_LOCKED_WALLS_KEY);
-    if (!local) {
-      this._emit({ operation: 'merge', type: 'lockedWalls', source: 'localStorage', success: true, detail: 'skipped (empty)' });
-      return;
-    }
-    this._lockedWalls = this._parseLockedWalls(local);
-    this._emit({ operation: 'merge', type: 'lockedWalls', source: 'localStorage', success: true, detail: 'restored from cache' });
   }
 
   private _parseLockedWalls(data: any): GlobalLockedWalls {
@@ -519,8 +485,6 @@ export class GlobalDataService {
       ]);
 
       this._mergeMarkersFromLocalStorage();
-      this._mergeWallsFromLocalStorage();
-      this._mergeLockedWallsFromLocalStorage();
       this._mergeDefaultsFromLocalStorage();
 
       this._loaded = true;
@@ -554,13 +518,9 @@ export class GlobalDataService {
 
       if (includeLocalOverrides) {
         this._mergeMarkersFromLocalStorage();
-        this._mergeWallsFromLocalStorage();
-        this._mergeLockedWallsFromLocalStorage();
         this._mergeDefaultsFromLocalStorage();
       } else {
         this._emit({ operation: 'reset', type: 'markers', source: 'localStorage', success: true, detail: 'skipped (新規)' });
-        this._emit({ operation: 'reset', type: 'walls', source: 'localStorage', success: true, detail: 'skipped (新規)' });
-        this._emit({ operation: 'reset', type: 'lockedWalls', source: 'localStorage', success: true, detail: 'skipped (新規)' });
         this._emit({ operation: 'reset', type: 'defaults', source: 'localStorage', success: true, detail: 'skipped (新規)' });
       }
 
@@ -615,12 +575,11 @@ export class GlobalDataService {
   saveWalls(walls: GlobalWalls): void {
     this._walls = ensureFloors(walls);
     this._save(() => {
-      saveLocalJSON(LOCAL_WALLS_KEY, this._walls);
       if (this._isLocal) {
         this._postAPI('api/global-walls', this._walls);
-        this._emit({ operation: 'save', type: 'walls', source: 'localStorage+api', success: true });
+        this._emit({ operation: 'save', type: 'walls', source: 'api', success: true });
       } else {
-        this._emit({ operation: 'save', type: 'walls', source: 'localStorage', success: true });
+        this._emit({ operation: 'save', type: 'walls', source: 'memory', success: true, detail: 'session only' });
       }
       this._notify();
     });
@@ -629,13 +588,7 @@ export class GlobalDataService {
   saveLockedWalls(walls: GlobalLockedWalls): void {
     this._lockedWalls = walls;
     this._save(() => {
-      saveLocalJSON(LOCAL_LOCKED_WALLS_KEY, walls);
-      if (this._isLocal) {
-        this._postAPI('api/global-locked-walls', walls);
-        this._emit({ operation: 'save', type: 'lockedWalls', source: 'localStorage+api', success: true });
-      } else {
-        this._emit({ operation: 'save', type: 'lockedWalls', source: 'localStorage', success: true });
-      }
+      this._emit({ operation: 'save', type: 'lockedWalls', source: 'memory', success: true, detail: 'session only' });
       this._notify();
     });
   }
