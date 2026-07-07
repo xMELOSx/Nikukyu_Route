@@ -327,7 +327,7 @@ function renderWalls(
         bgIsLocked = false;
       }
       // hit.distance が同じ鍵扉自身（FPSモード）の場合、全壁から探す
-      if (bgDist === Infinity && walls.length > 0) {
+      if (bgDist === Infinity && hit.distance < Infinity && walls.length > 0) {
         let minBgDist = Infinity;
         let minBgIsLocked = false;
         const rCos = Math.cos(rayAngle);
@@ -695,8 +695,23 @@ export function renderMinimap(
     if (Math.abs(dx) > half || Math.abs(dy) > half) continue;
     const mx = x + half + dx;
     const my = y + half + dy;
-    ctx.fillStyle = m.type === 'start' ? '#39ff14' : '#ff00ff';
-    ctx.fillRect(mx - 3, my - 3, 6, 6);
+
+    if (m.type === 'phone') {
+      // 電話ピン：アクティブ/ロック時は赤、インアクティブは灰色
+      // m.phoneActive や m.phoneLocked が boolean として渡ってくる
+      const phoneObj = m as any;
+      const dotColor = (phoneObj.phoneActive || phoneObj.phoneLocked) ? '#ff3333' : '#888888';
+      ctx.fillStyle = dotColor;
+      ctx.beginPath();
+      ctx.arc(mx, my, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = m.type === 'start' ? '#39ff14' : '#ff00ff';
+      ctx.fillRect(mx - 3, my - 3, 6, 6);
+    }
   }
 
   // Player direction cone

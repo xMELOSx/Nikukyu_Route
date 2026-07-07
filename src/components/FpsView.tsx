@@ -696,28 +696,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         if (mctx) {
           mctx.clearRect(0, 0, minimapCvs.width, minimapCvs.height);
           renderMinimap(mctx, playerRef.current, lw, lm, mapSnapshotRef.current || bgImageRef.current);
-          // Overlay phone status dots on minimap (active=green, inactive=red, locked=gray)
-          const mw = minimapCvs.width; // 280
-          const mRange = 250;
-          const mScale = mw / mRange;
-          const mcx = mw / 2;
-          const mcy = mw / 2;
-          for (const pm of lm) {
-            if (pm.type !== 'phone') continue;
-            const dx = (pm.x - playerRef.current.x) * mScale;
-            const dy = (pm.y - playerRef.current.y) * mScale;
-            if (Math.abs(dx) > mcx || Math.abs(dy) > mcy) continue;
-            const px = mcx + dx;
-            const py = mcy + dy;
-            const dotColor = (pm.phoneActive || pm.phoneLocked) ? '#ff3333' : '#888888';
-            mctx.fillStyle = dotColor;
-            mctx.beginPath();
-            mctx.arc(px, py, 6, 0, Math.PI * 2);
-            mctx.fill();
-            mctx.strokeStyle = '#000';
-            mctx.lineWidth = 2;
-            mctx.stroke();
-          }
+
         }
       }
 
