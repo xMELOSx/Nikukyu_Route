@@ -173,7 +173,7 @@ interface MapCanvasProps {
   onSpawnMoveComplete?: (id: string, x: number, y: number) => void;
   spawnVisible?: boolean;
   hideMapBg?: boolean;
-  onSpawnPointAdd?: (x: number, y: number) => void;
+  onSpawnPointAdd?: (x: number, y: number, id?: string) => void;
   onSpawnPointDelete?: (id: string) => void;
   onSpawnPointEdit?: (id: string) => void;
   onSpawnPointView?: (id: string) => void;
@@ -1295,7 +1295,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
     if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
+    // Filter out spawns referenced by shelf markers
+    const shelfIds = new Set<string>();
+    for(const m of markers) if(m.type==='shelf'&&m.shelfSpawns) for(const ss of m.shelfSpawns) if(ss.spawnId) shelfIds.add(ss.spawnId);
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
+    if(shelfIds.size>0) sp = sp.filter(p=>!shelfIds.has(p.id));
     if (sp.length === 0) return;
     const itemMap: Record<string, RegisteredItem> = {};
     for (const item of spawnItems) itemMap[item.id] = item;
@@ -4390,12 +4394,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {tNote(m.note)}
                         </div>
                       )}
-                      {/* Spawn overlays on collapsed shelf — simple percentage */}
+                      {/* Spawn overlays on collapsed shelf — color from SpawnPoint */}
                       {shelfSpawns.length > 0 && shelfSpawns.map(sp => {
+                        const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
                         const im2 = new Map((spawnItems||[]).map(i=>[i.id,i]));
                         const rR2:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                         let spColor='#888'; let bestR=-1;
-                        for(const si of (sp.items||[])){const it=im2.get(si.itemId);if(it){const r=rR2[it.textColor]??-1;if(r>bestR){bestR=r;spColor=rarityColor[it.textColor]||'#888';}}}
+                        if(spPt)for(const si of spPt.items){const it=im2.get(si.itemId);if(it){const r=rR2[it.textColor]??-1;if(r>bestR){bestR=r;spColor=rarityColor[it.textColor]||'#888';}}}
                         const spX = ((sp.col + 0.5) / cols) * 100;
                         const spY = ((sp.row + 0.5) / rows) * 100;
                         return (
@@ -4491,12 +4496,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             }
                             return <>{cols2}{rows2}</>;
                           })()}
-                          {/* Spawn dots — color from items */}
+                          {/* Spawn dots — color from referenced SpawnPoint */}
                           {shelfSpawns.map((sp, si) => {
+                            const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
                             const im = new Map((spawnItems||[]).map(i=>[i.id,i]));
                             const rr:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                             let dc='#888';let br=-1;
-                            for(const si2 of (sp.items||[])){const it=im.get(si2.itemId);if(it){const r=rr[it.textColor]??-1;if(r>br){br=r;dc=rarityColor[it.textColor]||'#888';}}}
+                            if(spPt)for(const si2 of spPt.items){const it=im.get(si2.itemId);if(it){const r=rr[it.textColor]??-1;if(r>br){br=r;dc=rarityColor[it.textColor]||'#888';}}}
                             const l=cellPos(sp.col,colGapEvery,colGapSize,totalW)+(100/totalW)/2;
                             const t=cellPos(sp.row,rowGapEvery,rowGapSize,totalH)+(100/totalH)/2;
                             return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:10,height:10,borderRadius:'50%',background:dc,boxShadow:'0 0 8px '+dc,pointerEvents:'none'}} />;
@@ -4516,22 +4522,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 }}
                                   onClick={(e)=>{
                                     e.stopPropagation();
-                                    if(isEditMode&&isLocal){
-                                      if(existing){
-                                        setShelfPopupCell({...existing});
-                                      }else{
-                                        const ns:ShelfSpawn={row:r,col:c,items:[],category:'引出'};
-                                        commitShelfSpawns(m.id,[...shelfSpawns,ns]);
-                                        setShelfEditTick(t=>t+1);
-                                      }
-                                    }else if(existing){
-                                      setShelfPopupCell({...existing});
+                                    if(existing){
+                                      // Open existing spawn edit modal
+                                      if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
+                                      else setShelfPopupCell(existing);
+                                    }else if(isEditMode&&isLocal&&onSpawnPointAdd){
+                                      // Create real SpawnPoint + store reference
+                                      const spawnId = 'sp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+                                      const sx = m.x + (c+0.5)*cellW - sw/2;
+                                      const sy = m.y + (r+0.5)*cellH - sh/2;
+                                      onSpawnPointAdd(sx, sy, spawnId);
+                                      commitShelfSpawns(m.id,[...shelfSpawns,{row:r,col:c,spawnId}]);
+                                      setShelfEditTick(t=>t+1);
+                                      // Open edit modal for the new spawn
+                                      setTimeout(()=>{if(onSpawnPointEdit)onSpawnPointEdit(spawnId);},50);
                                     }
                                   }}
                                   onContextMenu={(e)=>{
                                     e.preventDefault();e.stopPropagation();
                                     if(!isEditMode||!isLocal)return;
-                                    if(existing){
+                                    if(existing&&existing.spawnId){
+                                      if(onSpawnPointDelete)onSpawnPointDelete(existing.spawnId);
                                       commitShelfSpawns(m.id,shelfSpawns.filter(sp=>sp!==existing));
                                       setShelfEditTick(t=>t+1);
                                     }
@@ -4547,70 +4558,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '3px 8px', gap: '4px', borderTop: '1px solid rgba(205,133,63,0.15)' }}>
                           <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols} / {shelfSpawns.length}個</span>
                         </div>
-                        {/* Shelf spawn popup */}
-                        {shelfPopupCell && (()=>{
+                        {/* Shelf spawn info popup (display mode only) */}
+                        {shelfPopupCell && !(isEditMode&&isLocal) && (()=>{
+                          const spPt = (spawnPoints||[]).find(s=>s.id===shelfPopupCell.spawnId);
                           const im = new Map((spawnItems||[]).map(i=>[i.id,i]));
-                          const rr:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
-                          const sp=spawnItems||[];
-                          const isEdit=!!(isEditMode&&isLocal);
                           return (
-                            <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.9)',zIndex:10,borderRadius:'4px',padding:'8px',display:'flex',flexDirection:'column',gap:'4px',fontSize:'10px',overflow:'auto'}}
+                            <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.85)',zIndex:10,borderRadius:'4px',padding:'8px',display:'flex',flexDirection:'column',gap:'4px',fontSize:'10px',overflow:'auto'}}
                               onClick={e=>e.stopPropagation()}>
-                              <div style={{color:'#cd853f',fontWeight:'bold',marginBottom:'2px'}}>
-                                セル({shelfPopupCell.col},{shelfPopupCell.row}) {shelfPopupCell.category||'引出'}
+                              <div style={{color:'#cd853f',fontWeight:'bold'}}>
+                                セル({shelfPopupCell.col},{shelfPopupCell.row}) {spPt?.category||'引出'}
                               </div>
-                              {/* Items list */}
                               <div style={{color:'#aaa'}}>アイテム:</div>
-                              {(!shelfPopupCell.items||shelfPopupCell.items.length===0)&&<div style={{color:'#666',fontSize:'9px'}}>なし</div>}
-                              {isEdit?shelfPopupCell.items.map((ci,cii)=>(
-                                <div key={cii} style={{display:'flex',alignItems:'center',gap:'4px',background:'rgba(255,255,255,0.05)',borderRadius:'3px',padding:'2px 4px'}}>
-                                  <span style={{width:8,height:8,borderRadius:'50%',background:rarityColor[im.get(ci.itemId)?.textColor||'blue']||'#888',display:'inline-block'}} />
-                                  <span style={{color:'#ddd',flex:1}}>{im.get(ci.itemId)?.name||ci.itemId.slice(0,8)}</span>
-                                  <input type="number" min={1} max={4} value={ci.playerCount} onChange={e=>{
-                                    const n=parseInt(e.target.value)||1;
-                                    const items2=[...shelfPopupCell.items];items2[cii]={...items2[cii],playerCount:n};
-                                    commitShelfSpawns(m.id,shelfSpawns.map(sp2=>sp2.row===shelfPopupCell.row&&sp2.col===shelfPopupCell.col?{...shelfPopupCell,items:items2}:sp2));
-                                    setShelfPopupCell(p=>p?{...p,items:items2}:null);
-                                  }} style={{width:24,fontSize:'9px',padding:'1px',background:'rgba(0,0,0,0.4)',border:'1px solid #555',color:'#ccc',borderRadius:'2px',textAlign:'center'}} />
-                                  <span style={{color:'#888',fontSize:'8px'}}>P</span>
-                                  <button onClick={e=>{e.stopPropagation();const items2=shelfPopupCell.items.filter((_,j)=>j!==cii);commitShelfSpawns(m.id,shelfSpawns.map(sp2=>sp2.row===shelfPopupCell.row&&sp2.col===shelfPopupCell.col?{...shelfPopupCell,items:items2}:sp2));setShelfPopupCell(p=>p?{...p,items:items2}:null);}}
-                                    style={{background:'none',border:'none',color:'#f55',cursor:'pointer',fontSize:'9px',padding:0}}>✕</button>
-                                </div>
-                              )):shelfPopupCell.items.map((ci,cii)=>(
-                                <div key={cii} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'9px',color:'#ccc'}}>
+                              {(!spPt||!spPt.items||spPt.items.length===0)?<div style={{color:'#666',fontSize:'9px'}}>なし</div>:
+                                spPt.items.map((ci,cii)=><div key={cii} style={{color:'#ccc',fontSize:'9px',display:'flex',alignItems:'center',gap:'4px'}}>
                                   <span style={{width:8,height:8,borderRadius:'50%',background:rarityColor[im.get(ci.itemId)?.textColor||'blue']||'#888',display:'inline-block'}} />
                                   {im.get(ci.itemId)?.name||ci.itemId.slice(0,8)} ({ci.playerCount}P)
-                                </div>
-                              ))}
-                              {/* Add item (edit mode only) */}
-                              {isEdit&&sp.length>0&&(()=>{
-                                const cellItems=shelfPopupCell.items||[];
-                                const avail=sp.filter(it=>!cellItems.some(ci=>ci.itemId===it.id));
-                                return avail.length>0?(
-                                  <select style={{fontSize:'9px',padding:'2px',background:'rgba(0,0,0,0.6)',border:'1px solid #555',color:'#ccc',borderRadius:'3px'}}
-                                    onChange={e=>{const id=e.target.value;if(!id)return;const items2=[...cellItems,{itemId:id,discoveredAt:new Date().toISOString(),playerCount:1}];commitShelfSpawns(m.id,shelfSpawns.map(sp2=>sp2.row===shelfPopupCell.row&&sp2.col===shelfPopupCell.col?{...shelfPopupCell,items:items2}:sp2));setShelfPopupCell(p=>p?{...p,items:items2}:null);(e.target as HTMLSelectElement).value='';}}
-                                    value=''>
-                                    <option value=''>+ アイテム追加...</option>
-                                    {avail.map(it=><option key={it.id} value={it.id}>{it.name} ({it.textColor})</option>)}
-                                  </select>
-                                ):<div style={{color:'#666',fontSize:'9px'}}>全アイテム割当済</div>;
-                              })()}
-                              {/* Category (edit mode) */}
-                              {isEdit&&(
-                                <div style={{display:'flex',gap:'3px',flexWrap:'wrap',marginTop:'2px'}}>
-                                  {['机上','机上(レア)','引出','小金庫','中金庫','展示台','宝石置き','床','植木鉢','棚','絵画','ドロップ','ファンス'].map(cat=>(
-                                    <button key={cat} onClick={e=>{e.stopPropagation();commitShelfSpawns(m.id,shelfSpawns.map(sp2=>sp2.row===shelfPopupCell.row&&sp2.col===shelfPopupCell.col?{...shelfPopupCell,category:cat as any}:sp2));setShelfPopupCell(p=>p?{...p,category:cat as any}:null);}}
-                                      style={{padding:'1px 4px',fontSize:'8px',borderRadius:'3px',background:cat===(shelfPopupCell.category||'引出')?'rgba(205,133,63,0.3)':'rgba(255,255,255,0.05)',border:`1px solid ${cat===(shelfPopupCell.category||'引出')?'#cd853f':'#444'}`,color:cat===(shelfPopupCell.category||'引出')?'#cd853f':'#999',cursor:'pointer'}}>{cat}</button>
-                                  ))}
-                                </div>
-                              )}
-                              {/* Actions */}
-                              <div style={{display:'flex',gap:'6px',marginTop:'2px',justifyContent:'center'}}>
-                                {isEdit&&<button onClick={e=>{e.stopPropagation();commitShelfSpawns(m.id,shelfSpawns.filter(sp2=>sp2.row!==shelfPopupCell.row||sp2.col!==shelfPopupCell.col));setShelfEditTick(t=>t+1);setShelfPopupCell(null);}}
-                                  style={{padding:'2px 8px',fontSize:'9px',borderRadius:'3px',background:'rgba(255,0,0,0.2)',border:'1px solid #ff4444',color:'#ff4444',cursor:'pointer'}}>削除</button>}
-                                <button onClick={e=>{e.stopPropagation();setShelfPopupCell(null);}}
-                                  style={{padding:'2px 8px',fontSize:'9px',borderRadius:'3px',background:'rgba(255,255,255,0.1)',border:'1px solid #888',color:'#ccc',cursor:'pointer'}}>閉じる</button>
-                              </div>
+                                </div>)
+                              }
+                              <button onClick={e=>{e.stopPropagation();setShelfPopupCell(null);}}
+                                style={{marginTop:'2px',padding:'2px 8px',fontSize:'9px',borderRadius:'3px',background:'rgba(255,255,255,0.1)',border:'1px solid #888',color:'#ccc',cursor:'pointer',alignSelf:'center'}}>閉じる</button>
                             </div>
                           );
                         })()}
