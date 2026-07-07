@@ -24,8 +24,8 @@ import {
   type PresetData,
   type PresetVisibility,
   type SpawnPoint,
+  type RegisteredItem,
   type LockedWallSegment,
-  type GlobalLockedWalls,
   PRESET_VISIBILITY_META,
   MARKER_META,
   normalizeStrokes,
@@ -40,7 +40,7 @@ import {
 } from './utils/DataManager';
 import { useNotifications } from './hooks/useNotifications';
 import { useGlobalData } from './hooks/useGlobalData';
-import { GlobalDataService } from './utils/GlobalDataService';
+import { GlobalDataService, type GlobalDefaults, type GlobalWalls, type HelpData } from './utils/GlobalDataService';
 import { useRoute, type SaveInfo } from './hooks/useRoute';
 import { useHistory } from './hooks/useHistory';
 import { useFileIO } from './hooks/useFileIO';
@@ -2317,18 +2317,6 @@ export default function App() {
             itemFormEditId,
             itemFormDescription,
             itemFormImage,
-            bulkInput,
-            bulkColor,
-            showItemModal,
-            showEditModal,
-            rightTab,
-            lockedWalls,
-            selectedTexture
-          ])}
-          {/* Sidebar collapse buttons — zIndex 300 keeps them above the
-              mobile overlay panes (zIndex 200) so users can always reach
-              a close button, even when a pane is open. */}
-          <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
             style={{
               position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',

@@ -1,18 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GlobalDataService, type DataEvent, type GlobalWalls, type HelpData } from '../utils/GlobalDataService';
-import type { HeistMarker, GlobalLockedWalls, SpawnPoint, RegisteredItem, PresetData, SkillCdPreset, LockedWallSegment } from '../utils/DataManager';
+import type { HeistMarker, GlobalLockedWalls, SpawnPoint, RegisteredItem, PresetData, SkillCdPreset } from '../utils/DataManager';
 import type { GlobalDefaults } from '../utils/GlobalDataService';
 import { generateId } from '../utils/DataManager';
 
-const EVENT_EMOJI: Record<string, string> = {
-  load: '📂', merge: '📂', save: '💾', reset: '🔄'
-};
 
-function formatEvent(event: DataEvent): string {
-  const emoji = EVENT_EMOJI[event.operation] || '📋';
-  const detail = event.detail ? ` (${event.detail})` : '';
-  return `${emoji} ${event.type} ${event.operation}d: ${event.source}${detail}`;
-}
 
 export interface UseGlobalDataOptions {
   onEvent?: (event: DataEvent) => void;
@@ -22,7 +14,7 @@ export interface UseGlobalDataOptions {
 export function useGlobalData(options?: UseGlobalDataOptions) {
   const svc = GlobalDataService.getInstance();
   const [loading, setLoading] = useState(!svc.isLoaded);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
   const onDefaultsLoadedRef = useRef(options?.onDefaultsLoaded);
   onDefaultsLoadedRef.current = options?.onDefaultsLoaded;
   const onEventRef = useRef(options?.onEvent);

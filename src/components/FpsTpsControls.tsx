@@ -32,6 +32,7 @@ interface FpsTpsControlsProps {
   autoRouteSegments?: RouteSegment[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
+  fpsResolutionScale?: number;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -61,7 +62,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   hiddenMarkers = [], hiddenMarkerTypes = [], spawnPoints = [],
   strokes = {}, spawnItems = [], mapSnapshotCanvas,
   onFreeCamModeChange, onToggleNearestPhone,
-  autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming
+  autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming,
+  fpsResolutionScale = 2.0
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -71,7 +73,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   const tpsOverlayRef = useRef<HTMLCanvasElement | null>(null);
   const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null } | null>(null);
   const bgImageElementCacheRef = useRef<{ [url: string]: HTMLImageElement } | null>(null);
-  const canvasScale = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
+  const canvasScale = useMemo(() => fpsResolutionScale, [fpsResolutionScale]);
 
   useEffect(() => {
     onFreeCamModeChange?.(!!freeCamMode);

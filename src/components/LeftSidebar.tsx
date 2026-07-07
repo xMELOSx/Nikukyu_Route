@@ -201,8 +201,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     lockedWalls, setLockedWalls,
     wallLockedSubMode, setWallLockedSubMode,
     selectedTexture, setSelectedTexture, texturesList, selectedRepeat, setSelectedRepeat,
+    fpsResolutionScale, setFpsResolutionScale, aspectFitCut, setAspectFitCut,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
+  const [previewAspect, setPreviewAspect] = useState<number>(1.0);
+  const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   // Item image crop state
   const [cropSource, setCropSource] = useState<string | null>(null);
@@ -472,6 +475,29 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     />
                     <span>{t('🏷️ ラベル表示')}</span>
                   </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', gap: '6px', marginBottom: '4px' }}>
+                    <span>{t('🎮 3Dビュー画質:')}</span>
+                    <select
+                      value={fpsResolutionScale}
+                      onChange={(e) => setFpsResolutionScale(parseFloat(e.target.value))}
+                      style={{
+                        background: '#161925',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '4px',
+                        padding: '2px 4px',
+                        fontSize: '11px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="1.0">{t('低 (240p)')}</option>
+                      <option value="1.5">{t('中 (360p)')}</option>
+                      <option value="2.0">{t('高 (480p)')}</option>
+                      <option value="3.0">{t('超高 (720p)')}</option>
+                      <option value="4.5">{t('極限 (1080p)')}</option>
+                    </select>
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
                       <span>{t('📌 ピン・ラベル倍率:')}</span>
@@ -1111,27 +1137,48 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       </select>
                     </div>
                     {selectedTexture !== '' && (
-                      <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap' }}>{t('リピート数')}:</span>
-                        <select
-                          value={selectedRepeat}
-                          onChange={(e) => setSelectedRepeat(parseInt(e.target.value))}
-                          style={{
-                            flex: 1,
-                            background: '#161925',
-                            color: '#fff',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '4px',
-                            padding: '3px 6px',
-                            fontSize: '11px',
-                            outline: 'none'
-                          }}
-                        >
-                          {[1, 2, 3, 4, 5].map(n => (
-                            <option key={n} value={n}>{n}倍</option>
-                          ))}
-                        </select>
-                      </div>
+                      <>
+                        <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap' }}>{t('リピート数')}:</span>
+                          <select
+                            value={selectedRepeat}
+                            onChange={(e) => setSelectedRepeat(parseInt(e.target.value))}
+                            style={{
+                              flex: 1,
+                              background: '#161925',
+                              color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '4px',
+                              padding: '3px 6px',
+                              fontSize: '11px',
+                              outline: 'none'
+                            }}
+                          >
+                            {[1, 2, 3, 4, 5].map(n => (
+                              <option key={n} value={n}>{n}倍</option>
+                            ))}
+                          </select>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', userSelect: 'none', marginBottom: '6px' }}>
+                          <input type="checkbox" checked={aspectFitCut} onChange={(e) => setAspectFitCut(e.target.checked)} />
+                          <span style={{ fontSize: '10px', color: '#fff' }}>{t('比率維持で壁を切る')}</span>
+                        </label>
+                        <div style={{ marginTop: '6px', padding: '6px', background: '#0a0d16', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div style={{ fontSize: '9px', color: '#888', marginBottom: '4px' }}>{t('アスペクト比プレビュー')}:</div>
+                          <img
+                            src={`${import.meta.env.BASE_URL}texture/${selectedTexture}`}
+                            style={{ maxWidth: '100%', maxHeight: '60px', objectFit: 'contain', display: 'block', margin: '0 auto 4px', borderRadius: '2px' }}
+                            onLoad={(e) => {
+                              const img = e.currentTarget;
+                              setPreviewAspect(img.naturalWidth / img.naturalHeight);
+                              setPreviewSize({ w: img.naturalWidth, h: img.naturalHeight });
+                            }}
+                          />
+                          <div style={{ fontSize: '9px', color: 'var(--cyan-neon)', textAlign: 'center', fontWeight: 'bold' }}>
+                            {previewSize.w} x {previewSize.h} (比率: {previewAspect.toFixed(2)})
+                          </div>
+                        </div>
+                      </>
                     )}
                   </>
                 )}

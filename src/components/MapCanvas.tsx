@@ -39,6 +39,8 @@ interface MapCanvasProps {
   wallAutoSnap?: boolean;
   selectedTexture?: string;
   selectedRepeat?: number;
+  fpsResolutionScale?: number;
+  aspectFitCut?: boolean;
   lockedWalls?: LockedWallSegment[];
   onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   wallLockedSubMode?: 'normal' | 'locked';
@@ -192,6 +194,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   wallAutoSnap = false,
   selectedTexture = '',
   selectedRepeat = 1,
+  fpsResolutionScale = 2.0,
+  aspectFitCut = false,
   lockedWalls = [],
   onLockedWallsChange,
   wallLockedSubMode = 'normal',
@@ -2048,21 +2052,63 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
 
       if (bestIndex !== -1) {
-        const nextWalls = [...walls];
-        const target = nextWalls[bestIndex];
+        const target = walls[bestIndex];
         const currentTex = target[2];
         
         if (selectedTexture === '' || currentTex === selectedTexture) {
+          const nextWalls = [...walls];
           nextWalls[bestIndex] = [target[0], target[1]];
-        } else {
-          const rep = selectedRepeat;
-          if (rep > 1) {
-            nextWalls[bestIndex] = [target[0], target[1], selectedTexture, rep];
-          } else {
-            nextWalls[bestIndex] = [target[0], target[1], selectedTexture];
-          }
+          onWallsChange(nextWalls);
+          return;
         }
-        onWallsChange(nextWalls);
+
+        if (aspectFitCut) {
+          const img = new Image();
+          img.onload = () => {
+            const aspect = img.naturalWidth / img.naturalHeight;
+            const repeat = selectedRepeat;
+            // 3Dでの壁の高さ(36)を基準にした必要長さ
+            const targetLength = (36 * aspect) * repeat;
+
+            const dx = target[1].x - target[0].x;
+            const dy = target[1].y - target[0].y;
+            const actualLength = Math.hypot(dx, dy);
+
+            if (actualLength > targetLength + 2) {
+              const ratio = targetLength / actualLength;
+              const cutPt: Point = {
+                x: Math.round(target[0].x + dx * ratio),
+                y: Math.round(target[0].y + dy * ratio)
+              };
+
+              const part1: WallSegment = [target[0], cutPt, selectedTexture, repeat];
+              const part2: WallSegment = [cutPt, target[1]];
+
+              const nextWalls: WallSegment[] = [];
+              for (let i = 0; i < walls.length; i++) {
+                if (i === bestIndex) {
+                  nextWalls.push(part1, part2);
+                } else {
+                  nextWalls.push(walls[i]);
+                }
+              }
+              onWallsChange(nextWalls);
+            } else {
+              const nextWalls = [...walls];
+              nextWalls[bestIndex] = selectedRepeat > 1
+                ? [target[0], target[1], selectedTexture, selectedRepeat]
+                : [target[0], target[1], selectedTexture];
+              onWallsChange(nextWalls);
+            }
+          };
+          img.src = `${import.meta.env.BASE_URL}texture/${selectedTexture}`;
+        } else {
+          const nextWalls = [...walls];
+          nextWalls[bestIndex] = selectedRepeat > 1
+            ? [target[0], target[1], selectedTexture, selectedRepeat]
+            : [target[0], target[1], selectedTexture];
+          onWallsChange(nextWalls);
+        }
       }
     };
 
@@ -6378,6 +6424,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         walls={walls}
         lockedWalls={lockedWalls}
         onLockedWallsChange={onLockedWallsChange}
+        fpsResolutionScale={fpsResolutionScale}
         markers={markers}
         floor={floor}
         customBg={customBg}

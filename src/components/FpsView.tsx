@@ -800,8 +800,6 @@ const FpsView: React.FC<FpsViewProps> = ({
         if (octx) {
           octx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
           const tpsImgs = tpsImagesRef.current;
-          const cr = canvas.getBoundingClientRect();
-          const or = ovCanvas.getBoundingClientRect();
           const scaleX = ovCanvas.width / canvas.width;
           const scaleY = ovCanvas.height / canvas.height;
           const scale = Math.min(scaleX, scaleY);
@@ -814,7 +812,7 @@ const FpsView: React.FC<FpsViewProps> = ({
             const img = tpsImgs[m.id];
             // 看板的な近接表示: マーカーに接近したときだけ表示
             const worldDist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
-            if (worldDist > 35) continue;
+            if (worldDist > 18) continue;
             const dx = m.x - camPos.x, dy = m.y - camPos.y;
             const dist = Math.hypot(dx, dy);
             if (dist < 1) continue;
@@ -827,13 +825,13 @@ const FpsView: React.FC<FpsViewProps> = ({
             const perpDist = dist * Math.cos(relAngle);
             if (perpDist < 1) continue;
             if (colHeights[Math.round(screenX)].perpDist < perpDist) continue;
-            const ph = Math.max(2, Math.round((12 * distPlane) / perpDist));
+            const ph = Math.max(2, Math.round((18 * distPlane) / perpDist));
             const pBottom = Math.round(canvas.height / 2 - 50 + (24 * distPlane) / perpDist);
             const pTop = pBottom - ph;
             const imgW = Math.round(ph * 2);
             const imgH = Math.round(imgW * img.height / img.width);
-            // マーカー位置を中心に看板表示（上下中央揃え）
-            const drawTop = pTop + Math.round((ph - imgH) / 2);
+            // マーカー上方に看板表示（地面から 3/4 の高さを中心に配置）
+            const drawTop = pTop + Math.round(ph * 0.75 - imgH / 2);
             const drawLeft = screenX - imgW / 2;
             // Convert to overlay canvas coordinates (uniform scale preserves aspect ratio)
             const sx = drawLeft * scale + offX;

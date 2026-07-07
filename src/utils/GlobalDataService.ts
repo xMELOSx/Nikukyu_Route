@@ -1,9 +1,9 @@
 import type {
-  HeistMarker, WallSegment, Point, GlobalLockedWalls, LockedWallSegment,
-  SpawnPoint, RegisteredItem, PresetData, SkillCdPreset, SkillCdMode,
+  HeistMarker, WallSegment, Point, GlobalLockedWalls,
+  SpawnPoint, RegisteredItem, PresetData, SkillCdPreset,
   RouteData
 } from './types';
-import { generateId, normalizePresets, loadPresetBody, savePresetBody, PRESET_BODY_KEY_PREFIX } from './DataManager';
+import { normalizePresets, loadPresetBody, savePresetBody } from './DataManager';
 
 // GlobalDefaults type — defined here to avoid circular dependency with deleted hook
 export interface GlobalDefaults {
@@ -577,11 +577,7 @@ export class GlobalDataService {
     return this._loadPromise;
   }
 
-  private _guard(): boolean {
-    if (this._loaded) return true;
-    if (this._loading) return false;
-    return false;
-  }
+
 
   private _save(fn: () => void): void {
     if (this._loaded) { fn(); return; }
