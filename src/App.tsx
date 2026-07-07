@@ -1408,6 +1408,17 @@ export default function App() {
     const incomingGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
     if (options.isDelete) {
+      // Clean up shelf spawns when shelf marker is deleted
+      const deletedShelfMarkers = globalMarkersStore.globalMarkers.filter(
+        m => m.type === 'shelf' && m.shelfSpawns && !newMarkers.some(nm => nm.id === m.id)
+      );
+      for (const sm of deletedShelfMarkers) {
+        if (sm.shelfSpawns) {
+          for (const ss of sm.shelfSpawns) {
+            if (ss.spawnId) handleSpawnPointDelete(ss.spawnId);
+          }
+        }
+      }
       globalMarkersStore.replace(incomingGlobal);
     } else if (isDraggingMarkersRef.current) {
       // ドラッグ中は in-memory のみ更新し localStorage/API への保存をスキップ
