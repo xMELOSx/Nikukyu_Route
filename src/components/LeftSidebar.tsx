@@ -121,6 +121,7 @@ export interface LeftSidebarProps {
   warpColor: string; stairsColor: string;
   memoizedStrokes: DrawingStroke[];
   leftSidebarCollapsed: boolean; isMobile: boolean;
+  onOpenTextureUsageModal?: () => void;
   [key: string]: any;
 }
 
@@ -202,6 +203,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     wallLockedSubMode, setWallLockedSubMode,
     selectedTexture, setSelectedTexture, texturesList, selectedRepeat, setSelectedRepeat,
     fpsResolutionScale, setFpsResolutionScale, aspectFitCut, setAspectFitCut,
+    onOpenTextureUsageModal,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1115,12 +1117,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
                 {wallSubMode === 'texture' && (
                   <>
-                    <div style={{ marginBottom: '6px' }}>
+                    <div style={{ marginBottom: '6px', display: 'flex', gap: '4px' }}>
                       <select
                         value={selectedTexture}
                         onChange={(e) => setSelectedTexture(e.target.value)}
                         style={{
-                          width: '100%',
+                          flex: 1,
                           background: '#161925',
                           color: '#fff',
                           border: '1px solid rgba(255,255,255,0.1)',
@@ -1135,6 +1137,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           <option key={t} value={t}>{t}</option>
                         ))}
                       </select>
+                      <button
+                        onClick={onOpenTextureUsageModal}
+                        className="btn-cyber"
+                        style={{ padding: '0 8px', fontSize: '10px', height: '24px', clipPath: 'none', display: 'flex', alignItems: 'center', gap: '2px', whiteSpace: 'nowrap' }}
+                        title={t('テクスチャ画像の使用状況を表示')}
+                      >
+                        📊 {t('状況')}
+                      </button>
                     </div>
                     {selectedTexture !== '' && (
                       <>

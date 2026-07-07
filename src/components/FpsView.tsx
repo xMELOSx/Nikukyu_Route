@@ -37,6 +37,7 @@ interface FpsViewProps {
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
   imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
+  tpsPinSize?: number;
 }
 
 const FOV = Math.PI * 0.45;
@@ -56,6 +57,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   hiddenMarkers = [], hiddenMarkerTypes = [],
   autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
   mapSnapshotCanvas, imageOverlayCanvasRef,
+  tpsPinSize = 100,
   onToggleNearestPhone,
   onToggleMode
 }) => {
@@ -222,6 +224,10 @@ const FpsView: React.FC<FpsViewProps> = ({
   playerChangeRef.current = onPlayerChange;
   const unlockedWallsChangeRef = useRef(onLockedWallsChange);
   unlockedWallsChangeRef.current = onLockedWallsChange;
+  const toggleNearestPhoneRef = useRef(onToggleNearestPhone);
+  toggleNearestPhoneRef.current = onToggleNearestPhone;
+  const toggleModeRef = useRef(onToggleMode);
+  toggleModeRef.current = onToggleMode;
 
   const autoRouteActiveRef = useRef(autoRouteActive);
   autoRouteActiveRef.current = autoRouteActive;
@@ -240,6 +246,7 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (e.key.toLowerCase() === 'f' && !e.repeat) {
       const curP = playerRef.current;
       const lw = lockedWallsRef.current;
+      const unlockFn = unlockedWallsChangeRef.current;
       let nearestIdx = -1;
       let nearestDist = 16;
       for (let i = 0; i < lw.length; i++) {
@@ -252,18 +259,18 @@ const FpsView: React.FC<FpsViewProps> = ({
           nearestIdx = i;
         }
       }
-      if (nearestIdx >= 0 && onLockedWallsChange) {
+      if (nearestIdx >= 0 && unlockFn) {
         const next = lw.map((s, idx) => idx === nearestIdx ? { ...s, isOpen: !s.isOpen } : s);
-        onLockedWallsChange(next);
+        unlockFn(next);
       }
     }
     if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
-      onToggleNearestPhone?.();
+      toggleNearestPhoneRef.current?.();
     }
     if ((e.key === 't' || e.key === 'T') && !e.repeat) {
-      onToggleMode?.();
+      toggleModeRef.current?.();
     }
-  }, [onLockedWallsChange, onToggleNearestPhone, onToggleMode]);
+  }, []);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -464,7 +471,7 @@ const FpsView: React.FC<FpsViewProps> = ({
                 const segMarker = markersRef.current.find(m => m.id === seg.markerId);
                 const curP = segMarker ? { x: segMarker.x, y: segMarker.y } : seg.end;
                 let nearestIdx = -1;
-                let nearestDist = 40;
+                let nearestDist = 20;
                 for (let wi = 0; wi < ulw.length; wi++) {
                   const wseg = ulw[wi];
                   const wcx = (wseg.p1.x + wseg.p2.x) / 2;
@@ -825,13 +832,14 @@ const FpsView: React.FC<FpsViewProps> = ({
             const perpDist = dist * Math.cos(relAngle);
             if (perpDist < 1) continue;
             if (colHeights[Math.round(screenX)].perpDist < perpDist) continue;
-            const ph = Math.max(2, Math.round((18 * distPlane) / perpDist));
-            const pBottom = Math.round(canvas.height / 2 - 50 + (24 * distPlane) / perpDist);
-            const pTop = pBottom - ph;
+            const baseWorldHeight = 18 * (tpsPinSize / 100);
+            const ph = Math.max(2, Math.round((baseWorldHeight * distPlane) / perpDist));
             const imgW = Math.round(ph * 2);
             const imgH = Math.round(imgW * img.height / img.width);
-            // マーカー上方に看板表示（地面から 3/4 の高さを中心に配置）
-            const drawTop = pTop + Math.round(ph * 0.75 - imgH / 2);
+            // 地面から 15 ワールド単位上の位置を画像の中心に（視線の高さ）
+            const centerWorldHeight = 15;
+            const centerY = Math.round(canvas.height / 2 - 50 + ((24 - centerWorldHeight) * distPlane) / perpDist);
+            const drawTop = Math.round(centerY - imgH / 2);
             const drawLeft = screenX - imgW / 2;
             // Convert to overlay canvas coordinates (uniform scale preserves aspect ratio)
             const sx = drawLeft * scale + offX;

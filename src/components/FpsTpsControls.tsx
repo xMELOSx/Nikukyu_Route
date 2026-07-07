@@ -33,6 +33,7 @@ interface FpsTpsControlsProps {
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   fpsResolutionScale?: number;
+  tpsPinSize?: number;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -63,7 +64,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   strokes = {}, spawnItems = [], mapSnapshotCanvas,
   onFreeCamModeChange, onToggleNearestPhone,
   autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming,
-  fpsResolutionScale = 2.0
+  fpsResolutionScale = 2.0,
+  tpsPinSize = 100
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -446,6 +448,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteTiming={autoRouteTiming}
             autoRouteNoClip={autoRouteNoClip}
             imageOverlayCanvasRef={tpsOverlayRef}
+            tpsPinSize={tpsPinSize}
           />
         )}
         {/* Mobile touch controls */}

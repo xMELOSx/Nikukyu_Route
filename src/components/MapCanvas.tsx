@@ -93,6 +93,8 @@ interface MapCanvasProps {
   phoneBoxHudSize?: number;
   showBottomRightHud?: boolean;
   zoomHudSize?: number;
+  tpsPinSize?: number;
+  onTpsPinSizeChange?: (v: number) => void;
   onMarkersDragStart?: () => void;
   onMarkersDragEnd?: () => void;
   markerScale?: number;
@@ -195,6 +197,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   selectedTexture = '',
   selectedRepeat = 1,
   fpsResolutionScale = 2.0,
+  tpsPinSize = 100, onTpsPinSizeChange,
   aspectFitCut = false,
   lockedWalls = [],
   onLockedWallsChange,
@@ -5962,18 +5965,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
           {activeNoteMarker.type === 'tps' && (
-            <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255, 136, 0, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像の回転(度)')}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input type="range" min={0} max={360} step={1}
-                  value={activeNoteMarker.teleportAngle ?? 0}
-                  onChange={(e) => {
-                    const deg = parseInt(e.target.value);
-                    onMarkersChange(markers.map(m => m.id === activeNoteMarker.id ? { ...m, teleportAngle: deg } : m));
-                  }}
-                  style={{ flex: 1, accentColor: '#ff8800', cursor: 'pointer' }}
+            <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255, 136, 0, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像サイズ')}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#ff8800' }}>
+                  <span>{t('小')}</span>
+                  <span style={{ fontWeight: 'bold' }}>{tpsPinSize}%</span>
+                  <span>{t('大')}</span>
+                </div>
+                <input type="range" min={20} max={300} step={5}
+                  value={tpsPinSize}
+                  onChange={(e) => onTpsPinSizeChange?.(parseInt(e.target.value))}
+                  style={{ width: '100%', accentColor: '#ff8800', cursor: 'pointer' }}
                 />
-                <span style={{ fontSize: '11px', color: '#ff8800', minWidth: '32px', textAlign: 'right' }}>{activeNoteMarker.teleportAngle ?? 0}°</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像の回転(度)')}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="range" min={0} max={360} step={1}
+                    value={activeNoteMarker.teleportAngle ?? 0}
+                    onChange={(e) => {
+                      const deg = parseInt(e.target.value);
+                      onMarkersChange(markers.map(m => m.id === activeNoteMarker.id ? { ...m, teleportAngle: deg } : m));
+                    }}
+                    style={{ flex: 1, accentColor: '#ff8800', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#ff8800', minWidth: '32px', textAlign: 'right' }}>{activeNoteMarker.teleportAngle ?? 0}°</span>
+                </div>
               </div>
             </div>
           )}
@@ -6425,6 +6443,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         lockedWalls={lockedWalls}
         onLockedWallsChange={onLockedWallsChange}
         fpsResolutionScale={fpsResolutionScale}
+        tpsPinSize={tpsPinSize}
         markers={markers}
         floor={floor}
         customBg={customBg}

@@ -88,6 +88,36 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/resize-texture
+        if (isPathMatch(urlPath, '/api/resize-texture')) {
+          if (req.method === 'POST') {
+            let body = ''
+            req.on('data', (chunk: string) => { body += chunk })
+            req.on('end', () => {
+              try {
+                const parsed = JSON.parse(body)
+                const { name, dataUrl } = parsed
+                if (!name || !dataUrl) {
+                  res.statusCode = 400
+                  res.end(JSON.stringify({ error: 'Missing name or dataUrl' }))
+                  return
+                }
+                const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "")
+                const buffer = Buffer.from(base64Data, 'base64')
+                const targetPath = path.resolve(__dirname, '../public/texture', name)
+                fs.writeFileSync(targetPath, buffer)
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ success: true }))
+              } catch (e) {
+                res.statusCode = 500
+                res.end(JSON.stringify({ error: 'Resize failed' }))
+              }
+            })
+            return
+          }
+          return next()
+        }
+
         // /api/global-spawns
         if (isPathMatch(urlPath, '/api/global-spawns')) {
           if (req.method === 'GET') return handleGet(req, res, 'global_spawns.json', JSON.stringify([]))

@@ -7,6 +7,7 @@ import { HelpModal } from './components/HelpModal';
 import { PlayDataPanel } from './components/PlayDataPanel';
 import { OcrDebugModal } from './components/OcrDebugModal';
 import { SaveModal, type SaveModalExportParams } from './components/SaveModal';
+import { TextureUsageModal } from './components/TextureUsageModal';
 import { t, useLangState } from './i18n';
 
 function LangSync(): null {
@@ -253,6 +254,7 @@ export default function App() {
     localStorage.setItem('heist_aspect_fit_cut', String(aspectFitCut));
   }, [aspectFitCut]);
 
+  const [showTextureUsageModal, setShowTextureUsageModal] = useState<boolean>(false);
   const [texturesList, setTexturesList] = useState<string[]>([]);
 
   useEffect(() => {
@@ -559,6 +561,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heist_zoom_hud_size', String(zoomHudSize));
   }, [zoomHudSize]);
+
+  const [tpsPinSize, setTpsPinSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('heist_tps_pin_size') || '');
+    return !isNaN(v) && v >= 20 && v <= 300 ? v : 100;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_tps_pin_size', String(tpsPinSize));
+  }, [tpsPinSize]);
 
   // マーカー一覧折りたたみ状態 (default: 展開)
   const [globalMarkerListExpanded, setGlobalMarkerListExpanded] = useState<boolean>(() => {
@@ -2082,6 +2092,7 @@ export default function App() {
           aspectFitCut={aspectFitCut}
           setAspectFitCut={setAspectFitCut}
           texturesList={texturesList}
+          onOpenTextureUsageModal={() => setShowTextureUsageModal(true)}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2154,6 +2165,8 @@ export default function App() {
               phoneBoxHudSize={phoneBoxHudSize}
               showBottomRightHud={showBottomRightHud}
               zoomHudSize={zoomHudSize}
+              tpsPinSize={tpsPinSize}
+              onTpsPinSizeChange={setTpsPinSize}
               eraseTarget={eraseTarget}
               eraseDefaultBehavior={eraseDefaultBehavior}
               eraseSize={eraseSize}
@@ -2317,6 +2330,15 @@ export default function App() {
             itemFormEditId,
             itemFormDescription,
             itemFormImage,
+            wallSubMode,
+            wallAutoSnap,
+            wallLockedSubMode,
+            selectedRepeat,
+            aspectFitCut,
+            fpsResolutionScale,
+            tpsPinSize
+          ])}
+          <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
             style={{
               position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
@@ -3491,6 +3513,15 @@ export default function App() {
         info={lastCrashInfo}
         onClose={() => setLastCrashInfo(null)}
         onCopy={(msg) => notification.show(msg)}
+      />
+
+      <TextureUsageModal
+        show={showTextureUsageModal}
+        onClose={() => setShowTextureUsageModal(false)}
+        texturesList={texturesList}
+        globalWalls={globalWalls}
+        selectedTexture={selectedTexture}
+        onSelectTexture={setSelectedTexture}
       />
     </div>
   );
