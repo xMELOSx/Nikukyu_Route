@@ -938,7 +938,7 @@ export default function App() {
     const point: SpawnPoint = {
       id, x: sx, y: sy,
       floor: currentFloor,
-      category: (spawnPlaceCategory || undefined) as any,
+      category: '引出' as any,
       createdAt: new Date().toISOString(),
       items: [],
     };
@@ -948,7 +948,7 @@ export default function App() {
       setSpawnMoveX(sx); setSpawnMoveY(sy);
       setShowEditModal(true);
     }
-  }, [currentFloor, spawnApi, pushSpawnHistory, spawnPlaceCategory, spawnAutoEdit, spawnGridSnap]);
+  }, [currentFloor, spawnApi, pushSpawnHistory, spawnAutoEdit, spawnGridSnap]);
 
   // スポーン点編集: マップの点をクリック時 → モーダル表示
   const handleSpawnPointEdit = useCallback((id: string) => {
