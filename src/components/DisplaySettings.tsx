@@ -43,7 +43,7 @@ const DisplaySettings: React.FC<DisplaySettingsProps> = (props) => {
             <span>{t('\ud83d\udccc \u30d4\u30f3\u30fb\u30e9\u30d9\u30eb\u500d\u7387:')}</span>
             <span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{markerScale}%</span>
           </div>
-          <input type="range" min="30" max="200" step="5" value={markerScale} onChange={(e) => { const v = parseInt(e.target.value); setMarkerScale(v); localStorage.setItem('heist_marker_scale', String(v)); }} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
+          <input type="range" min="30" max="200" step="5" value={markerScale} onChange={(e) => { const v = parseInt(e.target.value); setMarkerScale(v); localStorage.setItem('heist_marker_scale', String(v)); }} onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; const v = Math.max(30, Math.min(200, markerScale + dir * step)); setMarkerScale(v); localStorage.setItem('heist_marker_scale', String(v)); }} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
           <input type="checkbox" checked={textPinPassThrough} onChange={(e) => setTextPinPassThrough(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
@@ -60,7 +60,7 @@ const DisplaySettings: React.FC<DisplaySettingsProps> = (props) => {
         {showPhoneBoxHud && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}><span>{t('HUD\u30b5\u30a4\u30ba:')}</span><span style={{ color: '#ff00ff', fontWeight: 'bold' }}>{phoneBoxHudSize}%</span></div>
-            <input type="range" min="60" max="140" step="5" value={phoneBoxHudSize} onChange={(e) => setPhoneBoxHudSize(parseInt(e.target.value))} style={{ accentColor: '#ff00ff', cursor: 'pointer', width: '100%' }} />
+            <input type="range" min="60" max="140" step="5" value={phoneBoxHudSize} onChange={(e) => setPhoneBoxHudSize(parseInt(e.target.value))} onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; setPhoneBoxHudSize(Math.max(60, Math.min(140, phoneBoxHudSize + dir * step))); }} style={{ accentColor: '#ff00ff', cursor: 'pointer', width: '100%' }} />
           </div>
         )}
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
@@ -70,7 +70,7 @@ const DisplaySettings: React.FC<DisplaySettingsProps> = (props) => {
         {showBottomRightHud && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}><span>{t('HUD\u30b5\u30a4\u30ba:')}</span><span style={{ color: 'var(--cyan-neon)', fontWeight: 'bold' }}>{zoomHudSize}%</span></div>
-            <input type="range" min="60" max="140" step="5" value={zoomHudSize} onChange={(e) => setZoomHudSize(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
+            <input type="range" min="60" max="140" step="5" value={zoomHudSize} onChange={(e) => setZoomHudSize(parseInt(e.target.value))} onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; setZoomHudSize(Math.max(60, Math.min(140, zoomHudSize + dir * step))); }} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
           </div>
         )}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '8px', marginTop: '4px' }}>

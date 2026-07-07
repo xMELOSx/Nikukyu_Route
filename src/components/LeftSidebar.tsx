@@ -516,6 +516,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         setMarkerScale(val);
                         localStorage.setItem('heist_marker_scale', String(val));
                       }}
+                      onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; const v = Math.max(30, Math.min(200, markerScale + dir * step)); setMarkerScale(v); localStorage.setItem('heist_marker_scale', String(v)); }}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)' }}>
@@ -563,6 +564,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         type="range" min="60" max="140" step="5"
                         value={phoneBoxHudSize}
                         onChange={(e) => setPhoneBoxHudSize(parseInt(e.target.value))}
+                        onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; setPhoneBoxHudSize(Math.max(60, Math.min(140, phoneBoxHudSize + dir * step))); }}
                         style={{ accentColor: '#ff00ff', cursor: 'pointer', width: '100%' }}
                       />
                     </div>
@@ -587,6 +589,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         type="range" min="60" max="140" step="5"
                         value={zoomHudSize}
                         onChange={(e) => setZoomHudSize(parseInt(e.target.value))}
+                        onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 5; const dir = e.deltaY > 0 ? -1 : 1; setZoomHudSize(Math.max(60, Math.min(140, zoomHudSize + dir * step))); }}
                         style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                       />
                     </div>
@@ -973,6 +976,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     const next = cur.map((s, i) => editStrokeIdxs.has(i) ? { ...s, width: v } : s);
                     updateStrokes(next);
                   }}
+                  onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; const v = Math.max(2, Math.min(12, strokeWidth + dir * step)); setStrokeWidth(v); if (editStrokeIdxs.size === 0) return; const cur = routeApi.route.strokes[currentFloor]; if (!cur) return; historyApi.pushHistory(routeApi.route.strokes, routeApi.route.markers, globalMarkersStore.globalMarkers); const next = cur.map((s, i) => editStrokeIdxs.has(i) ? { ...s, width: v } : s); updateStrokes(next); }}
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                 />
 
@@ -988,6 +992,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   max="6"
                   value={editSmoothIterations}
                   onChange={(e) => setEditSmoothIterations(parseInt(e.target.value))}
+                  onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; setEditSmoothIterations(Math.max(1, Math.min(6, editSmoothIterations + dir * step))); }}
                   style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }}
                 />
                 <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.3 }}>
@@ -1576,6 +1581,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     </div>
                     <input type="range" min="1" max="8" step="1" value={spawnPointSize}
                       onChange={e => setSpawnPointSize(parseInt(e.target.value))}
+                      onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; setSpawnPointSize(Math.max(1, Math.min(8, spawnPointSize + dir * step))); }}
                       style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer', width: '100%' }} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', borderTop: '1px solid rgba(79,195,247,0.1)', paddingTop: '6px' }}>

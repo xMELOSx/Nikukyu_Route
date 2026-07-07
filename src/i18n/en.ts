@@ -649,7 +649,7 @@ export const en: Locale = {
     'デバッグメニュー（グローバル編集モード専用）': '🔧 Debug menu (Global edit mode only)',
     '判定範囲を強調表示': '🎯 Highlight detection ranges',
     'スライダーで各マーカーの判定距離を変更できます。': 'Use the sliders to change the detection range for each marker.',
-    'スキルCDは 5〜20px の範囲で他とは別に調整できます (デフォルト10px)。': 'Skill CD can be adjusted between 5-20px independently of others (default 10px).',
+    'スキルCDは 5〜15px の範囲で他とは別に調整できます (デフォルト10px)。': 'Skill CD can be adjusted between 5-15px independently of others (default 10px).',
     '値は即座に自動ルート・判定範囲の円に反映されます。': 'Values are reflected immediately in the auto-route and detection-range circle.',
     '現在のビューをターゲットに設定': 'Set current view as target',
     '更新': 'Update',

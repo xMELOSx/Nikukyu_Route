@@ -152,41 +152,41 @@ export default function App() {
   }, [showDetectionRanges]);
   const [stopMarkerThreshold, setStopMarkerThresholdState] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('heist_threshold_stop') || '');
-    return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
+    return !isNaN(v) && v >= 5 && v <= 20 ? v : 12;
   });
   const [movementMarkerThreshold, setMovementMarkerThresholdState] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('heist_threshold_movement') || '');
-    return !isNaN(v) && v >= 5 && v <= 30 ? v : 20;
+    return !isNaN(v) && v >= 5 && v <= 20 ? v : 20;
   });
   const [warpMarkerThreshold, setWarpMarkerThresholdState] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('heist_threshold_warp') || '');
-    return !isNaN(v) && v >= 5 && v <= 30 ? v : 12;
+    return !isNaN(v) && v >= 5 && v <= 20 ? v : 12;
   });
   // スキルCDマーカー専用の判定閾値 (他のマーカーとは独立、デフォルト10px)
   const [skillCdThreshold, setSkillCdThresholdState] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('heist_threshold_skill_cd') || '');
-    return !isNaN(v) && v >= 5 && v <= 30 ? v : 10;
+    return !isNaN(v) && v >= 5 && v <= 15 ? v : 10;
   });
   const setStopMarkerThreshold = (n: number) => {
-    const clamped = Math.max(5, Math.min(30, n));
+    const clamped = Math.max(5, Math.min(20, n));
     setStopMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_stop', String(clamped));
     postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], clamped, undefined, undefined, skillCdThreshold);
   };
   const setMovementMarkerThreshold = (n: number) => {
-    const clamped = Math.max(5, Math.min(30, n));
+    const clamped = Math.max(5, Math.min(20, n));
     setMovementMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_movement', String(clamped));
     postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, clamped, undefined, skillCdThreshold);
   };
   const setWarpMarkerThreshold = (n: number) => {
-    const clamped = Math.max(5, Math.min(30, n));
+    const clamped = Math.max(5, Math.min(20, n));
     setWarpMarkerThresholdState(clamped);
     localStorage.setItem('heist_threshold_warp', String(clamped));
     postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], undefined, undefined, clamped, skillCdThreshold);
   };
   const setSkillCdThreshold = (n: number) => {
-    const clamped = Math.max(5, Math.min(30, n));
+    const clamped = Math.max(5, Math.min(15, n));
     setSkillCdThresholdState(clamped);
     localStorage.setItem('heist_threshold_skill_cd', String(clamped));
     postGlobalDefaults(routeApi.route.hiddenMarkers || [], routeApi.route.hiddenMarkerTypes || [], stopMarkerThreshold, movementMarkerThreshold, warpMarkerThreshold, clamped);

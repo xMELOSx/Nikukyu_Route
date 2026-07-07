@@ -51,7 +51,7 @@ const DrawSettings: React.FC<DrawSettingsProps> = (p) => (<>
     </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
       <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t('\u7dda\u306e\u592a\u3055: ')}{p.strokeWidth}px</span>
-      <input type="range" min="2" max="12" value={p.strokeWidth} onChange={(e) => p.setStrokeWidth(parseInt(e.target.value))} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+      <input type="range" min="2" max="12" value={p.strokeWidth} onChange={(e) => p.setStrokeWidth(parseInt(e.target.value))} onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; p.setStrokeWidth(Math.max(2, Math.min(12, p.strokeWidth + dir * step))); }} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
     </div>
   </div>
 </>);

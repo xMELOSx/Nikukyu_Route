@@ -293,24 +293,27 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '70px' }}>{t('🔴 停止')}</span>
-                      <input type="range" min="5" max="30" step="1" value={stopMarkerThreshold ?? 12}
+                      <input type="range" min="5" max="20" step="1" value={stopMarkerThreshold ?? 12}
                         onChange={(e) => setStopMarkerThreshold(parseInt(e.target.value))}
+                        onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; const cur = stopMarkerThreshold ?? 12; const next = Math.max(5, Math.min(20, cur + dir * step)); setStopMarkerThreshold(next); }}
                         style={{ flex: 1, accentColor: '#ff4444' }} />
                       <span style={{ fontSize: '11px', color: '#ff4444', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{stopMarkerThreshold}px</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>{t('🟢 階段')}</span>
-                      <input type="range" min="5" max="30" step="1" value={movementMarkerThreshold ?? 20}
+                      <input type="range" min="5" max="20" step="1" value={movementMarkerThreshold ?? 20}
                         onChange={(e) => setMovementMarkerThreshold(parseInt(e.target.value))}
+                        onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; const cur = movementMarkerThreshold ?? 20; const next = Math.max(5, Math.min(20, cur + dir * step)); setMovementMarkerThreshold(next); }}
                         style={{ flex: 1, accentColor: '#39ff14' }} />
                       <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{movementMarkerThreshold}px</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '70px' }}>{t('🟠 ワープ')}</span>
-                      <input type="range" min="5" max="30" step="1" value={warpMarkerThreshold ?? 12}
+                      <input type="range" min="5" max="20" step="1" value={warpMarkerThreshold ?? 12}
                         onChange={(e) => setWarpMarkerThreshold(parseInt(e.target.value))}
+                        onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; const cur = warpMarkerThreshold ?? 12; const next = Math.max(5, Math.min(20, cur + dir * step)); setWarpMarkerThreshold(next); }}
                         style={{ flex: 1, accentColor: '#ff9500' }} />
                       <span style={{ fontSize: '11px', color: '#ff9500', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{warpMarkerThreshold}px</span>
                     </div>
@@ -318,8 +321,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     {setSkillCdThreshold && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '70px' }}>{t('⏱ スキルCD')}</span>
-                        <input type="range" min="5" max="20" step="1" value={skillCdThreshold ?? 10}
+                        <input type="range" min="5" max="15" step="1" value={skillCdThreshold ?? 10}
                           onChange={(e) => setSkillCdThreshold(parseInt(e.target.value))}
+                          onWheel={(e) => { e.preventDefault(); e.stopPropagation(); const step = parseInt(e.currentTarget.step) || 1; const dir = e.deltaY > 0 ? -1 : 1; const cur = skillCdThreshold ?? 10; const next = Math.max(5, Math.min(15, cur + dir * step)); setSkillCdThreshold(next); }}
                           style={{ flex: 1, accentColor: '#39ff14' }} />
                         <span style={{ fontSize: '11px', color: '#39ff14', minWidth: '32px', textAlign: 'right', fontFamily: 'monospace' }}>{skillCdThreshold}px</span>
                       </div>
