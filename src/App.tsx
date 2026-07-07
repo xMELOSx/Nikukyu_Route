@@ -2128,7 +2128,8 @@ export default function App() {
             <MapCanvas
               floor={currentFloor}
               strokes={memoizedStrokes}
-              markers={((rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther) ? [] : [...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              markers={[...globalMarkersStore.globalMarkers, ...routeApi.route.markers]}
+              hideAllMarkers={(rightTab === 'spawn' || toolMode === 'add-spawn') && spawnHideOther}
               customBg={routeApi.route.customBg[currentFloor] ?? null}
               bgOffset={routeApi.route.bgOffset ?? { x: 0, y: 0 }}
               bgScale={routeApi.route.bgScale ?? { x: 1, y: 1 }}

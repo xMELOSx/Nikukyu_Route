@@ -111,6 +111,7 @@ interface MapCanvasProps {
   onToggleMarkerVisibility?: (id: string) => void;
   leftSidebarCollapsed?: boolean;
   rightSidebarCollapsed?: boolean;
+  hideAllMarkers?: boolean;
   targetDurationSeconds?: number;
   // Auto-route status callback — fired when status changes. Parent uses this
   // to render the auto-route UI (e.g. in the プレイデータ tab).
@@ -259,6 +260,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onToggleMarkerVisibility,
   leftSidebarCollapsed = false,
   rightSidebarCollapsed = false,
+  hideAllMarkers = false,
   targetDurationSeconds,
   onAutoRouteStatusChange,
   autoRouteCommand,
@@ -4117,7 +4119,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
         </svg>
 
-        <div className="markers-layer" style={{ display: (toolMode === 'wall' && hideMarkersDuringWalls) ? 'none' : undefined }}>
+        <div className="markers-layer" style={{ display: (hideAllMarkers || (toolMode === 'wall' && hideMarkersDuringWalls)) ? 'none' : undefined }}>
           {/* Detection range visualization (debug) — always on top */}
           {showDetectionRanges && (
             <svg
