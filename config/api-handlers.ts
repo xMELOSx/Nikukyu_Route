@@ -223,7 +223,7 @@ export function apiMiddleware(): Plugin {
                 }
               }
               if (filename && fileData) {
-                const uploadDir = path.resolve(__dirname, 'public/uploads')
+                const uploadDir = path.resolve(__dirname, '..', 'public', 'uploads')
                 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
                 const safeName = Date.now() + '_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_')
                 fs.writeFileSync(path.join(uploadDir, safeName), fileData)
@@ -248,7 +248,7 @@ export function apiMiddleware(): Plugin {
                   res.end(JSON.stringify({ error: 'No filename' }))
                   return
                 }
-                const filePath = path.resolve(__dirname, 'public/uploads', filename)
+                const filePath = path.resolve(__dirname, '..', 'public', 'uploads', filename)
                 if (fs.existsSync(filePath)) {
                   fs.unlinkSync(filePath)
                   res.setHeader('Content-Type', 'application/json')

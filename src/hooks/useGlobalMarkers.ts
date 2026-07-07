@@ -82,6 +82,8 @@ export interface UseGlobalMarkersApi {
   replace: (markers: HeistMarker[]) => void;
   mergeFromImport: (incoming: HeistMarker[]) => void;
   mergeOrUpdate: (markers: HeistMarker[]) => void;
+  /** Clear localStorage and reload global markers from the file (API/static JSON). */
+  reload: () => void;
 }
 
 export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGlobalMarkersApi {
@@ -99,6 +101,7 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
       try {
         const parsed: HeistMarker[] = JSON.parse(saved);
 
+        // 座標 v2 倍化マイグレーション（scrollConfig とは無関係）
         const migrated = localStorage.getItem('heist_global_markers_migrated_v2') === 'true'
           ? parsed
           : parsed.map(m => {
@@ -106,26 +109,11 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
               return updated;
             });
 
-        const wasV3Applied = localStorage.getItem('heist_global_markers_scroll_fixed_v3') === 'true';
-        const scrollFixed = localStorage.getItem('heist_global_markers_scroll_fixed_v4') === 'true'
-          ? migrated
-          : migrated.map(m => {
-              if (!m.scrollConfig) return m;
-              const sc = m.scrollConfig;
-              return {
-                ...m,
-                scrollConfig: {
-                  x: wasV3Applied ? 2 * sc.x + m.x * (sc.zoom - 0.5) : sc.x - m.x / 2,
-                  y: wasV3Applied ? 2 * sc.y + m.y * (sc.zoom - 0.5) : sc.y - m.y / 2,
-                  zoom: sc.zoom
-                }
-              };
-            });
-
-        const cleaned = filterLegacyAndClean(scrollFixed);
+        // scrollConfig マイグレーションは fixScrollConfig に一元化。
+        // loadFromLocalStorage では実施しない（二重適用防止）。
+        const cleaned = filterLegacyAndClean(migrated);
         localStorage.setItem('heist_global_markers', JSON.stringify(cleaned));
         localStorage.setItem('heist_global_markers_migrated_v2', 'true');
-        localStorage.setItem('heist_global_markers_scroll_fixed_v4', 'true');
         return cleaned;
       } catch (e) {
         console.error('Failed to load global markers from localStorage:', e);
@@ -160,12 +148,14 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
 
       if (cancelled) return;
 
-      // ファイルデータにも scrollConfig マイグレーションを適用し、localStorage と値を揃える
+      // scrollConfig マイグレーション（fixScrollConfig で一元管理）。
+      // 適用直後に v4 フラグを設定し、次回以降の二重適用を防止する。
       fileMarkers = fixScrollConfig(fileMarkers);
+      localStorage.setItem('heist_global_markers_scroll_fixed_v4', 'true');
 
       if (isLocalRef.current) {
-        // ローカルモード: ファイルを一次ソースとし、localStorage を
-        // ユーザー編集のオーバーレイとしてマージする。
+        // ローカルモード: ファイルデータを一次ソースとし、localStorage の全フィールド
+        // （編集内容・表示状態）をオーバーレイとしてマージする。
         if (fileMarkers.length > 0) {
           setGlobalMarkers(fileMarkers);
         } else {
@@ -186,11 +176,32 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
           });
         }
       } else {
-        // 疑似本番/個人モード: ファイルデータのみ信頼。localStorage は参照しない。
+        // 疑似本番モード: ファイルデータを信頼しつつ、表示状態（expanded 系）のみ
+        // localStorage からマージする。座標・scrollConfig 等のコアデータはファイル優先。
         if (fileMarkers.length > 0) {
           setGlobalMarkers(fileMarkers);
         } else {
           setGlobalMarkers([]);
+        }
+        const local = loadFromLocalStorage();
+        if (local && local.length > 0) {
+          setGlobalMarkers(prev => {
+            const localById = new Map(local.map(m => [m.id, m]));
+            return prev.map(m => {
+              const localM = localById.get(m.id);
+              if (!localM) return m;
+              return {
+                ...m,
+                infoExpanded: localM.infoExpanded,
+                noteExpanded: localM.noteExpanded,
+                bossExpanded: localM.bossExpanded,
+                battleExpanded: localM.battleExpanded,
+                pickingExpanded: localM.pickingExpanded,
+                checkpointExpanded: localM.checkpointExpanded,
+                drawerExpanded: localM.drawerExpanded,
+              };
+            });
+          });
         }
       }
     };
@@ -243,7 +254,43 @@ export function useGlobalMarkers({ isLocal }: UseGlobalMarkersOptions): UseGloba
     });
   }, []);
 
+  const reload = useCallback(async () => {
+    // ユーザーデータ（編集・表示状態）のみ破棄。マイグレーションフラグは維持。
+    localStorage.removeItem('heist_global_markers');
+
+    // ファイルから再取得
+    let fileMarkers: HeistMarker[] = [];
+    try {
+      const apiRes = await fetch(`${import.meta.env.BASE_URL}api/global-markers`);
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (Array.isArray(data)) {
+          fileMarkers = filterLegacyAndClean(data);
+        }
+      }
+    } catch {}
+    if (fileMarkers.length === 0) {
+      try {
+        const fileRes = await fetch(`${import.meta.env.BASE_URL}global_markers.json`);
+        if (fileRes.ok) {
+          const fallback = await fileRes.json();
+          if (Array.isArray(fallback)) {
+            fileMarkers = filterLegacyAndClean(fallback);
+          }
+        }
+      } catch {}
+    }
+    // scrollConfig マイグレーション（v4 フラグが未設定の場合のみ適用され、フラグを設定する）
+    fileMarkers = fixScrollConfig(fileMarkers);
+    localStorage.setItem('heist_global_markers_scroll_fixed_v4', 'true');
+    // 即座に localStorage へ保存し、後続の loadFromLocalStorage と二重適用を防止
+    if (fileMarkers.length > 0) {
+      localStorage.setItem('heist_global_markers', JSON.stringify(fileMarkers));
+    }
+    setGlobalMarkers(fileMarkers);
+  }, []);
+
   return {
-    globalMarkers, setGlobalMarkers, replace, mergeFromImport, mergeOrUpdate
+    globalMarkers, setGlobalMarkers, replace, mergeFromImport, mergeOrUpdate, reload
   };
 }

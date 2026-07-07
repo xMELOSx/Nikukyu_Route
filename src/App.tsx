@@ -1885,6 +1885,7 @@ export default function App() {
     }
     setNewPlanConfirm(false);
     stopAutoRouteIfActive();
+    globalMarkersStore.reload();
     routeApi.createNewPlan();
   };
 
