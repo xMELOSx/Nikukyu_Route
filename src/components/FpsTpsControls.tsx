@@ -392,10 +392,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           height={560}
           style={{
             position: 'absolute',
-            top: '14px',
-            left: '14px',
-            width: '280px',
-            height: '280px',
+            top: window.innerWidth < 768 ? '10px' : '14px',
+            left: window.innerWidth < 768 ? '10px' : '14px',
+            width: window.innerWidth < 768 ? '160px' : '280px',
+            height: window.innerWidth < 768 ? '160px' : '280px',
             imageRendering: 'pixelated',
             borderRadius: '2px',
             border: '1px solid rgba(0, 240, 255, 0.35)',

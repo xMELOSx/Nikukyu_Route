@@ -694,6 +694,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       if (minimapCvs) {
         const mctx = minimapCvs.getContext('2d');
         if (mctx) {
+          mctx.clearRect(0, 0, minimapCvs.width, minimapCvs.height);
           renderMinimap(mctx, playerRef.current, lw, lm, mapSnapshotRef.current || bgImageRef.current);
           // Overlay phone status dots on minimap (active=green, inactive=red, locked=gray)
           const mw = minimapCvs.width; // 280

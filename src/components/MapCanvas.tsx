@@ -1315,6 +1315,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
     if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
+    // Build rotation-aware fallback positions for hidden shelf spawns
+    const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
+    for(const m of markers) {
+      if(m.type!=='shelf'||!m.shelfSpawns||!hiddenMids.has(m.id)) continue;
+      const cols = m.shelfCols||3, rows = m.shelfRows||3;
+      const sw2 = m.shelfWidth||60, sh2 = m.shelfHeight||24;
+      const angleRad = (m.shelfAngle||0) * Math.PI / 180;
+      const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+      for(const ss of m.shelfSpawns){
+        if(!ss.spawnId) continue;
+        const dx = ((ss.col+0.5)/cols - 0.5) * sw2;
+        const dy = ((ss.row+0.5)/rows - 0.5) * sh2;
+        const rx = dx*cosA - dy*sinA;
+        const ry = dx*sinA + dy*cosA;
+        hiddenShelfSpawnPos.set(ss.spawnId, {x:m.x+rx, y:m.y+ry});
+      }
+    }
     if (sp.length === 0) return;
     const itemMap: Record<string, RegisteredItem> = {};
     for (const item of spawnItems) itemMap[item.id] = item;
@@ -1326,6 +1343,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.save();
     for (const p of sp) {
       if (p.floor !== floor) continue;
+      // Use rotation-aware position if this spawn belongs to a hidden shelf
+      const fallbackPos = hiddenShelfSpawnPos.get(p.id);
+      const px = fallbackPos ? fallbackPos.x : p.x;
+      const py = fallbackPos ? fallbackPos.y : p.y;
       let bestRank = -1;
       let color = '#888';
       let hasItemMatch = false;
@@ -1345,7 +1366,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#444';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
         continue;
@@ -1356,12 +1377,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.shadowBlur = glow;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius * 0.6, 0, Math.PI * 2);
+      ctx.arc(px, py, radius * 0.6, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

@@ -630,6 +630,9 @@ export function renderMinimap(
   const half = MINIMAP_SIZE / 2;
   const scale = MINIMAP_SIZE / MINIMAP_RANGE;
 
+  // 描画前にキャンバスのミニマップ領域をクリアして灰色の点の累積を防ぐ
+  ctx.clearRect(x - 2, y - 2, MINIMAP_SIZE + 4, MINIMAP_SIZE + 4);
+
   // クリッピング境界を設定してはみ出しを防ぐ
   ctx.save();
   ctx.beginPath();
@@ -637,11 +640,13 @@ export function renderMinimap(
   ctx.clip();
 
   if (bgImage) {
-    const sw = MINIMAP_RANGE;
-    const sh = MINIMAP_RANGE;
-    const sx = player.x - sw / 2;
-    const sy = player.y - sh / 2;
-    ctx.drawImage(bgImage, sx, sy, sw, sh, x, y, MINIMAP_SIZE, MINIMAP_SIZE);
+    // プレイヤーがマップ端に行っても絶対に歪まないよう、translate+scaleで描画
+    ctx.save();
+    ctx.translate(x + half, y + half);
+    ctx.scale(scale, scale);
+    ctx.translate(-player.x, -player.y);
+    ctx.drawImage(bgImage, 0, 0);
+    ctx.restore();
   } else {
     // Background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
