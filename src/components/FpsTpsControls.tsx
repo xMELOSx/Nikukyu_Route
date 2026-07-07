@@ -431,7 +431,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
               </span>
             </div>
             <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
-              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [P]再読込 [ESC]終了
+              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [Ctrl]解放 [P]再読込 [ESC]終了
             </div>
           </div>
         )}
@@ -519,7 +519,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', keyCode: 80 })); }}
               >↻ P</button>
               <button
-                style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(255,255,255,0.08)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(255,255,255,0.2)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : 'rgba(255,255,255,0.6)', touchAction: 'none', lineHeight: 1.2 }}
+                style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(180,0,255,0.3)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(180,0,255,0.6)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : '#cc66ff', touchAction: 'none', lineHeight: 1.2 }}
                 onClick={() => setAutoRouteNoClip(v => !v)}
               >壁抜け<br/>{(autoRouteNoClip ? 'ON' : 'OFF')}</button>
               <div style={{ display: 'flex', gap: '4px' }}>

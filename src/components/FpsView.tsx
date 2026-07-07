@@ -248,10 +248,16 @@ const FpsView: React.FC<FpsViewProps> = ({
   const autoRouteTimingRef = useRef(autoRouteTiming);
   autoRouteTimingRef.current = autoRouteTiming;
 
+  const ctrlHeldRef = useRef(false);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     keysRef.current.add(e.key.toLowerCase());
     if (e.key === 'Escape') {
       exitRef.current();
+    }
+    if (e.key === 'Control' && !e.repeat) {
+      ctrlHeldRef.current = true;
+      document.exitPointerLock();
     }
     if (e.key.toLowerCase() === 'f' && !e.repeat) {
       const curP = playerRef.current;
@@ -293,7 +299,14 @@ const FpsView: React.FC<FpsViewProps> = ({
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
-  }, []);
+    if (e.key === 'Control') {
+      ctrlHeldRef.current = false;
+      const canvas = canvasRef.current;
+      if (canvas && document.pointerLockElement !== canvas) {
+        try { canvas.requestPointerLock(); } catch {}
+      }
+    }
+  }, [canvasRef]);
 
   const hasLockedRef = useRef(false);
   const lockTimeRef = useRef<number>(0);
@@ -308,8 +321,10 @@ const FpsView: React.FC<FpsViewProps> = ({
     if (hasLockedRef.current && !document.pointerLockElement) {
       // 自動案内中はマウスキャプチャ解除で終了しない
       if (autoRouteActiveRef.current) return;
+      // Ctrl 解放中は終了しない
+      if (ctrlHeldRef.current) return;
       requestAnimationFrame(() => {
-        if (!document.pointerLockElement) {
+        if (!document.pointerLockElement && !ctrlHeldRef.current) {
           exitRef.current();
         }
       });
