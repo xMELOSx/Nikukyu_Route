@@ -821,7 +821,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                             markers: cleanedMarkers
                           }));
 
-                          const cleanedGlobalWalls = { ...globalWalls.walls };
+                          const cleanedGlobalWalls = { ...globalWalls };
                           for (const fl of Object.keys(cleanedGlobalWalls)) {
                             cleanedGlobalWalls[fl] = cleanedGlobalWalls[fl].filter(seg => {
                               const a = seg[0];
@@ -830,7 +830,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                                      b.x >= 0 && b.x <= 1600 && b.y >= 0 && b.y <= 4550;
                             });
                           }
-                          globalWalls.replace(cleanedGlobalWalls);
+                          updateGlobalWalls(cleanedGlobalWalls);
 
                           notification.show(t('マップ範囲外のゴミ点を一括削除しました'));
                         }}

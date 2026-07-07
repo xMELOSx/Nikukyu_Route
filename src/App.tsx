@@ -2319,9 +2319,12 @@ export default function App() {
             wallAutoSnap,
             wallLockedSubMode,
             selectedRepeat,
+            selectedTexture,
             aspectFitCut,
             fpsResolutionScale,
-            tpsPinSize
+            tpsPinSize,
+            hideStrokesDuringWalls,
+            hideMarkersDuringWalls
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
