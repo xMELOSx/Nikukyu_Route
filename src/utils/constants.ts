@@ -101,7 +101,8 @@ export const MARKER_META: { [key in MarkerType]: { emoji: string; label: string;
   checkpoint: { emoji: '🏁', label: 'CHECKPOINT', color: '#ff9500' },
   skill_cd: { emoji: 'S', label: 'SKILL CD', color: '#39ff14' },
   drawer: { emoji: '🗄', label: 'DRAWER', color: '#cd853f' },
-  tps: { emoji: '🖼', label: 'TPS PROJECTION', color: '#ff8800' }
+  tps: { emoji: '🖼', label: 'TPS PROJECTION', color: '#ff8800' },
+  itps: { emoji: '🖼', label: 'I-TPS PROJECTION', color: '#ff8800' }
 };
 
 export const PRESET_MAPS_META: { [key in FloorType]: { path: string | null; label: string } } = {

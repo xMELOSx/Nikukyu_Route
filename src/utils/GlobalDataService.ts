@@ -98,7 +98,7 @@ function backfillDefaults(m: HeistMarker): HeistMarker {
 }
 
 function filterGlobalMarkers(raw: HeistMarker[]): HeistMarker[] {
-  const indiv = new Set(['start','p1','p2','p3','battle','picking','long_picking','iwarp','iinfo','inote','itext','checkpoint','skill_cd']);
+  const indiv = new Set(['start','p1','p2','p3','battle','picking','long_picking','iwarp','iinfo','inote','itext','checkpoint','skill_cd','itps']);
   return raw.filter(m => m && typeof m === 'object' && typeof m.id === 'string' && !indiv.has(m.type) && m.type !== 'camera' as any && m.type !== 'guard' as any)
     .map(m => { const c = { ...m }; if (c.warpWaypoints) c.warpWaypoints = c.warpWaypoints.filter((wp: any) => wp != null); return backfillDefaults(c); });
 }

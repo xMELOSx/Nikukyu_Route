@@ -2154,7 +2154,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 </button>
                 {localMarkerListExpanded && (
                   <div className="marker-list" style={{ marginTop: '6px' }}>
-                    {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3'] as MarkerType[]).map(mt => {
+                    {(['start', 'checkpoint', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'skill_cd', 'p1', 'p2', 'p3', 'itps'] as MarkerType[]).map(mt => {
                       const meta = MARKER_META[mt];
                       const isActive = toolMode === 'add-marker' && activeMarkerType === mt;
                       return (

@@ -614,7 +614,7 @@ export function renderFpsView(
 
 const PLAYER_HEIGHT = 6;
 const PLAYER_WIDTH = 2;
-const MINIMAP_SIZE = 252;
+const MINIMAP_SIZE = 504;
 const MINIMAP_RANGE = 500;
 
 export function renderMinimap(
@@ -624,7 +624,7 @@ export function renderMinimap(
   markers: { x: number; y: number; type: string }[],
   bgImage?: HTMLCanvasElement | HTMLImageElement | null
 ): void {
-  const margin = 14;
+  const margin = 28;
   const x = margin; // 左上に配置
   const y = margin;
   const half = MINIMAP_SIZE / 2;
@@ -650,13 +650,13 @@ export function renderMinimap(
 
   // ミニマップ外枠のストローク
   ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 2;
   ctx.strokeRect(x, y, MINIMAP_SIZE, MINIMAP_SIZE);
 
   // グリッド線（背景画像がない場合のみ描画する、あるいは常に薄く重ねる）
   if (!bgImage) {
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
-    ctx.lineWidth = 0.5;
+    ctx.lineWidth = 1;
     for (let g = 100; g < MINIMAP_RANGE; g += 100) {
       const gp = g * scale;
       ctx.beginPath();
@@ -669,7 +669,7 @@ export function renderMinimap(
 
   // Walls within range
   ctx.strokeStyle = 'rgba(255, 85, 0, 0.5)';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 2;
   for (const w of walls) {
     const ax = (w[0].x - player.x) * scale + half;
     const ay = (w[0].y - player.y) * scale + half;
@@ -691,14 +691,14 @@ export function renderMinimap(
     const mx = x + half + dx;
     const my = y + half + dy;
     ctx.fillStyle = m.type === 'start' ? '#39ff14' : '#ff00ff';
-    ctx.fillRect(mx - 1.5, my - 1.5, 3, 3);
+    ctx.fillRect(mx - 3, my - 3, 6, 6);
   }
 
   // Player direction cone
   ctx.fillStyle = 'rgba(57, 255, 20, 0.12)';
   ctx.beginPath();
   ctx.moveTo(x + half, y + half);
-  const coneLen = 14;
+  const coneLen = 28;
   ctx.lineTo(
     x + half + Math.cos(player.angle - 0.3) * coneLen,
     y + half + Math.sin(player.angle - 0.3) * coneLen
@@ -712,12 +712,12 @@ export function renderMinimap(
   // Player dot
   ctx.fillStyle = '#39ff14';
   ctx.beginPath();
-  ctx.arc(x + half, y + half, 3, 0, Math.PI * 2);
+  ctx.arc(x + half, y + half, 10, 0, Math.PI * 2);
   ctx.fill();
 
   // Direction line
   ctx.strokeStyle = '#39ff14';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(x + half, y + half);
   ctx.lineTo(

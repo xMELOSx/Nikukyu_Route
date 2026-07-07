@@ -2092,6 +2092,7 @@ export default function App() {
               toolMode={toolMode}
               selectedTexture={selectedTexture}
               selectedRepeat={selectedRepeat}
+              fpsResolutionScale={fpsResolutionScale}
               aspectFitCut={aspectFitCut}
               activeMarkerType={activeMarkerType}
               strokeColor={strokeColor}

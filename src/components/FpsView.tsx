@@ -37,8 +37,10 @@ interface FpsViewProps {
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
   autoRouteNoClip?: boolean;
+  onAutoRouteNoClipChange?: (v: boolean) => void;
   imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   tpsPinSize?: number;
+  onReload?: () => void;
 }
 
 const FOV = Math.PI * 0.45;
@@ -56,11 +58,12 @@ const PLAYER_COLOR = '#39ff14';
 const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
-  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false,
+  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false, onAutoRouteNoClipChange,
   mapSnapshotCanvas, imageOverlayCanvasRef,
   tpsPinSize = 100,
   onToggleNearestPhone,
-  onToggleMode
+  onToggleMode,
+  onReload
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -98,7 +101,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   useEffect(() => {
     const imgCache = tpsImagesRef.current;
     for (const m of activeMarkers) {
-      if (m.type !== 'tps') continue;
+      if (m.type !== 'tps' && m.type !== 'itps') continue;
       if (imgCache[m.id]) continue;
       const imgUrl = m.mediaItems?.[0]?.url;
       if (!imgUrl) continue;
@@ -229,9 +232,15 @@ const FpsView: React.FC<FpsViewProps> = ({
   toggleNearestPhoneRef.current = onToggleNearestPhone;
   const toggleModeRef = useRef(onToggleMode);
   toggleModeRef.current = onToggleMode;
+  const autoRouteNoClipToggleRef = useRef(onAutoRouteNoClipChange);
+  autoRouteNoClipToggleRef.current = onAutoRouteNoClipChange;
+  const reloadRef = useRef(onReload);
+  reloadRef.current = onReload;
 
   const autoRouteActiveRef = useRef(autoRouteActive);
   autoRouteActiveRef.current = autoRouteActive;
+  const autoRouteNoClipRef = useRef(autoRouteNoClip);
+  autoRouteNoClipRef.current = autoRouteNoClip;
   const autoRouteSegmentsRef = useRef(autoRouteSegments);
   autoRouteSegmentsRef.current = autoRouteSegments;
   const autoRouteElapsedRef = useRef(autoRouteElapsed);
@@ -273,6 +282,12 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
     if ((e.key === 't' || e.key === 'T') && !e.repeat) {
       toggleModeRef.current?.();
+    }
+    if ((e.key === 'h' || e.key === 'H') && !e.repeat) {
+      autoRouteNoClipToggleRef.current?.(!(autoRouteNoClipRef.current ?? false));
+    }
+    if ((e.key === 'p' || e.key === 'P') && !e.repeat) {
+      reloadRef.current?.();
     }
   }, []);
 
@@ -373,7 +388,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       const lm = markersRef.current;
 
       if (forward !== 0 || strafe !== 0) {
-        if (autoRouteNoClip) {
+        if (autoRouteNoClipRef.current) {
           // 壁抜けON: 衝突判定なしで直接移動
           const cosA = Math.cos(playerRef.current.angle);
           const sinA = Math.sin(playerRef.current.angle);
@@ -534,17 +549,19 @@ const FpsView: React.FC<FpsViewProps> = ({
           const partner = lm.find(m => m.id === portal.linkedWarpId);
           if (partner) {
             // 両方の marker に teleportAngle が設定されていれば相対角度保持
+            // partner 側は teleportExitAngle があれば優先して使用
+            const partnerExitAngle = partner.teleportExitAngle ?? partner.teleportAngle;
             let newAngle: number;
-            if (portal.teleportAngle !== undefined && partner.teleportAngle !== undefined) {
+            if (portal.teleportAngle !== undefined && partnerExitAngle !== undefined) {
               const srcRef = (portal.teleportAngle * Math.PI) / 180;
-              const dstRef = (partner.teleportAngle * Math.PI) / 180;
+              const dstRef = (partnerExitAngle * Math.PI) / 180;
               let offset = curP.angle - srcRef;
               offset = ((offset % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
               if (offset > Math.PI) offset -= Math.PI * 2;
               newAngle = dstRef + offset;
               newAngle = ((newAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-            } else if (partner.teleportAngle !== undefined) {
-              newAngle = (partner.teleportAngle * Math.PI) / 180;
+            } else if (partnerExitAngle !== undefined) {
+              newAngle = (partnerExitAngle * Math.PI) / 180;
             } else {
               newAngle = curP.angle;
             }
@@ -616,7 +633,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         : { x: playerRef.current.x, y: playerRef.current.y };
       renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, lm.map(m => ({
         ...m,
-        image_loaded: m.type === 'tps' ? tpsImagesRef.current[m.id] : undefined
+        image_loaded: (m.type === 'tps' || m.type === 'itps') ? tpsImagesRef.current[m.id] : undefined
       })));
 
       // 自動ルート案内マーカーを3D描画
@@ -679,10 +696,10 @@ const FpsView: React.FC<FpsViewProps> = ({
             const dotColor = (pm.phoneActive || pm.phoneLocked) ? '#ff3333' : '#888888';
             mctx.fillStyle = dotColor;
             mctx.beginPath();
-            mctx.arc(px, py, 3, 0, Math.PI * 2);
+            mctx.arc(px, py, 6, 0, Math.PI * 2);
             mctx.fill();
             mctx.strokeStyle = '#000';
-            mctx.lineWidth = 1;
+            mctx.lineWidth = 2;
             mctx.stroke();
           }
         }
@@ -823,7 +840,7 @@ const FpsView: React.FC<FpsViewProps> = ({
           const halfFov = FOV / 2;
           const distPlane = (canvas.height / 2) / Math.tan(FOV / 2);
           for (const m of lm) {
-            if (m.type !== 'tps' || !tpsImgs[m.id]) continue;
+            if ((m.type !== 'tps' && m.type !== 'itps') || !tpsImgs[m.id]) continue;
             const img = tpsImgs[m.id];
             // 看板的な近接表示: マーカーに接近したときだけ表示
             const worldDist = Math.hypot(m.x - playerRef.current.x, m.y - playerRef.current.y);
@@ -857,7 +874,14 @@ const FpsView: React.FC<FpsViewProps> = ({
             octx.save();
             octx.imageSmoothingEnabled = true;
             octx.imageSmoothingQuality = 'high';
-            octx.drawImage(img, sx, sy, sw, sh);
+            const angle = ((m.teleportAngle ?? 0) % 360) * Math.PI / 180;
+            if (Math.abs(angle) > 0.001) {
+              octx.translate(sx + sw / 2, sy + sh / 2);
+              octx.rotate(angle);
+              octx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+            } else {
+              octx.drawImage(img, sx, sy, sw, sh);
+            }
             octx.restore();
             break;
           }

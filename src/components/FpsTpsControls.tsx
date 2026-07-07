@@ -293,6 +293,11 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     }
   }, [wrapperRef, zoom, currentPosition, startSmoothScroll]);
 
+  const handleReload = useCallback(() => {
+    bgCacheRef.current = null;
+    captureLatestBgImageData();
+  }, [captureLatestBgImageData]);
+
   useEffect(() => {
     if (freeCamMode) {
       // 自動案内中はマウスキャプチャ不要
@@ -383,14 +388,14 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         />
         <canvas
           ref={minimapCanvasRef}
-          width={280}
-          height={280}
+          width={560}
+          height={560}
           style={{
             position: 'absolute',
             top: '14px',
             left: '14px',
-            width: '140px',
-            height: '140px',
+            width: '280px',
+            height: '280px',
             imageRendering: 'pixelated',
             borderRadius: '2px',
             border: '1px solid rgba(0, 240, 255, 0.35)',
@@ -412,15 +417,21 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 <span style={{ color: 'rgba(0, 240, 255, 0.9)' }}>FPS</span>
               )}
             </div>
-            <div style={{ position: 'absolute', top: '14px', right: '14px', pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 })); }}
-            >
-              <span style={{ background: 'rgba(200, 50, 50, 0.85)', color: '#fff', padding: '6px 16px', borderRadius: '4px', fontSize: '22px', border: '1px solid rgba(255, 100, 100, 0.9)', textShadow: 'none', fontWeight: 'bold' }}>
+            <div style={{ position: 'absolute', top: '14px', right: '14px', display: 'flex', gap: '6px', pointerEvents: 'auto', cursor: 'pointer' }}>
+              <span style={{ background: 'rgba(0, 180, 255, 0.8)', color: '#fff', padding: '6px 12px', borderRadius: '4px', fontSize: '20px', border: '1px solid rgba(0, 200, 255, 0.8)', textShadow: 'none', fontWeight: 'bold' }}
+                onClick={() => handleReload()}
+                title="マップ床を再読み込み [P]"
+              >
+                ↻
+              </span>
+              <span style={{ background: 'rgba(200, 50, 50, 0.85)', color: '#fff', padding: '6px 16px', borderRadius: '4px', fontSize: '22px', border: '1px solid rgba(255, 100, 100, 0.9)', textShadow: 'none', fontWeight: 'bold' }}
+                onClick={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 })); }}
+              >
                 ✕ 終了
               </span>
             </div>
             <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
-              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [ESC]終了
+              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [P]再読込 [ESC]終了
             </div>
           </div>
         )}
@@ -447,8 +458,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteElapsed={autoRouteElapsed}
             autoRouteTiming={autoRouteTiming}
             autoRouteNoClip={autoRouteNoClip}
+            onAutoRouteNoClipChange={setAutoRouteNoClip}
             imageOverlayCanvasRef={tpsOverlayRef}
             tpsPinSize={tpsPinSize}
+            onReload={handleReload}
           />
         )}
         {/* Mobile touch controls */}
@@ -501,12 +514,14 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
                 style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(255,200,0,0.25)', border: '1px solid rgba(255,200,0,0.5)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}
                 onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', keyCode: 70 })); }}
               >🔑 鍵 F</button>
-              {autoRouteActive && (
-                <button
-                  style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(255,255,255,0.08)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(255,255,255,0.2)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : 'rgba(255,255,255,0.6)', touchAction: 'none', lineHeight: 1.2 }}
-                  onClick={() => setAutoRouteNoClip(v => !v)}
-                >壁抜け<br/>{(autoRouteNoClip ? 'ON' : 'OFF')}</button>
-              )}
+              <button
+                style={{ width: 52, height: 44, fontSize: 11, background: 'rgba(0,150,255,0.25)', border: '1px solid rgba(0,180,255,0.5)', borderRadius: 8, color: '#66d0ff', touchAction: 'none' }}
+                onTouchStart={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', keyCode: 80 })); }}
+              >↻ P</button>
+              <button
+                style={{ width: 52, height: 44, fontSize: 10, background: autoRouteNoClip ? 'rgba(255,200,0,0.35)' : 'rgba(255,255,255,0.08)', border: `1px solid ${autoRouteNoClip ? 'rgba(255,200,0,0.6)' : 'rgba(255,255,255,0.2)'}`, borderRadius: 8, color: autoRouteNoClip ? '#ffc800' : 'rgba(255,255,255,0.6)', touchAction: 'none', lineHeight: 1.2 }}
+                onClick={() => setAutoRouteNoClip(v => !v)}
+              >壁抜け<br/>{(autoRouteNoClip ? 'ON' : 'OFF')}</button>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <button
                   style={{ width: 44, height: 44, fontSize: 14, background: 'rgba(255,200,0,0.2)', border: '1px solid rgba(255,200,0,0.4)', borderRadius: 8, color: '#ffc800', touchAction: 'none' }}

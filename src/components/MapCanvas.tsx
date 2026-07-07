@@ -495,7 +495,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   // Helper function to check if marker is individual
-  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd'].includes(type);
+  const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd', 'itps'].includes(type);
   const isDrawer = (type: string) => type === 'drawer';
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
@@ -1973,7 +1973,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.drawerExpanded = false;
         newMarker.note = '';
       }
-      if (activeMarkerType === 'tps') {
+      if (activeMarkerType === 'tps' || activeMarkerType === 'itps') {
         newMarker.mediaItems = [];
       }
       onMarkersChange([...markers, newMarker], true);
@@ -3440,7 +3440,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerWidth = drawerWidth;
               updated.drawerHeight = drawerHeight;
             }
-            if (m.type === 'tps') {
+            if (m.type === 'tps' || m.type === 'itps') {
               const url = tpsImageUrlRef.current;
               if (url) {
                 updated.mediaItems = [{ type: 'image' as const, url }];
@@ -3528,7 +3528,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
       // TPS マーカーはカメラ位置保存のために例外
       const noteMarker = markers.find(m => m.id === activeNoteMarkerId);
-      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps') return;
+      if (!isLocal && noteMarker && !isIndiv(noteMarker.type) && noteMarker.type !== 'tps' && noteMarker.type !== 'itps') return;
       const wrapper = wrapperRef.current;
       const vw = wrapper ? wrapper.clientWidth : undefined;
       const vh = wrapper ? wrapper.clientHeight : undefined;
@@ -4250,8 +4250,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   >
                     {displayEmoji}
                   </div>
-                  {/* teleportAngle directional indicator */}
-                  {m.teleportAngle !== undefined && (
+                  {/* teleportAngle: TPS image rotation line */}
+                  {(m.type === 'tps' || m.type === 'itps') && m.teleportAngle !== undefined && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        width: '0',
+                        height: '0',
+                        overflow: 'visible',
+                        pointerEvents: 'none',
+                        zIndex: 5
+                      }}
+                      title={`画像回転: ${m.teleportAngle}°`}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '50%',
+                          top: '50%',
+                          width: `${20 * scaleMultiplier}px`,
+                          height: `${1.5 * scaleMultiplier}px`,
+                          background: '#ff8800',
+                          transform: `translate(-50%, -50%) rotate(${m.teleportAngle}deg)`,
+                          transformOrigin: 'center center',
+                          borderRadius: `${1 * scaleMultiplier}px`,
+                          boxShadow: '0 0 4px #ff8800',
+                          opacity: 0.7
+                        }}
+                      />
+                    </div>
+                  )}
+                  {/* teleportAngle directional arrow (non-TPS) */}
+                  {m.type !== 'tps' && m.type !== 'itps' && m.teleportAngle !== undefined && (
                     <div
                       style={{
                         position: 'absolute',
@@ -4280,6 +4312,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           fontWeight: 'bold'
                         }}
                         title={`進入時の向き: ${m.teleportAngle}°`}
+                      >
+                        ➔
+                      </div>
+                    </div>
+                  )}
+                  {m.teleportExitAngle !== undefined && m.teleportExitAngle !== m.teleportAngle && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        width: '0',
+                        height: '0',
+                        overflow: 'visible',
+                        pointerEvents: 'none',
+                        zIndex: 5
+                      }}
+                      title={`出るときの向き: ${m.teleportExitAngle}°`}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '50%',
+                          top: '50%',
+                          transform: `translate(-50%, -50%) rotate(${m.teleportExitAngle}deg) translateX(${15 * scaleMultiplier}px)`,
+                          fontSize: `${11 * scaleMultiplier}px`,
+                          color: '#ff9900',
+                          textShadow: '0 0 3px #000, 0 0 5px #ff9900',
+                          lineHeight: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold'
+                        }}
                       >
                         ➔
                       </div>
@@ -6153,7 +6219,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </div>
             </div>
           )}
-          {activeNoteMarker.type === 'tps' && (
+          {(activeNoteMarker.type === 'tps' || activeNoteMarker.type === 'itps') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 136, 0, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像URL')}</div>
               <div style={{ display: 'flex', gap: '4px' }}>
@@ -6194,7 +6260,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               )}
             </div>
           )}
-          {activeNoteMarker.type === 'tps' && (
+          {(activeNoteMarker.type === 'tps' || activeNoteMarker.type === 'itps') && (
             <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255, 136, 0, 0.2)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像サイズ')}</div>
@@ -6225,6 +6291,51 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </div>
             </div>
           )}
+
+          {/* Rotation direction for non-TPS/non-warp markers (including personal markers) */}
+          {activeNoteMarker.type !== 'tps' && activeNoteMarker.type !== 'itps' && activeNoteMarker.type !== 'warp' && activeNoteMarker.type !== 'iwarp' && activeNoteMarker.type !== 'stairs' && (() => {
+            const angle = activeNoteMarker.teleportAngle;
+            return (
+              <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(126, 200, 227, 0.2)', paddingTop: '8px' }}>
+                <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>🧭 ストリートビュー進入時の向き</span>
+                  {angle !== undefined && (
+                    <span
+                      style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
+                      onClick={() => {
+                        onMarkersChange(
+                          markers.map(m => {
+                            if (m.id === activeNoteMarker.id) {
+                              const { teleportAngle, ...rest } = m;
+                              return rest;
+                            }
+                            return m;
+                          }),
+                          true
+                        );
+                      }}
+                    >
+                      クリア
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="range" min={0} max={360} step={1}
+                    value={angle ?? 0}
+                    onChange={(e) => {
+                      const deg = parseInt(e.target.value);
+                      onMarkersChange(markers.map(m => m.id === activeNoteMarker.id ? { ...m, teleportAngle: deg } : m));
+                    }}
+                    style={{ flex: 1, accentColor: '#7ec8e3', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#7ec8e3', minWidth: '32px', textAlign: 'right' }}>{angle ?? 0}°</span>
+                </div>
+                <div style={{ fontSize: '9px', color: '#b0b0b0', marginTop: '2px' }}>
+                  ストリートビュー開始時のカメラの向き（マーカーに近づくと適用）
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px' }}>
             <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>{t('スクロールターゲット:')}</div>
@@ -6423,45 +6534,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 )}
 
-                {/* Teleport Angle Config (Entering Direction) */}
+                {/* Teleport Angle Config (Separate Entry/Exit) */}
                 <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '8px' }}>
-                  <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>🧭 ストリートビュー進入時の向き (度数: 0-359):</span>
-                    {activeNoteMarker.teleportAngle !== undefined && (
-                      <span
-                        style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
-                        onClick={() => {
-                          onMarkersChange(
-                            markers.map(m => {
-                              if (m.id === activeNoteMarker.id) {
-                                const { teleportAngle, ...rest } = m;
-                                return rest;
-                              }
-                              return m;
-                            }),
-                            true
-                          );
-                        }}
-                      >
-                        クリア
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: '#7ec8e3', cursor: 'pointer', marginBottom: '6px' }}>
                     <input
-                      type="number"
-                      className="input-cyber"
-                      style={{ width: '80px', fontSize: '10px', padding: '2px 4px', background: 'rgba(0,0,0,0.5)', border: '1px solid #7ec8e3', color: '#fff', borderRadius: '4px' }}
-                      min="0"
-                      max="359"
-                      placeholder="指定なし"
-                      value={activeNoteMarker.teleportAngle !== undefined ? activeNoteMarker.teleportAngle : ''}
+                      type="checkbox"
+                      checked={activeNoteMarker.teleportExitAngle !== undefined}
                       onChange={(e) => {
-                        const val = e.target.value === '' ? undefined : Math.max(0, Math.min(359, parseInt(e.target.value) || 0));
+                        const separate = e.target.checked;
                         onMarkersChange(
                           markers.map(m => {
                             if (m.id === activeNoteMarker.id) {
-                              return { ...m, teleportAngle: val };
+                              if (separate) {
+                                return { ...m, teleportExitAngle: m.teleportAngle ?? 0 };
+                              } else {
+                                return { ...m, teleportExitAngle: undefined };
+                              }
                             }
                             return m;
                           }),
@@ -6469,45 +6557,180 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         );
                       }}
                     />
-                    <span style={{ fontSize: '9px', color: '#b0b0b0' }}>
-                      {activeNoteMarker.teleportAngle !== undefined
-                        ? `(${activeNoteMarker.teleportAngle}°: ${
-                            activeNoteMarker.teleportAngle >= 315 || activeNoteMarker.teleportAngle < 45 ? '東(→)' :
-                            activeNoteMarker.teleportAngle >= 45 && activeNoteMarker.teleportAngle < 135 ? '南(↓)' :
-                            activeNoteMarker.teleportAngle >= 135 && activeNoteMarker.teleportAngle < 225 ? '西(←)' : '北(↑)'
-                          })`
-                        : '現在の地図上の向きを維持'
-                      }
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
-                    {[
-                      { label: '↑ 北(270°)', angle: 270 },
-                      { label: '↓ 南(90°)', angle: 90 },
-                      { label: '← 西(180°)', angle: 180 },
-                      { label: '→ 東(0°)', angle: 0 }
-                    ].map(btn => (
-                      <button
-                        key={btn.angle}
-                        type="button"
-                        className="btn-cyber"
-                        style={{ padding: '2px 4px', fontSize: '9px', flex: 1, clipPath: 'none' }}
-                        onClick={() => {
+                    入るときと出る時で向きを分ける
+                  </label>
+
+                  {/* Entry direction */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{activeNoteMarker.teleportExitAngle !== undefined ? '🟢 入るときの向き (度数: 0-359):' : '🧭 ストリートビュー進入時の向き (度数: 0-359):'}</span>
+                      {activeNoteMarker.teleportAngle !== undefined && (
+                        <span
+                          style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
+                          onClick={() => {
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === activeNoteMarker.id) {
+                                  return { ...m, teleportAngle: undefined };
+                                }
+                                return m;
+                              }),
+                              true
+                            );
+                          }}
+                        >
+                          クリア
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number"
+                        className="input-cyber"
+                        style={{ width: '80px', fontSize: '10px', padding: '2px 4px', background: 'rgba(0,0,0,0.5)', border: '1px solid #7ec8e3', color: '#fff', borderRadius: '4px' }}
+                        min="0"
+                        max="359"
+                        placeholder="指定なし"
+                        value={activeNoteMarker.teleportAngle !== undefined ? activeNoteMarker.teleportAngle : ''}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? undefined : Math.max(0, Math.min(359, parseInt(e.target.value) || 0));
                           onMarkersChange(
                             markers.map(m => {
                               if (m.id === activeNoteMarker.id) {
-                                return { ...m, teleportAngle: btn.angle };
+                                return { ...m, teleportAngle: val };
                               }
                               return m;
                             }),
                             true
                           );
                         }}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
+                      />
+                      <span style={{ fontSize: '9px', color: '#b0b0b0' }}>
+                        {activeNoteMarker.teleportAngle !== undefined
+                          ? `(${activeNoteMarker.teleportAngle}°: ${
+                              activeNoteMarker.teleportAngle >= 315 || activeNoteMarker.teleportAngle < 45 ? '東(→)' :
+                              activeNoteMarker.teleportAngle >= 45 && activeNoteMarker.teleportAngle < 135 ? '南(↓)' :
+                              activeNoteMarker.teleportAngle >= 135 && activeNoteMarker.teleportAngle < 225 ? '西(←)' : '北(↑)'
+                            })`
+                          : '現在の地図上の向きを維持'
+                        }
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                      {[
+                        { label: '↑ 北(270°)', angle: 270 },
+                        { label: '↓ 南(90°)', angle: 90 },
+                        { label: '← 西(180°)', angle: 180 },
+                        { label: '→ 東(0°)', angle: 0 }
+                      ].map(btn => (
+                        <button
+                          key={btn.angle}
+                          type="button"
+                          className="btn-cyber"
+                          style={{ padding: '2px 4px', fontSize: '9px', flex: 1, clipPath: 'none' }}
+                          onClick={() => {
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === activeNoteMarker.id) {
+                                  return { ...m, teleportAngle: btn.angle };
+                                }
+                                return m;
+                              }),
+                              true
+                            );
+                          }}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Exit direction (visible when separate mode is active) */}
+                  {activeNoteMarker.teleportExitAngle !== undefined && (
+                    <div style={{ borderTop: '1px dashed rgba(255,165,0,0.3)', paddingTop: '6px', marginTop: '2px' }}>
+                      <div style={{ fontSize: '10px', color: '#ff8800', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>🟠 出るときの向き (度数: 0-359):</span>
+                        <span
+                          style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
+                          onClick={() => {
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === activeNoteMarker.id) {
+                                  return { ...m, teleportExitAngle: undefined };
+                                }
+                                return m;
+                              }),
+                              true
+                            );
+                          }}
+                        >
+                          クリア
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="number"
+                          className="input-cyber"
+                          style={{ width: '80px', fontSize: '10px', padding: '2px 4px', background: 'rgba(0,0,0,0.5)', border: '1px solid #ff8800', color: '#ff8800', borderRadius: '4px' }}
+                          min="0"
+                          max="359"
+                          placeholder="指定なし"
+                          value={activeNoteMarker.teleportExitAngle}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Math.max(0, Math.min(359, parseInt(e.target.value) || 0));
+                            onMarkersChange(
+                              markers.map(m => {
+                                if (m.id === activeNoteMarker.id) {
+                                  return { ...m, teleportExitAngle: val };
+                                }
+                                return m;
+                              }),
+                              true
+                            );
+                          }}
+                        />
+                        <span style={{ fontSize: '9px', color: '#b0b0b0' }}>
+                          {activeNoteMarker.teleportExitAngle !== undefined
+                            ? `(${activeNoteMarker.teleportExitAngle}°: ${
+                                activeNoteMarker.teleportExitAngle >= 315 || activeNoteMarker.teleportExitAngle < 45 ? '東(→)' :
+                                activeNoteMarker.teleportExitAngle >= 45 && activeNoteMarker.teleportExitAngle < 135 ? '南(↓)' :
+                                activeNoteMarker.teleportExitAngle >= 135 && activeNoteMarker.teleportExitAngle < 225 ? '西(←)' : '北(↑)'
+                              })`
+                            : ''
+                          }
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                        {[
+                          { label: '↑ 北(270°)', angle: 270 },
+                          { label: '↓ 南(90°)', angle: 90 },
+                          { label: '← 西(180°)', angle: 180 },
+                          { label: '→ 東(0°)', angle: 0 }
+                        ].map(btn => (
+                          <button
+                            key={btn.angle}
+                            type="button"
+                            className="btn-cyber"
+                            style={{ padding: '2px 4px', fontSize: '9px', flex: 1, clipPath: 'none', borderColor: '#ff8800', color: '#ff8800' }}
+                            onClick={() => {
+                              onMarkersChange(
+                                markers.map(m => {
+                                  if (m.id === activeNoteMarker.id) {
+                                    return { ...m, teleportExitAngle: btn.angle };
+                                  }
+                                  return m;
+                                }),
+                                true
+                              );
+                            }}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Waypoint controls - visible when connection exists */}
