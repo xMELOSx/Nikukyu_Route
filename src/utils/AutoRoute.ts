@@ -351,6 +351,7 @@ export function buildAutoRoute(
       (seg as any)._markerFraction = clampedT;
       if (isCheckpointMarker(m.type)) {
         (seg as any)._checkpointTarget = m.checkpointTargetTime ?? 0;
+        (seg as any)._checkpointSpeed = m.checkpointSpeed;
         // _checkpointConflicted は computeRouteTiming で後付けする
       }
       if (m.type === 'skill_cd') {

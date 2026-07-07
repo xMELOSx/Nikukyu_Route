@@ -558,6 +558,12 @@ export class GlobalDataService {
 
   // --- Setters (auto-persist) ---
 
+  /** Update markers in-memory and notify subscribers without persisting to localStorage/API. */
+  notifyMarkersChanged(markers: HeistMarker[]): void {
+    this._markers = markers;
+    this._notify();
+  }
+
   saveMarkers(markers: HeistMarker[]): void {
     this._markers = markers;
     this._save(() => {

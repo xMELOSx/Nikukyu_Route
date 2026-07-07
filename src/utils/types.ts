@@ -92,6 +92,7 @@ export interface HeistMarker {
   checkpointTargetTime?: number;
   checkpointSoundOn?: boolean;
   checkpointVoiceOn?: boolean;
+  checkpointSpeed?: number;
   checkpointExpanded?: boolean;
   connectionColor?: string;
   skillPresetId?: string;

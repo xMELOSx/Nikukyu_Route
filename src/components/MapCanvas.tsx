@@ -6295,7 +6295,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {/* Rotation direction for non-TPS/non-warp markers (including personal markers) */}
-          {activeNoteMarker.type !== 'tps' && activeNoteMarker.type !== 'itps' && activeNoteMarker.type !== 'warp' && activeNoteMarker.type !== 'iwarp' && activeNoteMarker.type !== 'stairs' && (() => {
+          {activeNoteMarker.type !== 'tps' && activeNoteMarker.type !== 'itps' && activeNoteMarker.type !== 'warp' && activeNoteMarker.type !== 'iwarp' && activeNoteMarker.type !== 'stairs' && activeNoteMarker.type !== 'checkpoint' && (() => {
             const angle = activeNoteMarker.teleportAngle;
             return (
               <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(126, 200, 227, 0.2)', paddingTop: '8px' }}>

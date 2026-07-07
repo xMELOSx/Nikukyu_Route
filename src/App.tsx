@@ -1073,6 +1073,9 @@ export default function App() {
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
 
+  // ドラッグ中の連続保存を防止するフラグ
+  const isDraggingMarkersRef = useRef(false);
+
   // === サブウィンドウ (ブラウザツールバーなしの別ウィンドウ) ===
   const openSubWindow = () => {
     const w = window.open(
@@ -1404,15 +1407,13 @@ export default function App() {
     const incomingGlobal = newMarkers.filter(m => !isIndivType(m.type));
     const newIndividual = newMarkers.filter(m => isIndivType(m.type));
     if (options.isDelete) {
-      // Eraser: 受け取ったリストを「正」とみなしてそのまま反映 (削除込み)。
-      // mergeOrUpdate は partial な更新にしか使えないので、ここだけ replace。
       globalMarkersStore.replace(incomingGlobal);
+    } else if (isDraggingMarkersRef.current) {
+      // ドラッグ中は in-memory のみ更新し localStorage/API への保存をスキップ
+      if (incomingGlobal.length > 0) {
+        globalData.service.notifyMarkersChanged(incomingGlobal);
+      }
     } else {
-      // 通常編集: グローバル側は globalMarkersStore が source of truth。
-      // incoming は「マージ元」であり「置き換え元」ではない: mergeOrUpdate
-      // は現在のグローバル状態をベースに、ID 一致分のみ上書きし、存在しない
-      // ID は追加し、incoming に載っていない既存マーカーは保持する。これで
-      // 「ドラッグした瞬間の位置」しか残らない問題を根治する。
       globalMarkersStore.mergeOrUpdate(incomingGlobal);
     }
 
@@ -1425,6 +1426,19 @@ export default function App() {
     // ルートは display state (indiv マーカー + hidden リスト) のみ保持。
     routeApi.setRoute(prev => ({ ...prev, markers: newIndividual }));
   };
+
+  // ドラッグ開始/終了で連続保存防止フラグを管理
+  const handleMarkersDragStart = useCallback(() => {
+    isDraggingMarkersRef.current = true;
+    historyApi.startDragSnapshot();
+  }, [historyApi.startDragSnapshot]);
+
+  const handleMarkersDragEnd = useCallback(() => {
+    isDraggingMarkersRef.current = false;
+    // ドラッグ終了時に最終状態を1度だけ保存
+    globalData.service.saveMarkers(globalData.service.getMarkers());
+    historyApi.commitDragSnapshot();
+  }, [historyApi.commitDragSnapshot, globalData.service]);
 
   function postGlobalDefaults(
     hiddenMarkers: string[],
@@ -2175,8 +2189,8 @@ export default function App() {
               measureSelectedStrokeIdxs={measureSelectedStrokeIdxs}
               onMeasureSelectedStrokeIdxsChange={setMeasureSelectedStrokeIdxs}
               blockMarkerClicksDuringTools={blockMarkerClicksDuringTools}
-              onMarkersDragStart={historyApi.startDragSnapshot}
-              onMarkersDragEnd={historyApi.commitDragSnapshot}
+              onMarkersDragStart={handleMarkersDragStart}
+              onMarkersDragEnd={handleMarkersDragEnd}
               stopMarkerThreshold={stopMarkerThreshold}
               movementMarkerThreshold={movementMarkerThreshold}
               warpMarkerThreshold={warpMarkerThreshold}
