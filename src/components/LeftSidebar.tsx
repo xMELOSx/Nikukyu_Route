@@ -6,7 +6,7 @@ import { EraserSubMenu } from './EraserSubMenu';
 import { MeasureSubMenu } from './MeasureSubMenu';
 import { MapCanvas } from './MapCanvas';
 import {
-  Undo, Redo, Move, Ruler, Paintbrush, Eraser, EyeOff, Star, Wand2, Fence, RotateCcw, ChevronLeft, ChevronRight, Image, Scissors
+  Undo, Redo, Move, Ruler, Paintbrush, Eraser, EyeOff, Star, Wand2, Fence, RotateCcw, ChevronLeft, ChevronRight, Image, Scissors, Link2
 } from 'lucide-react';
 import {
   MARKER_META, TEXTCOLOR_OPTIONS, TEXTCOLOR_META, SPAWN_CATEGORIES, PRESET_MAPS_META,
@@ -1082,26 +1082,42 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 描く/消す/テクスチャ toggle */}
-                <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                {/* 描く/頂点/移動/テクスチャ/スライス/消す toggle */}
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('draw')}
-                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Fence size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('描く')}</span>
                   </button>
                   <button
+                    className={`tool-btn ${wallSubMode === 'vertex' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('vertex')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    title={t('壁の頂点同士をつなぐ')}
+                  >
+                    <Link2 size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点')}</span>
+                  </button>
+                  <button
+                    className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('move')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    title={t('壁をドラッグして移動')}
+                  >
+                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
+                  </button>
+                  <button
                     className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('texture')}
-                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Image size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('テクスチャ')}</span>
                   </button>
                   <button
                     className={`tool-btn ${wallSubMode === 'slice' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('slice')}
-                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                     title={t('壁をドラッグ線で切断します')}
                   >
                     <Scissors size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('スライス')}</span>
@@ -1109,7 +1125,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <button
                     className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('erase')}
-                    style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
                   </button>

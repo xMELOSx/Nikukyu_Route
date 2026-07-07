@@ -228,7 +228,7 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
-  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice'>(() => {
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move'>(() => {
     const saved = localStorage.getItem('heist_wall_sub_mode');
     return (saved as any) || 'draw';
   });

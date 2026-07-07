@@ -35,7 +35,7 @@ interface MapCanvasProps {
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
   walls?: WallSegment[];
   onWallsChange?: (walls: WallSegment[]) => void;
-  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice';
+  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move';
   wallAutoSnap?: boolean;
   selectedTexture?: string;
   selectedRepeat?: number;
@@ -312,6 +312,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isDrawingRef = useRef(false);
   const cachedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cacheKeyRef = useRef('');
+  // Vertex wall mode state
+  const [vertexWallStart, setVertexWallStart] = useState<Point | null>(null);
+  const vertexWallStartRef = useRef<Point | null>(null);
+  // Move wall mode state
+  const [movingWallIndex, setMovingWallIndex] = useState<number | null>(null);
+  const movingWallIndexRef = useRef<number | null>(null);
+  const movingWallStartPositions = useRef<[Point, Point] | null>(null);
+  const moveWallStartMouse = useRef<Point>({ x: 0, y: 0 });
   const runnerDotRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
@@ -2144,6 +2152,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (toolMode === 'wall' && wallSubMode === 'vertex') {
+      const VERTEX_THRESHOLD = 10;
+      const allEndpoints: { pt: Point; wallIdx: number; endIdx: number }[] = [];
+      for (let i = 0; i < walls.length; i++) {
+        allEndpoints.push({ pt: walls[i][0], wallIdx: i, endIdx: 0 });
+        allEndpoints.push({ pt: walls[i][1], wallIdx: i, endIdx: 1 });
+      }
+      let bestPt: Point | null = null;
+      let bestDist = VERTEX_THRESHOLD;
+      for (const ep of allEndpoints) {
+        const d = Math.hypot(ep.pt.x - coords.x, ep.pt.y - coords.y);
+        if (d < bestDist) { bestDist = d; bestPt = ep.pt; }
+      }
+      const start = vertexWallStartRef.current;
+      if (start) {
+        // Second click: connect if we hit an endpoint, else cancel
+        if (bestPt && (Math.hypot(bestPt.x - start.x, bestPt.y - start.y) > 2)) {
+          if (Math.hypot(start.x - bestPt.x, start.y - bestPt.y) > 1) {
+            const merged = [...walls, [start, bestPt] as WallSegment];
+            onWallsChange?.(merged);
+          }
+        }
+        setVertexWallStart(null);
+        vertexWallStartRef.current = null;
+      } else {
+        // First click: set start if we hit an endpoint
+        if (bestPt) {
+          setVertexWallStart(bestPt);
+          vertexWallStartRef.current = bestPt;
+        }
+      }
+      return;
+    }
+
+    if (toolMode === 'wall' && wallSubMode === 'move') {
+      const MOVE_THRESHOLD = 12;
+      let bestIdx = -1;
+      let bestDist = MOVE_THRESHOLD;
+      for (let i = 0; i < walls.length; i++) {
+        const d = getDistanceToSegment(coords, walls[i][0], walls[i][1]);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      if (bestIdx >= 0) {
+        setIsDrawing(true);
+        setMovingWallIndex(bestIdx);
+        movingWallIndexRef.current = bestIdx;
+        movingWallStartPositions.current = [{ ...walls[bestIdx][0] }, { ...walls[bestIdx][1] }];
+        moveWallStartMouse.current = { x: coords.x, y: coords.y };
+      }
+      return;
+    }
+
     if (toolMode === 'toggle-vis') {
       toggledIdsRef.current = new Set();
       toggleVisibilityAtPoint(coords);
@@ -2155,6 +2215,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const coords = getCanvasCoords(e);
+
+    // Move wall drag handling (not in isDrawing fast-path but needs its own early return)
+    if (toolMode === 'wall' && wallSubMode === 'move' && movingWallIndexRef.current !== null && movingWallStartPositions.current) {
+      const idx = movingWallIndexRef.current;
+      const startPos = movingWallStartPositions.current;
+      const dx = coords.x - moveWallStartMouse.current.x;
+      const dy = coords.y - moveWallStartMouse.current.y;
+      const newP1: Point = { x: Math.round(startPos[0].x + dx), y: Math.round(startPos[0].y + dy) };
+      const newP2: Point = { x: Math.round(startPos[1].x + dx), y: Math.round(startPos[1].y + dy) };
+      const nextWalls = [...walls];
+      const tex = nextWalls[idx][2];
+      if (tex) {
+        const repeat = nextWalls[idx][3];
+        if (repeat) {
+          nextWalls[idx] = [newP1, newP2, tex as string, repeat as number];
+        } else {
+          nextWalls[idx] = [newP1, newP2, tex as string];
+        }
+      } else {
+        nextWalls[idx] = [newP1, newP2];
+      }
+      onWallsChange?.(nextWalls);
+      return;
+    }
 
     // Fast-path: if actively drawing or erasing, handle only that and return immediately
     // to bypass heavy dragging/collision checks on every single mousemove event.
@@ -2376,6 +2460,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setIsDraggingPopup(false);
       return;
     }
+    if (toolMode === 'wall' && wallSubMode === 'move') {
+      movingWallIndexRef.current = null;
+      movingWallStartPositions.current = null;
+      setMovingWallIndex(null);
+    }
+
     if (isDrawing) {
       setIsDrawing(false);
       isDrawingRef.current = false;
@@ -3541,6 +3631,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 stroke="#ff0055"
                 strokeWidth={3}
                 strokeDasharray="4,4"
+              />
+            )}
+            {wallSubMode === 'vertex' && walls.length > 0 && (() => {
+              const endpoints = new Set<string>();
+              const pts: Point[] = [];
+              for (const w of walls) {
+                const k1 = `${w[0].x},${w[0].y}`;
+                const k2 = `${w[1].x},${w[1].y}`;
+                if (!endpoints.has(k1)) { endpoints.add(k1); pts.push(w[0]); }
+                if (!endpoints.has(k2)) { endpoints.add(k2); pts.push(w[1]); }
+              }
+              return (
+                <>
+                  {pts.map((pt, i) => (
+                    <circle
+                      key={`vtx-${i}`}
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={5}
+                      fill={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#ffcc00' : 'rgba(255, 85, 0, 0.6)'}
+                      stroke={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#fff' : 'rgba(255, 85, 0, 0.9)'}
+                      strokeWidth={1.5}
+                    />
+                  ))}
+                </>
+              );
+            })()}
+            {wallSubMode === 'move' && movingWallIndex !== null && (
+              <line
+                x1={walls[movingWallIndex]?.[0]?.x ?? 0}
+                y1={walls[movingWallIndex]?.[0]?.y ?? 0}
+                x2={walls[movingWallIndex]?.[1]?.x ?? 0}
+                y2={walls[movingWallIndex]?.[1]?.y ?? 0}
+                stroke="#00ccff"
+                strokeWidth={7}
+                strokeDasharray="4,4"
+                opacity={0.7}
               />
             )}
           </svg>
