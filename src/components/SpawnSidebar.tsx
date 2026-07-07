@@ -574,7 +574,7 @@ const SpawnSidebar: React.FC<any> = (p) => {
             ) : (() => {
               const poolRaw = (() => { try { return JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}'); } catch { return {}; } })();
               const poolInfo = poolId && poolRaw.pools ? poolRaw.pools[poolId] : null;
-              const poolItems = poolInfo?.itemIds ?? [];
+              const poolItems = Array.isArray(poolInfo) ? poolInfo : (poolInfo?.itemIds ?? []);
               return (
               <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                 {poolItems.length > 0 ? (

@@ -621,6 +621,7 @@ export default function App() {
 
   const [svgString, setSvgString] = useState<string>('');
   const [rightTab, setRightTab] = useState<'route' | 'play' | 'spawn'>('route');
+  const [poolSettingsOpen, setPoolSettingsOpen] = useState(0);
   const [markerScale, setMarkerScale] = useState<number>(() => {
     const saved = localStorage.getItem('heist_marker_scale');
     return saved !== null ? parseInt(saved) : 30;
@@ -2087,7 +2088,7 @@ export default function App() {
           spawnRedoRef={spawnRedoRef}
           onHighlightCategoriesChange={(cats: string[]) => setSpawnHighlightCategories(cats.length > 0 ? cats : null)}
           onHighlightItemIdsChange={(ids: string[]) => setSpawnHighlightItemIds(ids.length > 0 ? ids : null)}
-          onOpenPoolSettings={() => setRightTab('play')}
+          onOpenPoolSettings={() => { setRightTab('play'); setPoolSettingsOpen(n => n + 1); }}
           wallSubMode={wallSubMode}
           setWallSubMode={setWallSubMode}
           wallAutoSnap={wallAutoSnap}
@@ -3018,6 +3019,9 @@ export default function App() {
                     onNotify={(msg) => { notification.show(msg); }}
                     refreshKey={playDataRefreshKey}
                     isLocal={isLocal}
+                    poolSettingsOpen={poolSettingsOpen}
+                    spawnPoints={spawnApi.points}
+                    spawnItems={spawnApi.items}
                   />
                 </div>
               </>

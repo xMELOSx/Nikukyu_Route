@@ -507,6 +507,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Helper function to check if marker is individual
   const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd', 'itps'].includes(type);
   const isDrawer = (type: string) => type === 'drawer';
+  const isShelf = (type: string) => type === 'shelf';
   // Helpers to check type family (global or individual variant)
   const isInfoType = (type: string) => type === 'info' || type === 'iinfo';
   const isNoteType = (type: string) => type === 'note' || type === 'inote';
@@ -687,6 +688,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [drawerAngle, setDrawerAngle] = useState(0);
   const [drawerWidth, setDrawerWidth] = useState(60);
   const [drawerHeight, setDrawerHeight] = useState(70);
+  const [shelfRows, setShelfRows] = useState(3);
+  const [shelfCols, setShelfCols] = useState(3);
+  const [shelfWidth, setShelfWidth] = useState(80);
+  const [shelfHeight, setShelfHeight] = useState(80);
+  const [shelfAngle, setShelfAngle] = useState(0);
 
   const handleToggleNearestPhone = useCallback(() => {
     if (!currentPosition) return;
@@ -1936,6 +1942,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         newMarker.drawerExpanded = false;
         newMarker.note = '';
       }
+      if (activeMarkerType === 'shelf') {
+        newMarker.shelfRows = 3;
+        newMarker.shelfCols = 3;
+        newMarker.shelfWidth = 80;
+        newMarker.shelfHeight = 80;
+        newMarker.shelfAngle = 0;
+        newMarker.shelfExpanded = false;
+        newMarker.shelfSpawns = [];
+        newMarker.note = '';
+      }
       if (activeMarkerType === 'tps' || activeMarkerType === 'itps') {
         newMarker.mediaItems = [];
       }
@@ -3142,6 +3158,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         );
         return;
       }
+      // Shelf toggle in presentation mode
+      if (m.type === 'shelf') {
+        onMarkersChange(
+          markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: !mk.shelfExpanded } : mk)
+        );
+        return;
+      }
       // Warp/stairs navigation: use partner's scrollConfig if available (manual setting priority)
       const isLinkable = m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs';
       if (isLinkable && m.linkedWarpId) {
@@ -3190,13 +3213,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isNote = isNoteType(m.type);
       if (isInfo || isNote || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle'
         || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'
-        || m.type === 'checkpoint' || m.type === 'phone' || m.type === 'drawer') {
+        || m.type === 'checkpoint' || m.type === 'phone' || m.type === 'drawer' || m.type === 'shelf') {
         const field = isInfo ? 'infoExpanded' : isNote ? 'noteExpanded'
           : m.type === 'boss' ? 'bossExpanded'
           : m.type === 'battle' || m.type === 'gbattle' ? 'battleExpanded'
           : m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' ? 'pickingExpanded'
           : m.type === 'phone' ? 'phoneActive'
           : m.type === 'drawer' ? 'drawerExpanded'
+          : m.type === 'shelf' ? 'shelfExpanded'
           : 'checkpointExpanded';
         if (m.type === 'phone' && m.phoneLocked) return;
         onMarkersChange(markers.map(mk => mk.id === m.id ? toggleExpanded(field) : mk));
@@ -3267,6 +3291,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setDrawerAngle(m.drawerAngle !== undefined ? m.drawerAngle : 0);
     setDrawerWidth(m.drawerWidth !== undefined ? m.drawerWidth : 60);
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
+    setShelfRows(m.shelfRows !== undefined ? m.shelfRows : 3);
+    setShelfCols(m.shelfCols !== undefined ? m.shelfCols : 3);
+    setShelfWidth(m.shelfWidth !== undefined ? m.shelfWidth : 80);
+    setShelfHeight(m.shelfHeight !== undefined ? m.shelfHeight : 80);
+    setShelfAngle(m.shelfAngle !== undefined ? m.shelfAngle : 0);
     const imgUrl = m.mediaItems?.[0]?.url || '';
     setTpsImageUrl(imgUrl);
     tpsImageUrlRef.current = imgUrl;
@@ -3410,6 +3439,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerAngle = drawerAngle;
               updated.drawerWidth = drawerWidth;
               updated.drawerHeight = drawerHeight;
+            }
+            if (m.type === 'shelf') {
+              updated.shelfRows = shelfRows;
+              updated.shelfCols = shelfCols;
+              updated.shelfWidth = shelfWidth;
+              updated.shelfHeight = shelfHeight;
+              updated.shelfAngle = shelfAngle;
+              if (updated.shelfSpawns) {
+                // Re-map spawns if rows/cols changed to avoid out-of-bounds
+                const validSpawns = updated.shelfSpawns.filter(sp => sp.row < shelfRows && sp.col < shelfCols);
+                if (validSpawns.length !== updated.shelfSpawns.length) {
+                  updated.shelfSpawns = validSpawns;
+                }
+              }
             }
             if (m.type === 'tps' || m.type === 'itps') {
               const url = tpsImageUrlRef.current;
@@ -4224,6 +4267,217 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   </div>
                 );
               }
+              if (isShelf(m.type)) {
+                const rows = Math.max(1, m.shelfRows ?? 3);
+                const cols = Math.max(1, m.shelfCols ?? 3);
+                const angle = m.shelfAngle ?? 0;
+                const sw = (m.shelfWidth ?? 80) * scaleMultiplier;
+                const sh = (m.shelfHeight ?? 80) * scaleMultiplier;
+                const shelfSpawns = m.shelfSpawns || [];
+                const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
+                const cellW = sw / cols;
+                const cellH = sh / rows;
+                return (
+                  <React.Fragment key={m.id}>
+                    <div
+                      className={`map-marker ${isHidden && !(isLocal && isEditMode) ? 'hidden-marker-pin' : isHidden ? 'editor-hidden-marker' : ''}`}
+                      style={{
+                        position: 'absolute',
+                        left: `${m.x}px`,
+                        top: `${m.y}px`,
+                        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                        width: `${sw}px`,
+                        height: `${sh}px`,
+                        border: `${1.5 * scaleMultiplier}px solid ${meta.color}`,
+                        borderRadius: `${3 * scaleMultiplier}px`,
+                        background: 'rgba(205, 133, 63, 0.08)',
+                        boxShadow: zoom < 0.25 ? 'none' : `0 0 ${8 * scaleMultiplier}px ${meta.color}40`,
+                        pointerEvents: (blockMarkerClicksDuringTools && (toolMode === 'draw' || toolMode === 'edit-stroke' || toolMode === 'measure'))
+                          ? 'none' : 'auto',
+                        opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
+                        filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
+                        zIndex: 20,
+                        cursor: isEditMode ? 'move' : 'pointer',
+                        overflow: 'visible',
+                        userSelect: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      } as React.CSSProperties}
+                      onMouseDown={(e) => handleMarkerMouseDown(e, m)}
+                      onClick={(e) => handleMarkerClick(e, m)}
+                    >
+                      {/* Collapsed: show label + spawn overlays */}
+                      <span style={{ fontSize: `${10 * scaleMultiplier}px`, color: meta.color, opacity: 0.6, pointerEvents: 'none' }}>
+                        📦
+                      </span>
+                      {showMarkerLabels && zoom >= 0.25 && (m.note || '').trim() && (
+                        <div style={{
+                          position: 'absolute',
+                          left: '50%',
+                          bottom: `${-16 * scaleMultiplier}px`,
+                          transform: 'translateX(-50%)',
+                          fontSize: `${9 * scaleMultiplier}px`,
+                          color: meta.color,
+                          whiteSpace: 'nowrap',
+                          textShadow: '0 0 3px rgba(0,0,0,0.9)',
+                          pointerEvents: 'none'
+                        }}>
+                          {tNote(m.note)}
+                        </div>
+                      )}
+                      {/* Spawn overlays on collapsed shelf — always visible */}
+                      {!m.shelfExpanded && shelfSpawns.length > 0 && shelfSpawns.map(sp => {
+                        const spColor = sp.itemColor ? (rarityColor[sp.itemColor] || sp.itemColor) : '#888';
+                        const spX = (sp.col + 0.5) * cellW;
+                        const spY = (sp.row + 0.5) * cellH;
+                        return (
+                          <div key={sp.id} style={{
+                            position: 'absolute',
+                            left: `${spX}px`,
+                            top: `${spY}px`,
+                            transform: 'translate(-50%, -50%)',
+                            width: `${4 * scaleMultiplier}px`,
+                            height: `${4 * scaleMultiplier}px`,
+                            borderRadius: '50%',
+                            background: spColor,
+                            boxShadow: `0 0 ${4 * scaleMultiplier}px ${spColor}`,
+                            pointerEvents: 'none'
+                          }} />
+                        );
+                      })}
+                    </div>
+                    {/* Expanded shelf grid popup */}
+                    {m.shelfExpanded && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: `${m.x + sw / 2 + 8}px`,
+                          top: `${m.y}px`,
+                          transform: 'translate(0, -50%)',
+                          width: `${sw * 2.5}px`,
+                          height: `${sh * 2.5}px`,
+                          border: `1.5px solid ${meta.color}`,
+                          borderRadius: '6px',
+                          background: 'rgba(20, 12, 8, 0.95)',
+                          boxShadow: `0 0 20px ${meta.color}60`,
+                          zIndex: 100,
+                          padding: '8px',
+                          overflow: 'hidden',
+                          pointerEvents: 'auto'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ color: meta.color, fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>📦</span> {m.note.trim() ? tNote(m.note) : t('SHELF')} {t('マップ')}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMarkersChange(
+                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false } : mk)
+                              );
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {/* Grid area */}
+                        <div style={{
+                          position: 'relative',
+                          width: '100%',
+                          height: `calc(100% - 28px)`,
+                          border: '1px solid rgba(205, 133, 63, 0.3)',
+                          borderRadius: '4px',
+                          overflow: 'hidden'
+                        }}>
+                          {/* Grid lines */}
+                          {Array.from({ length: rows - 1 }, (_, r) => (
+                            <div key={`shr-${r}`} style={{ position: 'absolute', left: 0, top: `${((r + 1) / rows) * 100}%`, width: '100%', height: '1px', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />
+                          ))}
+                          {Array.from({ length: cols - 1 }, (_, c) => (
+                            <div key={`shc-${c}`} style={{ position: 'absolute', top: 0, left: `${((c + 1) / cols) * 100}%`, width: '1px', height: '100%', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />
+                          ))}
+                          {/* Spawn points in expanded grid — always visible */}
+                          {shelfSpawns.map(sp => {
+                            const spColor = sp.itemColor ? (rarityColor[sp.itemColor] || sp.itemColor) : '#888';
+                            const spPctX = ((sp.col + 0.5) / cols) * 100;
+                            const spPctY = ((sp.row + 0.5) / rows) * 100;
+                            return (
+                              <div key={sp.id} style={{
+                                position: 'absolute',
+                                left: `${spPctX}%`,
+                                top: `${spPctY}%`,
+                                transform: 'translate(-50%, -50%)',
+                                width: '10px',
+                                height: '10px',
+                                borderRadius: '50%',
+                                background: spColor,
+                                boxShadow: `0 0 8px ${spColor}`,
+                                pointerEvents: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '6px',
+                                color: '#000',
+                                fontWeight: 'bold'
+                              }}>
+                                {sp.itemName ? sp.itemName.charAt(0) : ''}
+                              </div>
+                            );
+                          })}
+                          {/* Clickable cells for adding/removing spawns */}
+                          {isEditMode && isLocal && Array.from({ length: rows }, (_, r) => (
+                            Array.from({ length: cols }, (_, c) => {
+                              const existing = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                              return (
+                                <div key={`cell-${r}-${c}`} style={{
+                                  position: 'absolute',
+                                  left: `${(c / cols) * 100}%`,
+                                  top: `${(r / rows) * 100}%`,
+                                  width: `${(1 / cols) * 100}%`,
+                                  height: `${(1 / rows) * 100}%`,
+                                  cursor: 'pointer',
+                                  opacity: existing ? 0 : 0.15,
+                                }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const existing2 = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                                    if (existing2) {
+                                      const nextSpawns = shelfSpawns.filter(sp => sp.id !== existing2.id);
+                                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfSpawns: nextSpawns } : mk));
+                                    } else {
+                                      const newSpawn: any = { id: `ss_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, row: r, col: c, itemName: '', itemColor: 'blue' };
+                                      const nextSpawns = [...shelfSpawns, newSpawn];
+                                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfSpawns: nextSpawns } : mk));
+                                    }
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    (e.currentTarget as HTMLElement).style.opacity = '0.3';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    const existing = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                                    (e.currentTarget as HTMLElement).style.opacity = existing ? '0' : '0.15';
+                                  }}
+                                />
+                              );
+                            })
+                          ))}
+                        </div>
+                        {/* Controls row */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '4px', gap: '4px' }}>
+                          <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                            <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              }
               const nonTextTooltip = isInfoType(m.type) ? (m.infoLabel?.trim() || t('Info Pin')) : isNoteType(m.type) ? (tNote(m.note) || t('Memo')) : tNote(m.note) || (isWarp ? t('Warp Point') : isStairs ? t('Stairs') : isPhone ? (m.phoneLocked ? t('🔒 Always On') : (m.phoneActive ? t('ACTIVE') : t('Inactive'))) : m.type === 'boss' ? (tNote(m.note)?.trim() || t('Boss')) : (m.type === 'battle' || m.type === 'gbattle') ? t('Battle') : (m.type === 'picking' || m.type === 'gpicking') ? t('Picking') : (m.type === 'long_picking' || m.type === 'glong_picking') ? t('Long Picking') : m.type === 'eh' ? t('エターナルハート発見地点') : m.type === 'cardkey' ? t('カードキー発見ポイント') : m.type === 'checkpoint' ? t('🏁 Checkpoint') : isSkillCd ? `${(m.skillLabel || tNote(m.note) || t('スキル')).trim() || t('スキル')} (CD ${m.skillCdSeconds ?? 0}${t('秒')})` : '');
               return (
                 <div
@@ -4288,8 +4542,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       />
                     </div>
                   )}
-                  {/* teleportAngle directional arrow (non-TPS) */}
-                  {m.type !== 'tps' && m.type !== 'itps' && m.teleportAngle !== undefined && (
+                  {/* teleportAngle directional arrow (warp/stairs only) */}
+                  {m.teleportAngle !== undefined && (m.type === 'warp' || m.type === 'iwarp' || m.type === 'stairs') && (
                     <div
                       style={{
                         position: 'absolute',
@@ -6260,6 +6514,86 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               </div>
             </div>
           )}
+          {activeNoteMarker.type === 'shelf' && (
+            <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(205, 133, 63, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#cd853f', fontWeight: 'bold' }}>{t('棚設定:')}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('行:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfRows}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={shelfRows}
+                  onChange={(e) => setShelfRows(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('列:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfCols}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={shelfCols}
+                  onChange={(e) => setShelfCols(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('幅:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={200}
+                  step={5}
+                  value={shelfWidth}
+                  onChange={(e) => setShelfWidth(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('高さ:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfHeight}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={200}
+                  step={5}
+                  value={shelfHeight}
+                  onChange={(e) => setShelfHeight(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('角度:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfAngle}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={1}
+                  value={shelfAngle}
+                  onChange={(e) => setShelfAngle(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+            </div>
+          )}
           {(activeNoteMarker.type === 'tps' || activeNoteMarker.type === 'itps') && (
             <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(255, 136, 0, 0.3)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '10px', color: '#ff8800', fontWeight: 'bold' }}>🖼 {t('投影画像URL')}</div>
@@ -6333,50 +6667,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </div>
           )}
 
-          {/* Rotation direction for non-TPS/non-warp markers (including personal markers) */}
-          {activeNoteMarker.type !== 'tps' && activeNoteMarker.type !== 'itps' && activeNoteMarker.type !== 'warp' && activeNoteMarker.type !== 'iwarp' && activeNoteMarker.type !== 'stairs' && activeNoteMarker.type !== 'checkpoint' && (() => {
-            const angle = activeNoteMarker.teleportAngle;
-            return (
-              <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(126, 200, 227, 0.2)', paddingTop: '8px' }}>
-                <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>🧭 ストリートビュー進入時の向き</span>
-                  {angle !== undefined && (
-                    <span
-                      style={{ color: '#ff5555', cursor: 'pointer', fontSize: '9px', textDecoration: 'underline' }}
-                      onClick={() => {
-                        onMarkersChange(
-                          markers.map(m => {
-                            if (m.id === activeNoteMarker.id) {
-                              const { teleportAngle, ...rest } = m;
-                              return rest;
-                            }
-                            return m;
-                          }),
-                          true
-                        );
-                      }}
-                    >
-                      クリア
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <input type="range" min={0} max={360} step={1}
-                    value={angle ?? 0}
-                    onChange={(e) => {
-                      const deg = parseInt(e.target.value);
-                      onMarkersChange(markers.map(m => m.id === activeNoteMarker.id ? { ...m, teleportAngle: deg } : m));
-                    }}
-                    style={{ flex: 1, accentColor: '#7ec8e3', cursor: 'pointer' }}
-                  />
-                  <span style={{ fontSize: '11px', color: '#7ec8e3', minWidth: '32px', textAlign: 'right' }}>{angle ?? 0}°</span>
-                </div>
-                <div style={{ fontSize: '9px', color: '#b0b0b0', marginTop: '2px' }}>
-                  ストリートビュー開始時のカメラの向き（マーカーに近づくと適用）
-                </div>
-              </div>
-            );
-          })()}
+
 
           <div style={{ marginTop: '8px', borderTop: '1px dashed rgba(0, 240, 255, 0.2)', paddingTop: '8px' }}>
             <div style={{ fontSize: '10px', color: '#7ec8e3', marginBottom: '4px' }}>{t('スクロールターゲット:')}</div>

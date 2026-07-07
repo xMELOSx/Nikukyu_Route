@@ -21,7 +21,8 @@ import {
 } from '../utils/PlayDataManager';
 import { Download, Trash2, AlertTriangle, TrendingUp, Clock, BarChart3, Check, List, Target, Plus, X, Type, Music, Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Calculator, RefreshCw } from 'lucide-react';
 import { t } from '../i18n';
-import type { RegisteredItem } from '../utils/types';
+import type { RegisteredItem, SpawnPoint } from '../utils/types';
+import { CATEGORY_TO_POOL } from '../utils/types';
 
 declare global {
   interface Window {
@@ -35,6 +36,9 @@ interface PlayDataPanelProps {
   routeTitle?: string;
   refreshKey?: number;
   isLocal?: boolean;
+  poolSettingsOpen?: number;
+  spawnPoints?: SpawnPoint[];
+  spawnItems?: RegisteredItem[];
 }
 
 type CumulativeField = 'recordedFans' | 'recordedCoins' | 'recordedNikukyuu';
@@ -218,7 +222,7 @@ function parseGoalsFromInput(text: string): { name: string; target: number; rewa
   return deduplicated;
 }
 
-export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }: PlayDataPanelProps) {
+export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal, poolSettingsOpen, spawnPoints, spawnItems }: PlayDataPanelProps) {
   const [state, setState] = useState<PlayDataState>(() => checkAutoReset(loadPlayData()));
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingLocation, setEditingLocation] = useState<string>('');
@@ -397,6 +401,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     } catch { return []; }
   });
   const [simActiveTab, setSimActiveTab] = useState<'input' | 'prob' | 'result' | 'history' | 'pool'>('input');
+  useEffect(() => { if (poolSettingsOpen) { setShowSimulator(true); setSimActiveTab('pool'); } }, [poolSettingsOpen]);
   const [simProbs, setSimProbs] = useState<Record<string, number>>(initState?.probs ?? { ...COLOR_DEFAULT_PROBS });
   const [simProbOverrides, setSimProbOverrides] = useState<Record<string, number | null>>(initState?.probOverrides ?? {});
   const [simTrialCount, setSimTrialCount] = useState(2000);
@@ -1426,15 +1431,15 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
     }
     const now = Date.now();
     const post = checkAutoReset(state, now);
-    const addedFans = Math.min(state.currentFans, Math.max(0, BIWEEKLY_FANS_CAP - post.recordedFans));
-    const addedCoins = Math.min(state.currentCoins, Math.max(0, BIWEEKLY_COINS_CAP - post.recordedCoins));
+    const addedFans = Math.min(fansWithBonus, Math.max(0, BIWEEKLY_FANS_CAP - post.recordedFans));
+    const addedCoins = Math.min(coinsWithBonus, Math.max(0, BIWEEKLY_COINS_CAP - post.recordedCoins));
     const addedNikukyuu = nikukyuuCurrent;
     const finalLocation = state.recordedLocation.trim() || routeTitle.trim();
     const newRecord: PlayDataRecord = {
       id: generateRecordId(),
       timestamp: now,
-      fans: state.currentFans,
-      coins: state.currentCoins,
+      fans: fansWithBonus,
+      coins: coinsWithBonus,
       location: finalLocation,
       requiem15: state.requiem15,
       requiem20: state.requiem20,
@@ -1449,7 +1454,7 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
       recordedNikukyuu: post.recordedNikukyuu + addedNikukyuu,
       records: [...post.records, newRecord]
     });
-    const capNote = addedFans < state.currentFans || addedCoins < state.currentCoins ? t(' (上限に達したため一部のみ加算)') : '';
+    const capNote = addedFans < fansWithBonus || addedCoins < coinsWithBonus ? t(' (上限に達したため一部のみ加算)') : '';
     notify(t('脱出記録を追加しました{0}', capNote));
   };
 
@@ -4116,6 +4121,8 @@ export function PlayDataPanel({ onNotify, routeTitle = '', refreshKey, isLocal }
                       onSaveToServer={savePoolsToServer}
                       isLocal={isLocal}
                       t={t}
+                      spawnPoints={spawnPoints}
+                      spawnItems={spawnItems}
                     />
                   ) : null}
             </div>
@@ -4159,6 +4166,8 @@ interface PoolTabProps {
   onSaveToServer: () => void;
   isLocal?: boolean;
   t: (key: string, ...args: any[]) => string;
+  spawnPoints?: SpawnPoint[];
+  spawnItems?: RegisteredItem[];
 }
 
 function groupItemsByColor(
@@ -4342,11 +4351,38 @@ const PoolSection = React.memo(function PoolSection({
 
 function PoolTab(props: PoolTabProps) {
   const { POOL_IDS, POOL_LABELS, simPools, setSimPools, simItems, simColorFilter,
-    simBluePlusProbs, setSimBluePlusProbs, poolCollapsed, setPoolCollapsed, onResetPools, onSaveToServer, isLocal, t } = props;
+    simBluePlusProbs, setSimBluePlusProbs, poolCollapsed, setPoolCollapsed, onResetPools, onSaveToServer, isLocal, t,
+    spawnPoints, spawnItems } = props;
+
+  const importFromSpawn = useCallback(() => {
+    if (!spawnPoints || !spawnItems) return;
+    const pools: Record<string, Set<string>> = {};
+    for (const pid of POOL_IDS) pools[pid] = new Set(simPools[pid]?.itemIds ?? []);
+    for (const pt of spawnPoints) {
+      if (!pt.category || !pt.items) continue;
+      const poolId = CATEGORY_TO_POOL[pt.category];
+      if (!poolId || !pools[poolId]) continue;
+      for (const pi of pt.items) {
+        const item = spawnItems.find(i => i.id === pi.itemId);
+        if (item) pools[poolId].add(item.id);
+      }
+    }
+    setSimPools(prev => {
+      const next = { ...prev };
+      for (const pid of POOL_IDS) next[pid] = { ...next[pid], itemIds: [...pools[pid]] };
+      return next;
+    });
+  }, [spawnPoints, spawnItems, POOL_IDS, simPools, setSimPools]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', marginBottom: '2px' }}>
+        {isLocal && spawnPoints && spawnPoints.length > 0 && (
+        <button className="btn-cyber success" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }}
+          onClick={importFromSpawn}>
+          スポーン記録からプールに反映
+        </button>
+        )}
         {isLocal && (
         <button className="btn-cyber success" style={{ padding: '3px 8px', fontSize: '10px', clipPath: 'none' }}
           onClick={onSaveToServer}>

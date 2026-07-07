@@ -15,7 +15,7 @@ export function generateId(prefix: string = ''): string {
 
 export type FloorType = 'main';
 
-export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd' | 'drawer' | 'tps' | 'itps';
+export type MarkerType = 'goal' | 'cardkey' | 'eh' | 'rare' | 'vault' | 'boss' | 'phone' | 'note' | 'room' | 'warp' | 'stairs' | 'p1' | 'p2' | 'p3' | 'info' | 'battle' | 'gbattle' | 'picking' | 'gpicking' | 'long_picking' | 'glong_picking' | 'iwarp' | 'text' | 'iinfo' | 'inote' | 'itext' | 'start' | 'checkpoint' | 'skill_cd' | 'drawer' | 'tps' | 'itps' | 'shelf';
 
 export interface Point {
   x: number;
@@ -107,6 +107,13 @@ export interface HeistMarker {
   drawerWidth?: number;
   drawerHeight?: number;
   drawerExpanded?: boolean;
+  shelfExpanded?: boolean;
+  shelfRows?: number;
+  shelfCols?: number;
+  shelfWidth?: number;
+  shelfHeight?: number;
+  shelfAngle?: number;
+  shelfSpawns?: ShelfSpawn[];
 }
 
 export type WallSegment = [Point, Point] | [Point, Point, string] | [Point, Point, string, number];
@@ -194,6 +201,15 @@ export interface RegisteredItem {
   coins: number;
   image?: string;
   description?: string;
+}
+
+export interface ShelfSpawn {
+  id: string;
+  row: number;
+  col: number;
+  itemId?: string;
+  itemName?: string;
+  itemColor?: string;
 }
 
 export interface SpawnPointItem {

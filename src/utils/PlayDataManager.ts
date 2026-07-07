@@ -273,7 +273,8 @@ export function buildCSV(records: PlayDataRecord[]): string {
     const location = r.location || '';
     const fans = r.fans.toString();
     const coins = r.coins.toString();
-    const nikukyuu = calculateNikukyuuPoints(r.fans).toString();
+    const rawFans = r.requiem20 ? Math.round(r.fans / 1.20) : (r.requiem15 ? Math.round(r.fans / 1.15) : r.fans);
+    const nikukyuu = calculateNikukyuuPoints(rawFans).toString();
     const r15 = r.requiem15 ? 'ON' : 'OFF';
     const r20 = r.requiem20 ? 'ON' : 'OFF';
     const ex = r.excluded ? 'YES' : 'NO';

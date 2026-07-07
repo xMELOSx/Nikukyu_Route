@@ -232,6 +232,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const [svMode, setSvMode] = useState<'records' | 'pool'>(() => (localStorage.getItem('heist_sv_mode') as 'records' | 'pool') || 'records');
   useEffect(() => { localStorage.setItem('heist_sv_mode', svMode); }, [svMode]);
   const [addToPoolId, setAddToPoolId] = useState<string>(Object.keys(POOL_LABELS)[0] || '');
+  useEffect(() => {
+    if (spawnViewPointId) {
+      const pt = spawnApi.points.find(p => p.id === spawnViewPointId);
+      if (pt?.category) {
+        const pid = CATEGORY_TO_POOL[pt.category];
+        if (pid) setAddToPoolId(pid);
+      }
+    }
+  }, [spawnViewPointId]);
 
   // 編集タブの絞り込みをキャンバスに同期
   useEffect(() => {
@@ -2059,7 +2068,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     ) : (() => {
                       const poolRaw = (() => { try { return JSON.parse(localStorage.getItem('heist_sim_pools_v1') || '{}'); } catch { return {}; } })();
                       const poolInfo = poolId && poolRaw.pools ? poolRaw.pools[poolId] : null;
-                      const poolItems = poolInfo?.itemIds ?? [];
+                      const poolItems = Array.isArray(poolInfo) ? poolInfo : (poolInfo?.itemIds ?? []);
                       return (
                       <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                         {poolItems.length > 0 ? (
@@ -2119,7 +2128,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 </button>
                 {globalMarkerListExpanded && (
                   <div className="marker-list" style={{ marginTop: '6px' }}>
-                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text', 'drawer', 'tps'] as MarkerType[]).map(t => {
+                    {(['eh', 'rare', 'cardkey', 'vault', 'boss', 'gbattle', 'gpicking', 'glong_picking', 'phone', 'room', 'warp', 'stairs', 'info', 'note', 'text', 'drawer', 'tps', 'shelf'] as MarkerType[]).map(t => {
                       const meta = MARKER_META[t];
                       return (
                         <button key={t} className={`marker-item ${toolMode === 'add-marker' && activeMarkerType === t ? 'active' : ''}`}
