@@ -1317,17 +1317,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
     // Build rotation-aware fallback positions for hidden shelf spawns
     const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
+    const smScale = markerScale / 30;
     for(const m of markers) {
       if(m.type!=='shelf'||!m.shelfSpawns||!hiddenMids.has(m.id)) continue;
       const cols = m.shelfCols||3, rows = m.shelfRows||3;
-      const sw2 = m.shelfWidth||60, sh2 = m.shelfHeight||24;
+      const sw2 = (m.shelfWidth||60) * smScale, sh2 = (m.shelfHeight||24) * smScale;
       const angleRad = (m.shelfAngle||0) * Math.PI / 180;
       const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
       for(const ss of m.shelfSpawns){
         if(!ss.spawnId) continue;
         const dx = ((ss.col+0.5)/cols - 0.5) * sw2;
         const dy = ((ss.row+0.5)/rows - 0.5) * sh2;
-        // CSS rotate is clockwise, use CW rotation matrix
         const rx = dx*cosA + dy*sinA;
         const ry = -dx*sinA + dy*cosA;
         hiddenShelfSpawnPos.set(ss.spawnId, {x:m.x+rx, y:m.y+ry});
@@ -4490,9 +4490,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {tNote(m.note)}
                         </div>
                       )}
-                      {/* Spawn overlays on collapsed shelf */}
-                      {shelfSpawns.length > 0 && shelfSpawns.map(sp => {
+                      {/* Spawn overlays on collapsed shelf — with highlight */}
+                      {shelfSpawns.length > 0 && shelfSpawns.map((sp, si) => {
                         const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
+                        const isOrphan = !spPt;
                         const im2 = new Map((spawnItems||[]).map(i=>[i.id,i]));
                         const rR2:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                         let spColor='#888'; let bestR=-1;
@@ -4501,24 +4502,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         const hiSet2 = spawnHighlightItemIds&&spawnHighlightItemIds.length>0?new Set(spawnHighlightItemIds):null;
                         const hcSet2 = spawnHighlightCategories&&spawnHighlightCategories.length>0?new Set(spawnHighlightCategories):null;
                         const filtering2 = hiSet2||hcSet2;
-                        let isHL2 = true;
+                        let isHL2 = !filtering2;
                         if(filtering2&&spPt){
                           isHL2 = (hiSet2?spPt.items.some(ci=>hiSet2.has(ci.itemId)):true) && (hcSet2?(hcSet2.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet2.has(spPt.category))):true);
                         }
                         if(filtering2&&!isHL2) return null;
                         const spX = ((sp.col + 0.5) / cols) * sw;
                         const spY = ((sp.row + 0.5) / rows) * sh;
+                        const dotSz = isOrphan?3:(filtering2&&isHL2?3:2);
+                        const dotGlow = isOrphan?0:(filtering2&&isHL2?8:2);
                         return (
-                          <div key={`${sp.row}-${sp.col}`} style={{
+                          <div key={sp.spawnId||'sp'+si} style={{
                             position: 'absolute',
                             left: `${spX}px`,
                             top: `${spY}px`,
                             transform: 'translate(-50%, -50%)',
-                            width: `${4 * scaleMultiplier}px`,
-                            height: `${4 * scaleMultiplier}px`,
+                            width: `${dotSz*2*scaleMultiplier}px`,
+                            height: `${dotSz*2*scaleMultiplier}px`,
                             borderRadius: '50%',
-                            background: spColor,
-                            boxShadow: `0 0 ${4 * scaleMultiplier}px ${spColor}`,
+                            background: isOrphan?'#f55':spColor,
+                            boxShadow: isOrphan?'0 0 2px #f55':`0 0 ${dotGlow*scaleMultiplier}px ${spColor}`,
+                            border: isOrphan?'1px dashed #f55':'none',
+                            opacity: isOrphan?0.6:1,
                             pointerEvents: 'none'
                           }} />
                         );
@@ -4660,14 +4665,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                 }}
                                   onClick={(e)=>{
                                     e.stopPropagation();
-                                    if(existing){
-                                      // Open existing spawn edit/view modal
-                                      if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
-                                      else if(onSpawnPointView) onSpawnPointView(existing.spawnId);
-                                    }else if(existing&&!(spawnPoints||[]).find(s=>s.id===existing.spawnId)){
+                                    if(existing&&!(spawnPoints||[]).find(s=>s.id===existing.spawnId)){
                                       // Orphaned reference: remove it
                                       commitShelfSpawns(m.id,shelfSpawns.filter(sp=>sp!==existing));
                                       setShelfEditTick(t=>t+1);
+                                    }else if(existing){
+                                      // Open existing spawn edit/view modal
+                                      if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
+                                      else if(onSpawnPointView) onSpawnPointView(existing.spawnId);
                                     }else if(isEditMode&&isLocal&&onSpawnPointAdd){
                                       // Create real SpawnPoint at shelf center (avoids rotation offset issues)
                                       const spawnId = 'sp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
