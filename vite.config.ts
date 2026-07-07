@@ -27,7 +27,8 @@ export default defineConfig({
     port: 29980,
     watch: {
       ignored: [
-        '**/config/data/*.json'
+        '**/config/data/*.json',
+        '**/public/*.json'
       ]
     }
   }

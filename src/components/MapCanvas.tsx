@@ -1305,32 +1305,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
     if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
-    // Filter out spawns ONLY for VISIBLE shelf markers (hidden shelves' spawns fallback to map)
-    const visibleShelfSpawnIds = new Set<string>();
+    // Filter out spawns for VISIBLE shelf markers (hidden/type-hidden shelves' spawns fallback to map)
     const hiddenMids = new Set(hiddenMarkers||[]);
+    const hiddenTypes = new Set(hiddenMarkerTypes||[]);
+    const visibleShelfSpawnIds = new Set<string>();
     for(const m of markers) {
-      if(m.type==='shelf'&&m.shelfSpawns && !hiddenMids.has(m.id)) {
+      if(m.type==='shelf'&&m.shelfSpawns && !hiddenMids.has(m.id) && !hiddenTypes.has('shelf')) {
         for(const ss of m.shelfSpawns) if(ss.spawnId) visibleShelfSpawnIds.add(ss.spawnId);
       }
     }
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
     if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
-    // Build rotation-aware fallback positions for hidden shelf spawns
+    // Build rotation-aware fallback positions for hidden/type-hidden shelf spawns
     const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
     const smScale = markerScale / 30;
     for(const m of markers) {
-      if(m.type!=='shelf'||!m.shelfSpawns||!hiddenMids.has(m.id)) continue;
+      if(m.type!=='shelf'||!m.shelfSpawns||(!hiddenMids.has(m.id)&&!hiddenTypes.has('shelf'))) continue;
       const cols = m.shelfCols||3, rows = m.shelfRows||3;
       const sw2 = (m.shelfWidth||60) * smScale, sh2 = (m.shelfHeight||24) * smScale;
-      const angleRad = (m.shelfAngle||0) * Math.PI / 180;
-      const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
-      for(const ss of m.shelfSpawns){
+      const a = (m.shelfAngle||0) * Math.PI / 180;
+      for(const ss of m.shelfSpawns) {
         if(!ss.spawnId) continue;
         const dx = ((ss.col+0.5)/cols - 0.5) * sw2;
         const dy = ((ss.row+0.5)/rows - 0.5) * sh2;
-        const rx = dx*cosA + dy*sinA;
-        const ry = -dx*sinA + dy*cosA;
-        hiddenShelfSpawnPos.set(ss.spawnId, {x:m.x+rx, y:m.y+ry});
+        hiddenShelfSpawnPos.set(ss.spawnId, {
+          x: m.x + dx*Math.cos(a) - dy*Math.sin(a),
+          y: m.y + dx*Math.sin(a) + dy*Math.cos(a)
+        });
       }
     }
     if (sp.length === 0) return;
