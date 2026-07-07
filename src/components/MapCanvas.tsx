@@ -614,7 +614,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (m.id === draggingMarkerId || m.id === activeNoteMarkerId) return true;
       return m.x >= viewLeft && m.x <= viewRight && m.y >= viewTop && m.y <= viewBottom;
     });
-  }, [markers, floor, draggingMarkerId, activeNoteMarkerId, zoom, pan]);
+  }, [markers, floor, draggingMarkerId, activeNoteMarkerId, zoom, pan, hideMarkersDuringWalls, toolMode]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [noteText, setNoteText] = useState('');
@@ -1109,7 +1109,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, toolMode]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, toolMode, hideStrokesDuringWalls]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
@@ -1511,7 +1511,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.setLineDash([]);
       for (const idx of activeHighlight) {
         if (idx < 0 || idx >= strokes.length) continue;
         const hs = strokes[idx];
@@ -1519,6 +1518,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (hs.type === 'temporary') continue;
         const baseColor = hs.color || '#00ff00';
         // 1. アウターハロー (白・半透明) — 黄色の線でも見えるよう白でコントラスト確保
+        ctx.setLineDash([]);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = (hs.width || 3) + 10;
         ctx.shadowColor = 'rgba(255, 255, 255, 0.75)';
@@ -2128,8 +2128,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     x: Math.round(target[0].x + nx * segCount * unitLen),
                     y: Math.round(target[0].y + ny * segCount * unitLen)
                   };
-                  nextWalls.push(remStart.x === target[1].x && remStart.y === target[1].y
-                    ? [] : [remStart, target[1]]);
+                  if (!(remStart.x === target[1].x && remStart.y === target[1].y)) {
+                    nextWalls.push([remStart, target[1]]);
+                  }
                 }
               } else {
                 nextWalls.push(walls[i]);
@@ -3663,6 +3664,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           className="drawing-canvas"
           width={1600}
           height={4550}
+          style={{ visibility: (toolMode === 'wall' && hideStrokesDuringWalls) ? 'hidden' : undefined }}
         />
 
         {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
@@ -3894,7 +3896,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
         </svg>
 
-        <div className="markers-layer">
+        <div className="markers-layer" style={{ display: (toolMode === 'wall' && hideMarkersDuringWalls) ? 'none' : undefined }}>
           {/* Detection range visualization (debug) — always on top */}
           {showDetectionRanges && (
             <svg

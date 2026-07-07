@@ -43,7 +43,7 @@ export interface SpawnStore {
 
 type DataType = 'markers' | 'walls' | 'lockedWalls' | 'spawns' | 'defaults' | 'help' | 'presets';
 type DataOperation = 'load' | 'merge' | 'save' | 'reset';
-type DataSource = 'static' | 'api' | 'localStorage' | 'localStorage+api';
+type DataSource = 'static' | 'api' | 'localStorage' | 'localStorage+api' | 'memory';
 
 export interface DataEvent {
   operation: DataOperation;
