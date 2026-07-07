@@ -17,7 +17,7 @@ import {
   getSkillCdIcon,
   getSkillCdColor
 } from '../utils/DataManager';
-import { ZoomIn, ZoomOut, Maximize2, Trash2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Trash2, Copy } from 'lucide-react';
 import { useAutoRouteEngine } from '../hooks/useAutoRouteEngine';
 import TweetEmbed from './TweetEmbed';
 import MediaManager from './MediaManager';
@@ -3637,6 +3637,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setActiveNoteMarkerId(null);
   };
 
+  const handleDuplicateMarker = () => {
+    if (!activeNoteMarker) return;
+    const OFFSET = 30;
+    const newId = `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const duplicated = {
+      ...activeNoteMarker,
+      id: newId,
+      x: activeNoteMarker.x + OFFSET,
+      y: activeNoteMarker.y + OFFSET,
+      linkedWarpId: undefined,
+      infoExpanded: false,
+      noteExpanded: false,
+      bossExpanded: false,
+      battleExpanded: false,
+      pickingExpanded: false,
+      checkpointExpanded: false,
+      drawerExpanded: false,
+      shelfExpanded: false,
+      phoneActive: false,
+      phoneLocked: false,
+      textFixedPosition: false,
+      trackSide: undefined,
+      fixedOriginX: undefined,
+      fixedOriginY: undefined,
+      popupOffset: undefined,
+      popupDirection: undefined,
+      popupWidth: undefined,
+      popupHeight: undefined,
+    };
+    onMarkersChange([...markers, duplicated], true);
+    setActiveNoteMarkerId(null);
+  };
+
   const handleSetScrollTarget = () => {
     if (activeNoteMarkerId) {
       // 個人編集モード: グローバルマーカーの scrollConfig を変更しない
@@ -5778,6 +5811,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       非表示
                     </button>
                   )}
+                  <button
+                    className="delete-btn"
+                    style={{ background: 'none', border: 'none', color: '#39ff14', cursor: 'pointer' }}
+                    onClick={() => handleDuplicateMarker()}
+                    title="複製"
+                  >
+                    <Copy size={14} />
+                  </button>
                   <button
                     className="delete-btn"
                     style={{ background: 'none', border: 'none', color: '#ff0055', cursor: 'pointer' }}
