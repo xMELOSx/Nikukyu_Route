@@ -819,12 +819,11 @@ export default function App() {
   const [spawnTabMode, setSpawnTabMode] = useState<'view' | 'manage'>('view');
   // サーバー設定値 (本番のスポーン表示有無)
   const [spawnServerEnabled, setSpawnServerEnabled] = useState<boolean>(() => !!globalDefaultsRef.current.spawnFeatureEnabled);
-  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
   useEffect(() => {
-    if (defaultsLoaded) {
-      setSpawnServerEnabled(!!globalDefaultsRef.current.spawnFeatureEnabled);
+    if (globalData.defaults) {
+      setSpawnServerEnabled(!!globalData.defaults.spawnFeatureEnabled);
     }
-  }, [defaultsLoaded]);
+  }, [globalData.defaults?.spawnFeatureEnabled]);
   // 表示制御: ローカルは常時表示、本番はサーバー設定に従う
   const showSpawnFeature = isLocal || spawnServerEnabled;
   // スポーン編集ツールはローカル専用

@@ -612,7 +612,7 @@ export function renderFpsView(
 
 const PLAYER_HEIGHT = 6;
 const PLAYER_WIDTH = 2;
-const MINIMAP_SIZE = 70;
+const MINIMAP_SIZE = 252;
 const MINIMAP_RANGE = 500;
 
 export function renderMinimap(

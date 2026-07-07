@@ -461,9 +461,10 @@ const FpsView: React.FC<FpsViewProps> = ({
               const stopEnd = seg.cumulativeDistance / Math.max(segSpd, 0.0001) + seg.cumulativeStopTime;
               if (prevElapsed < stopEnd && aaElapsed >= stopEnd) {
                 const ulw = lockedWallsRef.current;
-                const curP = playerRef.current;
+                const segMarker = markersRef.current.find(m => m.id === seg.markerId);
+                const curP = segMarker ? { x: segMarker.x, y: segMarker.y } : seg.end;
                 let nearestIdx = -1;
-                let nearestDist = 20;
+                let nearestDist = 40;
                 for (let wi = 0; wi < ulw.length; wi++) {
                   const wseg = ulw[wi];
                   const wcx = (wseg.p1.x + wseg.p2.x) / 2;
@@ -801,10 +802,11 @@ const FpsView: React.FC<FpsViewProps> = ({
           const tpsImgs = tpsImagesRef.current;
           const cr = canvas.getBoundingClientRect();
           const or = ovCanvas.getBoundingClientRect();
-          const pxX = ovCanvas.width / cr.width;
-          const pxY = ovCanvas.height / cr.height;
-          const offX = ((cr.left - or.left) / cr.width) * ovCanvas.width;
-          const offY = ((cr.top - or.top) / cr.height) * ovCanvas.height;
+          const scaleX = ovCanvas.width / canvas.width;
+          const scaleY = ovCanvas.height / canvas.height;
+          const scale = Math.min(scaleX, scaleY);
+          const offX = (ovCanvas.width - canvas.width * scale) / 2;
+          const offY = (ovCanvas.height - canvas.height * scale) / 2;
           const halfFov = FOV / 2;
           const distPlane = (canvas.width / 2) / Math.tan(FOV / 2);
           for (const m of lm) {
@@ -833,11 +835,11 @@ const FpsView: React.FC<FpsViewProps> = ({
             // マーカー位置を中心に看板表示（上下中央揃え）
             const drawTop = pTop + Math.round((ph - imgH) / 2);
             const drawLeft = screenX - imgW / 2;
-            // Convert to overlay canvas coordinates
-            const sx = (drawLeft / canvas.width) * cr.width * pxX + offX;
-            const sy = (drawTop / canvas.height) * cr.height * pxY + offY;
-            const sw = (imgW / canvas.width) * cr.width * pxX;
-            const sh = (imgH / canvas.height) * cr.height * pxY;
+            // Convert to overlay canvas coordinates (uniform scale preserves aspect ratio)
+            const sx = drawLeft * scale + offX;
+            const sy = drawTop * scale + offY;
+            const sw = imgW * scale;
+            const sh = imgH * scale;
             octx.save();
             octx.imageSmoothingEnabled = true;
             octx.imageSmoothingQuality = 'high';
