@@ -1152,12 +1152,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         redrawStrokes();
       }
     }
-  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, toolMode, hideStrokesDuringWalls]);
+  }, [strokes, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, toolMode, hideStrokesDuringWalls, hiddenMarkers, hiddenMarkerTypes, markers, hideMarkersDuringWalls]);
 
   // Redraw strokes when animation ticks (highly efficient)
   useEffect(() => {
     redrawStrokes();
-  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap]);
+  }, [autoRouteActive, autoRouteElapsed, autoRouteSegments, fuseMode, hideRouteLines, routeLines1px, hideBranchLines, branchLines1px, highlightedStrokeIdxs, editStrokeIdxs, toolMode, hideStrokesDuringWalls, spawnPoints, spawnHighlightItemIds, spawnHighlightCategories, spawnMovingPointId, spawnVisible, spawnPointSize, spawnGridSnap, hiddenMarkers, hiddenMarkerTypes, markers, hideMarkersDuringWalls]);
 
   // 距離計測モード:
   // - 計測モード進入時: セットが空 → 最後に描画した線を自動追加、
