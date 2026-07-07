@@ -1321,11 +1321,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
     // Build rotation-aware fallback positions for effectively-hidden shelf spawns
     const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
-    const smScale = markerScale / 30;
+
     for(const m of markers) {
-      if(m.type!=='shelf'||!m.shelfSpawns||!shelfIsEffectivelyHidden(m)) continue;
+      if(m.type!=='shelf'||!m.shelfSpawns) continue;
       const cols = m.shelfCols||3, rows = m.shelfRows||3;
-      const sw2 = (m.shelfWidth||60) * smScale, sh2 = (m.shelfHeight||24) * smScale;
+      const sw2 = m.shelfWidth||60, sh2 = m.shelfHeight||24;
       const a = (m.shelfAngle||0) * Math.PI / 180;
       const colGapEvery = m.shelfColGapEvery ?? 8;
       const colGapSize = m.shelfColGapSize ?? 2;
@@ -4524,8 +4524,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           isHL2 = (hiSet2?spPt.items.some(ci=>hiSet2.has(ci.itemId)):true) && (hcSet2?(hcSet2.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet2.has(spPt.category))):true);
                         }
                         if(filtering2&&!isHL2) return null;
-                        const spX = ((sp.col + 0.5) / cols) * sw;
-                        const spY = ((sp.row + 0.5) / rows) * sh;
+                        const lFrac = (sp.col + (colGapEvery > 0 && cols > colGapEvery ? Math.floor(sp.col / colGapEvery) * colGapSize : 0) + 0.5) / totalW;
+                        const tFrac = (sp.row + (rowGapEvery > 0 && rows > rowGapEvery ? Math.floor(sp.row / rowGapEvery) * rowGapSize : 0) + 0.5) / totalH;
+                        const spX = lFrac * sw;
+                        const spY = tFrac * sh;
                         const dotSz = isOrphan?3:(filtering2&&isHL2?3:2);
                         const dotGlow = isOrphan?0:(filtering2&&isHL2?8:2);
                         return (
