@@ -213,7 +213,9 @@ export interface RegisteredItem {
 export interface ShelfSpawn {
   row: number;
   col: number;
-  spawnId: string;
+  category?: SpawnCategory;
+  note?: string;
+  items: SpawnPointItem[];
 }
 
 export interface SpawnPointItem {
