@@ -1614,7 +1614,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
                 background: 'rgba(0,0,0,0.75)', zIndex: 5000,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }} onClick={() => { setShowItemModal(false); setItemFormEditId(null); setItemFormName(''); setItemFormDescription(''); setItemFormImage(''); setItemFormFans(0); setItemFormCoins(0); try { const v = localStorage.getItem('heist_item_last_rarity'); if (v && TEXTCOLOR_OPTIONS.includes(v)) setItemFormTextColor(v); else setItemFormTextColor('blue'); } catch { setItemFormTextColor('blue'); } }}>
+              }} onClick={() => setShowItemModal(false)}>
                 <div style={{
                   background: 'var(--panel-bg, #0a0e18)', width: '520px', maxHeight: '85vh',
                   border: '1px solid rgba(79,195,247,0.3)', borderRadius: '12px',
@@ -1622,7 +1622,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                 }} onClick={e => e.stopPropagation()}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid rgba(79,195,247,0.2)' }}>
                     <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-neon)' }}>アイテム管理</span>
-                    <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => { setShowItemModal(false); setItemFormEditId(null); setItemFormName(''); setItemFormDescription(''); setItemFormImage(''); setItemFormFans(0); setItemFormCoins(0); try { const v = localStorage.getItem('heist_item_last_rarity'); if (v && TEXTCOLOR_OPTIONS.includes(v)) setItemFormTextColor(v); else setItemFormTextColor('blue'); } catch { setItemFormTextColor('blue'); } }}>✕ 閉じる</button>
+                    <button className="btn-cyber" style={{ padding: '3px 10px', fontSize: '11px', clipPath: 'none' }} onClick={() => setShowItemModal(false)}>✕ 閉じる</button>
                   </div>
                   <div ref={itemFormScrollRef} style={{ padding: '12px 16px', overflowY: 'auto', flex: 1 }}>
                     {/* 個別登録フォーム */}
@@ -1837,6 +1837,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             )}
 
             {/* スポーン点編集モーダル */}
+            {(() => {
+              useEffect(() => {
+                if (!showEditModal || !editPointId) return;
+                const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowEditModal(false); setEditPointId(null); } };
+                document.addEventListener('keydown', handler);
+                return () => document.removeEventListener('keydown', handler);
+              }, [showEditModal, editPointId, setShowEditModal, setEditPointId]);
+              return null;
+            })()}
             {showEditModal && editPointId && (() => {
               const pt = spawnApi.points.find(p => p.id === editPointId);
               if (!pt) return null;

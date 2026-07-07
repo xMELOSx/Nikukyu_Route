@@ -703,18 +703,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [shelfAngle, setShelfAngle] = useState(0);
 
   const [shelfEditTick, setShelfEditTick] = useState(0);
-  // Ref for shelf modal position — saved to dedicated localStorage key
-  const pendingPopupOffsetRef = useRef<Point>({ x: 0, y: -100 });
+  // Per-shelf modal position — stored per marker, not shared
+  const shelfDragOffsetRef = useRef<Point>({ x: 0, y: 0 }); // delta during active drag
+  const shelfDraggedIdRef = useRef<string | null>(null); // which shelf is being dragged
   const saveShelfPopupOffset = useCallback((markerId: string, pos: Point) => {
-    try {
-      const key = 'heist_shelf_popup_' + markerId;
-      localStorage.setItem(key, JSON.stringify(pos));
-    } catch {}
+    try { localStorage.setItem('heist_shelf_popup_' + markerId, JSON.stringify(pos)); } catch {}
   }, []);
   const loadShelfPopupOffset = useCallback((markerId: string): Point => {
     try {
-      const key = 'heist_shelf_popup_' + markerId;
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem('heist_shelf_popup_' + markerId);
       if (raw) { const p = JSON.parse(raw); if (p && typeof p.x === 'number') return p; }
     } catch {}
     return { x: 0, y: -100 };
@@ -2359,8 +2356,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dx = (e.clientX - popupDragStart.x) / zoom;
       const dy = (e.clientY - popupDragStart.y) / zoom;
       const next = { x: Math.round(popupOffsetStart.x + dx), y: Math.round(popupOffsetStart.y + dy) };
-      setPopupOffset(next);
-      pendingPopupOffsetRef.current = next;
+      if (shelfDraggedIdRef.current) {
+        // Shelf drag: update delta only (per-shelf position)
+        shelfDragOffsetRef.current = { x: Math.round(dx), y: Math.round(dy) };
+      }
+      // Non-shelf popup: update shared state directly
+      if (!shelfDraggedIdRef.current) setPopupOffset(next);
       return;
     }
 
@@ -2497,14 +2498,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDraggingPopup) {
       setIsDraggingPopup(false);
-      // Save popupOffset to dedicated localStorage key AND marker data
-      const expandedShelves = markers.filter(mk => mk.type === 'shelf' && mk.shelfExpanded);
-      if (expandedShelves.length > 0) {
-        const pos = pendingPopupOffsetRef.current;
-        for (const sm of expandedShelves) saveShelfPopupOffset(sm.id, pos);
-        onMarkersChange(markers.map(mk => 
-          mk.type === 'shelf' && mk.shelfExpanded ? { ...mk, popupOffset: pos } : mk
-        ));
+      const sid = shelfDraggedIdRef.current;
+      if (sid) {
+        // Apply drag delta to the dragged shelf's saved position
+        const sm = markers.find(mk => mk.id === sid);
+        if (sm) {
+          const base = sm.popupOffset || { x: 0, y: -100 };
+          const delta = shelfDragOffsetRef.current;
+          const newPos = { x: base.x + delta.x, y: base.y + delta.y };
+          saveShelfPopupOffset(sid, newPos);
+          onMarkersChange(markers.map(mk => mk.id === sid ? { ...mk, popupOffset: newPos } : mk));
+        }
+        shelfDraggedIdRef.current = null;
+        shelfDragOffsetRef.current = { x: 0, y: 0 };
       }
       return;
     }
@@ -3213,7 +3219,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const saved = loadShelfPopupOffset(m.id);
           const pos = saved.x !== 0 || saved.y !== -100 ? saved : (m.popupOffset || { x: 0, y: -100 });
           setPopupOffset(pos);
-          pendingPopupOffsetRef.current = pos;
         }
         onMarkersChange(
           markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk)
@@ -3265,7 +3270,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const saved = loadShelfPopupOffset(m.id);
         const pos = saved.x !== 0 || saved.y !== -100 ? saved : (m.popupOffset || { x: 0, y: -100 });
         setPopupOffset(pos);
-        pendingPopupOffsetRef.current = pos;
       }
       onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk));
       // returnしない → ノートポップアップ（詳細設定）も開く
@@ -3298,6 +3302,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
 
+    // If the same marker is clicked while the popover is open, toggle it off
+    if (activeNoteMarkerId === m.id) {
+      setActiveNoteMarkerId(null);
+      return;
+    }
     // If popover is already open for a different marker, save that one first
     if (activeNoteMarkerId && activeNoteMarkerId !== m.id) {
       handleSaveNote();
@@ -3518,7 +3527,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.drawerHeight = drawerHeight;
             }
             if (m.type === 'shelf') {
-              updated.popupOffset = pendingPopupOffsetRef.current;
+              // Use the marker's own popupOffset (drag delta would be 0 during note save)
+              updated.popupOffset = m.popupOffset || { x: 0, y: -100 };
+              updated.shelfExpanded = false; // close modal on note save
               updated.shelfRows = shelfRows;
               updated.shelfCols = shelfCols;
               updated.shelfWidth = shelfWidth;
@@ -4447,7 +4458,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     </div>
                     {/* Expanded shelf grid popup — position offset by popupOffset */}
                     {m.shelfExpanded && (() => {
-                      const shelfPopupOffset = isEditMode ? popupOffset : (m.popupOffset || { x: 0, y: -100 });
+                      const basePos = m.popupOffset || { x: 0, y: -100 };
+                      const dragDelta = (shelfDraggedIdRef.current === m.id) ? shelfDragOffsetRef.current : { x: 0, y: 0 };
+                      const shelfPopupOffset = { x: basePos.x + dragDelta.x, y: basePos.y + dragDelta.y };
                       const followAngle = m.shelfModalFollowAngle;
                       return (
                       <div
@@ -4461,7 +4474,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           height: `${m.shelfGridHeight ?? 300}px`,
                           border: `1.5px solid ${meta.color}`,
                           borderRadius: '6px',
-                          background: 'rgba(20, 12, 8, 0.95)',
+                          background: 'transparent',
                           boxShadow: `0 0 20px ${meta.color}60`,
                           zIndex: 100,
                           padding: '0',
@@ -4473,7 +4486,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       >
                         {/* Draggable header */}
                         <div
-                          onMouseDown={(e) => handlePopupMouseDown(e)}
+                          onMouseDown={(e) => { handlePopupMouseDown(e); shelfDraggedIdRef.current = m.id; shelfDragOffsetRef.current = { x: 0, y: 0 }; }}
                           style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '6px 8px', cursor: isEditMode ? 'move' : 'default',
@@ -4482,15 +4495,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         >
                           <span style={{ color: meta.color, fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span>📦</span> {m.note.trim() ? tNote(m.note) : t('SHELF')} {t('マップ')}
+                            <button onClick={(e)=>{e.stopPropagation();onMarkersChange(markers.map(mk=>mk.id===m.id?{...mk,shelfModalFollowAngle:!mk.shelfModalFollowAngle}:mk));}}
+                              style={{background:'none',border:'1px solid currentColor',color:m.shelfModalFollowAngle?meta.color:'#555',borderRadius:'3px',fontSize:'8px',padding:'0 3px',cursor:'pointer',lineHeight:1.4,opacity:m.shelfModalFollowAngle?1:0.5,display:'inline-flex',alignItems:'center'}}
+                              title="モーダルを棚の角度に合わせる">
+                              ↻
+                            </button>
                           </span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const pos = pendingPopupOffsetRef.current;
-                              saveShelfPopupOffset(m.id, pos);
-                              onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset: pos } : mk)
-                              );
+                              const curOffset = m.popupOffset || { x: 0, y: -100 };
+                              saveShelfPopupOffset(m.id, curOffset);
+                              if (isEditMode && activeNoteMarkerId === m.id) {
+                                handleSaveNote();
+                              } else {
+                                onMarkersChange(
+                                  markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset: curOffset } : mk)
+                                );
+                              }
                             }}
                             style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '2px 4px', lineHeight: 1 }}
                           >
@@ -4505,22 +4527,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           border: 'none',
                           overflow: 'hidden'
                         }}>
-                          {/* Grid + gap backgrounds */}
+                          {/* Cell backgrounds (gap areas are transparent = show map behind) */}
+                          {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
+                            const cl=cellPos(c,colGapEvery,colGapSize,totalW);
+                            const ct=cellPos(r,rowGapEvery,rowGapSize,totalH);
+                            return <div key={'cbg'+r+'_'+c} style={{position:'absolute',left:cl+'%',top:ct+'%',width:(100/totalW)+'%',height:(100/totalH)+'%',background:'rgba(10,6,4,0.92)',pointerEvents:'none'}} />;
+                          }))}
+                          {/* Grid lines */}
                           {(()=>{
                             const gw = 100/totalW, gh = 100/totalH;
                             const cg = colGapEvery+colGapSize, rg = rowGapEvery+rowGapSize;
                             const els:React.ReactNode[]=[];
-                            // Column gap areas (transparent)
-                            if(cGaps>0)for(let g=0;g<cGaps;g++){
-                              const gapStart = (colGapEvery + g*(colGapEvery+colGapSize)) / totalW * 100;
-                              els.push(<div key={'cga'+g} style={{position:'absolute',top:0,left:gapStart+'%',width:(colGapSize*gw)+'%',height:'100%',background:'transparent',pointerEvents:'none'}}/>);
-                            }
-                            // Row gap areas
-                            if(rGaps>0)for(let g=0;g<rGaps;g++){
-                              const gapStart = (rowGapEvery + g*(rowGapEvery+rowGapSize)) / totalH * 100;
-                              els.push(<div key={'rga'+g} style={{position:'absolute',left:0,top:gapStart+'%',height:(rowGapSize*gh)+'%',width:'100%',background:'transparent',pointerEvents:'none'}}/>);
-                            }
-                            // Grid lines
                             for(let u=1;u<totalW;u++){
                               const pg=u%cg;
                               if(pg>colGapEvery)continue;
@@ -4597,7 +4614,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '3px 8px', gap: '4px', borderTop: '1px solid rgba(205,133,63,0.15)' }}>
                           <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols} / {shelfSpawns.length}個</span>
                         </div>
-                        {/* Display mode uses onSpawnPointView (handled in cell onClick) */}
                       </div>
                       );
                     })()}

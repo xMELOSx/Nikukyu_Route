@@ -404,6 +404,15 @@ const SpawnSidebar: React.FC<any> = (p) => {
     )}
 
     {/* Spawn point edit modal */}
+    {(() => {
+      useEffect(() => {
+        if (!p.showEditModal || !p.editPointId) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { p.setShowEditModal(false); p.setEditPointId(null); } };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+      }, [p.showEditModal, p.editPointId, p.setShowEditModal, p.setEditPointId]);
+      return null;
+    })()}
     {p.showEditModal && p.editPointId && (()=>{
       const pt=p.spawnApi.points.find((x:any)=>x.id===p.editPointId);if(!pt)return null;
       return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.75)',zIndex:5001,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{p.setShowEditModal(false);p.setEditPointId(null)}}>
