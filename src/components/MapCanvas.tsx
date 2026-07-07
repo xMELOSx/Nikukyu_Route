@@ -703,9 +703,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [shelfAngle, setShelfAngle] = useState(0);
 
   const [shelfEditTick, setShelfEditTick] = useState(0);
-  const [shelfPopupCell, setShelfPopupCell] = useState<ShelfSpawn|null>(null);
-  // Ref for shelf modal position (fallback in handleSaveNote)
+  // Ref for shelf modal position — saved to dedicated localStorage key
   const pendingPopupOffsetRef = useRef<Point>({ x: 0, y: -100 });
+  const saveShelfPopupOffset = useCallback((markerId: string, pos: Point) => {
+    try {
+      const key = 'heist_shelf_popup_' + markerId;
+      localStorage.setItem(key, JSON.stringify(pos));
+    } catch {}
+  }, []);
+  const loadShelfPopupOffset = useCallback((markerId: string): Point => {
+    try {
+      const key = 'heist_shelf_popup_' + markerId;
+      const raw = localStorage.getItem(key);
+      if (raw) { const p = JSON.parse(raw); if (p && typeof p.x === 'number') return p; }
+    } catch {}
+    return { x: 0, y: -100 };
+  }, []);
   const commitShelfSpawns = useCallback((markerId: string, spawns: ShelfSpawn[]) => {
     onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, shelfSpawns: spawns } : mk));
   }, [markers, onMarkersChange]);
@@ -2484,6 +2497,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDraggingPopup) {
       setIsDraggingPopup(false);
+      // Save popupOffset to dedicated localStorage key AND marker data
+      const expandedShelves = markers.filter(mk => mk.type === 'shelf' && mk.shelfExpanded);
+      if (expandedShelves.length > 0) {
+        const pos = pendingPopupOffsetRef.current;
+        for (const sm of expandedShelves) saveShelfPopupOffset(sm.id, pos);
+        onMarkersChange(markers.map(mk => 
+          mk.type === 'shelf' && mk.shelfExpanded ? { ...mk, popupOffset: pos } : mk
+        ));
+      }
       return;
     }
     if (toolMode === 'wall' && wallSubMode === 'move') {
@@ -3188,8 +3210,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (m.type === 'shelf') {
         const willExpand = !m.shelfExpanded;
         if (willExpand) {
-          setPopupOffset(m.popupOffset || { x: 0, y: -100 });
-          pendingPopupOffsetRef.current = m.popupOffset || { x: 0, y: -100 };
+          const saved = loadShelfPopupOffset(m.id);
+          const pos = saved.x !== 0 || saved.y !== -100 ? saved : (m.popupOffset || { x: 0, y: -100 });
+          setPopupOffset(pos);
+          pendingPopupOffsetRef.current = pos;
         }
         onMarkersChange(
           markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk)
@@ -3238,8 +3262,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isEditMode && m.type === 'shelf') {
       const willExpand = !m.shelfExpanded;
       if (willExpand) {
-        setPopupOffset(m.popupOffset || { x: 0, y: -100 });
-        pendingPopupOffsetRef.current = m.popupOffset || { x: 0, y: -100 };
+        const saved = loadShelfPopupOffset(m.id);
+        const pos = saved.x !== 0 || saved.y !== -100 ? saved : (m.popupOffset || { x: 0, y: -100 });
+        setPopupOffset(pos);
+        pendingPopupOffsetRef.current = pos;
       }
       onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk));
       // returnしない → ノートポップアップ（詳細設定）も開く
@@ -4394,15 +4420,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {tNote(m.note)}
                         </div>
                       )}
-                      {/* Spawn overlays on collapsed shelf — color from SpawnPoint */}
+                      {/* Spawn overlays on collapsed shelf — pixel position within shelf rect */}
                       {shelfSpawns.length > 0 && shelfSpawns.map(sp => {
                         const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
                         const im2 = new Map((spawnItems||[]).map(i=>[i.id,i]));
                         const rR2:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                         let spColor='#888'; let bestR=-1;
                         if(spPt)for(const si of spPt.items){const it=im2.get(si.itemId);if(it){const r=rR2[it.textColor]??-1;if(r>bestR){bestR=r;spColor=rarityColor[it.textColor]||'#888';}}}
-                        const spX = ((sp.col + 0.5) / cols) * 100;
-                        const spY = ((sp.row + 0.5) / rows) * 100;
+                        const spX = ((sp.col + 0.5) / cols) * sw;
+                        const spY = ((sp.row + 0.5) / rows) * sh;
                         return (
                           <div key={sp.id} style={{
                             position: 'absolute',
@@ -4460,8 +4486,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              const pos = pendingPopupOffsetRef.current;
+                              saveShelfPopupOffset(m.id, pos);
                               onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset: pendingPopupOffsetRef.current } : mk)
+                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset: pos } : mk)
                               );
                             }}
                             style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '2px 4px', lineHeight: 1 }}
@@ -4477,24 +4505,35 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           border: 'none',
                           overflow: 'hidden'
                         }}>
-                          {/* Grid lines — unit-based gap-aware */}
+                          {/* Grid + gap backgrounds */}
                           {(()=>{
                             const gw = 100/totalW, gh = 100/totalH;
                             const cg = colGapEvery+colGapSize, rg = rowGapEvery+rowGapSize;
-                            const cols2:React.ReactNode[]=[], rows2:React.ReactNode[]=[];
+                            const els:React.ReactNode[]=[];
+                            // Column gap areas (transparent)
+                            if(cGaps>0)for(let g=0;g<cGaps;g++){
+                              const gapStart = (colGapEvery + g*(colGapEvery+colGapSize)) / totalW * 100;
+                              els.push(<div key={'cga'+g} style={{position:'absolute',top:0,left:gapStart+'%',width:(colGapSize*gw)+'%',height:'100%',background:'transparent',pointerEvents:'none'}}/>);
+                            }
+                            // Row gap areas
+                            if(rGaps>0)for(let g=0;g<rGaps;g++){
+                              const gapStart = (rowGapEvery + g*(rowGapEvery+rowGapSize)) / totalH * 100;
+                              els.push(<div key={'rga'+g} style={{position:'absolute',left:0,top:gapStart+'%',height:(rowGapSize*gh)+'%',width:'100%',background:'transparent',pointerEvents:'none'}}/>);
+                            }
+                            // Grid lines
                             for(let u=1;u<totalW;u++){
                               const pg=u%cg;
                               if(pg>colGapEvery)continue;
                               const isGap=(pg===0||pg===colGapEvery);
-                              cols2.push(<div key={'c'+u} style={{position:'absolute',top:0,left:u*gw+'%',width:isGap?3:1,height:'100%',background:isGap?'rgba(205,133,63,0.4)':meta.color,opacity:0.3,pointerEvents:'none'}}/>);
+                              els.push(<div key={'c'+u} style={{position:'absolute',top:0,left:u*gw+'%',width:isGap?3:1,height:'100%',background:isGap?'rgba(205,133,63,0.4)':meta.color,opacity:0.3,pointerEvents:'none'}}/>);
                             }
                             for(let u=1;u<totalH;u++){
                               const pg=u%rg;
                               if(pg>rowGapEvery)continue;
                               const isGap=(pg===0||pg===rowGapEvery);
-                              rows2.push(<div key={'r'+u} style={{position:'absolute',left:0,top:u*gh+'%',width:'100%',height:isGap?3:1,background:isGap?'rgba(205,133,63,0.4)':meta.color,opacity:0.3,pointerEvents:'none'}}/>);
+                              els.push(<div key={'r'+u} style={{position:'absolute',left:0,top:u*gh+'%',width:'100%',height:isGap?3:1,background:isGap?'rgba(205,133,63,0.4)':meta.color,opacity:0.3,pointerEvents:'none'}}/>);
                             }
-                            return <>{cols2}{rows2}</>;
+                            return <>{els}</>;
                           })()}
                           {/* Spawn dots — color from referenced SpawnPoint */}
                           {shelfSpawns.map((sp, si) => {
@@ -4523,9 +4562,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                   onClick={(e)=>{
                                     e.stopPropagation();
                                     if(existing){
-                                      // Open existing spawn edit modal
+                                      // Open existing spawn edit/view modal
                                       if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
-                                      else setShelfPopupCell(existing);
+                                      else if(onSpawnPointView) onSpawnPointView(existing.spawnId);
                                     }else if(isEditMode&&isLocal&&onSpawnPointAdd){
                                       // Create real SpawnPoint + store reference
                                       const spawnId = 'sp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
@@ -4558,28 +4597,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '3px 8px', gap: '4px', borderTop: '1px solid rgba(205,133,63,0.15)' }}>
                           <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols} / {shelfSpawns.length}個</span>
                         </div>
-                        {/* Shelf spawn info popup (display mode only) */}
-                        {shelfPopupCell && !(isEditMode&&isLocal) && (()=>{
-                          const spPt = (spawnPoints||[]).find(s=>s.id===shelfPopupCell.spawnId);
-                          const im = new Map((spawnItems||[]).map(i=>[i.id,i]));
-                          return (
-                            <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.85)',zIndex:10,borderRadius:'4px',padding:'8px',display:'flex',flexDirection:'column',gap:'4px',fontSize:'10px',overflow:'auto'}}
-                              onClick={e=>e.stopPropagation()}>
-                              <div style={{color:'#cd853f',fontWeight:'bold'}}>
-                                セル({shelfPopupCell.col},{shelfPopupCell.row}) {spPt?.category||'引出'}
-                              </div>
-                              <div style={{color:'#aaa'}}>アイテム:</div>
-                              {(!spPt||!spPt.items||spPt.items.length===0)?<div style={{color:'#666',fontSize:'9px'}}>なし</div>:
-                                spPt.items.map((ci,cii)=><div key={cii} style={{color:'#ccc',fontSize:'9px',display:'flex',alignItems:'center',gap:'4px'}}>
-                                  <span style={{width:8,height:8,borderRadius:'50%',background:rarityColor[im.get(ci.itemId)?.textColor||'blue']||'#888',display:'inline-block'}} />
-                                  {im.get(ci.itemId)?.name||ci.itemId.slice(0,8)} ({ci.playerCount}P)
-                                </div>)
-                              }
-                              <button onClick={e=>{e.stopPropagation();setShelfPopupCell(null);}}
-                                style={{marginTop:'2px',padding:'2px 8px',fontSize:'9px',borderRadius:'3px',background:'rgba(255,255,255,0.1)',border:'1px solid #888',color:'#ccc',cursor:'pointer',alignSelf:'center'}}>閉じる</button>
-                            </div>
-                          );
-                        })()}
+                        {/* Display mode uses onSpawnPointView (handled in cell onClick) */}
                       </div>
                       );
                     })()}
