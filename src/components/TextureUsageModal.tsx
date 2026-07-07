@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, Check, ShieldAlert, Sparkles } from 'lucide-react';
+import { X, Check, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
 import { t } from '../i18n';
 import type { GlobalWalls } from '../utils/GlobalDataService';
 
@@ -10,6 +10,7 @@ interface TextureUsageModalProps {
   globalWalls: GlobalWalls;
   selectedTexture: string;
   onSelectTexture: (texName: string) => void;
+  onReloadTextures?: () => void;
 }
 
 const FLOOR_LABELS: Record<string, string> = {
@@ -25,7 +26,8 @@ export const TextureUsageModal: React.FC<TextureUsageModalProps> = ({
   texturesList,
   globalWalls,
   selectedTexture,
-  onSelectTexture
+  onSelectTexture,
+  onReloadTextures
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'unused'>('all');
   const [resolutions, setResolutions] = useState<Record<string, { w: number; h: number }>>({});
@@ -152,6 +154,30 @@ export const TextureUsageModal: React.FC<TextureUsageModalProps> = ({
             <span style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--cyan-neon)' }}>
               🖼️ {t('テクスチャ画像ブラウザ')}
             </span>
+            <button
+              onClick={() => {
+                setResolutions({});
+                setRefreshTrigger(prev => prev + 1);
+                onReloadTextures?.();
+              }}
+              title={t('テクスチャ一覧を再読み込み')}
+              style={{
+                background: 'rgba(79, 195, 247, 0.1)',
+                border: '1px solid rgba(79, 195, 247, 0.3)',
+                color: 'var(--cyan-neon)',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                transition: 'all 0.2s'
+              }}
+            >
+              <RefreshCw size={14} />
+              {t('再読み込み')}
+            </button>
           </div>
           <button
             onClick={onClose}

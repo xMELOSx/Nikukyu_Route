@@ -1187,7 +1187,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', userSelect: 'none', marginBottom: '6px' }}>
                           <input type="checkbox" checked={aspectFitCut} onChange={(e) => setAspectFitCut(e.target.checked)} />
-                          <span style={{ fontSize: '10px', color: '#fff' }}>{t('比率維持で壁を切る')}</span>
+                          <span style={{ fontSize: '10px', color: '#fff' }}>{t('比率維持の壁を召喚')}</span>
                         </label>
                         <div style={{ marginTop: '6px', padding: '6px', background: '#0a0d16', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
                           <div style={{ fontSize: '9px', color: '#888', marginBottom: '4px' }}>{t('アスペクト比プレビュー')}:</div>

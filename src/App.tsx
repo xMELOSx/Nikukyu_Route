@@ -274,6 +274,20 @@ export default function App() {
       .catch(() => {});
   }, [isLocal]);
 
+  const handleReloadTextures = useCallback(() => {
+    const url = isLocal
+      ? `${import.meta.env.BASE_URL}api/textures`
+      : `${import.meta.env.BASE_URL}textures.json`;
+    fetch(url)
+      .then(res => { if (res.ok) return res.json(); })
+      .then(data => {
+        if (Array.isArray(data)) {
+          setTexturesList(data);
+        }
+      })
+      .catch(() => {});
+  }, [isLocal]);
+
   const [wallAutoSnap, setWallAutoSnap] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_wall_auto_snap');
     return saved !== null ? saved === 'true' : false;
@@ -3511,6 +3525,7 @@ export default function App() {
         globalWalls={globalWalls}
         selectedTexture={selectedTexture}
         onSelectTexture={setSelectedTexture}
+        onReloadTextures={handleReloadTextures}
       />
     </div>
   );

@@ -312,6 +312,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const isDrawingRef = useRef(false);
   const cachedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cacheKeyRef = useRef('');
+  const textureAspectRef = useRef<number>(1);
   // Vertex wall mode state
   const [vertexWallStart, setVertexWallStart] = useState<Point | null>(null);
   const vertexWallStartRef = useRef<Point | null>(null);
@@ -438,6 +439,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   useEffect(() => {
     updateMiniMapSource();
   }, [updateMiniMapSource]);
+
+  // Preload texture aspect ratio for summon mode preview
+  useEffect(() => {
+    if (selectedTexture) {
+      const img = new Image();
+      img.onload = () => { textureAspectRef.current = img.naturalWidth / img.naturalHeight; };
+      img.src = `${import.meta.env.BASE_URL}texture/${selectedTexture}`;
+    }
+  }, [selectedTexture]);
 
   // Helper to resolve connection properties between Warp/Stairs
   const getWarpConnectionInfo = (m: HeistMarker, allMarkers: HeistMarker[]) => {
@@ -1363,7 +1373,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const isDashed = stroke.type === 'dashed';
           const isTemporary = stroke.type === 'temporary';
           if (isDashed && hideBranchLines) return;
-          if (!isDashed && !isTemporary && hideRouteLines) return;
+          if (!isDashed && !isTemporary && (hideRouteLines || (autoRouteActive && fuseMode))) return;
           cacheCtx.strokeStyle = stroke.color;
           if (isTemporary) {
             cacheCtx.globalAlpha = 0.4;
@@ -1396,96 +1406,44 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (cachedCanvasRef.current) {
+        if (cachedCanvasRef.current) {
       ctx.drawImage(cachedCanvasRef.current, 0, 0);
     }
 
-    // Dynamic: auto-route path
+    // Dynamic: auto-route path (fuse mode) — draw only remaining (not yet passed) segments
+    // Optimisation: all segments are batched into a single beginPath/stroke call
+    // so cost decreases as the route progresses (passed segments are skipped).
     if (autoRouteActive && fuseMode && autoRouteSegments && autoRouteSegments.length > 0) {
       if (!hideRouteLines) {
         const speed = autoRouteTiming.speed;
         const width = routeLines1px ? 1 : 3;
 
-        // --- 1. Draw Past (Passed) Segments with Solid Color (Alpha 1.0) ---
         ctx.save();
         ctx.strokeStyle = '#ff0055';
         ctx.lineWidth = width;
         ctx.globalAlpha = 1.0;
         ctx.setLineDash([]);
         ctx.beginPath();
-        
-        let lastX: number | null = null;
-        let lastY: number | null = null;
-        const addLineToPathPast = (x1: number, y1: number, x2: number, y2: number) => {
-          if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
-            ctx.moveTo(x1, y1);
-          }
-          ctx.lineTo(x2, y2);
-          lastX = x2;
-          lastY = y2;
-        };
 
-        let tempRemaining = autoRouteElapsed;
+        let needMoveTo = true;
+        let tempRemaining = remaining;
         autoRouteSegments.forEach(seg => {
           const isWarp = seg.distance === 0 && seg.stopDuration === 0;
-          if (isWarp) return;
-          const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
-          const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
-          
-          if (tempRemaining > 0) {
-            if (tempRemaining < travelTime) {
-              const t = tempRemaining / travelTime;
-              const midPt = {
-                x: seg.start.x + (seg.end.x - seg.start.x) * t,
-                y: seg.start.y + (seg.end.y - seg.start.y) * t
-              };
-              addLineToPathPast(seg.start.x, seg.start.y, midPt.x, midPt.y);
-              tempRemaining = 0;
-            } else {
-              addLineToPathPast(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
-              tempRemaining -= travelTime;
-              if (tempRemaining < seg.stopDuration) { tempRemaining = 0; }
-              else { tempRemaining -= seg.stopDuration; }
-            }
-          }
-        });
-        ctx.stroke();
-        ctx.restore();
-
-        // --- 2. Draw Future (Remaining) Segments with Translucent Color (Alpha 0.35) ---
-        ctx.save();
-        ctx.strokeStyle = '#ff0055';
-        ctx.lineWidth = width;
-        ctx.globalAlpha = 0.35;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-
-        lastX = null;
-        lastY = null;
-        const addLineToPathFuture = (x1: number, y1: number, x2: number, y2: number) => {
-          if (lastX === null || lastY === null || Math.abs(lastX - x1) > 0.1 || Math.abs(lastY - y1) > 0.1) {
-            ctx.moveTo(x1, y1);
-          }
-          ctx.lineTo(x2, y2);
-          lastX = x2;
-          lastY = y2;
-        };
-
-        tempRemaining = autoRouteElapsed;
-        autoRouteSegments.forEach(seg => {
-          const isWarp = seg.distance === 0 && seg.stopDuration === 0;
-          if (isWarp) return;
+          if (isWarp) { needMoveTo = true; return; }
           const segSpeed = seg.speed !== undefined && seg.speed > 0 ? seg.speed : speed;
           const travelTime = seg.distance / Math.max(segSpeed, 0.0001);
 
           if (tempRemaining > 0) {
             if (tempRemaining < travelTime) {
+              // Partial segment: draw the portion that hasn't been passed yet
               const t = tempRemaining / travelTime;
-              const midPt = {
+              const startPt = {
                 x: seg.start.x + (seg.end.x - seg.start.x) * t,
                 y: seg.start.y + (seg.end.y - seg.start.y) * t
               };
-              addLineToPathFuture(midPt.x, midPt.y, seg.end.x, seg.end.y);
+              ctx.moveTo(startPt.x, startPt.y);
+              ctx.lineTo(seg.end.x, seg.end.y);
+              needMoveTo = false;
               tempRemaining = 0;
             } else {
               tempRemaining -= travelTime;
@@ -1493,7 +1451,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               else { tempRemaining -= seg.stopDuration; }
             }
           } else {
-            addLineToPathFuture(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
+            if (needMoveTo) {
+              ctx.moveTo(seg.start.x, seg.start.y);
+              needMoveTo = false;
+            }
+            ctx.lineTo(seg.end.x, seg.end.y);
           }
         });
         ctx.stroke();
@@ -2092,60 +2054,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           return;
         }
 
-        if (aspectFitCut) {
-          const img = new Image();
-          img.onload = () => {
-            const aspect = img.naturalWidth / img.naturalHeight;
-            // 3Dでの壁の高さ(36)を基準とした1リピートの長さ
-            const unitLen = 36 * aspect;
-
-            const dx = target[1].x - target[0].x;
-            const dy = target[1].y - target[0].y;
-            const actualLength = Math.hypot(dx, dy);
-            const nx = dx / actualLength, ny = dy / actualLength;
-
-            // Divide into segments of unitLen each, all textured with repeat=1
-            const segCount = Math.floor(actualLength / unitLen);
-            const nextWalls: WallSegment[] = [];
-            for (let i = 0; i < walls.length; i++) {
-              if (i === bestIndex) {
-                for (let s = 0; s < segCount; s++) {
-                  const p1: Point = {
-                    x: Math.round(target[0].x + nx * s * unitLen),
-                    y: Math.round(target[0].y + ny * s * unitLen)
-                  };
-                  const p2: Point = {
-                    x: Math.round(target[0].x + nx * (s + 1) * unitLen),
-                    y: Math.round(target[0].y + ny * (s + 1) * unitLen)
-                  };
-                  nextWalls.push(selectedRepeat > 1
-                    ? [p1, p2, selectedTexture, selectedRepeat]
-                    : [p1, p2, selectedTexture]);
-                }
-                // Remainder wall (untextured)
-                if (segCount * unitLen < actualLength - 1) {
-                  const remStart: Point = {
-                    x: Math.round(target[0].x + nx * segCount * unitLen),
-                    y: Math.round(target[0].y + ny * segCount * unitLen)
-                  };
-                  if (!(remStart.x === target[1].x && remStart.y === target[1].y)) {
-                    nextWalls.push([remStart, target[1]]);
-                  }
-                }
-              } else {
-                nextWalls.push(walls[i]);
-              }
-            }
-            onWallsChange(nextWalls.filter(w => w.length > 0) as WallSegment[]);
-          };
-          img.src = `${import.meta.env.BASE_URL}texture/${selectedTexture}`;
-        } else {
-          const nextWalls = [...walls];
-          nextWalls[bestIndex] = selectedRepeat > 1
-            ? [target[0], target[1], selectedTexture, selectedRepeat]
-            : [target[0], target[1], selectedTexture];
-          onWallsChange(nextWalls);
-        }
+        const nextWalls = [...walls];
+        nextWalls[bestIndex] = selectedRepeat > 1
+          ? [target[0], target[1], selectedTexture, selectedRepeat]
+          : [target[0], target[1], selectedTexture];
+        onWallsChange(nextWalls);
       }
     };
 
@@ -2162,7 +2075,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'wall' && wallSubMode === 'texture') {
-      applyTextureToWallAtPoint(coords);
+      if (aspectFitCut && selectedTexture !== '') {
+        let hitWall = false;
+        for (const w of walls) {
+          const [p1, p2] = w;
+          const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+          let t = 0;
+          if (l2 > 0) {
+            t = ((coords.x - p1.x) * (p2.x - p1.x) + (coords.y - p1.y) * (p2.y - p1.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+          }
+          const projX = p1.x + t * (p2.x - p1.x);
+          const projY = p1.y + t * (p2.y - p1.y);
+          const dist = Math.hypot(coords.x - projX, coords.y - projY);
+          if (dist < 12) { hitWall = true; break; }
+        }
+        if (hitWall) {
+          applyTextureToWallAtPoint(coords);
+        } else {
+          setIsDrawing(true);
+          isDrawingRef.current = true;
+          setCurrentPoints([coords]);
+        }
+      } else {
+        applyTextureToWallAtPoint(coords);
+      }
       return;
     }
 
@@ -2323,6 +2260,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       if (toolMode === 'wall' && wallSubMode === 'slice') {
         if (currentPoints.length > 0) setCurrentPoints([currentPoints[0], coords]);
+        return;
+      }
+      if (toolMode === 'wall' && wallSubMode === 'texture' && aspectFitCut && selectedTexture !== '') {
+        if (currentPoints.length > 0) {
+          setCurrentPoints([currentPoints[0], effectiveCoords]);
+          redrawStrokes(undefined, true);
+        }
         return;
       }
       if (toolMode === 'wall' && wallSubMode === 'erase') {
@@ -2712,6 +2656,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (splitWalls.length !== walls.length) {
           // Don't use mergeWalls here — it would re-merge collinear split fragments
           onWallsChange?.(splitWalls);
+        }
+      }
+      if (toolMode === 'wall' && wallSubMode === 'texture' && aspectFitCut && selectedTexture !== '' && currentPoints.length === 2) {
+        const p1 = currentPoints[0];
+        const p2 = currentPoints[1];
+        const drawnLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (drawnLen > 1) {
+          const nx = (p2.x - p1.x) / drawnLen;
+          const ny = (p2.y - p1.y) / drawnLen;
+          const img = new Image();
+          img.onload = () => {
+            const aspect = img.naturalWidth / img.naturalHeight;
+            const unitLen = 36 * aspect;
+            const ep: Point = {
+              x: Math.round(p1.x + nx * unitLen),
+              y: Math.round(p1.y + ny * unitLen)
+            };
+            const newWall: WallSegment = selectedRepeat > 1
+              ? [p1, ep, selectedTexture, selectedRepeat]
+              : [p1, ep, selectedTexture];
+            onWallsChange?.([...walls, newWall]);
+          };
+          img.src = `${import.meta.env.BASE_URL}texture/${selectedTexture}`;
         }
       }
       setCurrentPoints([]);
@@ -3668,7 +3635,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
 
         {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
-        {toolMode === 'wall' && (((walls && walls.length > 0) || lockedWalls.length > 0) || (wallSubMode === 'draw' && isDrawing && currentPoints.length === 2)) && (
+        {toolMode === 'wall' && (((walls && walls.length > 0) || lockedWalls.length > 0) || (wallSubMode === 'draw' && isDrawing && currentPoints.length === 2) || (wallSubMode === 'texture' && aspectFitCut && isDrawing && currentPoints.length === 2)) && (
           <svg
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
@@ -3738,6 +3705,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 strokeDasharray="4,4"
               />
             )}
+            {wallSubMode === 'texture' && aspectFitCut && isDrawing && currentPoints.length === 2 && (() => {
+              const p1 = currentPoints[0];
+              const p2 = currentPoints[1];
+              const dx = p2.x - p1.x;
+              const dy = p2.y - p1.y;
+              const d = Math.hypot(dx, dy);
+              const nx = dx / d;
+              const ny = dy / d;
+              const unitLen = 36 * textureAspectRef.current;
+              const previewEndX = Math.round(p1.x + nx * Math.min(d, unitLen));
+              const previewEndY = Math.round(p1.y + ny * Math.min(d, unitLen));
+              return (
+                <>
+                  <line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="rgba(0, 255, 136, 0.2)"
+                    strokeWidth={2}
+                    strokeDasharray="4,6"
+                  />
+                  <line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={previewEndX}
+                    y2={previewEndY}
+                    stroke="#00ff88"
+                    strokeWidth={4}
+                    strokeDasharray="8,4"
+                  />
+                  <circle cx={previewEndX} cy={previewEndY} r={4} fill="#00ff88" />
+                </>
+              );
+            })()}
             {(wallSubMode === 'vertex' || wallSubMode === 'slice') && walls.length > 0 && (() => {
               const seen = new Set<string>();
               const pts: Point[] = [];
