@@ -704,9 +704,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const [shelfEditTick, setShelfEditTick] = useState(0);
   const [shelfPopupCell, setShelfPopupCell] = useState<ShelfSpawn|null>(null);
-  // Refs for shelf modal position
+  // Ref for shelf modal position (fallback in handleSaveNote)
   const pendingPopupOffsetRef = useRef<Point>({ x: 0, y: -100 });
-  const shelfDragMarkerIdRef = useRef<string | null>(null);
   const commitShelfSpawns = useCallback((markerId: string, spawns: ShelfSpawn[]) => {
     onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, shelfSpawns: spawns } : mk));
   }, [markers, onMarkersChange]);
@@ -2342,10 +2341,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isDraggingPopup) {
       const dx = (e.clientX - popupDragStart.x) / zoom;
       const dy = (e.clientY - popupDragStart.y) / zoom;
-      setPopupOffset({
-        x: Math.round(popupOffsetStart.x + dx),
-        y: Math.round(popupOffsetStart.y + dy)
-      });
+      const next = { x: Math.round(popupOffsetStart.x + dx), y: Math.round(popupOffsetStart.y + dy) };
+      setPopupOffset(next);
+      pendingPopupOffsetRef.current = next;
       return;
     }
 
@@ -2482,12 +2480,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
     if (isDraggingPopup) {
       setIsDraggingPopup(false);
-      // Save popupOffset to the shelf marker immediately on drag end
-      const sid = shelfDragMarkerIdRef.current;
-      if (sid) {
-        shelfDragMarkerIdRef.current = null;
-        onMarkersChange(markers.map(mk => mk.id === sid ? { ...mk, popupOffset: pendingPopupOffsetRef.current } : mk));
-      }
       return;
     }
     if (toolMode === 'wall' && wallSubMode === 'move') {
@@ -3192,10 +3184,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (m.type === 'shelf') {
         const willExpand = !m.shelfExpanded;
         if (willExpand) {
-          const offset = m.popupOffset || { x: 0, y: -100 };
-          setPopupOffset(offset);
-          pendingPopupOffsetRef.current = offset;
-          shelfDragMarkerIdRef.current = m.id;
+          setPopupOffset(m.popupOffset || { x: 0, y: -100 });
+          pendingPopupOffsetRef.current = m.popupOffset || { x: 0, y: -100 };
         }
         onMarkersChange(
           markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk)
@@ -3244,10 +3234,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (isEditMode && m.type === 'shelf') {
       const willExpand = !m.shelfExpanded;
       if (willExpand) {
-        const offset = m.popupOffset || { x: 0, y: -100 };
-        setPopupOffset(offset);
-        pendingPopupOffsetRef.current = offset;
-        shelfDragMarkerIdRef.current = m.id;
+        setPopupOffset(m.popupOffset || { x: 0, y: -100 });
+        pendingPopupOffsetRef.current = m.popupOffset || { x: 0, y: -100 };
       }
       onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand } : mk));
       // returnしない → ノートポップアップ（詳細設定）も開く
@@ -4402,14 +4390,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           {tNote(m.note)}
                         </div>
                       )}
-                      {/* Spawn overlays on collapsed shelf — always visible */}
+                      {/* Spawn overlays on collapsed shelf — simple percentage */}
                       {shelfSpawns.length > 0 && shelfSpawns.map(sp => {
                         const im2 = new Map((spawnItems||[]).map(i=>[i.id,i]));
                         const rR2:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                         let spColor='#888'; let bestR=-1;
                         for(const si of (sp.items||[])){const it=im2.get(si.itemId);if(it){const r=rR2[it.textColor]??-1;if(r>bestR){bestR=r;spColor=rarityColor[it.textColor]||'#888';}}}
-                        const spX = cellPos(sp.col,colGapEvery||8,colGapSize||2,totalW) + (100/totalW)/2;
-                        const spY = cellPos(sp.row,rowGapEvery||7,rowGapSize||1,totalH) + (100/totalH)/2;
+                        const spX = ((sp.col + 0.5) / cols) * 100;
+                        const spY = ((sp.row + 0.5) / rows) * 100;
                         return (
                           <div key={sp.id} style={{
                             position: 'absolute',
@@ -4468,7 +4456,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             onClick={(e) => {
                               e.stopPropagation();
                               onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false } : mk)
+                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset: pendingPopupOffsetRef.current } : mk)
                               );
                             }}
                             style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '2px 4px', lineHeight: 1 }}
