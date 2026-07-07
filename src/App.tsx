@@ -929,16 +929,16 @@ export default function App() {
   }, [spawnApi, pushSpawnHistory]);
 
   // スポーン点追加: マップクリック時 (空の点)
-  const handleSpawnPointAdd = useCallback((x: number, y: number) => {
+  const handleSpawnPointAdd = useCallback((x: number, y: number, pregeneratedId?: string) => {
     pushSpawnHistory();
     const snap = spawnGridSnap > 0 ? spawnGridSnap : 0;
     const sx = snap > 0 ? Math.round(x / snap) * snap : x;
     const sy = snap > 0 ? Math.round(y / snap) * snap : y;
     const point: SpawnPoint = {
-      id: generateId('sp'),
+      id: pregeneratedId || generateId('sp'),
       x: sx, y: sy,
       floor: currentFloor,
-      category: (spawnPlaceCategory || undefined) as any,
+      category: '引出' as any,
       createdAt: new Date().toISOString(),
       items: [],
     };
@@ -948,7 +948,7 @@ export default function App() {
       setSpawnMoveX(sx); setSpawnMoveY(sy);
       setShowEditModal(true);
     }
-  }, [currentFloor, spawnApi, pushSpawnHistory, spawnPlaceCategory, spawnAutoEdit, spawnGridSnap]);
+  }, [currentFloor, spawnApi, pushSpawnHistory, spawnAutoEdit, spawnGridSnap]);
 
   // スポーン点編集: マップの点をクリック時 → モーダル表示
   const handleSpawnPointEdit = useCallback((id: string) => {

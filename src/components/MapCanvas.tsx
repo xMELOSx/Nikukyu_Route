@@ -11,6 +11,7 @@ import {
   type RegisteredItem,
   type LockedWallSegment,
   type WallSegment,
+  type ShelfSpawn,
   MARKER_META,
   PRESET_MAPS_META,
   getSkillCdIcon,
@@ -172,7 +173,7 @@ interface MapCanvasProps {
   onSpawnMoveComplete?: (id: string, x: number, y: number) => void;
   spawnVisible?: boolean;
   hideMapBg?: boolean;
-  onSpawnPointAdd?: (x: number, y: number) => void;
+  onSpawnPointAdd?: (x: number, y: number, id?: string) => void;
   onSpawnPointDelete?: (id: string) => void;
   onSpawnPointEdit?: (id: string) => void;
   onSpawnPointView?: (id: string) => void;
@@ -690,9 +691,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [drawerHeight, setDrawerHeight] = useState(70);
   const [shelfRows, setShelfRows] = useState(3);
   const [shelfCols, setShelfCols] = useState(3);
-  const [shelfWidth, setShelfWidth] = useState(80);
-  const [shelfHeight, setShelfHeight] = useState(80);
+  const [shelfWidth, setShelfWidth] = useState(60);
+  const [shelfHeight, setShelfHeight] = useState(24);
+  const [shelfGridWidth, setShelfGridWidth] = useState(300);
+  const [shelfGridHeight, setShelfGridHeight] = useState(300);
+  const [shelfModalFollowAngle, setShelfModalFollowAngle] = useState(false);
+  const [shelfColGapEvery, setShelfColGapEvery] = useState(8);
+  const [shelfColGapSize, setShelfColGapSize] = useState(2);
+  const [shelfRowGapEvery, setShelfRowGapEvery] = useState(7);
+  const [shelfRowGapSize, setShelfRowGapSize] = useState(1);
   const [shelfAngle, setShelfAngle] = useState(0);
+
+  // Buffer shelf spawn edits locally; commit only on close to avoid crashes
+  const [shelfEditTick, setShelfEditTick] = useState(0);
+  const pendingShelfSpawnsRef = useRef<ShelfSpawn[] | null>(null);
+  const commitShelfSpawns = useCallback((markerId: string, spawns: ShelfSpawn[]) => {
+    pendingShelfSpawnsRef.current = null;
+    onMarkersChange(markers.map(mk => mk.id === markerId ? { ...mk, shelfSpawns: spawns } : mk));
+  }, [markers, onMarkersChange]);
 
   const handleToggleNearestPhone = useCallback(() => {
     if (!currentPosition) return;
@@ -1945,8 +1961,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (activeMarkerType === 'shelf') {
         newMarker.shelfRows = 3;
         newMarker.shelfCols = 3;
-        newMarker.shelfWidth = 80;
-        newMarker.shelfHeight = 80;
+        newMarker.shelfWidth = 60;
+        newMarker.shelfHeight = 24;
+        newMarker.shelfGridWidth = 300;
+        newMarker.shelfGridHeight = 300;
+        newMarker.shelfModalFollowAngle = false;
+        newMarker.shelfColGapEvery = 8;
+        newMarker.shelfColGapSize = 2;
+        newMarker.shelfRowGapEvery = 7;
+        newMarker.shelfRowGapSize = 1;
         newMarker.shelfAngle = 0;
         newMarker.shelfExpanded = false;
         newMarker.shelfSpawns = [];
@@ -3160,8 +3183,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       // Shelf toggle in presentation mode
       if (m.type === 'shelf') {
+        const willExpand = !m.shelfExpanded;
+        if (!willExpand) {
+          const spawns = pendingShelfSpawnsRef.current;
+          if (spawns) {
+            commitShelfSpawns(m.id, spawns);
+          }
+        } else {
+          setPopupOffset(m.popupOffset || { x: 0, y: -100 });
+          pendingShelfSpawnsRef.current = (m.shelfSpawns || []).map(s => ({ ...s }));
+        }
         onMarkersChange(
-          markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: !mk.shelfExpanded } : mk)
+          markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand, ...(willExpand ? {} : { popupOffset }) } : mk)
         );
         return;
       }
@@ -3203,6 +3236,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    // 編集モード: 棚は常に展開トグル（ローカル/リモート問わず、ノートポップアップは開かない）
+    if (isEditMode && m.type === 'shelf') {
+      const willExpand = !m.shelfExpanded;
+      if (!willExpand) {
+        const spawns = pendingShelfSpawnsRef.current;
+        if (spawns) {
+          commitShelfSpawns(m.id, spawns);
+        }
+      } else {
+        setPopupOffset(m.popupOffset || { x: 0, y: -100 });
+        pendingShelfSpawnsRef.current = (m.shelfSpawns || []).map(s => ({ ...s }));
+      }
+      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: willExpand, ...(willExpand ? {} : { popupOffset }) } : mk));
+      return;
+    }
+
     // 個人編集モード: グローバルマーカーは表示トグルのみ（編集ポップアップを開かない）
     if (isEditMode && !isLocal && !isIndiv(m.type)) {
       const toggleExpanded = (field: string): HeistMarker => ({
@@ -3213,19 +3262,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const isNote = isNoteType(m.type);
       if (isInfo || isNote || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle'
         || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking'
-        || m.type === 'checkpoint' || m.type === 'phone' || m.type === 'drawer' || m.type === 'shelf') {
+        || m.type === 'checkpoint' || m.type === 'phone' || m.type === 'drawer') {
         const field = isInfo ? 'infoExpanded' : isNote ? 'noteExpanded'
           : m.type === 'boss' ? 'bossExpanded'
           : m.type === 'battle' || m.type === 'gbattle' ? 'battleExpanded'
           : m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' ? 'pickingExpanded'
           : m.type === 'phone' ? 'phoneActive'
           : m.type === 'drawer' ? 'drawerExpanded'
-          : m.type === 'shelf' ? 'shelfExpanded'
           : 'checkpointExpanded';
         if (m.type === 'phone' && m.phoneLocked) return;
         onMarkersChange(markers.map(mk => mk.id === m.id ? toggleExpanded(field) : mk));
+        return;
       }
-      return;
+      {
+        return;
+      }
     }
 
     // If popover is already open for a different marker, save that one first
@@ -3293,8 +3344,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setDrawerHeight(m.drawerHeight !== undefined ? m.drawerHeight : 70);
     setShelfRows(m.shelfRows !== undefined ? m.shelfRows : 3);
     setShelfCols(m.shelfCols !== undefined ? m.shelfCols : 3);
-    setShelfWidth(m.shelfWidth !== undefined ? m.shelfWidth : 80);
-    setShelfHeight(m.shelfHeight !== undefined ? m.shelfHeight : 80);
+    setShelfWidth(m.shelfWidth !== undefined ? m.shelfWidth : 60);
+    setShelfHeight(m.shelfHeight !== undefined ? m.shelfHeight : 24);
+    setShelfGridWidth(m.shelfGridWidth !== undefined ? m.shelfGridWidth : 300);
+    setShelfGridHeight(m.shelfGridHeight !== undefined ? m.shelfGridHeight : 300);
+    setShelfModalFollowAngle(!!m.shelfModalFollowAngle);
+    setShelfColGapEvery(m.shelfColGapEvery !== undefined ? m.shelfColGapEvery : 8);
+    setShelfColGapSize(m.shelfColGapSize !== undefined ? m.shelfColGapSize : 2);
+    setShelfRowGapEvery(m.shelfRowGapEvery !== undefined ? m.shelfRowGapEvery : 7);
+    setShelfRowGapSize(m.shelfRowGapSize !== undefined ? m.shelfRowGapSize : 1);
     setShelfAngle(m.shelfAngle !== undefined ? m.shelfAngle : 0);
     const imgUrl = m.mediaItems?.[0]?.url || '';
     setTpsImageUrl(imgUrl);
@@ -3445,6 +3503,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.shelfCols = shelfCols;
               updated.shelfWidth = shelfWidth;
               updated.shelfHeight = shelfHeight;
+              updated.shelfGridWidth = shelfGridWidth;
+              updated.shelfGridHeight = shelfGridHeight;
+              updated.shelfModalFollowAngle = shelfModalFollowAngle;
+              updated.shelfColGapEvery = shelfColGapEvery;
+              updated.shelfColGapSize = shelfColGapSize;
+              updated.shelfRowGapEvery = shelfRowGapEvery;
+              updated.shelfRowGapSize = shelfRowGapSize;
               updated.shelfAngle = shelfAngle;
               if (updated.shelfSpawns) {
                 // Re-map spawns if rows/cols changed to avoid out-of-bounds
@@ -4271,12 +4336,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 const rows = Math.max(1, m.shelfRows ?? 3);
                 const cols = Math.max(1, m.shelfCols ?? 3);
                 const angle = m.shelfAngle ?? 0;
-                const sw = (m.shelfWidth ?? 80) * scaleMultiplier;
-                const sh = (m.shelfHeight ?? 80) * scaleMultiplier;
-                const shelfSpawns = m.shelfSpawns || [];
+                const sw = (m.shelfWidth ?? 60) * scaleMultiplier;
+                const sh = (m.shelfHeight ?? 24) * scaleMultiplier;
+                const shelfSpawns = (m.shelfExpanded ? (pendingShelfSpawnsRef.current ?? m.shelfSpawns) : m.shelfSpawns) || [];
                 const rarityColor: Record<string, string> = { green: '#39ff14', blue: '#00bfff', purple: '#b388ff', yellow: '#ffd700', red: '#ff4444', cyan: '#00ffff' };
                 const cellW = sw / cols;
                 const cellH = sh / rows;
+                // Gap-aware grid layout
+                const colGapEvery = m.shelfColGapEvery ?? 8;
+                const colGapSize = m.shelfColGapSize ?? 2;
+                const rowGapEvery = m.shelfRowGapEvery ?? 7;
+                const rowGapSize = m.shelfRowGapSize ?? 1;
+                const numColGaps = cols > colGapEvery ? Math.floor((cols - 1) / colGapEvery) : 0;
+                const numRowGaps = rows > rowGapEvery ? Math.floor((rows - 1) / rowGapEvery) : 0;
+                const totalUnitsW = cols + numColGaps * colGapSize;
+                const totalUnitsH = rows + numRowGaps * rowGapSize;
+                const cellPos = (idx: number, total: number, gapEvery: number, gapSize: number) => {
+                  const gapsBefore = Math.floor(idx / gapEvery);
+                  return (idx + gapsBefore * gapSize) / total * 100;
+                };
+                const cellSizePct = (total: number) => 100 / total;
                 return (
                   <React.Fragment key={m.id}>
                     <div
@@ -4347,40 +4426,56 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         );
                       })}
                     </div>
-                    {/* Expanded shelf grid popup */}
-                    {m.shelfExpanded && (
+                    {/* Expanded shelf grid popup — position offset by popupOffset */}
+                    {m.shelfExpanded && (() => {
+                      const shelfPopupOffset = isEditMode ? popupOffset : (m.popupOffset || { x: 0, y: -100 });
+                      const followAngle = m.shelfModalFollowAngle;
+                      return (
                       <div
                         style={{
                           position: 'absolute',
-                          left: `${m.x + sw / 2 + 8}px`,
-                          top: `${m.y}px`,
-                          transform: 'translate(0, -50%)',
-                          width: `${sw * 2.5}px`,
-                          height: `${sh * 2.5}px`,
+                          left: `${m.x + shelfPopupOffset.x}px`,
+                          top: `${m.y + shelfPopupOffset.y}px`,
+                          transform: followAngle ? `rotate(${angle}deg)` : undefined,
+                          transformOrigin: 'center center',
+                          width: `${m.shelfGridWidth ?? 300}px`,
+                          height: `${m.shelfGridHeight ?? 300}px`,
                           border: `1.5px solid ${meta.color}`,
                           borderRadius: '6px',
                           background: 'rgba(20, 12, 8, 0.95)',
                           boxShadow: `0 0 20px ${meta.color}60`,
                           zIndex: 100,
-                          padding: '8px',
+                          padding: '0',
                           overflow: 'hidden',
                           pointerEvents: 'auto'
                         }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        {/* Draggable header */}
+                        <div
+                          onMouseDown={(e) => handlePopupMouseDown(e)}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '6px 8px', cursor: isEditMode ? 'move' : 'default',
+                            background: 'rgba(205,133,63,0.12)', borderBottom: '1px solid rgba(205,133,63,0.2)'
+                          }}
+                        >
                           <span style={{ color: meta.color, fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span>📦</span> {m.note.trim() ? tNote(m.note) : t('SHELF')} {t('マップ')}
                           </span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              const spawns = pendingShelfSpawnsRef.current;
+                              if (spawns) {
+                                commitShelfSpawns(m.id, spawns);
+                              }
                               onMarkersChange(
-                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false } : mk)
+                                markers.map(mk => mk.id === m.id ? { ...mk, shelfExpanded: false, popupOffset } : mk)
                               );
                             }}
-                            style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px' }}
+                            style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '2px 4px', lineHeight: 1 }}
                           >
                             ✕
                           </button>
@@ -4389,78 +4484,100 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         <div style={{
                           position: 'relative',
                           width: '100%',
-                          height: `calc(100% - 28px)`,
-                          border: '1px solid rgba(205, 133, 63, 0.3)',
-                          borderRadius: '4px',
+                          height: 'calc(100% - 32px)',
+                          border: 'none',
                           overflow: 'hidden'
                         }}>
-                          {/* Grid lines */}
-                          {Array.from({ length: rows - 1 }, (_, r) => (
-                            <div key={`shr-${r}`} style={{ position: 'absolute', left: 0, top: `${((r + 1) / rows) * 100}%`, width: '100%', height: '1px', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />
-                          ))}
-                          {Array.from({ length: cols - 1 }, (_, c) => (
-                            <div key={`shc-${c}`} style={{ position: 'absolute', top: 0, left: `${((c + 1) / cols) * 100}%`, width: '1px', height: '100%', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />
-                          ))}
-                          {/* Spawn points in expanded grid — always visible */}
-                          {shelfSpawns.map(sp => {
-                            const spColor = sp.itemColor ? (rarityColor[sp.itemColor] || sp.itemColor) : '#888';
-                            const spPctX = ((sp.col + 0.5) / cols) * 100;
-                            const spPctY = ((sp.row + 0.5) / rows) * 100;
-                            return (
-                              <div key={sp.id} style={{
-                                position: 'absolute',
-                                left: `${spPctX}%`,
-                                top: `${spPctY}%`,
-                                transform: 'translate(-50%, -50%)',
-                                width: '10px',
-                                height: '10px',
-                                borderRadius: '50%',
-                                background: spColor,
-                                boxShadow: `0 0 8px ${spColor}`,
-                                pointerEvents: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '6px',
-                                color: '#000',
-                                fontWeight: 'bold'
-                              }}>
-                                {sp.itemName ? sp.itemName.charAt(0) : ''}
-                              </div>
-                            );
+                          {/* Grid lines with gap awareness */}
+                          {Array.from({ length: rows - 1 }, (_, r) => {
+                            const topPct = cellPos(r + 1, totalUnitsH, rowGapEvery, rowGapSize);
+                            return <div key={`shr-${r}`} style={{ position: 'absolute', left: 0, top: `${topPct}%`, width: '100%', height: '1px', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />;
                           })}
-                          {/* Clickable cells for adding/removing spawns */}
+                          {Array.from({ length: cols - 1 }, (_, c) => {
+                            const leftPct = cellPos(c + 1, totalUnitsW, colGapEvery, colGapSize);
+                            return <div key={`shc-${c}`} style={{ position: 'absolute', top: 0, left: `${leftPct}%`, width: '1px', height: '100%', background: meta.color, opacity: 0.2, pointerEvents: 'none' }} />;
+                          })}
+                          {/* Spawn points — look up color from existing spawn system */}
+                          {(() => {
+                            const itemMap: Record<string, RegisteredItem> = {};
+                            for (const item of (spawnItems || [])) itemMap[item.id] = item;
+                            const rarityRank: Record<string, number> = { green: 0, blue: 1, purple: 2, yellow: 3, red: 4, cyan: 5 };
+                            return shelfSpawns.map(sp => {
+                              const spawnPt = (spawnPoints || []).find(s => s.id === sp.spawnId);
+                              let dotColor: string;
+                              if (spawnPt && spawnPt.items.length > 0) {
+                                let bestRank = -1;
+                                let bestCol = '#888';
+                                for (const si of spawnPt.items) {
+                                  const item = itemMap[si.itemId];
+                                  if (!item) continue;
+                                  const rk = rarityRank[item.textColor] ?? -1;
+                                  if (rk > bestRank) { bestRank = rk; bestCol = rarityColor[item.textColor] || '#888'; }
+                                }
+                                dotColor = bestCol;
+                              } else {
+                                dotColor = '#888';
+                              }
+                              const spPctX = cellPos(sp.col, totalUnitsW, colGapEvery, colGapSize) + cellSizePct(totalUnitsW) / 2;
+                              const spPctY = cellPos(sp.row, totalUnitsH, rowGapEvery, rowGapSize) + cellSizePct(totalUnitsH) / 2;
+                              return (
+                                <div key={sp.spawnId} style={{
+                                  position: 'absolute',
+                                  left: `${spPctX}%`,
+                                  top: `${spPctY}%`,
+                                  transform: 'translate(-50%, -50%)',
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  background: dotColor,
+                                  boxShadow: `0 0 8px ${dotColor}`,
+                                  pointerEvents: 'none'
+                                }} />
+                              );
+                            });
+                          })()}
+                          {/* Clickable cells — use existing spawn system */}
                           {isEditMode && isLocal && Array.from({ length: rows }, (_, r) => (
                             Array.from({ length: cols }, (_, c) => {
                               const existing = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                              const cellL = cellPos(c, totalUnitsW, colGapEvery, colGapSize);
+                              const cellT = cellPos(r, totalUnitsH, rowGapEvery, rowGapSize);
+                              const cellSzW = cellSizePct(totalUnitsW);
+                              const cellSzH = cellSizePct(totalUnitsH);
                               return (
                                 <div key={`cell-${r}-${c}`} style={{
                                   position: 'absolute',
-                                  left: `${(c / cols) * 100}%`,
-                                  top: `${(r / rows) * 100}%`,
-                                  width: `${(1 / cols) * 100}%`,
-                                  height: `${(1 / rows) * 100}%`,
+                                  left: `${cellL}%`,
+                                  top: `${cellT}%`,
+                                  width: `${cellSzW}%`,
+                                  height: `${cellSzH}%`,
                                   cursor: 'pointer',
                                   opacity: existing ? 0 : 0.15,
                                 }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const existing2 = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                                    const current = pendingShelfSpawnsRef.current || shelfSpawns;
+                                    const existing2 = current.find(sp => sp.row === r && sp.col === c);
                                     if (existing2) {
-                                      const nextSpawns = shelfSpawns.filter(sp => sp.id !== existing2.id);
-                                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfSpawns: nextSpawns } : mk));
+                                      // Open existing spawn edit UI
+                                      if (onSpawnPointEdit) onSpawnPointEdit(existing2.spawnId);
                                     } else {
-                                      const newSpawn: any = { id: `ss_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, row: r, col: c, itemName: '', itemColor: 'blue' };
-                                      const nextSpawns = [...shelfSpawns, newSpawn];
-                                      onMarkersChange(markers.map(mk => mk.id === m.id ? { ...mk, shelfSpawns: nextSpawns } : mk));
+                                      // Create new spawn point via existing spawn system
+                                      const spawnId = 'sp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                                      const cellCenterX = m.x + (c + 0.5) * cellW - sw / 2;
+                                      const cellCenterY = m.y + (r + 0.5) * cellH - sh / 2;
+                                      if (onSpawnPointAdd) onSpawnPointAdd(cellCenterX, cellCenterY, spawnId);
+                                      const newRef: ShelfSpawn = { row: r, col: c, spawnId };
+                                      pendingShelfSpawnsRef.current = [...current, newRef];
+                                      setShelfEditTick(t => t + 1);
                                     }
                                   }}
                                   onMouseEnter={(e) => {
                                     (e.currentTarget as HTMLElement).style.opacity = '0.3';
                                   }}
                                   onMouseLeave={(e) => {
-                                    const existing = shelfSpawns.find(sp => sp.row === r && sp.col === c);
-                                    (e.currentTarget as HTMLElement).style.opacity = existing ? '0' : '0.15';
+                                    const ex = shelfSpawns.find(sp => sp.row === r && sp.col === c);
+                                    (e.currentTarget as HTMLElement).style.opacity = ex ? '0' : '0.15';
                                   }}
                                 />
                               );
@@ -4468,13 +4585,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           ))}
                         </div>
                         {/* Controls row */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '4px', gap: '4px' }}>
-                          <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-                            <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols}</span>
-                          </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '3px 8px', gap: '4px', borderTop: '1px solid rgba(205,133,63,0.15)' }}>
+                          <span style={{ color: '#888', fontSize: '9px' }}>{rows}×{cols} / {shelfSpawns.length}個</span>
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
                   </React.Fragment>
                 );
               }
@@ -6525,7 +6641,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <input
                   type="range"
                   min={1}
-                  max={10}
+                  max={32}
                   step={1}
                   value={shelfRows}
                   onChange={(e) => setShelfRows(parseInt(e.target.value))}
@@ -6540,7 +6656,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <input
                   type="range"
                   min={1}
-                  max={10}
+                  max={32}
                   step={1}
                   value={shelfCols}
                   onChange={(e) => setShelfCols(parseInt(e.target.value))}
@@ -6554,9 +6670,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </div>
                 <input
                   type="range"
-                  min={30}
+                  min={16}
                   max={200}
-                  step={5}
+                  step={2}
                   value={shelfWidth}
                   onChange={(e) => setShelfWidth(parseInt(e.target.value))}
                   style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
@@ -6569,11 +6685,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </div>
                 <input
                   type="range"
-                  min={30}
+                  min={16}
                   max={200}
-                  step={5}
+                  step={2}
                   value={shelfHeight}
                   onChange={(e) => setShelfHeight(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('グリッド幅:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfGridWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={800}
+                  step={10}
+                  value={shelfGridWidth}
+                  onChange={(e) => setShelfGridWidth(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('グリッド高さ:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfGridHeight}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={800}
+                  step={10}
+                  value={shelfGridHeight}
+                  onChange={(e) => setShelfGridHeight(parseInt(e.target.value))}
                   style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
                 />
               </div>
@@ -6592,6 +6738,50 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }}
                 />
               </div>
+              <div style={{ borderTop: '1px solid rgba(205,133,63,0.2)', margin: '4px 0' }} />
+              <div style={{ fontSize: '10px', color: '#cd853f', fontWeight: 'bold', marginBottom: '4px' }}>{t('間隔設定:')}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('横Nマスごとに間隔:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfColGapEvery}</span>
+                </div>
+                <input type="range" min={1} max={32} step={1} value={shelfColGapEvery}
+                  onChange={(e) => setShelfColGapEvery(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('横間隔サイズ(マス):')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfColGapSize}</span>
+                </div>
+                <input type="range" min={0} max={10} step={1} value={shelfColGapSize}
+                  onChange={(e) => setShelfColGapSize(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('縦Nマスごとに間隔:')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfRowGapEvery}</span>
+                </div>
+                <input type="range" min={1} max={32} step={1} value={shelfRowGapEvery}
+                  onChange={(e) => setShelfRowGapEvery(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#b0b0b0' }}>
+                  <span>{t('縦間隔サイズ(マス):')}</span>
+                  <span style={{ color: '#cd853f', fontWeight: 'bold' }}>{shelfRowGapSize}</span>
+                </div>
+                <input type="range" min={0} max={10} step={1} value={shelfRowGapSize}
+                  onChange={(e) => setShelfRowGapSize(parseInt(e.target.value))}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer', width: '100%' }} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: '#cd853f', cursor: 'pointer', marginTop: '4px' }}>
+                <input type="checkbox" checked={shelfModalFollowAngle}
+                  onChange={(e) => setShelfModalFollowAngle(e.target.checked)}
+                  style={{ accentColor: '#cd853f', cursor: 'pointer' }} />
+                {t('モーダルを棚の角度に合わせる')}
+              </label>
             </div>
           )}
           {(activeNoteMarker.type === 'tps' || activeNoteMarker.type === 'itps') && (

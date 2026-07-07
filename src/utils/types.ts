@@ -112,6 +112,13 @@ export interface HeistMarker {
   shelfCols?: number;
   shelfWidth?: number;
   shelfHeight?: number;
+  shelfGridWidth?: number;
+  shelfGridHeight?: number;
+  shelfModalFollowAngle?: boolean;
+  shelfColGapEvery?: number;
+  shelfColGapSize?: number;
+  shelfRowGapEvery?: number;
+  shelfRowGapSize?: number;
   shelfAngle?: number;
   shelfSpawns?: ShelfSpawn[];
 }
@@ -204,12 +211,9 @@ export interface RegisteredItem {
 }
 
 export interface ShelfSpawn {
-  id: string;
   row: number;
   col: number;
-  itemId?: string;
-  itemName?: string;
-  itemColor?: string;
+  spawnId: string;
 }
 
 export interface SpawnPointItem {
