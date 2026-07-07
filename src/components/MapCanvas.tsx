@@ -507,6 +507,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
   };
 
+  // Unified marker visibility check — covers ALL hiding methods
+  const isMarkerHidden = useCallback((m: HeistMarker) =>
+    hideAllMarkers || hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type)
+  , [hideAllMarkers, hiddenMarkers, hiddenMarkerTypes]);
+
   // Helper function to check if marker is individual
   const isIndiv = (type: string) => ['start', 'battle', 'picking', 'long_picking', 'iwarp', 'iinfo', 'inote', 'itext', 'p1', 'p2', 'p3', 'checkpoint', 'skill_cd', 'itps'].includes(type);
   const isDrawer = (type: string) => type === 'drawer';
@@ -1307,20 +1312,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
     if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
-    // Filter: shelf spawns hidden when shelf is visible AND markers layer is showing
-    const layerHidden = toolMode === 'wall' && hideMarkersDuringWalls;
-    const hiddenMids = new Set(hiddenMarkers||[]);
-    const hiddenTypes = new Set(hiddenMarkerTypes||[]);
-    const shelfIsEffectivelyHidden = (m: HeistMarker) =>
-      hiddenMids.has(m.id) || hiddenTypes.has('shelf') || layerHidden;
-    const visibleShelfSpawnIds = new Set<string>();
-    for(const m of markers) {
-      if(m.type==='shelf'&&m.shelfSpawns && !shelfIsEffectivelyHidden(m)) {
-        for(const ss of m.shelfSpawns) if(ss.spawnId) visibleShelfSpawnIds.add(ss.spawnId);
-      }
-    }
+    // Filter: only show shelf spawns when shelf is VISIBLE on screen
+    const shelfLayerHidden = toolMode === 'wall' && hideMarkersDuringWalls;
+    const shelfIsVis = (m: HeistMarker) => m.type==='shelf' && !isMarkerHidden(m) && !shelfLayerHidden;
+    const visShelfIds = new Set<string>();
+    for(const m of markers) if(shelfIsVis(m)&&m.shelfSpawns) for(const ss of m.shelfSpawns) if(ss.spawnId) visShelfIds.add(ss.spawnId);
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
-    if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
+    if(visShelfIds.size>0) sp = sp.filter(p=>!visShelfIds.has(p.id));
     // Build rotation-aware fallback positions for effectively-hidden shelf spawns
     const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
 
@@ -4036,7 +4034,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               if (m.id !== conn.primary.id) return null;
 
               const partner = conn.partner;
-              const isMHidden = hiddenMarkers.includes(m.id);
+              const isMHidden = isMarkerHidden(m);
               const isPartnerHidden = hiddenMarkers.includes(partner.id);
               if (!isEditMode && (isMHidden || isPartnerHidden)) return null;
 
@@ -4090,7 +4088,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {zoom >= 0.25 && markers
             .filter(m => (isInfoType(m.type) || m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking') && m.floor === floor)
             .map(m => {
-              const isHidden = hiddenMarkers.includes(m.id);
+              const isHidden = isMarkerHidden(m);
               if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
               const offset = (isEditMode && activeNoteMarkerId === m.id) ? popupOffset : m.popupOffset;
@@ -4285,7 +4283,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           )}
 
           {visibleMarkers.map(m => {
-              const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
+              const isHidden = isMarkerHidden(m);
               if (isHidden && !isEditMode) return null;
               if (!isEditMode && m.type === 'room') return null;
 
@@ -4935,7 +4933,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           {/* Details Popups rendered in flat layer at the end to stay on top of everything */}
           {visibleMarkers
             .map(m => {
-              const isHidden = hiddenMarkers.includes(m.id);
+              const isHidden = isMarkerHidden(m);
               if (isHidden && !isEditMode) return null;
               const meta = MARKER_META[m.type];
               return (
@@ -5650,7 +5648,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         markers
           .filter(m => m.floor === floor && isTextType(m.type) && (activeNoteMarkerId === m.id ? textFixedPosition : !!m.textFixedPosition))
           .map(m => {
-            const isHidden = hiddenMarkers.includes(m.id) || hiddenMarkerTypes.includes(m.type);
+            const isHidden = isMarkerHidden(m);
             if (isHidden && !isEditMode) return null;
             const isEditing = activeNoteMarkerId === m.id;
             const displayColor = isEditing ? textColor : (m.textColor || '#ffffff');
