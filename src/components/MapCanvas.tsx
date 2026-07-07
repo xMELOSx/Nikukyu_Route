@@ -1305,16 +1305,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
     if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
-    // Filter out spawns referenced by shelf markers (both visible and hidden)
-    const shelfSpawnIds = new Set<string>();
+    // Filter out spawns ONLY for VISIBLE shelf markers (hidden shelves' spawns fallback to map)
+    const visibleShelfSpawnIds = new Set<string>();
     const hiddenMids = new Set(hiddenMarkers||[]);
     for(const m of markers) {
-      if(m.type==='shelf'&&m.shelfSpawns) {
-        for(const ss of m.shelfSpawns) if(ss.spawnId) shelfSpawnIds.add(ss.spawnId);
+      if(m.type==='shelf'&&m.shelfSpawns && !hiddenMids.has(m.id)) {
+        for(const ss of m.shelfSpawns) if(ss.spawnId) visibleShelfSpawnIds.add(ss.spawnId);
       }
     }
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
-    if(shelfSpawnIds.size>0) sp = sp.filter(p=>!shelfSpawnIds.has(p.id));
+    if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
     if (sp.length === 0) return;
     const itemMap: Record<string, RegisteredItem> = {};
     for (const item of spawnItems) itemMap[item.id] = item;
@@ -4621,11 +4621,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                       if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
                                       else if(onSpawnPointView) onSpawnPointView(existing.spawnId);
                                     }else if(isEditMode&&isLocal&&onSpawnPointAdd){
-                                      // Create real SpawnPoint + store reference
+                                      // Create real SpawnPoint at shelf center (avoids rotation offset issues)
                                       const spawnId = 'sp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-                                      const sx = m.x + (c+0.5)*cellW - sw/2;
-                                      const sy = m.y + (r+0.5)*cellH - sh/2;
-                                      onSpawnPointAdd(sx, sy, spawnId);
+                                      onSpawnPointAdd(m.x, m.y, spawnId);
                                       commitShelfSpawns(m.id,[...shelfSpawns,{row:r,col:c,spawnId}]);
                                       setShelfEditTick(t=>t+1);
                                       // Open edit modal for the new spawn
