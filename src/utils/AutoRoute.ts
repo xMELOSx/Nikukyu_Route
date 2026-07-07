@@ -707,6 +707,27 @@ export function computeRouteTiming(
     if (seg.speed === undefined) seg.speed = speed;
   }
 
+  // 速度ベースモード: チェックポイント単位の速度上書き
+  if (speedMode === 'speed') {
+    let lastCpSpeedIdx = -1;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.markerType === 'checkpoint') {
+        const cpSpeed = (seg as any)._checkpointSpeed as number | undefined;
+        if (cpSpeed !== undefined && cpSpeed > 0) {
+          const startIdx = Math.max(0, lastCpSpeedIdx + 1);
+          for (let j = startIdx; j <= i; j++) {
+            const s = segments[j];
+            if (s.distance > 0) {
+              s.speed = cpSpeed;
+            }
+          }
+          lastCpSpeedIdx = i;
+        }
+      }
+    }
+  }
+
   // Recalculate totalTravelTime using the actual per-segment speeds
   // (which may differ from the route-wide speed when checkpoints are set).
   totalTravelTime = 0;

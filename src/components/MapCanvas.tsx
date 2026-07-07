@@ -663,6 +663,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [checkpointTargetTime, setCheckpointTargetTime] = useState(60);
   const [checkpointSoundOn, setCheckpointSoundOn] = useState(false);
   const [checkpointVoiceOn, setCheckpointVoiceOn] = useState(true);
+  const [checkpointSpeed, setCheckpointSpeed] = useState<number>(0);
   const [popupDirection, setPopupDirection] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
   const [popupWidth, setPopupWidth] = useState<number>(300);
   const [popupHeight, setPopupHeight] = useState<number>(0);
@@ -1963,6 +1964,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setCheckpointTargetTime(60);
       setCheckpointSoundOn(false);
       setCheckpointVoiceOn(false);
+      setCheckpointSpeed(0);
       setSkillCdColor(MARKER_META.skill_cd.color);
       setSkillCdMode('fixed');
       setSkillCdSeconds(0);
@@ -3252,6 +3254,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setCheckpointTargetTime(m.checkpointTargetTime ?? 60);
     setCheckpointSoundOn(!!m.checkpointSoundOn);
     setCheckpointVoiceOn(m.checkpointVoiceOn !== false);
+    setCheckpointSpeed(m.checkpointSpeed ?? 0);
 
     // スキルCD編集用: 既存値 or プリセット既定値
     setSkillCdColor(m.skillColor || MARKER_META.skill_cd.color);
@@ -3391,6 +3394,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               updated.checkpointTargetTime = checkpointTargetTime;
               updated.checkpointSoundOn = checkpointSoundOn;
               updated.checkpointVoiceOn = checkpointVoiceOn;
+              updated.checkpointSpeed = checkpointSpeed > 0 ? checkpointSpeed : undefined;
             }
             if (m.type === 'skill_cd') {
               // ラベルは presetId からのみ導出 (テキスト入力欄は廃止)。
@@ -4597,6 +4601,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                           />
                           🗣 通過時に「X秒地点です」と読み上げ
                         </label>
+                        {m.checkpointSpeed !== undefined && m.checkpointSpeed > 0 && (
+                          <div style={{ fontSize: '12px', color: '#ffb84d', marginTop: '6px', padding: '4px 6px', background: 'rgba(255,149,0,0.1)', borderRadius: '3px' }}>
+                            ⚡ 速度: {m.checkpointSpeed} px/秒
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -5308,6 +5317,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 />
                 🗣 通過時に「X秒地点です」と読み上げ
               </label>
+              {hm.checkpointSpeed !== undefined && hm.checkpointSpeed > 0 && (
+                <div style={{ fontSize: '11px', color: '#ffb84d', marginTop: '4px' }}>
+                  ⚡ 速度: {hm.checkpointSpeed} px/秒
+                </div>
+              )}
             </div>
           );
         })(),
@@ -5966,6 +5980,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   🗣 「X秒地点です」と読み上げ
                 </label>
               </label>
+
+              {/* Speed override (speed-based mode) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px', background: 'rgba(255,149,0,0.04)', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,149,0,0.15)' }}>
+                <div style={{ fontSize: '11px', color: '#ffb84d', fontWeight: 'bold' }}>⚡ {t('速度ベース時の移動速度 (px/秒)')}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="range"
+                    min="0" max="500" step="1"
+                    value={checkpointSpeed}
+                    onChange={(e) => setCheckpointSpeed(parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: '#ff9500', height: '22px' }}
+                  />
+                  <input
+                    type="number"
+                    min="0" max="500"
+                    value={checkpointSpeed}
+                    onChange={(e) => setCheckpointSpeed(Math.max(0, Math.min(500, parseInt(e.target.value) || 0)))}
+                    style={{ width: '56px', fontSize: '12px', textAlign: 'center', padding: '2px 4px', background: 'rgba(5,7,10,0.8)', border: '1px solid rgba(255,149,0,0.4)', color: '#ffb84d', borderRadius: '3px' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#b0b0b0' }}>px/秒</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#999' }}>
+                  速度ベースモードでこのチェックポイントまでの移動速度を上書きします（0 = 全体設定を使用）
+                </div>
+              </div>
             </div>
           )}
 

@@ -270,6 +270,8 @@ export const en: Locale = {
     '📝 I-MEMO 添付メディア': '📝 I-MEMO attached media',
     '🏁 チェックポイント設定': '🏁 Checkpoint settings',
     '🏁 チェックポイント': '🏁 Checkpoint',
+    '速度ベース時の移動速度 (px/秒)': 'Movement speed in speed-based mode (px/sec)',
+    '速度ベースモードでこのチェックポイントまでの移動速度を上書きします（0 = 全体設定を使用）': 'Overrides movement speed to this checkpoint in speed-based mode (0 = use global setting)',
     '目標時間: ': 'Target time: ',
     '⏱️ スキルCD': '⏱️ Skill CD',
     '(なし)': '(none)',
