@@ -1305,22 +1305,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!ctx) return;
     // spawnVisible=false でもハイライト中は表示 (絞り込み時は無視)
     if (!spawnVisible && !(spawnHighlightItemIds && spawnHighlightItemIds.length > 0) && !(spawnHighlightCategories && spawnHighlightCategories.length > 0)) return;
-    // Filter out spawns for VISIBLE shelf markers (hidden/type-hidden shelves' spawns fallback to map)
+    // Filter: shelf spawns hidden when shelf is visible AND markers layer is showing
+    const layerHidden = toolMode === 'wall' && hideMarkersDuringWalls;
     const hiddenMids = new Set(hiddenMarkers||[]);
     const hiddenTypes = new Set(hiddenMarkerTypes||[]);
+    const shelfIsEffectivelyHidden = (m: HeistMarker) =>
+      hiddenMids.has(m.id) || hiddenTypes.has('shelf') || layerHidden;
     const visibleShelfSpawnIds = new Set<string>();
     for(const m of markers) {
-      if(m.type==='shelf'&&m.shelfSpawns && !hiddenMids.has(m.id) && !hiddenTypes.has('shelf')) {
+      if(m.type==='shelf'&&m.shelfSpawns && !shelfIsEffectivelyHidden(m)) {
         for(const ss of m.shelfSpawns) if(ss.spawnId) visibleShelfSpawnIds.add(ss.spawnId);
       }
     }
     let sp = spawnPoints ? (spawnMovingPointId ? spawnPoints.filter(p => p.id !== spawnMovingPointId) : spawnPoints) : [];
     if(visibleShelfSpawnIds.size>0) sp = sp.filter(p=>!visibleShelfSpawnIds.has(p.id));
-    // Build rotation-aware fallback positions for hidden/type-hidden shelf spawns
+    // Build rotation-aware fallback positions for effectively-hidden shelf spawns
     const hiddenShelfSpawnPos = new Map<string,{x:number;y:number}>();
     const smScale = markerScale / 30;
     for(const m of markers) {
-      if(m.type!=='shelf'||!m.shelfSpawns||(!hiddenMids.has(m.id)&&!hiddenTypes.has('shelf'))) continue;
+      if(m.type!=='shelf'||!m.shelfSpawns||!shelfIsEffectivelyHidden(m)) continue;
       const cols = m.shelfCols||3, rows = m.shelfRows||3;
       const sw2 = (m.shelfWidth||60) * smScale, sh2 = (m.shelfHeight||24) * smScale;
       const a = (m.shelfAngle||0) * Math.PI / 180;
@@ -3425,7 +3428,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     tpsImageUrlRef.current = imgUrl;
 
     setPopupDirection(m.popupDirection || 'top');
-    setPopupWidth(m.popupWidth || ((m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300));
+    setPopupWidth(m.popupWidth || (
+      (m.type === 'shelf') ? 220 :
+      (m.type === 'boss' || m.type === 'battle' || m.type === 'gbattle' || m.type === 'picking' || m.type === 'gpicking' || m.type === 'long_picking' || m.type === 'glong_picking' || m.type === 'drawer') ? 280 : 300
+    ));
     setPopupHeight(m.popupHeight || 0);
     setPopupOffset(m.popupOffset || { x: 0, y: -100 });
   };
@@ -7568,6 +7574,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         hiddenMarkers={hiddenMarkers}
         hiddenMarkerTypes={hiddenMarkerTypes}
         spawnPoints={spawnPoints}
+        spawnVisible={spawnVisible}
+        hideRouteLines={hideRouteLines}
+        hideBranchLines={hideBranchLines}
         strokes={strokes}
         spawnItems={spawnItems}
         mapSnapshotCanvas={miniMapSource}

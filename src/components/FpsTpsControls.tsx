@@ -34,6 +34,9 @@ interface FpsTpsControlsProps {
   autoRouteTiming?: { totalTime: number; speed: number };
   fpsResolutionScale?: number;
   tpsPinSize?: number;
+  spawnVisible?: boolean;
+  hideRouteLines?: boolean;
+  hideBranchLines?: boolean;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -65,7 +68,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   onFreeCamModeChange, onToggleNearestPhone,
   autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming,
   fpsResolutionScale = 2.0,
-  tpsPinSize = 100
+  tpsPinSize = 100,
+  spawnVisible = true,
+  hideRouteLines = false,
+  hideBranchLines = false
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -146,7 +152,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         }
 
         // Draw Spawn Points on ground texture (matching rarity color from settings)
-        if (spawnPoints) {
+        if (spawnVisible && spawnPoints) {
           const itemMap: Record<string, any> = {};
           if (spawnItems) {
             for (const item of spawnItems) itemMap[item.id] = item;
@@ -182,31 +188,34 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         }
 
         // Draw Route Strokes on ground texture
-        for (const stroke of currentFloorStrokes) {
-          if (stroke.points.length < 2) continue;
-          tempCtx.beginPath();
-          tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-          for (let i = 1; i < stroke.points.length; i++) {
-            tempCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        if (!hideRouteLines) {
+          for (const stroke of currentFloorStrokes) {
+            if (stroke.points.length < 2) continue;
+            tempCtx.beginPath();
+            tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+            for (let i = 1; i < stroke.points.length; i++) {
+              tempCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+            }
+            tempCtx.strokeStyle = stroke.color || '#39ff14';
+            tempCtx.lineWidth = stroke.width || 4;
+            tempCtx.lineCap = 'round';
+            tempCtx.lineJoin = 'round';
+            tempCtx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1.0;
+            tempCtx.stroke();
           }
-          tempCtx.strokeStyle = stroke.color || '#39ff14';
-          tempCtx.lineWidth = stroke.width || 4;
-          tempCtx.lineCap = 'round';
-          tempCtx.lineJoin = 'round';
-          tempCtx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1.0;
-          tempCtx.stroke();
+          tempCtx.globalAlpha = 1.0; // Reset alpha
         }
-        tempCtx.globalAlpha = 1.0; // Reset alpha
 
         // Draw waypoint/link lines between connected markers
-        for (const m of activeMarkers) {
-          if (m.floor !== floor || !m.linkedWarpId) continue;
-          const partner = activeMarkers.find(mk => mk.id === m.linkedWarpId);
-          if (!partner || partner.floor !== floor) continue;
-          const meta = MARKER_META[m.type];
-          tempCtx.strokeStyle = meta?.color || '#ff00ff';
-          tempCtx.lineWidth = 2;
-          tempCtx.globalAlpha = 0.5;
+        if (!hideBranchLines) {
+          for (const m of activeMarkers) {
+            if (m.floor !== floor || !m.linkedWarpId) continue;
+            const partner = activeMarkers.find(mk => mk.id === m.linkedWarpId);
+            if (!partner || partner.floor !== floor) continue;
+            const meta = MARKER_META[m.type];
+            tempCtx.strokeStyle = meta?.color || '#ff00ff';
+            tempCtx.lineWidth = 2;
+            tempCtx.globalAlpha = 0.5;
 
           const waypoints = (m.warpWaypoints || []).filter((wp): wp is Point => wp !== null && wp !== undefined);
           if (waypoints.length > 0) {
@@ -222,6 +231,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             tempCtx.lineTo(partner.x, partner.y);
             tempCtx.stroke();
           }
+        }
         }
         tempCtx.globalAlpha = 1.0;
 
