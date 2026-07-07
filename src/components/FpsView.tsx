@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import type { Point, HeistMarker, LockedWallSegment, WallSegment } from '../utils/DataManager';
 import type { RouteSegment } from '../utils/AutoRoute';
 import heroImg from '../assets/hero.png';
@@ -261,7 +262,10 @@ const FpsView: React.FC<FpsViewProps> = ({
       }
       if (nearestIdx >= 0 && unlockFn) {
         const next = lw.map((s, idx) => idx === nearestIdx ? { ...s, isOpen: !s.isOpen } : s);
-        unlockFn(next);
+        lockedWallsRef.current = next;
+        flushSync(() => {
+          unlockFn(next);
+        });
       }
     }
     if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
@@ -486,7 +490,10 @@ const FpsView: React.FC<FpsViewProps> = ({
                   const unlockFn = unlockedWallsChangeRef.current;
                   if (unlockFn) {
                     const next = ulw.map((s, idx) => idx === nearestIdx ? { ...s, isOpen: true } : s);
-                    unlockFn(next);
+                    lockedWallsRef.current = next;
+                    flushSync(() => {
+                      unlockFn(next);
+                    });
                   }
                 }
               }
