@@ -1327,8 +1327,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if(!ss.spawnId) continue;
         const dx = ((ss.col+0.5)/cols - 0.5) * sw2;
         const dy = ((ss.row+0.5)/rows - 0.5) * sh2;
-        const rx = dx*cosA - dy*sinA;
-        const ry = dx*sinA + dy*cosA;
+        // CSS rotate is clockwise, use CW rotation matrix
+        const rx = dx*cosA + dy*sinA;
+        const ry = -dx*sinA + dy*cosA;
         hiddenShelfSpawnPos.set(ss.spawnId, {x:m.x+rx, y:m.y+ry});
       }
     }
@@ -4619,29 +4620,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             }
                             return <>{els}</>;
                           })()}
-                          {/* Spawn dots — color from referenced SpawnPoint, respects highlight filter */}
+                          {/* Spawn dots — orphaned/highlight-aware */}
                           {shelfSpawns.map((sp, si) => {
                             const spPt = (spawnPoints||[]).find(s=>s.id===sp.spawnId);
+                            const isOrphan = !spPt;
                             const im = new Map((spawnItems||[]).map(i=>[i.id,i]));
                             const rr:{[k:string]:number}={green:0,blue:1,purple:2,yellow:3,red:4,cyan:5};
                             let dc='#888';let br=-1;
                             if(spPt)for(const si2 of spPt.items){const it=im.get(si2.itemId);if(it){const r=rr[it.textColor]??-1;if(r>br){br=r;dc=rarityColor[it.textColor]||'#888';}}}
-                            // Highlight filter check
+                            // Filter check
                             const hiSet = spawnHighlightItemIds&&spawnHighlightItemIds.length>0?new Set(spawnHighlightItemIds):null;
                             const hcSet = spawnHighlightCategories&&spawnHighlightCategories.length>0?new Set(spawnHighlightCategories):null;
                             const filtering = hiSet||hcSet;
-                            let isHighlighted = true;
+                            let isHL = !filtering;
                             if(filtering&&spPt){
-                              const hasItemMatch = hiSet?spPt.items.some(ci=>hiSet.has(ci.itemId)):true;
-                              const hasCatMatch = hcSet?(hcSet.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet.has(spPt.category))):true;
-                              isHighlighted = hasItemMatch&&hasCatMatch;
+                              const hasItem=hiSet?spPt.items.some(ci=>hiSet.has(ci.itemId)):true;
+                              const hasCat=hcSet?(hcSet.has('__unset__')?!spPt.category:!!(spPt.category&&hcSet.has(spPt.category))):true;
+                              isHL = hasItem&&hasCat;
                             }
                             const l=cellPos(sp.col,colGapEvery,colGapSize,totalW)+(100/totalW)/2;
                             const t=cellPos(sp.row,rowGapEvery,rowGapSize,totalH)+(100/totalH)/2;
-                            if(filtering&&!isHighlighted){
-                              return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:6,height:6,borderRadius:'50%',background:'#444',pointerEvents:'none',opacity:0.15}} />;
-                            }
-                            return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:filtering?14:10,height:filtering?14:10,borderRadius:'50%',background:dc,boxShadow:filtering?'0 0 16px '+dc:'0 0 8px '+dc,pointerEvents:'none'}} />;
+                            if(isOrphan) return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:8,height:8,borderRadius:'50%',background:'#333',border:'1px dashed #f55',pointerEvents:'none',opacity:0.5}} title="データなし" />;
+                            if(filtering&&!isHL) return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:6,height:6,borderRadius:'50%',background:'#444',pointerEvents:'none',opacity:0.1}} />;
+                            const isHLMode = filtering&&isHL;
+                            return <div key={'sd'+si} style={{position:'absolute',left:l+'%',top:t+'%',transform:'translate(-50%,-50%)',width:isHLMode?22:10,height:isHLMode?22:10,borderRadius:'50%',background:dc,boxShadow:isHLMode?'0 0 30px '+dc+',0 0 60px '+dc:'0 0 6px '+dc,pointerEvents:'none',border:isHLMode?'2px solid #fff':'none'}} />;
                           })}
                           {/* Clickable cells */}
                           {Array.from({ length: rows }, (_, r) => (
@@ -4662,6 +4664,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                                       // Open existing spawn edit/view modal
                                       if(isEditMode&&isLocal&&onSpawnPointEdit) onSpawnPointEdit(existing.spawnId);
                                       else if(onSpawnPointView) onSpawnPointView(existing.spawnId);
+                                    }else if(existing&&!(spawnPoints||[]).find(s=>s.id===existing.spawnId)){
+                                      // Orphaned reference: remove it
+                                      commitShelfSpawns(m.id,shelfSpawns.filter(sp=>sp!==existing));
+                                      setShelfEditTick(t=>t+1);
                                     }else if(isEditMode&&isLocal&&onSpawnPointAdd){
                                       // Create real SpawnPoint at shelf center (avoids rotation offset issues)
                                       const spawnId = 'sp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
