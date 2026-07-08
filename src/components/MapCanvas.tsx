@@ -3263,13 +3263,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onWallsChange?.([...walls, ...newWalls]);
     } else if (wallShapeSubMode === 'indent') {
-      // くぼみ: 壁と多角形の2交点を、外周の短い経路でコ字接続
+      // くぼみ: 全壁の切断点を集め、外周で隣接ペアを結ぶ
       const n = polygon.length;
-      let modWalls: WallSegment[] = [];
+      const isInside = (p: Point) => isPointInPolygon(p, polygon);
+
+      interface CutPt {
+        pt: Point;
+        edgeIdx: number;
+        edgeT: number;
+      }
+      const cutPts: CutPt[] = [];
+      const modWalls: WallSegment[] = [];
 
       for (const w of walls) {
-        // Find intersection points between this wall and the polygon
-        const hits: { pt: Point; edgeIdx: number; t: number }[] = [];
+        const wTex = w[2] as string | undefined;
+        const wRep = w[3] as number | undefined;
+
+        // Find intersection points with edge info
+        const hits: { pt: Point; edgeIdx: number; edgeT: number; t: number }[] = [];
         for (let ei = 0; ei < n; ei++) {
           const pa = polygon[ei], pb = polygon[(ei + 1) % n];
           const ix = getSegmentIntersection(w[0], w[1], pa, pb);
@@ -3278,77 +3289,96 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
             const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
             if (d1 > 2 && d2 > 2 && wallLen > 4) {
-              hits.push({ pt: ix, edgeIdx: ei, t: d1 / wallLen });
+              const edgeLen = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+              const edgeT = edgeLen > 1 ? Math.hypot(ix.x - pa.x, ix.y - pa.y) / edgeLen : 0;
+              hits.push({ pt: ix, edgeIdx: ei, edgeT, t: d1 / wallLen });
             }
           }
         }
         hits.sort((a, b) => a.t - b.t);
+        const h = hits.length;
 
-        if (hits.length === 0) {
-          // Wall doesn't intersect polygon
+        if (h === 0) {
           const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
-          if (!isPointInPolygon({ x: mx, y: my }, polygon)) {
-            modWalls.push(w);
+          if (!isInside({ x: mx, y: my })) modWalls.push(w);
+          continue;
+        }
+
+        // Build split points: alternating between wall endpoint and hit points
+        const pts: Point[] = [w[0]];
+        for (const ht of hits) pts.push(ht.pt);
+        pts.push(w[1]);
+
+        const pushSeg = (a: Point, b: Point) => {
+          if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
+            if (wTex) modWalls.push(wRep ? [a, b, wTex, wRep] : [a, b, wTex]);
+            else modWalls.push([a, b]);
           }
-        } else if (hits.length === 2) {
-          // Wall is cut at 2 points → C-shape connection
-          const tex = w[2] as string | undefined, rep = w[3] as number | undefined;
-          const pushSeg = (a: Point, b: Point) => {
-            if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
-              if (tex) modWalls.push(rep ? [a, b, tex, rep] : [a, b, tex]);
-              else modWalls.push([a, b]);
+        };
+
+        for (let i = 0; i < pts.length - 1; i++) {
+          const mid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+          if (isInside(mid)) {
+            // Interior segment: record endpoints as cut points
+            // Each endpoint corresponds to a hit; find which hit
+            for (const p of [pts[i], pts[i + 1]]) {
+              const match = hits.find(ht =>
+                Math.abs(ht.pt.x - p.x) < 1 && Math.abs(ht.pt.y - p.y) < 1
+              );
+              if (match) {
+                cutPts.push({ pt: p, edgeIdx: match.edgeIdx, edgeT: match.edgeT });
+              }
             }
-          };
-          // Keep outer segments (outside polygon)
-          pushSeg(w[0], hits[0].pt);
-          pushSeg(hits[1].pt, w[1]);
-          // Connect the two cut points via the shorter perimeter path
-          // Tour polygon edges from A to B, always moving along edges.
-          const a = hits[0], b = hits[1];
-          const ae = a.edgeIdx, be = b.edgeIdx;
-          if (ae === be) {
-            // Same edge: direct connection A→B (both lie on this edge)
-            pushSeg(a.pt, b.pt);
           } else {
-            // Forward path: start at A on edge ae, first vertex = polygon[(ae+1)%n],
-            // then follow increasing edge index until we reach polygon[be], then B.
-            const pathFwd = [a.pt];
-            for (let i = ae, cnt = 0; cnt < n; cnt++) {
-              const vi = (i + 1) % n;
-              pathFwd.push(polygon[vi]);
-              if (vi === be) break;
-              i = vi;
-            }
-            // Backward path: start at A on edge ae, first vertex = polygon[ae],
-            // then follow decreasing edge index until polygon[(be+1)%n], then B.
-            const pathBwd = [a.pt, polygon[ae]];
-            for (let i = ae, cnt = 0; cnt < n; cnt++) {
-              const vi = (i - 1 + n) % n;
-              pathBwd.push(polygon[vi]);
-              if (vi === (be + 1) % n) break;
-              i = vi;
-            }
-            // Append B to whichever path doesn't already end at B
-            const ensureEndB = (path: Point[]) => {
-              const last = path[path.length - 1];
-              if (Math.hypot(b.pt.x - last.x, b.pt.y - last.y) > 1) path.push(b.pt);
-            };
-            ensureEndB(pathFwd);
-            ensureEndB(pathBwd);
-            const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j-1].x, p.y - pathFwd[j-1].y) : s, 0);
-            const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j-1].x, p.y - pathBwd[j-1].y) : s, 0);
-            const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
-            for (let j = 0; j < chosen.length - 1; j++) {
-              pushSeg(chosen[j], chosen[j + 1]);
-            }
-          }
-        } else {
-          // 1 or 3+ hits: keep wall as-is if not fully inside
-          const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
-          if (!isPointInPolygon({ x: mx, y: my }, polygon)) {
-            modWalls.push(w);
+            pushSeg(pts[i], pts[i + 1]);
           }
         }
+      }
+
+      // Sort cut endpoints along polygon perimeter
+      cutPts.sort((a, b) => {
+        if (a.edgeIdx !== b.edgeIdx) return a.edgeIdx - b.edgeIdx;
+        return a.edgeT - b.edgeT;
+      });
+
+      // Connect consecutive cut endpoints along the shorter perimeter path
+      const connectCutPts = (a: CutPt, b: CutPt) => {
+        if (a.edgeIdx === b.edgeIdx) {
+          const d = Math.hypot(b.pt.x - a.pt.x, b.pt.y - a.pt.y);
+          if (d > 2) modWalls.push([a.pt, b.pt]);
+          return;
+        }
+        const pathFwd: Point[] = [a.pt];
+        for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
+          const vi = (i + 1) % n;
+          pathFwd.push(polygon[vi]);
+          if (vi === b.edgeIdx) break;
+          i = vi;
+        }
+        const pathBwd: Point[] = [a.pt, polygon[a.edgeIdx]];
+        for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
+          const vi = (i - 1 + n) % n;
+          pathBwd.push(polygon[vi]);
+          if (vi === (b.edgeIdx + 1) % n) break;
+          i = vi;
+        }
+        const ensureEnd = (path: Point[], end: Point) => {
+          const last = path[path.length - 1];
+          if (Math.hypot(end.x - last.x, end.y - last.y) > 1) path.push(end);
+        };
+        ensureEnd(pathFwd, b.pt);
+        ensureEnd(pathBwd, b.pt);
+        const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j-1].x, p.y - pathFwd[j-1].y) : s, 0);
+        const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j-1].x, p.y - pathBwd[j-1].y) : s, 0);
+        const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
+        for (let j = 0; j < chosen.length - 1; j++) {
+          const d = Math.hypot(chosen[j+1].x - chosen[j].x, chosen[j+1].y - chosen[j].y);
+          if (d > 2) modWalls.push([chosen[j], chosen[j + 1]]);
+        }
+      };
+
+      for (let i = 0; i + 1 < cutPts.length; i += 2) {
+        connectCutPts(cutPts[i], cutPts[i + 1]);
       }
 
       onWallsChange?.(mergeWalls(modWalls));
