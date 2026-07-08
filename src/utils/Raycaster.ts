@@ -315,8 +315,9 @@ function renderWalls(
     let bgIsLocked = false;
     if (isLocked) {
       // 鍵付き壁は地面から lhf の高さまで描画（浮かせず地面設置）
-      const lockedH = (wallBottomFull - wallTopFull) * lhf;
-      wallTop = Math.max(0, Math.floor(wallBottomFull - lockedH));
+      const lockedH = (wallBottomFullRaw - wallTopFullRaw) * lhf;
+      wallTop = Math.max(0, Math.floor(wallBottomFullRaw - lockedH));
+      wallTop = Math.min(H, wallTop);
       wallBottom = wallBottomFull;
       bgDist = Infinity;
       bgIsLocked = false;
@@ -488,12 +489,23 @@ function renderWalls(
 
     // プレイヤー近距離フェード: 壁がプレイヤーに近いほど背景色に近づける
     let wallFade = 1.0;
-    if (args.playerPos && args.wallFadeRadius && hit.wallIndex >= 0 && !isLocked) {
-      const w = walls[hit.wallIndex];
-      const pDist = pointToSegmentDist(args.playerPos.x, args.playerPos.y, w[0].x, w[0].y, w[1].x, w[1].y);
-      if (pDist < args.wallFadeRadius) {
-        wallFade = Math.max(0, pDist / args.wallFadeRadius);
+    if (args.playerPos && args.wallFadeRadius) {
+      let w = (hit.wallIndex >= 0) ? walls[hit.wallIndex] : null;
+      if (!w && isLocked && lockedHits && lockedHits[i] && lockedHits[i].wallIndex >= 0 && lw) {
+        w = lw[lockedHits[i].wallIndex];
       }
+      if (w) {
+        const pDist = pointToSegmentDist(args.playerPos.x, args.playerPos.y, w[0].x, w[0].y, w[1].x, w[1].y);
+        if (pDist < args.wallFadeRadius) {
+          wallFade = Math.max(0, pDist / args.wallFadeRadius);
+        }
+      }
+    }
+    // 目の前を塞いでカメラを遮る現象を防ぐため、超至近距離では完全に透過して見えなくする
+    if (effectiveDist < 6.0) {
+      wallFade = 0.0;
+    } else if (effectiveDist < 12.0) {
+      wallFade = Math.min(wallFade, (effectiveDist - 6.0) / 6.0);
     }
 
     const hitWall = (hit.wallIndex >= 0) ? walls[hit.wallIndex] : null;
@@ -610,7 +622,7 @@ function renderWalls(
                   const pBotRaw = Math.floor(halfH + pWallH * camHeightFrac);
                   const pFullTop = Math.max(0, pTopRaw);
                   const pFullBot = Math.min(H, pBotRaw);
-                  const PARTITION_HEIGHT_WORLD = 48;
+                  const PARTITION_HEIGHT_WORLD = 32;
                   const heightAboveCam = PARTITION_HEIGHT_WORLD - 24;
                   const pStartY = Math.floor(
                     Math.max(pFullTop, Math.min(pFullBot, halfH - heightAboveCam * distPlane / pPerp))

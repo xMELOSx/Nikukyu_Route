@@ -1115,34 +1115,43 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 1st row: 描く/形状/消す/頂点/移動 */}
+                {/* Row 1: 描画/形状/切断/削除 */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '3px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('draw')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
-                    <Fence size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('描く')}</span>
+                    <span style={{ fontSize: '10px' }}>{t('描画')}</span>
                   </button>
                   <button
                     className={`tool-btn ${wallSubMode === 'shape' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('shape')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    title={t('頂点を打って図形を作成')}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                   >
                     <span style={{ fontSize: '10px', color: '#00ccff' }}>{t('形状')}</span>
                   </button>
                   <button
+                    className={`tool-btn ${wallSubMode === 'slice' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('slice')}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                  >
+                    <Scissors size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('切断')}</span>
+                  </button>
+                  <button
                     className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('erase')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
-                    <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
+                    <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('削除')}</span>
                   </button>
+                </div>
+                {/* Row 2: 頂点/移動/テクスチャ */}
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'vertex' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('vertex')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                     title={t('壁の頂点同士をつなぐ')}
                   >
                     <Link2 size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点')}</span>
@@ -1150,47 +1159,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <button
                     className={`tool-btn ${wallSubMode === 'move' || wallSubMode === 'vertex-move' ? 'active' : ''}`}
                     onClick={() => setWallSubMode(wallSubMode === 'vertex-move' ? 'move' : (wallSubMode === 'move' ? 'vertex-move' : 'move'))}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                     title={t('壁/頂点をドラッグして移動')}
                   >
                     <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
                   </button>
-                </div>
-                {/* 移動モード sub-toggle: 壁移動/頂点移動 */}
-                {(wallSubMode === 'move' || wallSubMode === 'vertex-move') && (
-                  <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                    <button
-                      className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
-                      onClick={() => setWallSubMode('move')}
-                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    >
-                      <span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
-                    </button>
-                    <button
-                      className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
-                      onClick={() => setWallSubMode('vertex-move')}
-                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    >
-                      <span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
-                    </button>
-                  </div>
-                )}
-                {/* 2nd row: テクスチャ/スライス */}
-                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('texture')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Image size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('テクスチャ')}</span>
-                  </button>
-                  <button
-                    className={`tool-btn ${wallSubMode === 'slice' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('slice')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
-                    title={t('壁をドラッグ線で切断します')}
-                  >
-                    <Scissors size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('スライス')}</span>
                   </button>
                 </div>
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
