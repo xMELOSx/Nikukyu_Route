@@ -3244,6 +3244,119 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return null;
   };
 
+  // Shared indent computation  (preview + execution)
+  const computeIndentData = useCallback((polygon: Point[], srcWalls: WallSegment[]): {
+    cutPts: { pt: Point; edgeIdx: number; edgeT: number }[];
+    connWalls: WallSegment[];
+  } => {
+    const n = polygon.length;
+    const inside = (p: Point) => isPointInPolygon(p, polygon);
+    const cutPts: { pt: Point; edgeIdx: number; edgeT: number }[] = [];
+    const connWalls: WallSegment[] = [];
+
+    for (const w of srcWalls) {
+      const wTex = w[2] as string | undefined;
+      const wRep = w[3] as number | undefined;
+
+      const hits: { pt: Point; edgeIdx: number; edgeT: number; t: number }[] = [];
+      for (let ei = 0; ei < n; ei++) {
+        const pa = polygon[ei], pb = polygon[(ei + 1) % n];
+        const ix = getSegmentIntersection(w[0], w[1], pa, pb);
+        if (ix) {
+          const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
+          const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
+          const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
+          if (d1 > 2 && d2 > 2 && wallLen > 4) {
+            const edgeLen = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+            const edgeT = edgeLen > 1 ? Math.hypot(ix.x - pa.x, ix.y - pa.y) / edgeLen : 0;
+            hits.push({ pt: ix, edgeIdx: ei, edgeT, t: d1 / wallLen });
+          }
+        }
+      }
+      hits.sort((a, b) => a.t - b.t);
+      const h = hits.length;
+
+      if (h === 0) {
+        const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
+        if (!inside({ x: mx, y: my })) connWalls.push(w);
+        continue;
+      }
+
+      const pts: Point[] = [w[0]];
+      for (const ht of hits) pts.push(ht.pt);
+      pts.push(w[1]);
+
+      const pushSeg = (a: Point, b: Point) => {
+        if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
+          if (wTex) connWalls.push(wRep ? [a, b, wTex, wRep] : [a, b, wTex]);
+          else connWalls.push([a, b]);
+        }
+      };
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const mid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+        if (inside(mid)) {
+          if (i >= 1 && i - 1 < h) {
+            cutPts.push({ pt: pts[i], edgeIdx: hits[i - 1].edgeIdx, edgeT: hits[i - 1].edgeT });
+          }
+          if (i < h) {
+            cutPts.push({ pt: pts[i + 1], edgeIdx: hits[i].edgeIdx, edgeT: hits[i].edgeT });
+          }
+        } else {
+          pushSeg(pts[i], pts[i + 1]);
+        }
+      }
+    }
+
+    // Sort cut endpoints along perimeter
+    cutPts.sort((a, b) => {
+      if (a.edgeIdx !== b.edgeIdx) return a.edgeIdx - b.edgeIdx;
+      return a.edgeT - b.edgeT;
+    });
+
+    // Connect consecutive pairs
+    const connectPair = (a: typeof cutPts[0], b: typeof cutPts[0]) => {
+      if (a.edgeIdx === b.edgeIdx) {
+        const d = Math.hypot(b.pt.x - a.pt.x, b.pt.y - a.pt.y);
+        if (d > 2) connWalls.push([a.pt, b.pt]);
+        return;
+      }
+      const pathFwd: Point[] = [a.pt];
+      for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
+        const vi = (i + 1) % n;
+        pathFwd.push(polygon[vi]);
+        if (vi === b.edgeIdx) break;
+        i = vi;
+      }
+      const pathBwd: Point[] = [a.pt, polygon[a.edgeIdx]];
+      for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
+        const vi = (i - 1 + n) % n;
+        pathBwd.push(polygon[vi]);
+        if (vi === (b.edgeIdx + 1) % n) break;
+        i = vi;
+      }
+      const ensureEnd = (path: Point[], end: Point) => {
+        const last = path[path.length - 1];
+        if (Math.hypot(end.x - last.x, end.y - last.y) > 1) path.push(end);
+      };
+      ensureEnd(pathFwd, b.pt);
+      ensureEnd(pathBwd, b.pt);
+      const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j - 1].x, p.y - pathFwd[j - 1].y) : s, 0);
+      const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j - 1].x, p.y - pathBwd[j - 1].y) : s, 0);
+      const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
+      for (let j = 0; j < chosen.length - 1; j++) {
+        const d = Math.hypot(chosen[j + 1].x - chosen[j].x, chosen[j + 1].y - chosen[j].y);
+        if (d > 2) connWalls.push([chosen[j], chosen[j + 1]]);
+      }
+    };
+
+    for (let i = 0; i + 1 < cutPts.length; i += 2) {
+      connectPair(cutPts[i], cutPts[i + 1]);
+    }
+
+    return { cutPts, connWalls };
+  }, []);
+
   // Execute shape operation (redraw-outside or generate)
   const executeShapeOperation = (polygon: Point[]) => {
     if (polygon.length < 3) {
@@ -3263,125 +3376,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onWallsChange?.([...walls, ...newWalls]);
     } else if (wallShapeSubMode === 'indent') {
-      // くぼみ: 全壁の切断点を集め、外周で隣接ペアを結ぶ
-      const n = polygon.length;
-      const isInside = (p: Point) => isPointInPolygon(p, polygon);
-
-      interface CutPt {
-        pt: Point;
-        edgeIdx: number;
-        edgeT: number;
-      }
-      const cutPts: CutPt[] = [];
-      const modWalls: WallSegment[] = [];
-
-      for (const w of walls) {
-        const wTex = w[2] as string | undefined;
-        const wRep = w[3] as number | undefined;
-
-        // Find intersection points with edge info
-        const hits: { pt: Point; edgeIdx: number; edgeT: number; t: number }[] = [];
-        for (let ei = 0; ei < n; ei++) {
-          const pa = polygon[ei], pb = polygon[(ei + 1) % n];
-          const ix = getSegmentIntersection(w[0], w[1], pa, pb);
-          if (ix) {
-            const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
-            const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
-            const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
-            if (d1 > 2 && d2 > 2 && wallLen > 4) {
-              const edgeLen = Math.hypot(pb.x - pa.x, pb.y - pa.y);
-              const edgeT = edgeLen > 1 ? Math.hypot(ix.x - pa.x, ix.y - pa.y) / edgeLen : 0;
-              hits.push({ pt: ix, edgeIdx: ei, edgeT, t: d1 / wallLen });
-            }
-          }
-        }
-        hits.sort((a, b) => a.t - b.t);
-        const h = hits.length;
-
-        if (h === 0) {
-          const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
-          if (!isInside({ x: mx, y: my })) modWalls.push(w);
-          continue;
-        }
-
-        // Build split points: alternating between wall endpoint and hit points
-        const pts: Point[] = [w[0]];
-        for (const ht of hits) pts.push(ht.pt);
-        pts.push(w[1]);
-
-        const pushSeg = (a: Point, b: Point) => {
-          if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
-            if (wTex) modWalls.push(wRep ? [a, b, wTex, wRep] : [a, b, wTex]);
-            else modWalls.push([a, b]);
-          }
-        };
-
-        for (let i = 0; i < pts.length - 1; i++) {
-          const mid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
-          if (isInside(mid)) {
-            // Interior segment: record endpoints as cut points
-            // Each endpoint corresponds to a hit; find which hit
-            for (const p of [pts[i], pts[i + 1]]) {
-              const match = hits.find(ht =>
-                Math.abs(ht.pt.x - p.x) < 1 && Math.abs(ht.pt.y - p.y) < 1
-              );
-              if (match) {
-                cutPts.push({ pt: p, edgeIdx: match.edgeIdx, edgeT: match.edgeT });
-              }
-            }
-          } else {
-            pushSeg(pts[i], pts[i + 1]);
-          }
-        }
-      }
-
-      // Sort cut endpoints along polygon perimeter
-      cutPts.sort((a, b) => {
-        if (a.edgeIdx !== b.edgeIdx) return a.edgeIdx - b.edgeIdx;
-        return a.edgeT - b.edgeT;
-      });
-
-      // Connect consecutive cut endpoints along the shorter perimeter path
-      const connectCutPts = (a: CutPt, b: CutPt) => {
-        if (a.edgeIdx === b.edgeIdx) {
-          const d = Math.hypot(b.pt.x - a.pt.x, b.pt.y - a.pt.y);
-          if (d > 2) modWalls.push([a.pt, b.pt]);
-          return;
-        }
-        const pathFwd: Point[] = [a.pt];
-        for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
-          const vi = (i + 1) % n;
-          pathFwd.push(polygon[vi]);
-          if (vi === b.edgeIdx) break;
-          i = vi;
-        }
-        const pathBwd: Point[] = [a.pt, polygon[a.edgeIdx]];
-        for (let i = a.edgeIdx, cnt = 0; cnt < n; cnt++) {
-          const vi = (i - 1 + n) % n;
-          pathBwd.push(polygon[vi]);
-          if (vi === (b.edgeIdx + 1) % n) break;
-          i = vi;
-        }
-        const ensureEnd = (path: Point[], end: Point) => {
-          const last = path[path.length - 1];
-          if (Math.hypot(end.x - last.x, end.y - last.y) > 1) path.push(end);
-        };
-        ensureEnd(pathFwd, b.pt);
-        ensureEnd(pathBwd, b.pt);
-        const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j-1].x, p.y - pathFwd[j-1].y) : s, 0);
-        const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j-1].x, p.y - pathBwd[j-1].y) : s, 0);
-        const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
-        for (let j = 0; j < chosen.length - 1; j++) {
-          const d = Math.hypot(chosen[j+1].x - chosen[j].x, chosen[j+1].y - chosen[j].y);
-          if (d > 2) modWalls.push([chosen[j], chosen[j + 1]]);
-        }
-      };
-
-      for (let i = 0; i + 1 < cutPts.length; i += 2) {
-        connectCutPts(cutPts[i], cutPts[i + 1]);
-      }
-
-      onWallsChange?.(mergeWalls(modWalls));
+      const data = computeIndentData(polygon, walls);
+      onWallsChange?.(mergeWalls(data.connWalls));
     }
 
     // Reset shape state
@@ -4462,6 +4458,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       fill={i === 0 ? '#39ff14' : strokeColor}
                       stroke="#fff" strokeWidth={1}
                     />
+                  ))}
+                </>
+              );
+            })()}
+            {/* Indent shape preview: cut endpoints + connection paths */}
+            {wallSubMode === 'shape' && wallShapeSubMode === 'indent' && (() => {
+              let poly: Point[] | null = null;
+              if (shapeDrawMode === 'rect' && shapeRectStart && shapeRectEnd) {
+                const x1 = Math.min(shapeRectStart.x, shapeRectEnd.x);
+                const y1 = Math.min(shapeRectStart.y, shapeRectEnd.y);
+                const x2 = Math.max(shapeRectStart.x, shapeRectEnd.x);
+                const y2 = Math.max(shapeRectStart.y, shapeRectEnd.y);
+                if (Math.abs(x2 - x1) > 4 && Math.abs(y2 - y1) > 4) {
+                  poly = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+                }
+              } else if (shapeDrawMode === 'path' && shapePath.length >= 2) {
+                poly = shapePath.length >= 3 ? shapePath : null;
+              }
+              if (!poly || poly.length < 3) return null;
+              const preview = computeIndentData(poly, walls);
+              const pts = preview.cutPts;
+              const allConns = preview.connWalls;
+              const totalSegs = allConns.length;
+              // Show at most 200 preview segments to avoid perf issues
+              const maxShow = Math.min(totalSegs, 200);
+              return (
+                <>
+                  {pts.map((cp, i) => (
+                    <circle key={`icp-${i}`} cx={cp.pt.x} cy={cp.pt.y} r={5}
+                      fill="none" stroke="#ff8800" strokeWidth={2} opacity={0.9} />
+                  ))}
+                  {allConns.slice(0, maxShow).map((seg, i) => (
+                    <line key={`icw-${i}`}
+                      x1={seg[0].x} y1={seg[0].y}
+                      x2={seg[1].x} y2={seg[1].y}
+                      stroke="#ffcc00" strokeWidth={1.5}
+                      strokeDasharray="4,3" opacity={0.6} />
                   ))}
                 </>
               );
