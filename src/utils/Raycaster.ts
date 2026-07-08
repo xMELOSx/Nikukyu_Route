@@ -1046,6 +1046,7 @@ export function renderTpsView(
 
 /**
  * Renders a semi-transparent ghost billboard at the given world position.
+ * Uses the hero image when available for a ghostly player silhouette.
  * Used by the TPS 3D ghost follow mode.
  */
 export function renderGhostBillboard(
@@ -1055,7 +1056,8 @@ export function renderGhostBillboard(
   camPos: { x: number; y: number },
   camAngle: number,
   fov: number,
-  colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[]
+  colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[],
+  heroImage?: HTMLImageElement | null
 ): void {
   const W = canvas.width;
   const H = canvas.height;
@@ -1077,30 +1079,47 @@ export function renderGhostBillboard(
   const pCol = Math.round(((relAngle + halfFov) / fov) * (W - 1));
   const pPerpDist = dist * Math.cos(relAngle);
   const ghostHeight = 6;
-  const ghostWidth = 2;
   const pScreenHeight = Math.round((ghostHeight * distPlane) / pPerpDist);
-  const pHalfWidth = Math.max(1, Math.round((ghostWidth * distPlane) / pPerpDist / 2));
+
+  const hasImage = heroImage && heroImage.complete && heroImage.width > 0;
+  const pHalfWidth = hasImage
+    ? Math.max(1, Math.round((pScreenHeight * (heroImage!.width / heroImage!.height)) / 2))
+    : Math.max(1, Math.round((2 * distPlane) / pPerpDist / 2));
 
   const camHeight = 30;
   const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist);
   const pTop = pBottom - pScreenHeight;
 
-  for (let i = Math.max(0, pCol - pHalfWidth); i <= Math.min(W - 1, pCol + pHalfWidth); i++) {
-    if (colHeights[i] && colHeights[i].rawDist > dist) {
-      const distFromCenter = Math.abs(pCol - i) / pHalfWidth;
-      if (distFromCenter > 1) continue;
-      const thickness = 1 - distFromCenter;
-      const bodyH = pBottom - pTop;
-      const bodyTop = pTop + bodyH * 0.1 * (1 - thickness);
-      const shade = 0.6 + 0.4 * thickness;
-      const alpha = 0.5;
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = `rgba(150, 200, 255, ${shade * alpha})`;
-      ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
-      const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
-      const headY = bodyTop - headSize * 1.2;
-      ctx.fillRect(i, headY, 1, headSize);
-      ctx.globalAlpha = 1;
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+
+  if (hasImage) {
+    const imgW = heroImage!.width;
+    const imgH = heroImage!.height;
+    const totalWidth = pHalfWidth * 2 || 1;
+    for (let i = Math.max(0, pCol - pHalfWidth); i <= Math.min(W - 1, pCol + pHalfWidth); i++) {
+      if (colHeights[i] && colHeights[i].rawDist > dist) {
+        const srcX = Math.max(0, Math.min(imgW - 1, Math.round(((i - (pCol - pHalfWidth)) / totalWidth) * imgW)));
+        ctx.drawImage(heroImage!, srcX, 0, 1, imgH, i, pTop, 1, pScreenHeight);
+      }
+    }
+  } else {
+    for (let i = Math.max(0, pCol - pHalfWidth); i <= Math.min(W - 1, pCol + pHalfWidth); i++) {
+      if (colHeights[i] && colHeights[i].rawDist > dist) {
+        const distFromCenter = Math.abs(pCol - i) / pHalfWidth;
+        if (distFromCenter > 1) continue;
+        const thickness = 1 - distFromCenter;
+        const bodyH = pBottom - pTop;
+        const bodyTop = pTop + bodyH * 0.1 * (1 - thickness);
+        const shade = 0.6 + 0.4 * thickness;
+        ctx.fillStyle = `rgba(150, 200, 255, ${shade * 0.5})`;
+        ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
+        const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
+        const headY = bodyTop - headSize * 1.2;
+        ctx.fillRect(i, headY, 1, headSize);
+      }
     }
   }
+
+  ctx.restore();
 }

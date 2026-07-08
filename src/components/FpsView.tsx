@@ -324,8 +324,8 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
 
     if (hasLockedRef.current && !document.pointerLockElement) {
-      // 自動案内中はマウスキャプチャ解除で終了しない
-      if (autoRouteActiveRef.current) return;
+      // 自動案内中はマウスキャプチャ解除で終了しない (ghost3d時は自由操作のため解除可)
+      if (autoRouteActiveRef.current && !ghost3dRef.current) return;
       // Ctrl 解放中は終了しない
       if (ctrlHeldRef.current) return;
       requestAnimationFrame(() => {
@@ -702,7 +702,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         const ghostElapsed = autoRouteElapsedRef.current;
         const ghostInterp = interpolateRoute(autoRouteSegmentsRef.current, autoRouteTimingRef.current.speed, autoRouteTimingRef.current.totalTime, ghostElapsed);
         if (ghostInterp) {
-          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights);
+          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights, heroImageRef.current);
         }
       }
 

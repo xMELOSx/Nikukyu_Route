@@ -1127,14 +1127,20 @@ export default function App() {
       undefined, undefined,
       routeApi.route.maskCanvas
     );
-    const newMaskCanvas = { ...routeApi.route.maskCanvas, [currentFloor]: url } as { [key in FloorType]: string | null };
+    const prev = routeApi.route.maskCanvas || {} as { [key in FloorType]: string | null };
+    const newMaskCanvas = { ...prev, [currentFloor]: url } as { [key in FloorType]: string | null };
     routeApi.setRoute(r => ({
       ...r,
-      maskCanvas: newMaskCanvas
+      maskCanvas: { ...(r.maskCanvas || {} as any), [currentFloor]: url } as { [key in FloorType]: string | null }
     }));
+    // immediately persist to localStorage
     const updatedRoute: RouteData = { ...routeApi.route, maskCanvas: newMaskCanvas };
-    DataManager.saveToLocalStorage(updatedRoute);
-    notification.show(t('マスクを保存しました'));
+    const saved = DataManager.saveToLocalStorage(updatedRoute);
+    if (saved) {
+      notification.show(t('マスクを保存しました'));
+    } else {
+      notification.show(t('⚠️ マスクの保存に失敗しました（容量超過）'), 5000);
+    }
   }, [routeApi, currentFloor, globalMarkersStore.globalMarkers, notification, t]);
 
   const handleClearMask = useCallback(() => {

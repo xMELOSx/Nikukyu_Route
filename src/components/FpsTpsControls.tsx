@@ -312,8 +312,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
 
   useEffect(() => {
     if (freeCamMode) {
-      // 自動案内中はマウスキャプチャ不要
-      if (autoRouteActive) {
+      // 自動案内中はマウスキャプチャ不要 (ghost3d 時はプレイヤー操作のため必要)
+      if (autoRouteActive && !ghost3d) {
         if (document.pointerLockElement) {
           document.exitPointerLock();
         }
@@ -325,7 +325,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         requestAnimationFrame(() => requestAnimationFrame(tryLock));
       }
     }
-  }, [freeCamMode, autoRouteActive]);
+  }, [freeCamMode, autoRouteActive, ghost3d]);
 
   const handleStart = useCallback((mode: 'fps' | 'tps') => {
     captureLatestBgImageData();
@@ -334,7 +334,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     }
     setFreeCamMode(mode);
 
-    if (autoRouteActive) return; // 自動案内中はマウスキャプチャ不要 (効果が解放する)
+    if (autoRouteActive && !ghost3d) return; // 自動案内中はマウスキャプチャ不要 (ghost3d時は操作のため必要)
 
     const c = fpsCanvasRef.current;
     if (c) {
@@ -344,7 +344,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
         console.error("Pointer lock failed on button click:", e);
       }
     }
-  }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId, autoRouteActive]);
+  }, [captureLatestBgImageData, currentPosition, onPositionChange, markers, startupFocusMarkerId, autoRouteActive, ghost3d]);
 
   const handlePlayerChange = useCallback((pos: Point) => {
     onPositionChange(pos);

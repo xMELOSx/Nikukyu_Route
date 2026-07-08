@@ -3485,10 +3485,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     tempCanvas.height = 4550;
     const tCtx = tempCanvas.getContext('2d')!;
 
+    tCtx.imageSmoothingEnabled = false;
     tCtx.fillStyle = '#fff';
     tCtx.fillRect(0, 0, 1600, 4550);
     tCtx.strokeStyle = '#000';
-    tCtx.lineWidth = 3;
+    tCtx.lineWidth = 5;
+    tCtx.lineCap = 'square';
+    tCtx.lineJoin = 'miter';
     for (const w of walls) {
       tCtx.beginPath();
       tCtx.moveTo(w[0].x, w[0].y);
@@ -3496,12 +3499,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       tCtx.stroke();
     }
 
+    // In paint mode, existing mask pixels also act as boundaries
+    if (maskSubMode !== 'erase') {
+      tCtx.drawImage(getMaskCanvas(), 0, 0);
+    }
+
     const imageData = tCtx.getImageData(0, 0, 1600, 4550);
     const w = 1600, h = 4550;
     const sx = Math.round(start.x), sy = Math.round(start.y);
     if (sx < 0 || sx >= w || sy < 0 || sy >= h) return;
 
-    const isBoundary = (r: number, g: number, b: number) => (r + g + b) < 384;
+    // Treat any non-white pixel as a boundary (walls, mask edges, anti-aliasing)
+    const isBoundary = (r: number, g: number, b: number) => r < 255 || g < 255 || b < 255;
 
     const startPi = (sy * w + sx) * 4;
     if (isBoundary(imageData.data[startPi], imageData.data[startPi + 1], imageData.data[startPi + 2])) return;
@@ -4844,7 +4853,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         )}
 
         {/* Mask overlay: shows current mask state on main canvas (mask mode only) */}
-        {maskOverlayUrl && wallShapeSubMode === 'mask' && (
+        {maskOverlayUrl && toolMode === 'wall' && wallSubMode === 'shape' && wallShapeSubMode === 'mask' && (
           <svg
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 90 }}
             viewBox="0 0 1600 4550"
