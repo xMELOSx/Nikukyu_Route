@@ -1105,7 +1105,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 1st row: 描く/頂点/移動/頂点移動 */}
+                {/* 1st row: 描く/形状/頂点/移動/頂点移動 */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '3px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
@@ -1113,6 +1113,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Fence size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('描く')}</span>
+                  </button>
+                  <button
+                    className={`tool-btn ${wallSubMode === 'shape' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('shape')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    title={t('頂点を打って図形を作成')}
+                  >
+                    <span style={{ fontSize: '10px', color: '#00ccff' }}>{t('形状')}</span>
                   </button>
                   <button
                     className={`tool-btn ${wallSubMode === 'vertex' ? 'active' : ''}`}
@@ -1139,7 +1147,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
                   </button>
                 </div>
-                {/* 2nd row: テクスチャ/スライス/消す/仕切り/形状 */}
+                {/* 2nd row: テクスチャ/スライス/消す */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
@@ -1162,14 +1170,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
-                  </button>
-                  <button
-                    className={`tool-btn ${wallSubMode === 'shape' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('shape')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    title={t('頂点を打って図形を作成')}
-                  >
-                    <span style={{ fontSize: '10px', color: '#00ccff' }}>{t('形状')}</span>
                   </button>
                 </div>
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
@@ -1282,12 +1282,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <>
                     <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
                       <button
-                        className={`tool-btn ${wallShapeSubMode === 'redraw-outside' ? 'active' : ''}`}
-                        onClick={() => setWallShapeSubMode('redraw-outside')}
+                        className={`tool-btn ${wallShapeSubMode === 'indent' ? 'active' : ''}`}
+                        onClick={() => setWallShapeSubMode('indent')}
                         style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 200, 0, 0.4)' }}
-                        title={t('壁を図形で切断し外側に作り直す')}
+                        title={t('壁を図形で切断しくぼみを作る')}
                       >
-                        <span style={{ fontSize: '10px', color: '#ffcc00' }}>{t('外側再配置')}</span>
+                        <span style={{ fontSize: '10px', color: '#ffcc00' }}>{t('くぼみ')}</span>
                       </button>
                       <button
                         className={`tool-btn ${wallShapeSubMode === 'generate' ? 'active' : ''}`}

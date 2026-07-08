@@ -239,7 +239,7 @@ export default function App() {
     localStorage.setItem('heist_wall_sub_mode', wallSubMode);
   }, [wallSubMode]);
 
-  const [wallShapeSubMode, setWallShapeSubMode] = useState<'redraw-outside' | 'generate'>('redraw-outside');
+  const [wallShapeSubMode, setWallShapeSubMode] = useState<'indent' | 'generate'>('indent');
   useEffect(() => {
     localStorage.setItem('heist_wall_shape_sub_mode', wallShapeSubMode);
   }, [wallShapeSubMode]);

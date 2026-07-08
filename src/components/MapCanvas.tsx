@@ -48,8 +48,8 @@ interface MapCanvasProps {
   wallLockedSubMode?: 'normal' | 'locked' | 'partition';
   partitionWalls?: PartitionWallSegment[];
   onPartitionWallsChange?: (walls: PartitionWallSegment[]) => void;
-  wallShapeSubMode?: 'redraw-outside' | 'generate';
-  setWallShapeSubMode?: (v: 'redraw-outside' | 'generate') => void;
+  wallShapeSubMode?: 'indent' | 'generate';
+  setWallShapeSubMode?: (v: 'indent' | 'generate') => void;
   shapeDrawMode?: 'rect' | 'path';
   setShapeDrawMode?: (v: 'rect' | 'path') => void;
   hideStrokesDuringWalls?: boolean;
@@ -214,7 +214,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   wallLockedSubMode = 'normal',
   partitionWalls = [],
   onPartitionWallsChange,
-  wallShapeSubMode = 'redraw-outside',
+  wallShapeSubMode = 'indent',
   setWallShapeSubMode,
   shapeDrawMode = 'rect',
   setShapeDrawMode,
@@ -2339,44 +2339,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (toolMode === 'wall' && wallSubMode === 'shape') {
       if (shapeDrawMode === 'rect') {
-        // Rectangle mode: click two corners
-        if (shapeRectStart) {
-          // Second click → execute with rectangle polygon
-          const x1 = Math.min(shapeRectStart.x, coords.x);
-          const y1 = Math.min(shapeRectStart.y, coords.y);
-          const x2 = Math.max(shapeRectStart.x, coords.x);
-          const y2 = Math.max(shapeRectStart.y, coords.y);
-          if (x2 - x1 > 4 && y2 - y1 > 4) {
-            const rectPoly: Point[] = [
-              { x: x1, y: y1 }, { x: x2, y: y1 },
-              { x: x2, y: y2 }, { x: x1, y: y2 }
-            ];
-            executeShapeOperation(rectPoly);
-          } else {
-            setShapeRectStart(null);
-            setShapeRectEnd(null);
-          }
-        } else {
-          // First click
-          setShapeRectStart(coords);
-          setShapeRectEnd(coords);
-          setIsDrawing(true);
-        }
+        // Rectangle mode: drag to define rect, execute on mouse up
+        setShapeRectStart(coords);
+        setShapeRectEnd(coords);
+        setIsDrawing(true);
       } else {
-        // Path mode: click vertices, close by clicking start
+        // Path mode: left click adds vertex, right click cancels (handled in onContextMenu)
         const current = shapePathRef.current;
+        const last = current.length > 0 ? current[current.length - 1] : null;
+        // Alt snap: snap to 45-degree angle from last point
+        let pt = coords;
+        if (e.altKey && last) {
+          const dx = coords.x - last.x;
+          const dy = coords.y - last.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 1) {
+            const angle = Math.atan2(dy, dx);
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            pt = {
+              x: Math.round(last.x + dist * Math.cos(snappedAngle)),
+              y: Math.round(last.y + dist * Math.sin(snappedAngle))
+            };
+          }
+        }
         if (current.length >= 3) {
           const start = current[0];
-          const dist = Math.hypot(coords.x - start.x, coords.y - start.y);
+          const dist = Math.hypot(pt.x - start.x, pt.y - start.y);
           if (dist < 12) {
             executeShapeOperation(current);
             return;
           }
         }
-        const next = [...current, coords];
+        const next = [...current, pt];
         shapePathRef.current = next;
         setShapePath(next);
-        setIsDrawing(true);
       }
       return;
     }
@@ -2724,11 +2720,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (toolMode === 'wall' && wallSubMode === 'shape') {
       setIsDrawing(false);
       isDrawingRef.current = false;
+      if (shapeDrawMode === 'rect' && shapeRectStart && shapeRectEnd) {
+        const x1 = Math.min(shapeRectStart.x, shapeRectEnd.x);
+        const y1 = Math.min(shapeRectStart.y, shapeRectEnd.y);
+        const x2 = Math.max(shapeRectStart.x, shapeRectEnd.x);
+        const y2 = Math.max(shapeRectStart.y, shapeRectEnd.y);
+        if (x2 - x1 > 4 && y2 - y1 > 4) {
+          const rectPoly: Point[] = [
+            { x: x1, y: y1 }, { x: x2, y: y1 },
+            { x: x2, y: y2 }, { x: x1, y: y2 }
+          ];
+          executeShapeOperation(rectPoly);
+        } else {
+          setShapeRectStart(null);
+          setShapeRectEnd(null);
+        }
+      }
       setShapeMousePos(null);
-      // Don't reset shapeRectStart/shapeRectEnd or shapePath here —
-      // rect mode needs shapeRectStart to persist for the second click,
-      // and path mode needs shapePath to accumulate across clicks.
-      // Only executeShapeOperation resets them when the polygon closes.
       return;
     }
 
@@ -3237,74 +3245,110 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
       onWallsChange?.([...walls, ...newWalls]);
-    } else if (wallShapeSubMode === 'redraw-outside') {
-      // Redraw Outside (indentation): cut walls intersected by polygon edges,
-      // remove interior portions, redraw along polygon boundary at cut points
-      const polygonEdges: [Point, Point][] = [];
-      for (let i = 0; i < polygon.length; i++) {
-        const j = (i + 1) % polygon.length;
-        polygonEdges.push([polygon[i], polygon[j]]);
-      }
-
-      // Find which polygon edges have wall intersections
-      const edgeHasIntersection = new Array(polygonEdges.length).fill(false);
-      const cutWalls: { wall: WallSegment; t: number; pt: Point; edgeIdx: number }[] = [];
-
+    } else if (wallShapeSubMode === 'indent') {
+      // くぼみ (Indentation): cut walls intersected by polygon edges,
+      // remove interior portions, connect cut endpoints via the shorter
+      // path along the polygon perimeter to form a C-shape.
+      const n = polygon.length;
+      // Find all wall-polygon intersections
+      const cutPts: { pt: Point; edgeIdx: number }[] = [];
       for (let wi = 0; wi < walls.length; wi++) {
         const w = walls[wi];
-        for (let ei = 0; ei < polygonEdges.length; ei++) {
-          const [pa, pb] = polygonEdges[ei];
+        for (let ei = 0; ei < n; ei++) {
+          const pa = polygon[ei], pb = polygon[(ei + 1) % n];
           const ix = getSegmentIntersection(w[0], w[1], pa, pb);
           if (ix) {
-            // Check intersection is not at endpoint
             const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
             const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
-            const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
-            if (d1 > 2 && d2 > 2 && wallLen > 4) {
-              edgeHasIntersection[ei] = true;
-              const t = d1 / wallLen;
-              cutWalls.push({ wall: w, t, pt: ix, edgeIdx: ei });
+            if (d1 > 2 && d2 > 2) {
+              cutPts.push({ pt: ix, edgeIdx: ei });
+            }
+          }
+        }
+      }
+      if (cutPts.length < 2) return;
+
+      // Split each wall at all cut points
+      let modWalls: WallSegment[] = [];
+      for (const w of walls) {
+        const ptsOnWall: { pt: Point; t: number }[] = [];
+        for (const cp of cutPts) {
+          const dx = w[1].x - w[0].x, dy = w[1].y - w[0].y;
+          const len2 = dx * dx + dy * dy;
+          if (len2 < 1) continue;
+          const t = ((cp.pt.x - w[0].x) * dx + (cp.pt.y - w[0].y) * dy) / len2;
+          if (t > 0.01 && t < 0.99) {
+            const d = Math.hypot(cp.pt.x - (w[0].x + t * dx), cp.pt.y - (w[0].y + t * dy));
+            if (d < 3) ptsOnWall.push({ pt: cp.pt, t });
+          }
+        }
+        ptsOnWall.sort((a, b) => a.t - b.t);
+        if (ptsOnWall.length === 0) {
+          // Check if the wall's midpoint is inside the polygon
+          const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
+          if (!isPointInPolygon({ x: mx, y: my }, polygon)) {
+            modWalls.push(w);
+          }
+        } else {
+          const tex = w[2] as string | undefined, rep = w[3] as number | undefined;
+          const segs: Point[] = [w[0], ...ptsOnWall.map(p => p.pt), w[1]];
+          for (let i = 0; i < segs.length - 1; i++) {
+            const mid = { x: (segs[i].x + segs[i + 1].x) / 2, y: (segs[i].y + segs[i + 1].y) / 2 };
+            if (!isPointInPolygon(mid, polygon)) {
+              if (Math.hypot(segs[i + 1].x - segs[i].x, segs[i + 1].y - segs[i].y) > 2) {
+                if (tex) modWalls.push(rep ? [segs[i], segs[i + 1], tex, rep] : [segs[i], segs[i + 1], tex]);
+                else modWalls.push([segs[i], segs[i + 1]]);
+              }
             }
           }
         }
       }
 
-      // Split walls at intersection points
-      let modifiedWalls = [...walls];
-      for (const cw of cutWalls) {
-        const idx = modifiedWalls.indexOf(cw.wall);
-        if (idx >= 0) {
-          const w = modifiedWalls[idx];
-          const tex = w[2] as string | undefined;
-          const rep = w[3] as number | undefined;
-          const w1: WallSegment = tex
-            ? (rep ? [w[0], cw.pt, tex, rep] : [w[0], cw.pt, tex])
-            : [w[0], cw.pt];
-          const w2: WallSegment = tex
-            ? (rep ? [cw.pt, w[1], tex, rep] : [cw.pt, w[1], tex])
-            : [cw.pt, w[1]];
-          modifiedWalls.splice(idx, 1, w1, w2);
+      // Connect cut points along polygon perimeter (shorter path)
+      if (cutPts.length >= 2) {
+        // Find polygon vertex indices for each cut point
+        const vertexIdx = new Map<number, number>();
+        for (const cp of cutPts) {
+          const vi = cp.edgeIdx;
+          const dStart = Math.hypot(cp.pt.x - polygon[vi].x, cp.pt.y - polygon[vi].y);
+          const dEnd = Math.hypot(cp.pt.x - polygon[(vi + 1) % n].x, cp.pt.y - polygon[(vi + 1) % n].y);
+          vertexIdx.set(cp.edgeIdx, dStart < dEnd ? (vi + 1) % n : vi);
         }
-      }
 
-      // Remove wall segments whose midpoints are inside the polygon
-      modifiedWalls = modifiedWalls.filter(w => {
-        const mx = (w[0].x + w[1].x) / 2;
-        const my = (w[0].y + w[1].y) / 2;
-        return !isPointInPolygon({ x: mx, y: my }, polygon);
-      });
-
-      // Add new walls along polygon edges that had intersections
-      for (let ei = 0; ei < polygonEdges.length; ei++) {
-        if (edgeHasIntersection[ei]) {
-          const [pa, pb] = polygonEdges[ei];
-          if (Math.hypot(pb.x - pa.x, pb.y - pa.y) > 2) {
-            modifiedWalls.push([pa, pb]);
+        // For each pair of adjacent cut points (by edge index), connect along shorter perimeter path
+        const sortedCut = [...cutPts].sort((a, b) => a.edgeIdx - b.edgeIdx);
+        for (let i = 0; i < sortedCut.length; i += 2) {
+          if (i + 1 >= sortedCut.length) break;
+          const a = sortedCut[i], b = sortedCut[i + 1];
+          // Two possible paths along the polygon: forward and backward
+          const path1: Point[] = [];
+          let idx = a.edgeIdx;
+          while (true) {
+            const next = (idx + 1) % n;
+            path1.push(polygon[idx]);
+            if (idx === b.edgeIdx) break;
+            idx = next;
+          }
+          const path2: Point[] = [];
+          idx = a.edgeIdx;
+          while (true) {
+            path2.push(polygon[idx]);
+            if (idx === b.edgeIdx) break;
+            idx = (idx - 1 + n) % n;
+          }
+          // Choose shorter path
+          const len1 = path1.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - path1[j - 1].x, p.y - path1[j - 1].y) : s, 0);
+          const len2 = path2.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - path2[j - 1].x, p.y - path2[j - 1].y) : s, 0);
+          const chosenPath = len1 <= len2 ? path1 : path2;
+          for (let j = 0; j < chosenPath.length - 1; j++) {
+            if (Math.hypot(chosenPath[j + 1].x - chosenPath[j].x, chosenPath[j + 1].y - chosenPath[j].y) > 2) {
+              modWalls.push([chosenPath[j], chosenPath[j + 1]]);
+            }
           }
         }
       }
 
-      onWallsChange?.(modifiedWalls);
+      onWallsChange?.(mergeWalls(modWalls));
     }
 
     // Reset shape state
@@ -4120,6 +4164,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const coords = getCanvasCoords(e);
         setCurrentPosition(coords);
       }}
+      onContextMenu={(e) => {
+        // Right-click in path mode cancels the current shape path
+        if (toolMode === 'wall' && wallSubMode === 'shape' && shapeDrawMode === 'path') {
+          e.preventDefault();
+          shapePathRef.current = [];
+          setShapePath([]);
+          setIsDrawing(false);
+          isDrawingRef.current = false;
+        }
+      }}
     >
       <div
         className="canvas-container"
@@ -4332,7 +4386,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 width={Math.abs((shapeRectEnd || shapeRectStart).x - shapeRectStart.x)}
                 height={Math.abs((shapeRectEnd || shapeRectStart).y - shapeRectStart.y)}
                 fill="rgba(0, 200, 255, 0.08)"
-                stroke={wallShapeSubMode === 'redraw-outside' ? '#ffcc00' : '#39ff14'}
+                stroke={wallShapeSubMode === 'indent' ? '#ffcc00' : '#39ff14'}
                 strokeWidth={2}
                 strokeDasharray="6,4"
               />
@@ -4340,7 +4394,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             {wallSubMode === 'shape' && shapeDrawMode === 'path' && shapePath.length > 0 && (() => {
               const pts = shapePath;
               const mousePos = shapeMousePos;
-              const strokeColor = wallShapeSubMode === 'redraw-outside' ? '#ffcc00' : '#39ff14';
+              const strokeColor = wallShapeSubMode === 'indent' ? '#ffcc00' : '#39ff14';
               return (
                 <>
                   {pts.length >= 3 && (
