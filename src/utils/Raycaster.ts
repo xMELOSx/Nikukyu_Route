@@ -591,7 +591,7 @@ function renderWalls(
     // 4. Partition wall overlay — render above locked wall height
     if (partitionHits) {
       const pHit = partitionHits[i];
-      if (pHit.distance < Infinity && pHit.distance <= effectiveDist + 0.1) {
+      if (pHit.distance < Infinity) {
         const pPerp = pHit.distance * Math.cos(rayAngle - originAngle);
         const pScale = H / 240;
         const pHalfHRef = halfH / pScale;
@@ -600,7 +600,6 @@ function renderWalls(
         const pBotRaw = Math.floor(halfH + pWallH * camHeightFrac);
         const pFullTop = Math.max(0, pTopRaw);
         const pFullBot = Math.min(H, pBotRaw);
-        // Start partition wall at phs fraction from bottom
         const pStartY = Math.floor(pFullBot - (pFullBot - pFullTop) * phs);
         const pShade = Math.min(1, 10 / pPerp);
         const pR = Math.round(pDarkR2 + (pr2 - pDarkR2) * pShade);

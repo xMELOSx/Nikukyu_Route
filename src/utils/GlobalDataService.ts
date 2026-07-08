@@ -344,24 +344,36 @@ export class GlobalDataService {
   }
 
   private async _loadPartitionWalls(): Promise<void> {
+    if (this._isLocal) {
+      const fromAPI = await this._fetchJSON<any>('api/partition-walls');
+      if (fromAPI && typeof fromAPI === 'object') {
+        this._partitionWalls = this._parsePartitionWalls(fromAPI);
+        this._emit({ operation: 'load', type: 'partitionWalls', source: 'api', success: true });
+        return;
+      }
+    }
     const fromStatic = await this._fetchJSON<any>('partition_walls.json');
     if (fromStatic && typeof fromStatic === 'object') {
-      const out: typeof this._partitionWalls = {};
-      for (const floor of FLOORS) {
-        out[floor] = [];
-        if (Array.isArray(fromStatic[floor])) {
-          for (const seg of fromStatic[floor]) {
-            if (seg?.p1 && seg?.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
-              out[floor].push({ p1: seg.p1, p2: seg.p2 });
-            }
-          }
-        }
-      }
-      this._partitionWalls = out;
+      this._partitionWalls = this._parsePartitionWalls(fromStatic);
       this._emit({ operation: 'load', type: 'partitionWalls', source: 'static', success: true });
     } else {
       this._emit({ operation: 'load', type: 'partitionWalls', source: 'static', success: false, detail: 'no data' });
     }
+  }
+
+  private _parsePartitionWalls(data: any): typeof this._partitionWalls {
+    const out: typeof this._partitionWalls = {};
+    for (const floor of FLOORS) {
+      out[floor] = [];
+      if (Array.isArray(data[floor])) {
+        for (const seg of data[floor]) {
+          if (seg?.p1 && seg?.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
+            out[floor].push({ p1: seg.p1, p2: seg.p2 });
+          }
+        }
+      }
+    }
+    return out;
   }
 
   private async _loadSpawns(): Promise<void> {
