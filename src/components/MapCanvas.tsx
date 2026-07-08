@@ -2386,13 +2386,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             };
           }
         }
-        if (current.length >= 3) {
-          const start = current[0];
-          const dist = Math.hypot(pt.x - start.x, pt.y - start.y);
-          if (dist < 12) {
-            executeShapeOperation(current);
-            return;
-          }
+        // Click near last point → finish polyline (open path)
+        if (current.length >= 2 && last && Math.hypot(pt.x - last.x, pt.y - last.y) < 12) {
+          executePolyline(current);
+          return;
         }
         const next = [...current, pt];
         shapePathRef.current = next;
@@ -3455,6 +3452,85 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setShapeMousePos(null);
   };
 
+  const resetShapeState = () => {
+    shapePathRef.current = [];
+    setShapePath([]);
+    setShapeRectStart(null);
+    setShapeRectEnd(null);
+    setShapeMousePos(null);
+  };
+
+  // Execute polyline (open path): each segment cuts/generates independently
+  const executePolyline = (points: Point[]) => {
+    if (points.length < 2) return;
+
+    if (wallShapeSubMode === 'generate') {
+      const newWalls: WallSegment[] = [];
+      for (let i = 0; i < points.length - 1; i++) {
+        if (Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y) > 2) {
+          newWalls.push([points[i], points[i + 1]]);
+        }
+      }
+      onWallsChange?.([...walls, ...newWalls]);
+    } else if (wallShapeSubMode === 'indent') {
+      // Collect all (wallIdx, intersectionPt) pairs across all segments
+      const cuts: { wallIdx: number; pt: Point }[] = [];
+      for (let i = 0; i < points.length - 1; i++) {
+        for (let wi = 0; wi < walls.length; wi++) {
+          const w = walls[wi];
+          const ix = getSegmentIntersection(points[i], points[i + 1], w[0], w[1]);
+          if (ix) {
+            const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
+            const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
+            if (d1 > 2 && d2 > 2 && Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y) > 4) {
+              cuts.push({ wallIdx: wi, pt: ix });
+            }
+          }
+        }
+      }
+
+      // Group cuts by wall, sort each wall's cuts along the wall, then split
+      const byWall = new Map<number, Point[]>();
+      for (const c of cuts) {
+        if (!byWall.has(c.wallIdx)) byWall.set(c.wallIdx, []);
+        byWall.get(c.wallIdx)!.push(c.pt);
+      }
+
+      const newWalls: WallSegment[] = [];
+      for (let wi = 0; wi < walls.length; wi++) {
+        const w = walls[wi];
+        const wCuts = byWall.get(wi);
+        if (!wCuts || wCuts.length === 0) {
+          newWalls.push(w);
+          continue;
+        }
+        // Sort cuts along wall (by distance from w[0])
+        wCuts.sort((a, b) => {
+          const da = Math.hypot(a.x - w[0].x, a.y - w[0].y);
+          const db = Math.hypot(b.x - w[0].x, b.y - w[0].y);
+          return da - db;
+        });
+        // Split wall: cut points create gaps, segments between cuts are kept
+        const pts: Point[] = [w[0], ...wCuts, w[1]];
+        const wTex = w[2] as string | undefined;
+        const wRep = w[3] as number | undefined;
+        for (let pi = 1; pi < pts.length; pi++) {
+          // Even-indexed segments (1st, 3rd, 5th...) are kept; odd-indexed are gaps
+          if (pi % 2 === 1) {
+            const a = pts[pi - 1], b = pts[pi];
+            if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
+              if (wTex) newWalls.push(wRep ? [a, b, wTex, wRep] : [a, b, wTex]);
+              else newWalls.push([a, b]);
+            }
+          }
+        }
+      }
+      onWallsChange?.(newWalls);
+    }
+
+    resetShapeState();
+  };
+
   // 指定点でマーカーを削除 (グローバル or 個人ピン)
   const eraseMarkersAtPoint = (pt: Point, threshold?: number) => {
     const r = threshold ?? eraseSize;
@@ -4502,15 +4578,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const pts = shapePath;
               const mousePos = shapeMousePos;
               const strokeColor = wallShapeSubMode === 'indent' ? '#ffcc00' : '#39ff14';
+              const last = pts[pts.length - 1];
               return (
                 <>
-                  {pts.length >= 3 && (
-                    <polygon
-                      points={pts.map(p => `${p.x},${p.y}`).join(' ')}
-                      fill="rgba(0, 200, 255, 0.06)"
-                      stroke="none"
-                    />
-                  )}
                   {pts.map((p, i) => {
                     const next = i < pts.length - 1 ? pts[i + 1] : mousePos;
                     if (!next) return null;
@@ -4524,19 +4594,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                       />
                     );
                   })}
-                  {pts.length >= 3 && (
-                    <circle cx={pts[0].x} cy={pts[0].y} r={8}
-                      fill="none" stroke="#39ff14" strokeWidth={1.5}
+                  {pts.length >= 2 && last && mousePos && (
+                    <circle cx={last.x} cy={last.y} r={10}
+                      fill="none" stroke={strokeColor} strokeWidth={1.5}
                       strokeDasharray="3,3" opacity={0.6}
                     />
                   )}
-                  {pts.map((p, i) => (
-                    <circle key={`sp-pt-${i}`}
-                      cx={p.x} cy={p.y} r={4}
-                      fill={i === 0 ? '#39ff14' : strokeColor}
-                      stroke="#fff" strokeWidth={1}
-                    />
-                  ))}
+                  {pts.map((p, i) => {
+                    const isFirst = i === 0;
+                    const isLast = i === pts.length - 1 && pts.length >= 2;
+                    return (
+                      <circle key={`sp-pt-${i}`}
+                        cx={p.x} cy={p.y} r={isLast ? 5 : 4}
+                        fill={isFirst ? '#39ff14' : isLast ? strokeColor : strokeColor}
+                        stroke="#fff" strokeWidth={1}
+                      />
+                    );
+                  })}
                 </>
               );
             })()}
