@@ -69,6 +69,13 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/partition-walls
+        if (isPathMatch(urlPath, '/api/partition-walls')) {
+          if (req.method === 'GET') return handleGet(req, res, 'partition_walls.json', '{}')
+          if (req.method === 'POST') return handlePost(req, res, 'partition_walls.json', 'partition_walls.json')
+          return next()
+        }
+
         // /api/textures
         if (isPathMatch(urlPath, '/api/textures')) {
           if (req.method === 'GET') {
@@ -355,6 +362,8 @@ export function apiMiddleware(): Plugin {
 
       copyToDist('global_markers.json')
       copyToDist('global_walls.json')
+      copyToDist('global_locked_walls.json')
+      copyToDist('partition_walls.json')
       copyToDist('default_preset.json')
       copyToDist('presets.json')
       copyToDist('global_spawns.json')

@@ -2297,7 +2297,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'wall' && wallSubMode === 'vertex') {
-      if (walls.length === 0) return;
       const VERTEX_THRESHOLD = 10;
       const seen = new Set<string>();
       const allEndpoints: Point[] = [];
@@ -2305,6 +2304,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const k1 = `${w[0].x},${w[0].y}`, k2 = `${w[1].x},${w[1].y}`;
         if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w[0].x, y: w[0].y }); }
         if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w[1].x, y: w[1].y }); }
+      }
+      for (const w of lockedWalls) {
+        const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+        if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w.p1.x, y: w.p1.y }); }
+        if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w.p2.x, y: w.p2.y }); }
+      }
+      for (const w of partitionWalls) {
+        const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+        if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w.p1.x, y: w.p1.y }); }
+        if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w.p2.x, y: w.p2.y }); }
       }
       let clickedPt: Point | null = null;
       let bestDist = VERTEX_THRESHOLD;
@@ -2328,6 +2337,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const p2 = (Math.hypot(w[1].x - clickedPt.x, w[1].y - clickedPt.y) < 1)
                 ? { x: start.x, y: start.y } : w[1];
               return [p1, p2] as WallSegment;
+            }));
+            onLockedWallsChange?.(lockedWalls.map(w => {
+              const p1 = (Math.hypot(w.p1.x - clickedPt.x, w.p1.y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w.p1;
+              const p2 = (Math.hypot(w.p2.x - clickedPt.x, w.p2.y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w.p2;
+              return { ...w, p1, p2 };
+            }));
+            onPartitionWallsChange?.(partitionWalls.map(w => {
+              const p1 = (Math.hypot(w.p1.x - clickedPt.x, w.p1.y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w.p1;
+              const p2 = (Math.hypot(w.p2.x - clickedPt.x, w.p2.y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w.p2;
+              return { p1, p2 };
             }));
           }
           // Clear after one snap
@@ -4662,23 +4685,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </>
               );
             })()}
-            {(wallSubMode === 'vertex' || wallSubMode === 'slice') && walls.length > 0 && (() => {
+            {(wallSubMode === 'vertex' || wallSubMode === 'slice') && (walls.length > 0 || lockedWalls.length > 0 || partitionWalls.length > 0) && (() => {
               const seen = new Set<string>();
-              const pts: Point[] = [];
+              const pts: { pt: Point; color: string; stroke: string }[] = [];
               for (const w of walls) {
-                const k1 = `${w[0].x},${w[0].y}`;
-                const k2 = `${w[1].x},${w[1].y}`;
-                if (!seen.has(k1)) { seen.add(k1); pts.push(w[0]); }
-                if (!seen.has(k2)) { seen.add(k2); pts.push(w[1]); }
+                const k1 = `${w[0].x},${w[0].y}`, k2 = `${w[1].x},${w[1].y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w[0], color: 'rgba(255, 85, 0, 0.6)', stroke: 'rgba(255, 85, 0, 0.9)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w[1], color: 'rgba(255, 85, 0, 0.6)', stroke: 'rgba(255, 85, 0, 0.9)' }); }
               }
-              return pts.map((pt, i) => (
+              for (const w of lockedWalls) {
+                const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w.p1, color: 'rgba(255, 204, 0, 0.6)', stroke: 'rgba(255, 204, 0, 0.9)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w.p2, color: 'rgba(255, 204, 0, 0.6)', stroke: 'rgba(255, 204, 0, 0.9)' }); }
+              }
+              for (const w of partitionWalls) {
+                const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w.p1, color: 'rgba(180, 60, 255, 0.6)', stroke: 'rgba(180, 60, 255, 0.9)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w.p2, color: 'rgba(180, 60, 255, 0.6)', stroke: 'rgba(180, 60, 255, 0.9)' }); }
+              }
+              return pts.map(({ pt, color, stroke }, i) => (
                 <circle
                   key={`vtx-${i}`}
                   cx={pt.x}
                   cy={pt.y}
                   r={5}
-                  fill={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#ffcc00' : 'rgba(255, 85, 0, 0.6)'}
-                  stroke={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#fff' : 'rgba(255, 85, 0, 0.9)'}
+                  fill={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#ffcc00' : color}
+                  stroke={vertexWallStart && pt.x === vertexWallStart.x && pt.y === vertexWallStart.y ? '#fff' : stroke}
                   strokeWidth={1.5}
                 />
               ));

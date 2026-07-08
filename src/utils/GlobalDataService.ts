@@ -41,7 +41,7 @@ export interface SpawnStore {
   moveItem: (id: string, direction: -1 | 1) => void;
 }
 
-type DataType = 'markers' | 'walls' | 'lockedWalls' | 'spawns' | 'defaults' | 'help' | 'presets';
+type DataType = 'markers' | 'walls' | 'lockedWalls' | 'partitionWalls' | 'spawns' | 'defaults' | 'help' | 'presets';
 type DataOperation = 'load' | 'merge' | 'save' | 'reset';
 type DataSource = 'static' | 'api' | 'localStorage' | 'localStorage+api' | 'memory';
 
@@ -187,6 +187,7 @@ export class GlobalDataService {
   private _markers: HeistMarker[] = [];
   private _walls: GlobalWalls = { ...EMPTY_WALLS };
   private _lockedWalls: GlobalLockedWalls = { main: [], second: [], third: [], fourth: [] };
+  private _partitionWalls: { [key: string]: { p1: Point; p2: Point }[] } = { main: [], second: [], third: [], fourth: [] };
   private _spawnPoints: SpawnPoint[] = [];
   private _spawnItems: RegisteredItem[] = [];
   private _defaults: GlobalDefaults | null = null;
@@ -340,6 +341,27 @@ export class GlobalDataService {
       }
     }
     return out;
+  }
+
+  private async _loadPartitionWalls(): Promise<void> {
+    const fromStatic = await this._fetchJSON<any>('partition_walls.json');
+    if (fromStatic && typeof fromStatic === 'object') {
+      const out: typeof this._partitionWalls = {};
+      for (const floor of FLOORS) {
+        out[floor] = [];
+        if (Array.isArray(fromStatic[floor])) {
+          for (const seg of fromStatic[floor]) {
+            if (seg?.p1 && seg?.p2 && typeof seg.p1.x === 'number' && typeof seg.p1.y === 'number' && typeof seg.p2.x === 'number' && typeof seg.p2.y === 'number') {
+              out[floor].push({ p1: seg.p1, p2: seg.p2 });
+            }
+          }
+        }
+      }
+      this._partitionWalls = out;
+      this._emit({ operation: 'load', type: 'partitionWalls', source: 'static', success: true });
+    } else {
+      this._emit({ operation: 'load', type: 'partitionWalls', source: 'static', success: false, detail: 'no data' });
+    }
   }
 
   private async _loadSpawns(): Promise<void> {
@@ -512,6 +534,7 @@ export class GlobalDataService {
         this._loadMarkers(),
         this._loadWalls(),
         this._loadLockedWalls(),
+        this._loadPartitionWalls(),
         this._loadSpawns(),
         this._loadDefaults(),
         this._loadHelp(),
@@ -598,7 +621,12 @@ export class GlobalDataService {
   saveLockedWalls(walls: GlobalLockedWalls): void {
     this._lockedWalls = walls;
     this._save(() => {
-      this._emit({ operation: 'save', type: 'lockedWalls', source: 'memory', success: true, detail: 'session only' });
+      if (this._isLocal) {
+        this._postAPI('api/global-locked-walls', this._lockedWalls);
+        this._emit({ operation: 'save', type: 'lockedWalls', source: 'api', success: true });
+      } else {
+        this._emit({ operation: 'save', type: 'lockedWalls', source: 'memory', success: true, detail: 'session only' });
+      }
       this._notify();
     });
   }

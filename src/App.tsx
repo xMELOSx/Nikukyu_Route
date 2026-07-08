@@ -261,14 +261,26 @@ export default function App() {
     localStorage.setItem('heist_vertex_mode', vertexMode);
   }, [vertexMode]);
 
-  const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>(() => {
-    try {
-      const saved = localStorage.getItem('heist_partition_walls');
-      return saved ? JSON.parse(saved) : {};
-    } catch { return {}; }
-  });
+  const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>({});
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/partition-walls`)
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        if (data && typeof data === 'object') setPartitionWalls(data as any);
+      })
+      .catch(() => {
+        // fallback to localStorage
+        try {
+          const saved = localStorage.getItem('heist_partition_walls');
+          if (saved) setPartitionWalls(JSON.parse(saved));
+        } catch {}
+      });
+  }, []);
   useEffect(() => {
     localStorage.setItem('heist_partition_walls', JSON.stringify(partitionWalls));
+    fetch(`${import.meta.env.BASE_URL}api/partition-walls`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(partitionWalls)
+    }).catch(() => {});
   }, [partitionWalls]);
 
   const [selectedTexture, setSelectedTexture] = useState<string>('');
