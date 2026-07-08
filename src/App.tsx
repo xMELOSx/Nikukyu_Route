@@ -28,8 +28,6 @@ import {
   type RegisteredItem,
   type LockedWallSegment,
   type PartitionWallSegment,
-  type GlobalPartitionWalls,
-  type Point,
   PRESET_VISIBILITY_META,
   MARKER_META,
   normalizeStrokes,

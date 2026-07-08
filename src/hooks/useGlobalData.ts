@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GlobalDataService, type DataEvent, type GlobalWalls, type HelpData } from '../utils/GlobalDataService';
-import type { HeistMarker, GlobalLockedWalls, SpawnPoint, RegisteredItem, PresetData, SkillCdPreset } from '../utils/DataManager';
+import type { HeistMarker, GlobalLockedWalls, SpawnPoint, RegisteredItem, PresetData, SkillCdPreset, Point } from '../utils/DataManager';
 import type { GlobalDefaults } from '../utils/GlobalDataService';
 import { generateId } from '../utils/DataManager';
 

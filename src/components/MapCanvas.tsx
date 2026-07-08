@@ -154,6 +154,7 @@ interface MapCanvasProps {
     speedMultiplier: 1 | 2 | 3 | 5 | 10;
     followCamera: boolean;
     startStopSeconds: number;
+    ghost3d: boolean;
   };
   // Follow camera state — when true, the view scrolls to keep the current
   // position slightly below center during the auto-route animation.
@@ -220,9 +221,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   partitionWalls = [],
   onPartitionWallsChange,
   wallShapeSubMode = 'indent',
-  setWallShapeSubMode,
   shapeDrawMode = 'rect',
-  setShapeDrawMode,
   indentDir = 'short',
   vertexMode = 'connect',
   maskCanvasUrl,
@@ -353,7 +352,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [wallMoveDraft, setWallMoveDraft] = useState<{ idx: number; p1: Point; p2: Point } | null>(null);
 
   // Vertex-move mode state
-  const [vertexMoveTarget, setVertexMoveTarget] = useState<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
+  const [, setVertexMoveTarget] = useState<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
   const vertexMoveTargetRef = useRef<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
   const vertexMoveStartMouse = useRef<Point>({ x: 0, y: 0 });
   const [vertexMoveDraft, setVertexMoveDraft] = useState<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; newPos: Point } | null>(null);
@@ -2437,7 +2436,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         setIsDrawing(true);
         const arr = bestWallType === 'walls' ? walls : bestWallType === 'lockedWalls' ? lockedWalls : partitionWalls;
         const seg = arr[bestWallIdx];
-        const startPos = { ...(Array.isArray(seg) ? seg[bestEndpointIdx] : bestEndpointIdx === 0 ? seg.p1 : seg.p2) };
+        const rawPos: Point = Array.isArray(seg) ? seg[bestEndpointIdx] as Point : bestEndpointIdx === 0 ? seg.p1 : seg.p2;
+        const startPos = { x: rawPos.x, y: rawPos.y };
         setVertexMoveTarget({ wallType: bestWallType, wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos });
         vertexMoveTargetRef.current = { wallType: bestWallType, wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos };
         vertexMoveStartMouse.current = { x: coords.x, y: coords.y };
@@ -3536,6 +3536,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       tCtx.beginPath();
       tCtx.moveTo(w[0].x, w[0].y);
       tCtx.lineTo(w[1].x, w[1].y);
+      tCtx.stroke();
+    }
+    for (const w of lockedWalls) {
+      tCtx.beginPath();
+      tCtx.moveTo(w.p1.x, w.p1.y);
+      tCtx.lineTo(w.p2.x, w.p2.y);
       tCtx.stroke();
     }
 
@@ -4775,12 +4781,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w.p2, color: 'rgba(180, 60, 255, 0.4)', stroke: 'rgba(180, 60, 255, 0.7)' }); }
               }
               const target = vertexMoveTargetRef.current;
-              const getPt = (t: typeof target, i: number) => {
+              const getPt = (t: typeof target, i: number): Point | null => {
                 if (!t) return null;
                 const arr = t.wallType === 'walls' ? walls : t.wallType === 'lockedWalls' ? lockedWalls : partitionWalls;
                 const seg = arr[t.wallIdx];
                 if (!seg) return null;
-                return Array.isArray(seg) ? seg[i] : i === 0 ? seg.p1 : seg.p2;
+                const pt = Array.isArray(seg) ? seg[i] : i === 0 ? seg.p1 : seg.p2;
+                return (pt as unknown as Point);
               };
               const targetPt = target ? getPt(target, target.endpointIdx) : null;
               const targetKey = targetPt ? `${targetPt.x},${targetPt.y}` : null;
