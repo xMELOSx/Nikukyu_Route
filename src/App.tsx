@@ -2481,7 +2481,9 @@ export default function App() {
             indentDir,
             vertexMode,
             maskCanvasUrl,
-            maskSubMode
+            maskSubMode,
+            lockedWalls,
+            partitionWalls
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
