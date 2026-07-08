@@ -1113,43 +1113,49 @@ export default function App() {
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
 
-  // Mask canvas — derived from route data per-current-floor
-  const maskCanvasUrl = useMemo(() => {
-    const mc = routeApi.route.maskCanvas;
-    return mc ? mc[currentFloor] ?? null : null;
-  }, [routeApi.route.maskCanvas, currentFloor]);
+  // Mask canvas — loaded from global static file (per-floor PNG)
+  const [maskCanvasUrl, setMaskCanvasUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (cancelled) return;
+      const c = document.createElement('canvas');
+      c.width = 1600; c.height = 4550;
+      c.getContext('2d')!.drawImage(img, 0, 0);
+      setMaskCanvasUrl(c.toDataURL('image/png'));
+    };
+    img.onerror = () => { if (!cancelled) setMaskCanvasUrl(null); };
+    img.src = `${import.meta.env.BASE_URL}masks/${currentFloor}.png`;
+    return () => { cancelled = true; };
+  }, [currentFloor]);
 
-  const handleMaskCanvasChange = useCallback((url: string | null) => {
-    historyApiRef.current?.pushHistory(
-      routeApi.route.strokes,
-      routeApi.route.markers,
-      globalMarkersStore.globalMarkers,
-      undefined, undefined,
-      routeApi.route.maskCanvas
-    );
-    const prev = routeApi.route.maskCanvas || {} as { [key in FloorType]: string | null };
-    const newMaskCanvas = { ...prev, [currentFloor]: url } as { [key in FloorType]: string | null };
-    routeApi.setRoute(r => ({
-      ...r,
-      maskCanvas: { ...(r.maskCanvas || {} as any), [currentFloor]: url } as { [key in FloorType]: string | null }
-    }));
-    // persist to IndexedDB (same as customBg — base64 data URL is too large for localStorage)
-    const { id } = routeApi.route;
-    if (id) {
-      const hasAny = Object.values(newMaskCanvas).some(v => v != null);
-      if (hasAny) {
-        DataManager.saveMaskCanvas(id, newMaskCanvas).catch(() => {});
-      } else {
-        DataManager.saveMaskCanvas(id, null).catch(() => {});
-      }
-      DataManager.setSaveMetaMask(id, hasAny);
+  const handleMaskCanvasChange = useCallback((dataUrl: string | null) => {
+    setMaskCanvasUrl(dataUrl);
+    if (dataUrl) {
+      const byteString = atob(dataUrl.split(',')[1]);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      const blob = new Blob([ab], { type: 'image/png' });
+      fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: blob });
       notification.show(t('マスクを保存しました'));
+    } else {
+      fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: '' });
     }
-  }, [routeApi, currentFloor, globalMarkersStore.globalMarkers, notification, t]);
+  }, [currentFloor, notification, t]);
 
   const handleClearMask = useCallback(() => {
-    handleMaskCanvasChange(null);
-  }, [handleMaskCanvasChange]);
+    setMaskCanvasUrl(null);
+    // clear all floors via API
+    for (const fl of (['main', 'second', 'third', 'fourth'] as FloorType[])) {
+      fetch(`${import.meta.env.BASE_URL}api/mask?floor=${fl}`, { method: 'POST', body: '' });
+    }
+    notification.show(t('マスクを全消ししました'));
+  }, [notification, t]);
+
+  // ドラッグ中の連続保存を防止するフラグ
 
   // ドラッグ中の連続保存を防止するフラグ
   const isDraggingMarkersRef = useRef(false);

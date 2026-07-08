@@ -1091,7 +1091,18 @@ export function renderGhostBillboard(
   const pTop = pBottom - pScreenHeight;
 
   ctx.save();
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.85;
+
+  // Glow halo
+  const glowHalfW = pHalfWidth + 4;
+  for (let i = Math.max(0, pCol - glowHalfW); i <= Math.min(W - 1, pCol + glowHalfW); i++) {
+    if (colHeights[i] && colHeights[i].rawDist > dist) {
+      const glowDist = Math.abs(pCol - i) / glowHalfW;
+      if (glowDist > 1) continue;
+      ctx.fillStyle = `rgba(100, 180, 255, ${(1 - glowDist) * 0.3})`;
+      ctx.fillRect(i, pTop - 2, 1, pScreenHeight + 4);
+    }
+  }
 
   if (hasImage) {
     const imgW = heroImage!.width;
@@ -1112,10 +1123,10 @@ export function renderGhostBillboard(
         const bodyH = pBottom - pTop;
         const bodyTop = pTop + bodyH * 0.1 * (1 - thickness);
         const shade = 0.6 + 0.4 * thickness;
-        ctx.fillStyle = `rgba(150, 200, 255, ${shade * 0.5})`;
+        ctx.fillStyle = `rgba(180, 220, 255, ${shade * 0.85})`;
         ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
-        const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
-        const headY = bodyTop - headSize * 1.2;
+        const headSize = Math.max(3, Math.round(pScreenHeight * 0.14 * thickness));
+        const headY = bodyTop - headSize * 1.3;
         ctx.fillRect(i, headY, 1, headSize);
       }
     }

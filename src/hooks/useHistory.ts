@@ -106,15 +106,12 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls()),
-      maskCanvas: clone(getRoute().maskCanvas)
+      lockedWalls: clone(getLockedWalls())
     };
     setPastHistory(nextPast);
     setFutureHistory(prev => [...prev, current]);
 
-    const restoredRoute = { ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers };
-    if (previous.maskCanvas) restoredRoute.maskCanvas = previous.maskCanvas;
-    replaceRoute(restoredRoute);
+    replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers });
     if (previous.walls) replaceWalls(previous.walls);
     if (previous.lockedWalls) replaceLockedWalls(previous.lockedWalls);
     const safeGlobals = Array.isArray(previous.globalMarkers) ? previous.globalMarkers : [];
@@ -135,15 +132,12 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls()),
-      maskCanvas: clone(getRoute().maskCanvas)
+      lockedWalls: clone(getLockedWalls())
     };
     setFutureHistory(nextFuture);
     setPastHistory(prev => [...prev, current]);
 
-    const restoredRoute = { ...getRoute(), strokes: next.strokes, markers: next.individualMarkers };
-    if (next.maskCanvas) restoredRoute.maskCanvas = next.maskCanvas;
-    replaceRoute(restoredRoute);
+    replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers });
     if (next.walls) replaceWalls(next.walls);
     if (next.lockedWalls) replaceLockedWalls(next.lockedWalls);
     const safeGlobals = Array.isArray(next.globalMarkers) ? next.globalMarkers : [];
@@ -160,8 +154,7 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls()),
-      maskCanvas: clone(getRoute().maskCanvas)
+      lockedWalls: clone(getLockedWalls())
     };
   }, [getRoute, getGlobalMarkers, getWalls, getLockedWalls]);
 

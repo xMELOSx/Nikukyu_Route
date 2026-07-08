@@ -409,6 +409,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       const keys = keysRef.current;
       let forward = 0;
       let strafe = 0;
+      const speedMul = keys.has('shift') ? 2.5 : 1;
 
       if (keys.has('w') || keys.has('arrowup')) forward = 1;
       if (keys.has('s') || keys.has('arrowdown')) forward = -1;
@@ -426,8 +427,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           // 壁抜けON: 衝突判定なしで直接移動
           const cosA = Math.cos(playerRef.current.angle);
           const sinA = Math.sin(playerRef.current.angle);
-          playerRef.current.x += (cosA * forward - sinA * strafe) * MOVE_SPEED * dt;
-          playerRef.current.y += (sinA * forward + cosA * strafe) * MOVE_SPEED * dt;
+          playerRef.current.x += (cosA * forward - sinA * strafe) * MOVE_SPEED * speedMul * dt;
+          playerRef.current.y += (sinA * forward + cosA * strafe) * MOVE_SPEED * speedMul * dt;
         } else {
           const collisionWalls = closedLockedArr.length > 0 ? [...lw, ...closedLockedArr] : lw;
           if (mode === 'tps') {
@@ -437,7 +438,7 @@ const FpsView: React.FC<FpsViewProps> = ({
               strafe,
               playerRef.current.angle,
               collisionWalls,
-              MOVE_SPEED * dt,
+              MOVE_SPEED * speedMul * dt,
               6
             );
             playerRef.current = newPlayer;
@@ -447,7 +448,7 @@ const FpsView: React.FC<FpsViewProps> = ({
               forward,
               strafe,
               collisionWalls,
-              MOVE_SPEED * dt,
+              MOVE_SPEED * speedMul * dt,
               6
             );
             playerRef.current = newPlayer;
@@ -720,7 +721,7 @@ const FpsView: React.FC<FpsViewProps> = ({
         const ghostInterp = interpolateRoute(autoRouteSegmentsRef.current, autoRouteTimingRef.current.speed, autoRouteTimingRef.current.totalTime, ghostElapsed);
         if (ghostInterp) {
           ghostPosRef.current = { x: ghostInterp.position.x, y: ghostInterp.position.y };
-          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights);
+          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights, heroImageRef.current);
         } else {
           ghostPosRef.current = null;
         }
