@@ -1073,17 +1073,8 @@ export default function App() {
 
   const lockedWallsRef = useRef(lockedWalls);
   lockedWallsRef.current = lockedWalls;
-  const handleLockedWallsChange = useCallback((newLocked: LockedWallSegment[]) => {
-    const next = { ...lockedWallsRef.current, [currentFloor]: newLocked };
-    globalData.setLockedWalls(next);
-  }, [currentFloor, globalData.setLockedWalls]);
-
   const partitionWallsRef = useRef(partitionWalls);
   partitionWallsRef.current = partitionWalls;
-  const handlePartitionWallsChange = useCallback((newPartition: PartitionWallSegment[]) => {
-    const next = { ...partitionWallsRef.current, [currentFloor]: newPartition };
-    globalData.setPartitionWalls(next);
-  }, [currentFloor, globalData.setPartitionWalls]);
 
   const historyApiRef = useRef<any>(null);
 
@@ -1106,6 +1097,24 @@ export default function App() {
 
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
+
+  const handleLockedWallsChange = useCallback((newLocked: LockedWallSegment[]) => {
+    historyApiRef.current?.pushHistory(
+      routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers,
+      undefined, lockedWallsRef.current, partitionWallsRef.current
+    );
+    const next = { ...lockedWallsRef.current, [currentFloor]: newLocked };
+    globalData.setLockedWalls(next);
+  }, [currentFloor, globalData.setLockedWalls, globalMarkersStore.globalMarkers]);
+
+  const handlePartitionWallsChange = useCallback((newPartition: PartitionWallSegment[]) => {
+    historyApiRef.current?.pushHistory(
+      routeRef.current.strokes, routeRef.current.markers, globalMarkersStore.globalMarkers,
+      undefined, lockedWallsRef.current, partitionWallsRef.current
+    );
+    const next = { ...partitionWallsRef.current, [currentFloor]: newPartition };
+    globalData.setPartitionWalls(next);
+  }, [currentFloor, globalData.setPartitionWalls, globalMarkersStore.globalMarkers]);
 
   // Mask canvas — loaded from global static file (per-floor PNG)
   const [maskCanvasUrl, setMaskCanvasUrl] = useState<string | null>(null);
@@ -1215,10 +1224,12 @@ export default function App() {
     getGlobalMarkers: () => globalMarkersStore.globalMarkers,
     getWalls: () => globalWallsRef.current as any,
     getLockedWalls: () => globalData.lockedWalls,
+    getPartitionWalls: () => globalData.partitionWalls,
     replaceRoute: routeApi._replaceRoute,
     replaceGlobalMarkers: globalMarkersStore.replace,
     replaceWalls: updateGlobalWalls as any,
     replaceLockedWalls: (next) => globalData.setLockedWalls(next),
+    replacePartitionWalls: (next) => globalData.setPartitionWalls(next),
     persistGlobalMarkers: (markers) => {
       if (Array.isArray(markers) && markers.length > 0) {
         globalData.setMarkers(markers);

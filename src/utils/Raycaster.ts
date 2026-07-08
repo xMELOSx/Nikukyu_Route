@@ -168,6 +168,10 @@ interface WallRenderArgs {
   lockedWallColor?: string;
   lockedWallColorDark?: string;
   lockedWallHeightFrac?: number;
+  partitionWalls?: WallSegment[];
+  partitionWallColor?: string;
+  partitionWallColorDark?: string;
+  partitionWallHeightStart?: number;
   playerPos?: { x: number; y: number };
   wallFadeRadius?: number;
   wallTexturesData?: Record<string, ImageData>;
@@ -223,6 +227,10 @@ function renderWalls(
   const lockedHits = lw && lw.length > 0
     ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, lw, fov, numRays)
     : null;
+  const pw = args.partitionWalls;
+  const partitionHits = pw && pw.length > 0
+    ? castRays({ x: origin.x, y: origin.y, angle: originAngle }, pw, fov, numRays)
+    : null;
   const colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[] = [];
 
   // Create screen pixel buffer
@@ -245,6 +253,17 @@ function renderWalls(
   const lDarkG = args.lockedWallColorDark ? parseInt(args.lockedWallColorDark.slice(3, 5), 16) : darkG;
   const lDarkB = args.lockedWallColorDark ? parseInt(args.lockedWallColorDark.slice(5, 7), 16) : darkB;
   const lhf = args.lockedWallHeightFrac ?? 0.5;
+
+  // Pre-parse partition wall colors
+  const pr2 = args.partitionWallColor ? parseInt(args.partitionWallColor.slice(1, 3), 16) : r;
+  const pg2 = args.partitionWallColor ? parseInt(args.partitionWallColor.slice(3, 5), 16) : g;
+  const pb2 = args.partitionWallColor ? parseInt(args.partitionWallColor.slice(5, 7), 16) : b;
+  const pDarkR2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(1, 3), 16) : darkR;
+  const pDarkG2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(3, 5), 16) : darkG;
+  const pDarkB2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(5, 7), 16) : darkB;
+  const phs = args.partitionWallHeightStart ?? 0.3;
+
+  // Pre-parse ceiling / floor colors
 
   // Pre-parse ceiling / floor colors
   const parseHex = (hex: string) => {
@@ -569,6 +588,34 @@ function renderWalls(
       }
     }
 
+    // 4. Partition wall overlay — render above locked wall height
+    if (partitionHits) {
+      const pHit = partitionHits[i];
+      if (pHit.distance < Infinity && pHit.distance <= effectiveDist + 0.1) {
+        const pPerp = pHit.distance * Math.cos(rayAngle - originAngle);
+        const pScale = H / 240;
+        const pHalfHRef = halfH / pScale;
+        let pWallH = pPerp > 0.1 ? (pHalfHRef / pPerp) * distPlane : H;
+        const pTopRaw = Math.floor(halfH - pWallH * (1 - camHeightFrac));
+        const pBotRaw = Math.floor(halfH + pWallH * camHeightFrac);
+        const pFullTop = Math.max(0, pTopRaw);
+        const pFullBot = Math.min(H, pBotRaw);
+        // Start partition wall at phs fraction from bottom
+        const pStartY = Math.floor(pFullBot - (pFullBot - pFullTop) * phs);
+        const pShade = Math.min(1, 10 / pPerp);
+        const pR = Math.round(pDarkR2 + (pr2 - pDarkR2) * pShade);
+        const pG = Math.round(pDarkG2 + (pg2 - pDarkG2) * pShade);
+        const pB = Math.round(pDarkB2 + (pb2 - pDarkB2) * pShade);
+        for (let y = pFullTop; y < pStartY; y++) {
+          const idx = (y * W + i) * 4;
+          buf[idx] = pR;
+          buf[idx + 1] = pG;
+          buf[idx + 2] = pB;
+          buf[idx + 3] = 255;
+        }
+      }
+    }
+
   }
 
   // Draw buffer to canvas in 1 draw call!
@@ -596,7 +643,11 @@ export function renderFpsView(
   lockedWallHeightFrac?: number,
   playerPos?: { x: number; y: number },
   wallFadeRadius?: number,
-  wallTexturesData?: Record<string, ImageData>
+  wallTexturesData?: Record<string, ImageData>,
+  partitionWalls?: WallSegment[],
+  partitionWallColor?: string,
+  partitionWallColorDark?: string,
+  partitionWallHeightStart?: number
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -608,7 +659,8 @@ export function renderFpsView(
     ceilingColor1, ceilingColor2,
     bgImageData,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
-    playerPos, wallFadeRadius, wallTexturesData
+    playerPos, wallFadeRadius, wallTexturesData,
+    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart
   }).colHeights;
 }
 
@@ -952,7 +1004,11 @@ export function renderTpsView(
   playerPos?: { x: number; y: number },
   wallFadeRadius?: number,
   heroImage?: HTMLImageElement | null,
-  wallTexturesData?: Record<string, ImageData>
+  wallTexturesData?: Record<string, ImageData>,
+  partitionWalls?: WallSegment[],
+  partitionWallColor?: string,
+  partitionWallColorDark?: string,
+  partitionWallHeightStart?: number
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -970,7 +1026,8 @@ export function renderTpsView(
     bgImageData,
     playerDist: actualCamDistance,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
-    playerPos, wallFadeRadius, wallTexturesData
+    playerPos, wallFadeRadius, wallTexturesData,
+    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart
   });
 
   // Render player billboard

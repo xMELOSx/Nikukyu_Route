@@ -7,6 +7,7 @@ import FpsView from './FpsView';
 interface FpsTpsControlsProps {
   walls: WallSegment[];
   lockedWalls: LockedWallSegment[];
+  partitionWalls?: { p1: Point; p2: Point }[];
   onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
   markers: HeistMarker[];
   floor: FloorType;
@@ -73,7 +74,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   tpsPinSize = 100,
   spawnVisible = true,
   hideRouteLines = false,
-  hideBranchLines = false
+  hideBranchLines = false,
+  partitionWalls = []
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -453,6 +455,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
           <FpsView
             walls={walls}
             lockedWalls={lockedWalls}
+            partitionWalls={partitionWalls}
             onLockedWallsChange={onLockedWallsChange}
             markers={markers}
             playerPos={currentPosition}

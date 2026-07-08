@@ -20,6 +20,7 @@ import {
 interface FpsViewProps {
   walls: WallSegment[];
   lockedWalls: LockedWallSegment[];
+  partitionWalls?: { p1: Point; p2: Point }[];
   markers: HeistMarker[];
   playerPos: { x: number; y: number };
   onExit: () => void;
@@ -66,7 +67,8 @@ const FpsView: React.FC<FpsViewProps> = ({
   tpsPinSize = 100,
   onToggleNearestPhone,
   onToggleMode,
-  onReload
+  onReload,
+  partitionWalls = []
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -627,7 +629,10 @@ const FpsView: React.FC<FpsViewProps> = ({
       let colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[];
       const LOCKED_WALL_COLOR = '#cc9900';
       const LOCKED_WALL_COLOR_DARK = '#664400';
+      const PARTITION_WALL_COLOR = '#b43cff';
+      const PARTITION_WALL_COLOR_DARK = '#6a1fb3';
       const closedLockedForRender = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
+      const partitionForRender = partitionWalls.map(s => [s.p1, s.p2] as [Point, Point]);
       if (mode === 'tps') {
         colHeights = renderTpsView(
           ctx, canvas,
@@ -646,7 +651,10 @@ const FpsView: React.FC<FpsViewProps> = ({
           { x: playerRef.current.x, y: playerRef.current.y },
           30,
           heroImageRef.current,
-          wallTexturesRef.current
+          wallTexturesRef.current,
+          partitionForRender,
+          PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
+          0.3
         );
       } else {
         colHeights = renderFpsView(
@@ -663,7 +671,10 @@ const FpsView: React.FC<FpsViewProps> = ({
           0.3,
           { x: playerRef.current.x, y: playerRef.current.y },
           30,
-          wallTexturesRef.current
+          wallTexturesRef.current,
+          partitionForRender,
+          PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
+          0.3
         );
       }
 

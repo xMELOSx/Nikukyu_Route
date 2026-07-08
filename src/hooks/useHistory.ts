@@ -13,30 +13,21 @@ export interface HistorySnapshot {
   globalMarkers: HeistMarker[];
   walls?: RouteData['walls'];
   lockedWalls?: GlobalLockedWalls;
+  partitionWalls?: { [key: string]: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] };
 }
 
 export interface UseHistoryOptions {
-  /** Read the current route (used to build "current state" snapshots). */
   getRoute: () => RouteData;
-  /** Read the current global markers. */
   getGlobalMarkers: () => HeistMarker[];
-  /** Read the current global walls. */
   getWalls: () => RouteData['walls'];
-  /** Read the current global locked walls. */
   getLockedWalls: () => GlobalLockedWalls;
-  /** Replace the route (used by undo/redo). */
+  getPartitionWalls: () => { [key: string]: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] };
   replaceRoute: (next: RouteData) => void;
-  /** Replace the global markers (used by undo/redo). */
   replaceGlobalMarkers: (next: HeistMarker[]) => void;
-  /** Replace the global walls (used by undo/redo). */
   replaceWalls: (next: RouteData['walls']) => void;
-  /** Replace the global locked walls (used by undo/redo). */
   replaceLockedWalls: (next: GlobalLockedWalls) => void;
-  /** Persist global markers to localStorage (called after undo/redo). */
+  replacePartitionWalls: (next: { [key: string]: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] }) => void;
   persistGlobalMarkers: (next: HeistMarker[]) => void;
-  /** Called after undo/redo with the restored marker set so the host can
-   *  clean up active-marker state (e.g. clear active note marker, reset
-   *  tool mode to 'move'). */
   onRestore?: (restoredIndiv: HeistMarker[], restoredGlobal: HeistMarker[]) => void;
 }
 
@@ -45,7 +36,7 @@ export interface UseHistoryApi {
   futureHistory: HistorySnapshot[];
   canUndo: boolean;
   canRedo: boolean;
-  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls'], lockedWalls?: GlobalLockedWalls) => void;
+  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls'], lockedWalls?: GlobalLockedWalls, partitionWalls?: { [key: string]: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] }) => void;
   undo: () => void;
   redo: () => void;
   /** Capture a snapshot at the start of a marker drag (no history yet). */
@@ -71,7 +62,7 @@ function clone<T>(value: T): T {
  * caller can run any side effects (active-marker cleanup, persistence, etc.).
  */
 export function useHistory(options: UseHistoryOptions): UseHistoryApi {
-  const { getRoute, getGlobalMarkers, getWalls, getLockedWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, persistGlobalMarkers, onRestore } = options;
+  const { getRoute, getGlobalMarkers, getWalls, getLockedWalls, getPartitionWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, replacePartitionWalls, persistGlobalMarkers, onRestore } = options;
 
   const [pastHistory, setPastHistory] = useState<HistorySnapshot[]>([]);
   const [futureHistory, setFutureHistory] = useState<HistorySnapshot[]>([]);
@@ -82,18 +73,20 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     indiv: HeistMarker[],
     global: HeistMarker[],
     walls?: RouteData['walls'],
-    lockedWalls?: GlobalLockedWalls
+    lockedWalls?: GlobalLockedWalls,
+    partitionWalls?: { [key: string]: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] }
   ) => {
     const snapshot: HistorySnapshot = {
       strokes: clone(strokes),
       individualMarkers: clone(indiv),
       globalMarkers: clone(global),
       walls: walls ? clone(walls) : clone(getWalls()),
-      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls())
+      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls()),
+      partitionWalls: partitionWalls ? clone(partitionWalls) : clone(getPartitionWalls())
     };
     setPastHistory(prev => [...prev.slice(-(HISTORY_LIMIT - 1)), snapshot]);
     setFutureHistory([]);
-  }, [getWalls, getLockedWalls]);
+  }, [getWalls, getLockedWalls, getPartitionWalls]);
 
   const undo = useCallback(() => {
     if (pastHistory.length === 0) return;
@@ -106,7 +99,8 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      partitionWalls: clone(getPartitionWalls())
     };
     setPastHistory(nextPast);
     setFutureHistory(prev => [...prev, current]);
@@ -114,13 +108,14 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers });
     if (previous.walls) replaceWalls(previous.walls);
     if (previous.lockedWalls) replaceLockedWalls(previous.lockedWalls);
+    if (previous.partitionWalls) replacePartitionWalls(previous.partitionWalls);
     const safeGlobals = Array.isArray(previous.globalMarkers) ? previous.globalMarkers : [];
     if (safeGlobals.length > 0) {
       replaceGlobalMarkers(safeGlobals);
       persistGlobalMarkers(safeGlobals);
     }
     if (onRestore) onRestore(previous.individualMarkers, previous.globalMarkers);
-  }, [pastHistory, getRoute, getGlobalMarkers, getWalls, getLockedWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, persistGlobalMarkers, onRestore]);
+  }, [pastHistory, getRoute, getGlobalMarkers, getWalls, getLockedWalls, getPartitionWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, replacePartitionWalls, persistGlobalMarkers, onRestore]);
 
   const redo = useCallback(() => {
     if (futureHistory.length === 0) return;
@@ -132,7 +127,8 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      partitionWalls: clone(getPartitionWalls())
     };
     setFutureHistory(nextFuture);
     setPastHistory(prev => [...prev, current]);
@@ -140,13 +136,14 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers });
     if (next.walls) replaceWalls(next.walls);
     if (next.lockedWalls) replaceLockedWalls(next.lockedWalls);
+    if (next.partitionWalls) replacePartitionWalls(next.partitionWalls);
     const safeGlobals = Array.isArray(next.globalMarkers) ? next.globalMarkers : [];
     if (safeGlobals.length > 0) {
       replaceGlobalMarkers(safeGlobals);
       persistGlobalMarkers(safeGlobals);
     }
     if (onRestore) onRestore(next.individualMarkers, safeGlobals);
-  }, [futureHistory, getRoute, getGlobalMarkers, getWalls, getLockedWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, persistGlobalMarkers, onRestore]);
+  }, [futureHistory, getRoute, getGlobalMarkers, getWalls, getLockedWalls, getPartitionWalls, replaceRoute, replaceGlobalMarkers, replaceWalls, replaceLockedWalls, replacePartitionWalls, persistGlobalMarkers, onRestore]);
 
   const startDragSnapshot = useCallback(() => {
     dragSnapshotRef.current = {
@@ -154,9 +151,10 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      partitionWalls: clone(getPartitionWalls())
     };
-  }, [getRoute, getGlobalMarkers, getWalls, getLockedWalls]);
+  }, [getRoute, getGlobalMarkers, getWalls, getLockedWalls, getPartitionWalls]);
 
   const commitDragSnapshot = useCallback(() => {
     if (dragSnapshotRef.current) {
