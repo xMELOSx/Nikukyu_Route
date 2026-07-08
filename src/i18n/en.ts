@@ -359,6 +359,8 @@ export const en: Locale = {
     '図形の形に壁を生成': 'Generate walls along shape',
     '長方形': 'Rectangle',
     'パス': 'Path',
+    '近道': 'Short Path',
+    '遠回り': 'Long Path',
 
     // ----- Edit stroke sub menu -----
     '線をクリックで選択 (Alt+クリックで複数選択)。': 'Click a line to select it (Alt+click to add multiple).',

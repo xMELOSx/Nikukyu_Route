@@ -128,6 +128,8 @@ export interface LeftSidebarProps {
   setWallShapeSubMode?: (v: string) => void;
   shapeDrawMode?: string;
   setShapeDrawMode?: (v: string) => void;
+  indentDir?: string;
+  setIndentDir?: (v: string) => void;
   [key: string]: any;
 }
 
@@ -213,6 +215,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     partitionWalls, setPartitionWalls,
     wallShapeSubMode, setWallShapeSubMode,
     shapeDrawMode, setShapeDrawMode,
+    indentDir, setIndentDir,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1314,6 +1317,24 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                         <span style={{ fontSize: '10px' }}>{t('パス')}</span>
                       </button>
                     </div>
+                    {wallShapeSubMode === 'indent' && (
+                      <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                        <button
+                          className={`tool-btn ${indentDir === 'short' ? 'active' : ''}`}
+                          onClick={() => setIndentDir?.('short')}
+                          style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 200, 0, 0.3)' }}
+                        >
+                          <span style={{ fontSize: '10px' }}>{t('近道')}</span>
+                        </button>
+                        <button
+                          className={`tool-btn ${indentDir === 'long' ? 'active' : ''}`}
+                          onClick={() => setIndentDir?.('long')}
+                          style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 200, 0, 0.3)' }}
+                        >
+                          <span style={{ fontSize: '10px' }}>{t('遠回り')}</span>
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
                 {/* 仕切り壁の本数表示 (描く+仕切りモード時) */}

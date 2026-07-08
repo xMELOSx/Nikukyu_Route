@@ -249,6 +249,11 @@ export default function App() {
     localStorage.setItem('heist_shape_draw_mode', shapeDrawMode);
   }, [shapeDrawMode]);
 
+  const [indentDir, setIndentDir] = useState<'short' | 'long'>('short');
+  useEffect(() => {
+    localStorage.setItem('heist_indent_dir', indentDir);
+  }, [indentDir]);
+
   const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>(() => {
     try {
       const saved = localStorage.getItem('heist_partition_walls');
@@ -2154,6 +2159,8 @@ export default function App() {
           setWallShapeSubMode={setWallShapeSubMode}
           shapeDrawMode={shapeDrawMode}
           setShapeDrawMode={setShapeDrawMode}
+          indentDir={indentDir}
+          setIndentDir={setIndentDir}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2306,6 +2313,7 @@ export default function App() {
               setWallShapeSubMode={setWallShapeSubMode}
               shapeDrawMode={shapeDrawMode}
               setShapeDrawMode={setShapeDrawMode}
+              indentDir={indentDir}
             />
           ), [
             currentFloor,
@@ -2412,7 +2420,8 @@ export default function App() {
             hideMarkersDuringWalls,
             partitionWalls,
             wallShapeSubMode,
-            shapeDrawMode
+            shapeDrawMode,
+            indentDir
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}

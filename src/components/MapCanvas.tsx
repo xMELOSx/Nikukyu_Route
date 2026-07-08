@@ -52,6 +52,7 @@ interface MapCanvasProps {
   setWallShapeSubMode?: (v: 'indent' | 'generate') => void;
   shapeDrawMode?: 'rect' | 'path';
   setShapeDrawMode?: (v: 'rect' | 'path') => void;
+  indentDir?: 'short' | 'long';
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -218,6 +219,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   setWallShapeSubMode,
   shapeDrawMode = 'rect',
   setShapeDrawMode,
+  indentDir = 'short',
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -3244,11 +3246,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return null;
   };
 
-  // Shared indent computation  (preview + execution)
-  const computeIndentData = useCallback((polygon: Point[], srcWalls: WallSegment[]): {
+  // Shared indent computation (preview + execution)
+  const computeIndentData = useCallback((polygon: Point[], srcWalls: WallSegment[], pathDir?: 'short' | 'long'): {
     cutPts: { pt: Point; edgeIdx: number; edgeT: number }[];
     connWalls: WallSegment[];
   } => {
+    const useLong = pathDir === 'long';
     const n = polygon.length;
     const inside = (p: Point) => isPointInPolygon(p, polygon);
     const cutPts: { pt: Point; edgeIdx: number; edgeT: number }[] = [];
@@ -3343,7 +3346,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ensureEnd(pathBwd, b.pt);
       const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j - 1].x, p.y - pathFwd[j - 1].y) : s, 0);
       const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j - 1].x, p.y - pathBwd[j - 1].y) : s, 0);
-      const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
+      const chosen = useLong ? (lenFwd > lenBwd ? pathFwd : pathBwd) : (lenFwd <= lenBwd ? pathFwd : pathBwd);
       for (let j = 0; j < chosen.length - 1; j++) {
         const d = Math.hypot(chosen[j + 1].x - chosen[j].x, chosen[j + 1].y - chosen[j].y);
         if (d > 2) connWalls.push([chosen[j], chosen[j + 1]]);
@@ -3376,7 +3379,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onWallsChange?.([...walls, ...newWalls]);
     } else if (wallShapeSubMode === 'indent') {
-      const data = computeIndentData(polygon, walls);
+      const data = computeIndentData(polygon, walls, indentDir);
       onWallsChange?.(mergeWalls(data.connWalls));
     }
 
@@ -4477,7 +4480,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 poly = shapePath.length >= 3 ? shapePath : null;
               }
               if (!poly || poly.length < 3) return null;
-              const preview = computeIndentData(poly, walls);
+              const preview = computeIndentData(poly, walls, indentDir);
               const pts = preview.cutPts;
               const allConns = preview.connWalls;
               const totalSegs = allConns.length;
