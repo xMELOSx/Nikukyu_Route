@@ -512,6 +512,7 @@ export class GlobalDataService {
         this._loadMarkers(),
         this._loadWalls(),
         this._loadLockedWalls(),
+        this._loadPartitionWalls(),
         this._loadSpawns(),
         this._loadDefaults(),
         this._loadHelp(),
