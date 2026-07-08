@@ -363,6 +363,10 @@ export const en: Locale = {
     '遠回り': 'Long Path',
     '接続': 'Connect',
     '吸着': 'Snap',
+    'マスク': 'Mask',
+    'マスク全消し': 'Clear Mask',
+    '塗り': 'Paint',
+    '塗りつぶし': 'Fill',
 
     // ----- Edit stroke sub menu -----
     '線をクリックで選択 (Alt+クリックで複数選択)。': 'Click a line to select it (Alt+click to add multiple).',

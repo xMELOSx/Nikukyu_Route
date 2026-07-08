@@ -13,6 +13,7 @@ export interface HistorySnapshot {
   globalMarkers: HeistMarker[];
   walls?: RouteData['walls'];
   lockedWalls?: GlobalLockedWalls;
+  maskCanvas?: { [key in FloorType]: string | null };
 }
 
 export interface UseHistoryOptions {
@@ -45,7 +46,7 @@ export interface UseHistoryApi {
   futureHistory: HistorySnapshot[];
   canUndo: boolean;
   canRedo: boolean;
-  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls']) => void;
+  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls'], lockedWalls?: GlobalLockedWalls, maskCanvas?: { [key in FloorType]: string | null }) => void;
   undo: () => void;
   redo: () => void;
   /** Capture a snapshot at the start of a marker drag (no history yet). */
@@ -82,18 +83,20 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     indiv: HeistMarker[],
     global: HeistMarker[],
     walls?: RouteData['walls'],
-    lockedWalls?: GlobalLockedWalls
+    lockedWalls?: GlobalLockedWalls,
+    maskCanvas?: { [key in FloorType]: string | null }
   ) => {
     const snapshot: HistorySnapshot = {
       strokes: clone(strokes),
       individualMarkers: clone(indiv),
       globalMarkers: clone(global),
       walls: walls ? clone(walls) : clone(getWalls()),
-      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls())
+      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls()),
+      maskCanvas: maskCanvas ? clone(maskCanvas) : clone(getRoute().maskCanvas)
     };
     setPastHistory(prev => [...prev.slice(-(HISTORY_LIMIT - 1)), snapshot]);
     setFutureHistory([]);
-  }, [getWalls, getLockedWalls]);
+  }, [getWalls, getLockedWalls, getRoute]);
 
   const undo = useCallback(() => {
     if (pastHistory.length === 0) return;
@@ -106,17 +109,18 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      maskCanvas: clone(getRoute().maskCanvas)
     };
     setPastHistory(nextPast);
     setFutureHistory(prev => [...prev, current]);
 
-    replaceRoute({ ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers });
+    const restoredRoute = { ...getRoute(), strokes: previous.strokes, markers: previous.individualMarkers };
+    if (previous.maskCanvas) restoredRoute.maskCanvas = previous.maskCanvas;
+    replaceRoute(restoredRoute);
     if (previous.walls) replaceWalls(previous.walls);
     if (previous.lockedWalls) replaceLockedWalls(previous.lockedWalls);
     const safeGlobals = Array.isArray(previous.globalMarkers) ? previous.globalMarkers : [];
-    // snapshot が空のグローバルマーカーを持っている場合は現在の状態を維持する
-    // (非同期ロード前に取得したスナップショットによるデータ破壊を防止)
     if (safeGlobals.length > 0) {
       replaceGlobalMarkers(safeGlobals);
       persistGlobalMarkers(safeGlobals);
@@ -134,12 +138,15 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      maskCanvas: clone(getRoute().maskCanvas)
     };
     setFutureHistory(nextFuture);
     setPastHistory(prev => [...prev, current]);
 
-    replaceRoute({ ...getRoute(), strokes: next.strokes, markers: next.individualMarkers });
+    const restoredRoute = { ...getRoute(), strokes: next.strokes, markers: next.individualMarkers };
+    if (next.maskCanvas) restoredRoute.maskCanvas = next.maskCanvas;
+    replaceRoute(restoredRoute);
     if (next.walls) replaceWalls(next.walls);
     if (next.lockedWalls) replaceLockedWalls(next.lockedWalls);
     const safeGlobals = Array.isArray(next.globalMarkers) ? next.globalMarkers : [];
@@ -156,7 +163,8 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
       individualMarkers: clone(getRoute().markers),
       globalMarkers: clone(getGlobalMarkers()),
       walls: clone(getWalls()),
-      lockedWalls: clone(getLockedWalls())
+      lockedWalls: clone(getLockedWalls()),
+      maskCanvas: clone(getRoute().maskCanvas)
     };
   }, [getRoute, getGlobalMarkers, getWalls, getLockedWalls]);
 

@@ -126,12 +126,15 @@ export interface LeftSidebarProps {
   setPartitionWalls?: (v: any) => void;
   wallShapeSubMode?: string;
   setWallShapeSubMode?: (v: string) => void;
-  shapeDrawMode?: string;
+  shapeDrawMode?: 'rect' | 'path' | 'fill';
   setShapeDrawMode?: (v: string) => void;
   indentDir?: string;
   setIndentDir?: (v: string) => void;
   vertexMode?: string;
   setVertexMode?: (v: string) => void;
+  onClearMask?: () => void;
+  maskSubMode?: 'paint' | 'erase';
+  setMaskSubMode?: (v: string) => void;
   [key: string]: any;
 }
 
@@ -219,6 +222,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     shapeDrawMode, setShapeDrawMode,
     indentDir, setIndentDir,
     vertexMode, setVertexMode,
+    maskSubMode, setMaskSubMode,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1314,6 +1318,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       >
                         <span style={{ fontSize: '10px', color: '#39ff14' }}>{t('壁生成')}</span>
                       </button>
+                      <button
+                        className={`tool-btn ${wallShapeSubMode === 'mask' ? 'active' : ''}`}
+                        onClick={() => setWallShapeSubMode('mask')}
+                        style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 0, 0, 0.4)' }}
+                        title={t('図形でミニマップをマスク')}
+                      >
+                        <span style={{ fontSize: '10px', color: '#000' }}>{t('マスク')}</span>
+                      </button>
                     </div>
                     <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                       <button
@@ -1330,6 +1342,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       >
                         <span style={{ fontSize: '10px' }}>{t('パス')}</span>
                       </button>
+                      {wallShapeSubMode === 'mask' && (
+                        <button
+                          className={`tool-btn ${shapeDrawMode === 'fill' ? 'active' : ''}`}
+                          onClick={() => setShapeDrawMode('fill')}
+                          style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 100, 255, 0.4)' }}
+                        >
+                          <span style={{ fontSize: '10px', color: '#0066ff' }}>{t('塗りつぶし')}</span>
+                        </button>
+                      )}
                     </div>
                     {wallShapeSubMode === 'indent' && (
                       <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
@@ -1348,6 +1369,35 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                           <span style={{ fontSize: '10px' }}>{t('遠回り')}</span>
                         </button>
                       </div>
+                    )}
+                    {wallShapeSubMode === 'mask' && (
+                      <>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                          <button
+                            className={`tool-btn ${maskSubMode === 'paint' ? 'active' : ''}`}
+                            onClick={() => setMaskSubMode?.('paint')}
+                            style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 0, 0, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#000' }}>{t('塗り')}</span>
+                          </button>
+                          <button
+                            className={`tool-btn ${maskSubMode === 'erase' ? 'active' : ''}`}
+                            onClick={() => setMaskSubMode?.('erase')}
+                            style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 50, 50, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#ff3333' }}>{t('削除')}</span>
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                          <button
+                            className="tool-btn"
+                            onClick={() => props.onClearMask?.()}
+                            style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 50, 50, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#ff3333' }}>{t('マスク全消し')}</span>
+                          </button>
+                        </div>
+                      </>
                     )}
                   </>
                 )}

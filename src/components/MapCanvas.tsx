@@ -48,12 +48,15 @@ interface MapCanvasProps {
   wallLockedSubMode?: 'normal' | 'locked' | 'partition';
   partitionWalls?: PartitionWallSegment[];
   onPartitionWallsChange?: (walls: PartitionWallSegment[]) => void;
-  wallShapeSubMode?: 'indent' | 'generate';
-  setWallShapeSubMode?: (v: 'indent' | 'generate') => void;
-  shapeDrawMode?: 'rect' | 'path';
-  setShapeDrawMode?: (v: 'rect' | 'path') => void;
+  wallShapeSubMode?: 'indent' | 'generate' | 'mask';
+  setWallShapeSubMode?: (v: 'indent' | 'generate' | 'mask') => void;
+  shapeDrawMode?: 'rect' | 'path' | 'fill';
+  setShapeDrawMode?: (v: 'rect' | 'path' | 'fill') => void;
   indentDir?: 'short' | 'long';
   vertexMode?: 'connect' | 'snap';
+  maskCanvasUrl?: string | null;
+  onMaskCanvasChange?: (url: string | null) => void;
+  maskSubMode?: 'paint' | 'erase';
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -222,6 +225,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   setShapeDrawMode,
   indentDir = 'short',
   vertexMode = 'connect',
+  maskCanvasUrl,
+  onMaskCanvasChange,
+  maskSubMode: maskSubModeProp = 'paint',
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -352,6 +358,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const vertexMoveStartMouse = useRef<Point>({ x: 0, y: 0 });
   const [vertexMoveDraft, setVertexMoveDraft] = useState<{ wallIdx: number; newPos: Point } | null>(null);
 
+  // Mask tool state
+  const [maskSubMode, setMaskSubMode] = useState<'paint' | 'erase'>(maskSubModeProp as 'paint' | 'erase');
+  useEffect(() => { setMaskSubMode(maskSubModeProp as 'paint' | 'erase'); }, [maskSubModeProp]);
+
   // Shape tool state
   const [shapePath, setShapePath] = useState<Point[]>([]);
   const shapePathRef = useRef<Point[]>([]);
@@ -364,6 +374,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const erasedMarkerIdsRef = useRef<Set<string>>(new Set());
   const freeCamModeRef = useRef(false);
   const [miniMapSource, setMiniMapSource] = useState<HTMLCanvasElement | null>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const getMaskCanvas = () => {
+    if (!maskCanvasRef.current) {
+      maskCanvasRef.current = document.createElement('canvas');
+      maskCanvasRef.current.width = 1600;
+      maskCanvasRef.current.height = 4550;
+    }
+    return maskCanvasRef.current;
+  };
+
+  // Sync mask canvas from data URL
+  useEffect(() => {
+    if (!maskCanvasUrl) {
+      const mc = getMaskCanvas();
+      mc.getContext('2d')?.clearRect(0, 0, 1600, 4550);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const ctx = getMaskCanvas().getContext('2d')!;
+      ctx.clearRect(0, 0, 1600, 4550);
+      ctx.drawImage(img, 0, 0);
+    };
+    img.src = maskCanvasUrl;
+  }, [maskCanvasUrl]);
 
   const handleFreeCamModeChange = useCallback((active: boolean) => {
     freeCamModeRef.current = active;
@@ -465,16 +501,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
 
+      // 6. Mask canvas overlay (black fills hide minimap margins)
+      if (maskCanvasRef.current) {
+        ctx.drawImage(maskCanvasRef.current, 0, 0);
+      }
+
       setMiniMapSource(srcCanvas);
     };
     img.onerror = () => setMiniMapSource(null);
     img.src = bgUrl;
-  }, [floor, customBg, bgOffset, bgScale, canvasRef, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes]);
+  }, [floor, customBg, bgOffset, bgScale, canvasRef, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes, maskCanvasUrl, maskSubMode]);
 
   // Update minimap source when map data changes
   useEffect(() => {
     updateMiniMapSource();
   }, [updateMiniMapSource]);
+
+  // Mask overlay for main canvas view
+  const [maskOverlayUrl, setMaskOverlayUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (maskCanvasRef.current) {
+      setMaskOverlayUrl(maskCanvasRef.current.toDataURL('image/png'));
+    } else {
+      setMaskOverlayUrl(null);
+    }
+  }, [maskCanvasUrl]);
 
   // Preload texture aspect ratio for summon mode preview
   useEffect(() => {
@@ -2362,6 +2413,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'wall' && wallSubMode === 'shape') {
+      // Flood fill mode: single click fills bounded area
+      if (wallShapeSubMode === 'mask' && shapeDrawMode === 'fill') {
+        floodFillMask(coords);
+        return;
+      }
       if (shapeDrawMode === 'rect') {
         // Rectangle mode: drag to define rect, execute on mouse up
         setShapeRectStart(coords);
@@ -3421,6 +3477,76 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return { cutPts, connWalls };
   }, []);
 
+  // Flood fill mask from a point, bounded by walls
+  const floodFillMask = (start: Point) => {
+    const maskCtx = getMaskCanvas().getContext('2d')!;
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 1600;
+    tempCanvas.height = 4550;
+    const tCtx = tempCanvas.getContext('2d')!;
+
+    tCtx.fillStyle = '#fff';
+    tCtx.fillRect(0, 0, 1600, 4550);
+    tCtx.strokeStyle = '#000';
+    tCtx.lineWidth = 3;
+    for (const w of walls) {
+      tCtx.beginPath();
+      tCtx.moveTo(w[0].x, w[0].y);
+      tCtx.lineTo(w[1].x, w[1].y);
+      tCtx.stroke();
+    }
+
+    const imageData = tCtx.getImageData(0, 0, 1600, 4550);
+    const w = 1600, h = 4550;
+    const sx = Math.round(start.x), sy = Math.round(start.y);
+    if (sx < 0 || sx >= w || sy < 0 || sy >= h) return;
+
+    const isBoundary = (r: number, g: number, b: number) => (r + g + b) < 384;
+
+    const startPi = (sy * w + sx) * 4;
+    if (isBoundary(imageData.data[startPi], imageData.data[startPi + 1], imageData.data[startPi + 2])) return;
+
+    const fillArea = new Uint8Array(w * h);
+    const stack: number[] = [sx, sy];
+    let iterCount = 0;
+    const MAX_ITER = 500000;
+
+    while (stack.length > 0 && iterCount++ < MAX_ITER) {
+      const y = stack.pop()!;
+      const x = stack.pop()!;
+      const idx = y * w + x;
+      if (fillArea[idx]) continue;
+      fillArea[idx] = 1;
+
+      const pi = idx * 4;
+      if (isBoundary(imageData.data[pi], imageData.data[pi + 1], imageData.data[pi + 2])) continue;
+
+      if (x > 0) stack.push(x - 1, y);
+      if (x < w - 1) stack.push(x + 1, y);
+      if (y > 0) stack.push(x, y - 1);
+      if (y < h - 1) stack.push(x, y + 1);
+    }
+
+    const maskImageData = maskCtx.getImageData(0, 0, w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (fillArea[y * w + x]) {
+          const pi = (y * w + x) * 4;
+          if (maskSubMode === 'erase') {
+            maskImageData.data[pi + 3] = 0;
+          } else {
+            maskImageData.data[pi] = 0;
+            maskImageData.data[pi + 1] = 0;
+            maskImageData.data[pi + 2] = 0;
+            maskImageData.data[pi + 3] = 255;
+          }
+        }
+      }
+    }
+    maskCtx.putImageData(maskImageData, 0, 0);
+    onMaskCanvasChange?.(getMaskCanvas().toDataURL('image/png'));
+  };
+
   // Execute shape operation (redraw-outside or generate)
   const executeShapeOperation = (polygon: Point[]) => {
     if (polygon.length < 3) {
@@ -3439,9 +3565,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
       onWallsChange?.([...walls, ...newWalls]);
-    } else if (wallShapeSubMode === 'indent') {
-      const data = computeIndentData(polygon, walls, indentDir);
-      onWallsChange?.(mergeWalls(data.connWalls));
+    } else if (wallShapeSubMode === 'mask') {
+      const ctx = getMaskCanvas().getContext('2d')!;
+      ctx.beginPath();
+      ctx.moveTo(polygon[0].x, polygon[0].y);
+      for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
+      ctx.closePath();
+      if (maskSubMode === 'erase') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      } else {
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+      }
+      onMaskCanvasChange?.(getMaskCanvas().toDataURL('image/png'));
     }
 
     // Reset shape state
@@ -3450,6 +3589,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setShapeRectStart(null);
     setShapeRectEnd(null);
     setShapeMousePos(null);
+  };
+
+  const paintMaskPath = (points: Point[]) => {
+    if (points.length < 2) return;
+    const ctx = getMaskCanvas().getContext('2d')!;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+    if (maskSubMode === 'erase') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+    }
+    onMaskCanvasChange?.(getMaskCanvas().toDataURL('image/png'));
   };
 
   const resetShapeState = () => {
@@ -3463,6 +3621,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Execute polyline (open path): each segment cuts/generates independently
   const executePolyline = (points: Point[]) => {
     if (points.length < 2) return;
+
+    if (wallShapeSubMode === 'mask') {
+      paintMaskPath(points);
+      resetShapeState();
+      return;
+    }
 
     if (wallShapeSubMode === 'generate') {
       const newWalls: WallSegment[] = [];
@@ -4569,7 +4733,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 width={Math.abs((shapeRectEnd || shapeRectStart).x - shapeRectStart.x)}
                 height={Math.abs((shapeRectEnd || shapeRectStart).y - shapeRectStart.y)}
                 fill="rgba(0, 200, 255, 0.08)"
-                stroke={wallShapeSubMode === 'indent' ? '#ffcc00' : '#39ff14'}
+                stroke={wallShapeSubMode === 'indent' ? '#ffcc00' : wallShapeSubMode === 'mask' ? '#000' : '#39ff14'}
                 strokeWidth={2}
                 strokeDasharray="6,4"
               />
@@ -4577,7 +4741,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             {wallSubMode === 'shape' && shapeDrawMode === 'path' && shapePath.length > 0 && (() => {
               const pts = shapePath;
               const mousePos = shapeMousePos;
-              const strokeColor = wallShapeSubMode === 'indent' ? '#ffcc00' : '#39ff14';
+              const strokeColor = wallShapeSubMode === 'indent' ? '#ffcc00' : wallShapeSubMode === 'mask' ? '#000' : '#39ff14';
               const last = pts[pts.length - 1];
               return (
                 <>
@@ -4612,6 +4776,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     );
                   })}
                 </>
+              );
+            })()}
+            {/* Mask shape preview: semi-transparent fill */}
+            {wallSubMode === 'shape' && wallShapeSubMode === 'mask' && (() => {
+              let poly: Point[] | null = null;
+              if (shapeDrawMode === 'rect' && shapeRectStart && shapeRectEnd) {
+                const x1 = Math.min(shapeRectStart.x, shapeRectEnd.x);
+                const y1 = Math.min(shapeRectStart.y, shapeRectEnd.y);
+                const x2 = Math.max(shapeRectStart.x, shapeRectEnd.x);
+                const y2 = Math.max(shapeRectStart.y, shapeRectEnd.y);
+                if (Math.abs(x2 - x1) > 4 && Math.abs(y2 - y1) > 4) {
+                  poly = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+                }
+              } else if (shapeDrawMode === 'path' && shapePath.length >= 2) {
+                poly = shapePath.length >= 3 ? shapePath : null;
+              }
+              if (!poly) return null;
+              return (
+                <polygon
+                  points={poly.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="rgba(0, 0, 0, 0.25)"
+                  stroke="#000"
+                  strokeWidth={2}
+                  strokeDasharray="6,4"
+                />
               );
             })()}
             {/* Indent shape preview: cut endpoints + connection paths */}
@@ -4651,6 +4840,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </>
               );
             })()}
+          </svg>
+        )}
+
+        {/* Mask overlay: shows current mask state on main canvas (mask mode only) */}
+        {maskOverlayUrl && wallShapeSubMode === 'mask' && (
+          <svg
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 90 }}
+            viewBox="0 0 1600 4550"
+          >
+            <image href={maskOverlayUrl} x={0} y={0} width={1600} height={4550} opacity={0.35} />
           </svg>
         )}
 

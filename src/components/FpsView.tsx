@@ -443,11 +443,13 @@ const FpsView: React.FC<FpsViewProps> = ({
       }
 
       // Auto-walk along route in street view (壁を無視、進行方向を向く)
+      // ghost3d が ON のときはプレイヤーをルートに拘束せず、自由操作可能にする
       const aaActive = autoRouteActiveRef.current;
       const aaSegs = autoRouteSegmentsRef.current;
       const aaElapsed = autoRouteElapsedRef.current;
       const aaTiming = autoRouteTimingRef.current;
-      if (aaActive && aaSegs.length > 0 && aaTiming) {
+      const ghostOn = ghost3dRef.current;
+      if (aaActive && aaSegs.length > 0 && aaTiming && !ghostOn) {
         const speed = aaTiming.speed;
         let remaining = aaElapsed;
         let targetX = aaSegs[0]?.start.x ?? playerRef.current.x;

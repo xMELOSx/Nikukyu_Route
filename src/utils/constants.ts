@@ -38,6 +38,7 @@ export const DEFAULT_ROUTE = (id: string = 'default'): RouteData => ({
   strokes: { main: [] },
   markers: [],
   customBg: { main: null },
+  maskCanvas: { main: null },
   bgOffset: { x: 0, y: 0 },
   bgScale: { x: 1, y: 1 },
   walls: { main: [] },

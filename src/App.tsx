@@ -239,12 +239,14 @@ export default function App() {
     localStorage.setItem('heist_wall_sub_mode', wallSubMode);
   }, [wallSubMode]);
 
-  const [wallShapeSubMode, setWallShapeSubMode] = useState<'indent' | 'generate'>('indent');
+  const [wallShapeSubMode, setWallShapeSubMode] = useState<'indent' | 'generate' | 'mask'>('indent');
   useEffect(() => {
     localStorage.setItem('heist_wall_shape_sub_mode', wallShapeSubMode);
   }, [wallShapeSubMode]);
 
-  const [shapeDrawMode, setShapeDrawMode] = useState<'rect' | 'path'>('rect');
+  const [maskSubMode, setMaskSubMode] = useState<'paint' | 'erase'>('paint');
+
+  const [shapeDrawMode, setShapeDrawMode] = useState<'rect' | 'path' | 'fill'>('rect');
   useEffect(() => {
     localStorage.setItem('heist_shape_draw_mode', shapeDrawMode);
   }, [shapeDrawMode]);
@@ -1110,6 +1112,34 @@ export default function App() {
 
   const routeRef = useRef(routeApi.route);
   routeRef.current = routeApi.route;
+
+  // Mask canvas — derived from route data per-current-floor
+  const maskCanvasUrl = useMemo(() => {
+    const mc = routeApi.route.maskCanvas;
+    return mc ? mc[currentFloor] ?? null : null;
+  }, [routeApi.route.maskCanvas, currentFloor]);
+
+  const handleMaskCanvasChange = useCallback((url: string | null) => {
+    historyApiRef.current?.pushHistory(
+      routeApi.route.strokes,
+      routeApi.route.markers,
+      globalMarkersStore.globalMarkers,
+      undefined, undefined,
+      routeApi.route.maskCanvas
+    );
+    const newMaskCanvas = { ...routeApi.route.maskCanvas, [currentFloor]: url } as { [key in FloorType]: string | null };
+    routeApi.setRoute(r => ({
+      ...r,
+      maskCanvas: newMaskCanvas
+    }));
+    const updatedRoute: RouteData = { ...routeApi.route, maskCanvas: newMaskCanvas };
+    DataManager.saveToLocalStorage(updatedRoute);
+    notification.show(t('マスクを保存しました'));
+  }, [routeApi, currentFloor, globalMarkersStore.globalMarkers, notification, t]);
+
+  const handleClearMask = useCallback(() => {
+    handleMaskCanvasChange(null);
+  }, [handleMaskCanvasChange]);
 
   // ドラッグ中の連続保存を防止するフラグ
   const isDraggingMarkersRef = useRef(false);
@@ -2168,6 +2198,9 @@ export default function App() {
           setIndentDir={setIndentDir}
           vertexMode={vertexMode}
           setVertexMode={setVertexMode}
+          onClearMask={handleClearMask}
+          maskSubMode={maskSubMode}
+          setMaskSubMode={setMaskSubMode}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2322,6 +2355,9 @@ export default function App() {
               setShapeDrawMode={setShapeDrawMode}
               indentDir={indentDir}
               vertexMode={vertexMode}
+              maskCanvasUrl={maskCanvasUrl}
+              onMaskCanvasChange={handleMaskCanvasChange}
+              maskSubMode={maskSubMode}
             />
           ), [
             currentFloor,
@@ -2430,7 +2466,9 @@ export default function App() {
             wallShapeSubMode,
             shapeDrawMode,
             indentDir,
-            vertexMode
+            vertexMode,
+            maskCanvasUrl,
+            maskSubMode
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}

@@ -270,6 +270,7 @@ export class DataManager {
       walls: route?.walls && typeof route.walls === 'object' ? route.walls : def.walls,
       markers: Array.isArray(route?.markers) ? route.markers.map(DataManager.migrateMarkerMediaFields) : def.markers,
       customBg: route?.customBg && typeof route.customBg === 'object' ? route.customBg : def.customBg,
+      maskCanvas: route?.maskCanvas && typeof route.maskCanvas === 'object' ? route.maskCanvas : def.maskCanvas,
       bgOffset: route?.bgOffset && typeof route.bgOffset === 'object' ? route.bgOffset : def.bgOffset,
       bgScale: route?.bgScale && typeof route.bgScale === 'object' ? route.bgScale : (def.bgScale ?? { x: 1, y: 1 }),
       createdAt: typeof route?.createdAt === 'number' ? route.createdAt : def.createdAt,
