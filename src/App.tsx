@@ -2201,16 +2201,16 @@ export default function App() {
           partitionWalls={partitionWalls}
           setPartitionWalls={globalData.setPartitionWalls}
           wallShapeSubMode={wallShapeSubMode}
-          setWallShapeSubMode={setWallShapeSubMode}
+          setWallShapeSubMode={(v: string) => setWallShapeSubMode(v as 'indent' | 'generate' | 'mask')}
           shapeDrawMode={shapeDrawMode}
-          setShapeDrawMode={setShapeDrawMode}
+          setShapeDrawMode={(v: string) => setShapeDrawMode(v as 'rect' | 'path' | 'fill')}
           indentDir={indentDir}
-          setIndentDir={setIndentDir}
+          setIndentDir={(v: string) => setIndentDir(v as 'short' | 'long')}
           vertexMode={vertexMode}
-          setVertexMode={setVertexMode}
+          setVertexMode={(v: string) => setVertexMode(v as 'connect' | 'snap')}
           onClearMask={handleClearMask}
           maskSubMode={maskSubMode}
-          setMaskSubMode={setMaskSubMode}
+          setMaskSubMode={(v: string) => setMaskSubMode(v as 'paint' | 'erase')}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>

@@ -4639,18 +4639,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 strokeDasharray={w.isOpen ? '4,4' : '2,6'}
               />
             ))}
-            {partitionWalls.map((w, idx) => (
-              <line
-                key={`pwall-${idx}`}
-                x1={w.p1.x}
-                y1={w.p1.y}
-                x2={w.p2.x}
-                y2={w.p2.y}
-                stroke="rgba(180, 60, 255, 0.85)"
-                strokeWidth={5}
-                strokeDasharray="8,3,2,3"
-              />
-            ))}
             {wallSubMode === 'draw' && isDrawing && currentPoints.length === 2 && (
               <line
                 x1={currentPoints[0].x}
@@ -4922,6 +4910,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 </>
               );
             })()}
+          </svg>
+        )}
+
+        {/* Partition walls layer — above locked door height (passable), rendered above normal/locked walls */}
+        {toolMode === 'wall' && partitionWalls.length > 0 && (
+          <svg
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 250 }}
+            viewBox="0 0 1600 4550"
+          >
+            {partitionWalls.map((w, idx) => (
+              <line
+                key={`pwall-layer-${idx}`}
+                x1={w.p1.x} y1={w.p1.y}
+                x2={w.p2.x} y2={w.p2.y}
+                stroke="rgba(180, 60, 255, 0.85)"
+                strokeWidth={5}
+                strokeDasharray="8,3,2,3"
+              />
+            ))}
           </svg>
         )}
 
