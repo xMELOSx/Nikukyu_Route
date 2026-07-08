@@ -261,7 +261,6 @@ function renderWalls(
   const pDarkR2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(1, 3), 16) : darkR;
   const pDarkG2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(3, 5), 16) : darkG;
   const pDarkB2 = args.partitionWallColorDark ? parseInt(args.partitionWallColorDark.slice(5, 7), 16) : darkB;
-  const phs = args.partitionWallHeightStart ?? 0.3;
 
   // Pre-parse ceiling / floor colors
 
@@ -588,29 +587,49 @@ function renderWalls(
       }
     }
 
-    // 4. Partition wall overlay — render above locked wall height
+    // 4. Partition wall overlay — one-sided upper wall (passable)
     if (partitionHits) {
       const pHit = partitionHits[i];
-      if (pHit.distance < Infinity) {
-        const pPerp = pHit.distance * Math.cos(rayAngle - originAngle);
-        const pScale = H / 240;
-        const pHalfHRef = halfH / pScale;
-        let pWallH = pPerp > 0.1 ? (pHalfHRef / pPerp) * distPlane : H;
-        const pTopRaw = Math.floor(halfH - pWallH * (1 - camHeightFrac));
-        const pBotRaw = Math.floor(halfH + pWallH * camHeightFrac);
-        const pFullTop = Math.max(0, pTopRaw);
-        const pFullBot = Math.min(H, pBotRaw);
-        const pStartY = Math.floor(pFullBot - (pFullBot - pFullTop) * phs);
-        const pShade = Math.min(1, 10 / pPerp);
-        const pR = Math.round(pDarkR2 + (pr2 - pDarkR2) * pShade);
-        const pG = Math.round(pDarkG2 + (pg2 - pDarkG2) * pShade);
-        const pB = Math.round(pDarkB2 + (pb2 - pDarkB2) * pShade);
-        for (let y = pFullTop; y < pStartY; y++) {
-          const idx = (y * W + i) * 4;
-          buf[idx] = pR;
-          buf[idx + 1] = pG;
-          buf[idx + 2] = pB;
-          buf[idx + 3] = 255;
+      if (pHit.distance < effectiveDist + 0.5) {
+        const pwArr = args.partitionWalls;
+        if (pwArr && pHit.wallIndex >= 0 && pHit.wallIndex < pwArr.length) {
+          const pSeg = pwArr[pHit.wallIndex];
+          const pDx = pSeg[1].x - pSeg[0].x;
+          const pDy = pSeg[1].y - pSeg[0].y;
+          const nLen = Math.hypot(pDx, pDy);
+          if (nLen > 0.01) {
+            // One-sided: only render if ray hits the wall from the front
+            // (ray direction opposite to wall's left normal)
+            const rx = Math.cos(rayAngle);
+            const ry = Math.sin(rayAngle);
+              if (rx * (-pDy / nLen) + ry * (pDx / nLen) < 0) {
+                const pPerp = pHit.distance * Math.cos(rayAngle - originAngle);
+                if (pPerp > 0.1) {
+                  const pWallH = (halfHRef / pPerp) * distPlane;
+                  const pTopRaw = Math.floor(halfH - pWallH * (1 - camHeightFrac));
+                  const pBotRaw = Math.floor(halfH + pWallH * camHeightFrac);
+                  const pFullTop = Math.max(0, pTopRaw);
+                  const pFullBot = Math.min(H, pBotRaw);
+                  const PARTITION_HEIGHT_WORLD = 48;
+                  const heightAboveCam = PARTITION_HEIGHT_WORLD - 24;
+                  const pStartY = Math.floor(
+                    Math.max(pFullTop, Math.min(pFullBot, halfH - heightAboveCam * distPlane / pPerp))
+                  );
+                  const pShade = Math.min(1, 10 / pPerp);
+                  const pR = Math.round(pDarkR2 + (pr2 - pDarkR2) * pShade);
+                  const pG = Math.round(pDarkG2 + (pg2 - pDarkG2) * pShade);
+                  const pB = Math.round(pDarkB2 + (pb2 - pDarkB2) * pShade);
+                  for (let y = pFullTop; y < pStartY; y++) {
+                    const idx = (y * W + i) * 4;
+                    const er = buf[idx], eg = buf[idx+1], eb = buf[idx+2];
+                    buf[idx] = Math.round(pR * 0.6 + er * 0.4);
+                    buf[idx+1] = Math.round(pG * 0.6 + eg * 0.4);
+                    buf[idx+2] = Math.round(pB * 0.6 + eb * 0.4);
+                    buf[idx+3] = 255;
+                  }
+                }
+              }
+          }
         }
       }
     }

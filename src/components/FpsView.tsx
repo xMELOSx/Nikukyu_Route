@@ -654,7 +654,7 @@ const FpsView: React.FC<FpsViewProps> = ({
           wallTexturesRef.current,
           partitionForRender,
           PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
-          0.3
+          0.6
         );
       } else {
         colHeights = renderFpsView(
@@ -674,7 +674,7 @@ const FpsView: React.FC<FpsViewProps> = ({
           wallTexturesRef.current,
           partitionForRender,
           PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
-          0.3
+          0.6
         );
       }
 
