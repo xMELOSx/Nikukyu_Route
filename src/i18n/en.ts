@@ -361,6 +361,8 @@ export const en: Locale = {
     'パス': 'Path',
     '近道': 'Short Path',
     '遠回り': 'Long Path',
+    '接続': 'Connect',
+    '吸着': 'Snap',
 
     // ----- Edit stroke sub menu -----
     '線をクリックで選択 (Alt+クリックで複数選択)。': 'Click a line to select it (Alt+click to add multiple).',

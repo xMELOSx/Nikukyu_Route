@@ -53,6 +53,7 @@ interface MapCanvasProps {
   shapeDrawMode?: 'rect' | 'path';
   setShapeDrawMode?: (v: 'rect' | 'path') => void;
   indentDir?: 'short' | 'long';
+  vertexMode?: 'connect' | 'snap';
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -220,6 +221,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   shapeDrawMode = 'rect',
   setShapeDrawMode,
   indentDir = 'short',
+  vertexMode = 'connect',
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -336,6 +338,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   // Vertex wall mode state
   const [vertexWallStart, setVertexWallStart] = useState<Point | null>(null);
   const vertexWallStartRef = useRef<Point | null>(null);
+  const vertexSnapTargetRef = useRef<Point | null>(null);
   // Move wall mode state
   const [movingWallIndex, setMovingWallIndex] = useState<number | null>(null);
   const movingWallIndexRef = useRef<number | null>(null);
@@ -2245,7 +2248,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (toolMode === 'wall' && wallSubMode === 'vertex') {
       if (walls.length === 0) return;
       const VERTEX_THRESHOLD = 10;
-      // Collect all unique endpoints
       const seen = new Set<string>();
       const allEndpoints: Point[] = [];
       for (const w of walls) {
@@ -2253,7 +2255,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w[0].x, y: w[0].y }); }
         if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w[1].x, y: w[1].y }); }
       }
-      // Find nearest endpoint to click
       let clickedPt: Point | null = null;
       let bestDist = VERTEX_THRESHOLD;
       for (const ep of allEndpoints) {
@@ -2263,37 +2264,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (!clickedPt) { setVertexWallStart(null); vertexWallStartRef.current = null; return; }
 
       const start = vertexWallStartRef.current;
-      if (start) {
-        // Second click
-        const isSamePt = clickedPt.x === start.x && clickedPt.y === start.y;
-        if (isSamePt) {
-          // Same vertex clicked twice → connect to nearest other endpoint
-          let nearestPt: Point | null = null;
-          let nearestDist = Infinity;
-          for (const ep of allEndpoints) {
-            if (ep.x === start.x && ep.y === start.y) continue;
-            const d = Math.hypot(ep.x - start.x, ep.y - start.y);
-            if (d > 0 && d < nearestDist) { nearestDist = d; nearestPt = ep; }
+
+      if (vertexMode === 'snap') {
+        // Snap (吸着) mode: click source vertex, then click target vertex → target moves to source position
+        if (start) {
+          const isSamePt = clickedPt.x === start.x && clickedPt.y === start.y;
+          if (!isSamePt && Math.hypot(start.x - clickedPt.x, start.y - clickedPt.y) > 2) {
+            // Move all walls referencing clickedPt to use start's position instead
+            onWallsChange?.(walls.map(w => {
+              const p1 = (Math.hypot(w[0].x - clickedPt.x, w[0].y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w[0];
+              const p2 = (Math.hypot(w[1].x - clickedPt.x, w[1].y - clickedPt.y) < 1)
+                ? { x: start.x, y: start.y } : w[1];
+              return [p1, p2] as WallSegment;
+            }));
           }
-          if (nearestPt) {
-            const exists = walls.some(w =>
-              (Math.hypot(w[0].x - start.x, w[0].y - start.y) < 1 && Math.hypot(w[1].x - nearestPt!.x, w[1].y - nearestPt!.y) < 1) ||
-              (Math.hypot(w[0].x - nearestPt!.x, w[0].y - nearestPt!.y) < 1 && Math.hypot(w[1].x - start.x, w[1].y - start.y) < 1)
-            );
-            if (!exists) onWallsChange?.([...walls, [start, nearestPt] as WallSegment]);
-          }
+          // Clear after one snap
+          setVertexWallStart(null);
+          vertexWallStartRef.current = null;
         } else {
-          // Different vertex → connect start → clickedPt
-          if (Math.hypot(start.x - clickedPt.x, start.y - clickedPt.y) > 2) {
-            onWallsChange?.([...walls, [start, clickedPt] as WallSegment]);
-          }
+          setVertexWallStart(clickedPt);
+          vertexWallStartRef.current = clickedPt;
         }
-        setVertexWallStart(null);
-        vertexWallStartRef.current = null;
       } else {
-        // First click: remember start
-        setVertexWallStart(clickedPt);
-        vertexWallStartRef.current = clickedPt;
+        // Connect mode: alternating start/end (current behavior)
+        if (start) {
+          const isSamePt = clickedPt.x === start.x && clickedPt.y === start.y;
+          if (isSamePt) {
+            let nearestPt: Point | null = null;
+            let nearestDist = Infinity;
+            for (const ep of allEndpoints) {
+              if (ep.x === start.x && ep.y === start.y) continue;
+              const d = Math.hypot(ep.x - start.x, ep.y - start.y);
+              if (d > 0 && d < nearestDist) { nearestDist = d; nearestPt = ep; }
+            }
+            if (nearestPt) {
+              const exists = walls.some(w =>
+                (Math.hypot(w[0].x - start.x, w[0].y - start.y) < 1 && Math.hypot(w[1].x - nearestPt!.x, w[1].y - nearestPt!.y) < 1) ||
+                (Math.hypot(w[0].x - nearestPt!.x, w[0].y - nearestPt!.y) < 1 && Math.hypot(w[1].x - start.x, w[1].y - start.y) < 1)
+              );
+              if (!exists) onWallsChange?.([...walls, [start, nearestPt] as WallSegment]);
+            }
+          } else {
+            if (Math.hypot(start.x - clickedPt.x, start.y - clickedPt.y) > 2) {
+              onWallsChange?.([...walls, [start, clickedPt] as WallSegment]);
+            }
+          }
+          setVertexWallStart(null);
+          vertexWallStartRef.current = null;
+        } else {
+          setVertexWallStart(clickedPt);
+          vertexWallStartRef.current = clickedPt;
+        }
       }
       return;
     }
@@ -2521,6 +2543,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    // Vertex snap mode: show preview line to nearest endpoint
+    if (toolMode === 'wall' && wallSubMode === 'vertex' && vertexMode === 'snap' && vertexWallStartRef.current) {
+      const VERTEX_THRESHOLD = 10;
+      const seen = new Set<string>();
+      const allEndpoints: Point[] = [];
+      for (const w of walls) {
+        const k1 = `${w[0].x},${w[0].y}`, k2 = `${w[1].x},${w[1].y}`;
+        if (!seen.has(k1)) { seen.add(k1); allEndpoints.push({ x: w[0].x, y: w[0].y }); }
+        if (!seen.has(k2)) { seen.add(k2); allEndpoints.push({ x: w[1].x, y: w[1].y }); }
+      }
+      let nearest: Point | null = null;
+      let bestDist = VERTEX_THRESHOLD;
+      for (const ep of allEndpoints) {
+        const d = Math.hypot(ep.x - coords.x, ep.y - coords.y);
+        if (d < bestDist) { bestDist = d; nearest = ep; }
+      }
+      vertexSnapTargetRef.current = nearest;
+    } else {
+      vertexSnapTargetRef.current = null;
+    }
+
     // 線分編集モード: ラバーバンド矩形を更新中
     if (toolMode === 'edit-stroke' && isEditMode && editRect) {
       setEditRect(prev => prev ? { ...prev, end: coords } : prev);
@@ -2564,9 +2607,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     ? nextWaypoints.length - 1 - draggingWaypoint.index
                     : draggingWaypoint.index;
 
+                  // Alt snap: 45-degree angle from previous point in warp path
+                  let dragX = coords.x, dragY = coords.y;
+                  if ((e as unknown as React.MouseEvent).altKey) {
+                    const prevPt: Point | null = conn.isReversed
+                      ? (targetIdx === nextWaypoints.length - 1
+                        ? { x: conn.partner.x, y: conn.partner.y }
+                        : nextWaypoints[targetIdx + 1])
+                      : (targetIdx === 0
+                        ? { x: conn.primary.x, y: conn.primary.y }
+                        : nextWaypoints[targetIdx - 1]);
+                    if (prevPt) {
+                      const dx = coords.x - prevPt.x;
+                      const dy = coords.y - prevPt.y;
+                      const dist = Math.hypot(dx, dy);
+                      if (dist > 1) {
+                        const angle = Math.atan2(dy, dx);
+                        const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                        dragX = prevPt.x + dist * Math.cos(snapped);
+                        dragY = prevPt.y + dist * Math.sin(snapped);
+                      }
+                    }
+                  }
                   nextWaypoints[targetIdx] = {
-                    x: Math.max(0, Math.min(1600, coords.x)),
-                    y: Math.max(0, Math.min(4550, coords.y))
+                    x: Math.max(0, Math.min(1600, dragX)),
+                    y: Math.max(0, Math.min(4550, dragY))
                   };
                   return { ...mk, warpWaypoints: nextWaypoints };
                 } else if (conn.isMutuallyLinked && mk.id === conn.partner.id && mk.id !== conn.primary.id) {
@@ -2591,8 +2656,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (draggingMarkerId) {
       const marker = markers.find(m => m.id === draggingMarkerId);
-      const isIndivMarker = marker && isIndiv(marker.type);
-      const canDrag = isEditMode && (isLocal ? true : isIndivMarker);
+      const canDrag = isEditMode;
       if (canDrag) {
         // EDIT GUARD: ドラッグ対象が現在の markers リストに居ることを確認。
         // 万一 stale な参照 (直前の state で削除済み等) なら no-op。
@@ -3479,8 +3543,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     e.stopPropagation();
 
     const isIndivMarker = isIndiv(m.type);
-    const canInteract = isEditMode && (isLocal ? true : (toolMode === 'erase' ? true : isIndivMarker));
-    if (!canInteract) return;
+    if (!isEditMode) return;
 
     if (toolMode === 'erase') {
       if (!isLocal && !isIndivMarker) {
@@ -4371,6 +4434,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 />
               ));
             })()}
+            {wallSubMode === 'vertex' && vertexMode === 'snap' && vertexWallStart && vertexSnapTargetRef.current && (
+              <line
+                x1={vertexWallStart.x}
+                y1={vertexWallStart.y}
+                x2={vertexSnapTargetRef.current.x}
+                y2={vertexSnapTargetRef.current.y}
+                stroke="#ffcc00"
+                strokeWidth={3}
+                strokeDasharray="6,4"
+                opacity={0.7}
+              />
+            )}
             {wallSubMode === 'move' && (wallMoveDraft || movingWallIndex !== null) && (
               <line
                 x1={wallMoveDraft?.p1?.x ?? walls[movingWallIndex ?? -1]?.[0]?.x ?? 0}
@@ -4983,8 +5058,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         borderRadius: `${3 * scaleMultiplier}px`,
                         background: 'rgba(205, 133, 63, 0.08)',
                         boxShadow: zoom < 0.25 ? 'none' : `0 0 ${8 * scaleMultiplier}px ${meta.color}40`,
-                        pointerEvents: (blockMarkerClicksDuringTools && (toolMode === 'draw' || toolMode === 'edit-stroke' || toolMode === 'measure'))
-                          ? 'none' : 'auto',
+                        pointerEvents: 'auto',
                         opacity: isHidden ? 0.35 : ((inactiveMarkersMode && passedMarkerIds.has(m.id)) ? 0.4 : 1),
                         filter: (zoom < 0.25) ? 'none' : (isHidden ? 'grayscale(90%)' : 'none'),
                         zIndex: 20,

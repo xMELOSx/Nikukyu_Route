@@ -130,6 +130,8 @@ export interface LeftSidebarProps {
   setShapeDrawMode?: (v: string) => void;
   indentDir?: string;
   setIndentDir?: (v: string) => void;
+  vertexMode?: string;
+  setVertexMode?: (v: string) => void;
   [key: string]: any;
 }
 
@@ -216,6 +218,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     wallShapeSubMode, setWallShapeSubMode,
     shapeDrawMode, setShapeDrawMode,
     indentDir, setIndentDir,
+    vertexMode, setVertexMode,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1108,7 +1111,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 1st row: 描く/形状/頂点/移動/頂点移動 */}
+                {/* 1st row: 描く/形状/消す/頂点/移動 */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '3px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
@@ -1126,6 +1129,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <span style={{ fontSize: '10px', color: '#00ccff' }}>{t('形状')}</span>
                   </button>
                   <button
+                    className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('erase')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                  >
+                    <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
+                  </button>
+                  <button
                     className={`tool-btn ${wallSubMode === 'vertex' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('vertex')}
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
@@ -1134,23 +1144,34 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Link2 size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点')}</span>
                   </button>
                   <button
-                    className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('move')}
+                    className={`tool-btn ${wallSubMode === 'move' || wallSubMode === 'vertex-move' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode(wallSubMode === 'vertex-move' ? 'move' : (wallSubMode === 'move' ? 'vertex-move' : 'move'))}
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    title={t('壁をドラッグして移動')}
+                    title={t('壁/頂点をドラッグして移動')}
                   >
-                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
-                  </button>
-                  <button
-                    className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('vertex-move')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    title={t('頂点をドラッグして移動')}
-                  >
-                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
+                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
                   </button>
                 </div>
-                {/* 2nd row: テクスチャ/スライス/消す */}
+                {/* 移動モード sub-toggle: 壁移動/頂点移動 */}
+                {(wallSubMode === 'move' || wallSubMode === 'vertex-move') && (
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                    <button
+                      className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
+                      onClick={() => setWallSubMode('move')}
+                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
+                    </button>
+                    <button
+                      className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
+                      onClick={() => setWallSubMode('vertex-move')}
+                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
+                    </button>
+                  </div>
+                )}
+                {/* 2nd row: テクスチャ/スライス */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
@@ -1166,13 +1187,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     title={t('壁をドラッグ線で切断します')}
                   >
                     <Scissors size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('スライス')}</span>
-                  </button>
-                  <button
-                    className={`tool-btn ${wallSubMode === 'erase' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('erase')}
-                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
-                  >
-                    <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
                   </button>
                 </div>
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
@@ -1336,6 +1350,24 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       </div>
                     )}
                   </>
+                )}
+                {wallSubMode === 'vertex' && (
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                    <button
+                      className={`tool-btn ${vertexMode === 'connect' ? 'active' : ''}`}
+                      onClick={() => setVertexMode?.('connect')}
+                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 200, 0, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('接続')}</span>
+                    </button>
+                    <button
+                      className={`tool-btn ${vertexMode === 'snap' ? 'active' : ''}`}
+                      onClick={() => setVertexMode?.('snap')}
+                      style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 200, 0, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('吸着')}</span>
+                    </button>
+                  </div>
                 )}
                 {/* 仕切り壁の本数表示 (描く+仕切りモード時) */}
                 {wallSubMode === 'draw' && wallLockedSubMode === 'partition' && partitionWalls && partitionWalls[currentFloor] && partitionWalls[currentFloor].length > 0 && (

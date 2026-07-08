@@ -254,6 +254,11 @@ export default function App() {
     localStorage.setItem('heist_indent_dir', indentDir);
   }, [indentDir]);
 
+  const [vertexMode, setVertexMode] = useState<'connect' | 'snap'>('connect');
+  useEffect(() => {
+    localStorage.setItem('heist_vertex_mode', vertexMode);
+  }, [vertexMode]);
+
   const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>(() => {
     try {
       const saved = localStorage.getItem('heist_partition_walls');
@@ -2161,6 +2166,8 @@ export default function App() {
           setShapeDrawMode={setShapeDrawMode}
           indentDir={indentDir}
           setIndentDir={setIndentDir}
+          vertexMode={vertexMode}
+          setVertexMode={setVertexMode}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2314,6 +2321,7 @@ export default function App() {
               shapeDrawMode={shapeDrawMode}
               setShapeDrawMode={setShapeDrawMode}
               indentDir={indentDir}
+              vertexMode={vertexMode}
             />
           ), [
             currentFloor,
@@ -2421,7 +2429,8 @@ export default function App() {
             partitionWalls,
             wallShapeSubMode,
             shapeDrawMode,
-            indentDir
+            indentDir,
+            vertexMode
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
