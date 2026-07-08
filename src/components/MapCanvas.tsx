@@ -2430,7 +2430,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (shapeDrawMode === 'rect' && shapeRectStart) {
         setShapeRectEnd(coords);
       } else {
-        setShapeMousePos(coords);
+        // Path mode: apply Alt snap to preview position
+        let previewPt = coords;
+        const currentPath = shapePathRef.current;
+        const last = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
+        if (e.altKey && last) {
+          const dx = coords.x - last.x;
+          const dy = coords.y - last.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 1) {
+            const angle = Math.atan2(dy, dx);
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            previewPt = {
+              x: Math.round(last.x + dist * Math.cos(snappedAngle)),
+              y: Math.round(last.y + dist * Math.sin(snappedAngle))
+            };
+          }
+        }
+        setShapeMousePos(previewPt);
       }
       return;
     }
@@ -3246,104 +3263,90 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onWallsChange?.([...walls, ...newWalls]);
     } else if (wallShapeSubMode === 'indent') {
-      // くぼみ (Indentation): cut walls intersected by polygon edges,
-      // remove interior portions, connect cut endpoints via the shorter
-      // path along the polygon perimeter to form a C-shape.
+      // くぼみ: 壁と多角形の2交点を、外周の短い経路でコ字接続
       const n = polygon.length;
-      // Find all wall-polygon intersections
-      const cutPts: { pt: Point; edgeIdx: number }[] = [];
-      for (let wi = 0; wi < walls.length; wi++) {
-        const w = walls[wi];
+      let modWalls: WallSegment[] = [];
+
+      for (const w of walls) {
+        // Find intersection points between this wall and the polygon
+        const hits: { pt: Point; edgeIdx: number; t: number }[] = [];
         for (let ei = 0; ei < n; ei++) {
           const pa = polygon[ei], pb = polygon[(ei + 1) % n];
           const ix = getSegmentIntersection(w[0], w[1], pa, pb);
           if (ix) {
             const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
             const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
-            if (d1 > 2 && d2 > 2) {
-              cutPts.push({ pt: ix, edgeIdx: ei });
+            const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
+            if (d1 > 2 && d2 > 2 && wallLen > 4) {
+              hits.push({ pt: ix, edgeIdx: ei, t: d1 / wallLen });
             }
           }
         }
-      }
-      if (cutPts.length < 2) return;
+        hits.sort((a, b) => a.t - b.t);
 
-      // Split each wall at all cut points
-      let modWalls: WallSegment[] = [];
-      for (const w of walls) {
-        const ptsOnWall: { pt: Point; t: number }[] = [];
-        for (const cp of cutPts) {
-          const dx = w[1].x - w[0].x, dy = w[1].y - w[0].y;
-          const len2 = dx * dx + dy * dy;
-          if (len2 < 1) continue;
-          const t = ((cp.pt.x - w[0].x) * dx + (cp.pt.y - w[0].y) * dy) / len2;
-          if (t > 0.01 && t < 0.99) {
-            const d = Math.hypot(cp.pt.x - (w[0].x + t * dx), cp.pt.y - (w[0].y + t * dy));
-            if (d < 3) ptsOnWall.push({ pt: cp.pt, t });
-          }
-        }
-        ptsOnWall.sort((a, b) => a.t - b.t);
-        if (ptsOnWall.length === 0) {
-          // Check if the wall's midpoint is inside the polygon
+        if (hits.length === 0) {
+          // Wall doesn't intersect polygon
           const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
           if (!isPointInPolygon({ x: mx, y: my }, polygon)) {
             modWalls.push(w);
           }
-        } else {
+        } else if (hits.length === 2) {
+          // Wall is cut at 2 points → C-shape connection
           const tex = w[2] as string | undefined, rep = w[3] as number | undefined;
-          const segs: Point[] = [w[0], ...ptsOnWall.map(p => p.pt), w[1]];
-          for (let i = 0; i < segs.length - 1; i++) {
-            const mid = { x: (segs[i].x + segs[i + 1].x) / 2, y: (segs[i].y + segs[i + 1].y) / 2 };
-            if (!isPointInPolygon(mid, polygon)) {
-              if (Math.hypot(segs[i + 1].x - segs[i].x, segs[i + 1].y - segs[i].y) > 2) {
-                if (tex) modWalls.push(rep ? [segs[i], segs[i + 1], tex, rep] : [segs[i], segs[i + 1], tex]);
-                else modWalls.push([segs[i], segs[i + 1]]);
-              }
+          const pushSeg = (a: Point, b: Point) => {
+            if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
+              if (tex) modWalls.push(rep ? [a, b, tex, rep] : [a, b, tex]);
+              else modWalls.push([a, b]);
+            }
+          };
+          // Keep outer segments (outside polygon)
+          pushSeg(w[0], hits[0].pt);
+          pushSeg(hits[1].pt, w[1]);
+          // Connect the two cut points via the shorter perimeter path
+          // Tour polygon edges from A to B, always moving along edges.
+          const a = hits[0], b = hits[1];
+          const ae = a.edgeIdx, be = b.edgeIdx;
+          if (ae === be) {
+            // Same edge: direct connection A→B (both lie on this edge)
+            pushSeg(a.pt, b.pt);
+          } else {
+            // Forward path: start at A on edge ae, first vertex = polygon[(ae+1)%n],
+            // then follow increasing edge index until we reach polygon[be], then B.
+            const pathFwd = [a.pt];
+            for (let i = ae, cnt = 0; cnt < n; cnt++) {
+              const vi = (i + 1) % n;
+              pathFwd.push(polygon[vi]);
+              if (vi === be) break;
+              i = vi;
+            }
+            // Backward path: start at A on edge ae, first vertex = polygon[ae],
+            // then follow decreasing edge index until polygon[(be+1)%n], then B.
+            const pathBwd = [a.pt, polygon[ae]];
+            for (let i = ae, cnt = 0; cnt < n; cnt++) {
+              const vi = (i - 1 + n) % n;
+              pathBwd.push(polygon[vi]);
+              if (vi === (be + 1) % n) break;
+              i = vi;
+            }
+            // Append B to whichever path doesn't already end at B
+            const ensureEndB = (path: Point[]) => {
+              const last = path[path.length - 1];
+              if (Math.hypot(b.pt.x - last.x, b.pt.y - last.y) > 1) path.push(b.pt);
+            };
+            ensureEndB(pathFwd);
+            ensureEndB(pathBwd);
+            const lenFwd = pathFwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathFwd[j-1].x, p.y - pathFwd[j-1].y) : s, 0);
+            const lenBwd = pathBwd.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - pathBwd[j-1].x, p.y - pathBwd[j-1].y) : s, 0);
+            const chosen = lenFwd <= lenBwd ? pathFwd : pathBwd;
+            for (let j = 0; j < chosen.length - 1; j++) {
+              pushSeg(chosen[j], chosen[j + 1]);
             }
           }
-        }
-      }
-
-      // Connect cut points along polygon perimeter (shorter path)
-      if (cutPts.length >= 2) {
-        // Find polygon vertex indices for each cut point
-        const vertexIdx = new Map<number, number>();
-        for (const cp of cutPts) {
-          const vi = cp.edgeIdx;
-          const dStart = Math.hypot(cp.pt.x - polygon[vi].x, cp.pt.y - polygon[vi].y);
-          const dEnd = Math.hypot(cp.pt.x - polygon[(vi + 1) % n].x, cp.pt.y - polygon[(vi + 1) % n].y);
-          vertexIdx.set(cp.edgeIdx, dStart < dEnd ? (vi + 1) % n : vi);
-        }
-
-        // For each pair of adjacent cut points (by edge index), connect along shorter perimeter path
-        const sortedCut = [...cutPts].sort((a, b) => a.edgeIdx - b.edgeIdx);
-        for (let i = 0; i < sortedCut.length; i += 2) {
-          if (i + 1 >= sortedCut.length) break;
-          const a = sortedCut[i], b = sortedCut[i + 1];
-          // Two possible paths along the polygon: forward and backward
-          const path1: Point[] = [];
-          let idx = a.edgeIdx;
-          while (true) {
-            const next = (idx + 1) % n;
-            path1.push(polygon[idx]);
-            if (idx === b.edgeIdx) break;
-            idx = next;
-          }
-          const path2: Point[] = [];
-          idx = a.edgeIdx;
-          while (true) {
-            path2.push(polygon[idx]);
-            if (idx === b.edgeIdx) break;
-            idx = (idx - 1 + n) % n;
-          }
-          // Choose shorter path
-          const len1 = path1.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - path1[j - 1].x, p.y - path1[j - 1].y) : s, 0);
-          const len2 = path2.reduce((s, p, j) => j > 0 ? s + Math.hypot(p.x - path2[j - 1].x, p.y - path2[j - 1].y) : s, 0);
-          const chosenPath = len1 <= len2 ? path1 : path2;
-          for (let j = 0; j < chosenPath.length - 1; j++) {
-            if (Math.hypot(chosenPath[j + 1].x - chosenPath[j].x, chosenPath[j + 1].y - chosenPath[j].y) > 2) {
-              modWalls.push([chosenPath[j], chosenPath[j + 1]]);
-            }
+        } else {
+          // 1 or 3+ hits: keep wall as-is if not fully inside
+          const mx = (w[0].x + w[1].x) / 2, my = (w[0].y + w[1].y) / 2;
+          if (!isPointInPolygon({ x: mx, y: my }, polygon)) {
+            modWalls.push(w);
           }
         }
       }
