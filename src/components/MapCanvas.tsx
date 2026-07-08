@@ -10,6 +10,7 @@ import {
   type SpawnPoint,
   type RegisteredItem,
   type LockedWallSegment,
+  type PartitionWallSegment,
   type WallSegment,
   type ShelfSpawn,
   MARKER_META,
@@ -36,7 +37,7 @@ interface MapCanvasProps {
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
   walls?: WallSegment[];
   onWallsChange?: (walls: WallSegment[]) => void;
-  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move';
+  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape';
   wallAutoSnap?: boolean;
   selectedTexture?: string;
   selectedRepeat?: number;
@@ -44,7 +45,13 @@ interface MapCanvasProps {
   aspectFitCut?: boolean;
   lockedWalls?: LockedWallSegment[];
   onLockedWallsChange?: (walls: LockedWallSegment[]) => void;
-  wallLockedSubMode?: 'normal' | 'locked';
+  wallLockedSubMode?: 'normal' | 'locked' | 'partition';
+  partitionWalls?: PartitionWallSegment[];
+  onPartitionWallsChange?: (walls: PartitionWallSegment[]) => void;
+  wallShapeSubMode?: 'redraw-outside' | 'generate';
+  setWallShapeSubMode?: (v: 'redraw-outside' | 'generate') => void;
+  shapeDrawMode?: 'rect' | 'path';
+  setShapeDrawMode?: (v: 'rect' | 'path') => void;
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -153,6 +160,7 @@ interface MapCanvasProps {
   stairsColor?: string;
   fuseMode?: boolean;
   inactiveMarkersMode?: boolean;
+  ghost3d?: boolean;
   onAutoRouteStart?: () => void;
   hideRouteLines?: boolean;
   routeLines1px?: boolean;
@@ -204,6 +212,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   lockedWalls = [],
   onLockedWallsChange,
   wallLockedSubMode = 'normal',
+  partitionWalls = [],
+  onPartitionWallsChange,
+  wallShapeSubMode = 'redraw-outside',
+  setWallShapeSubMode,
+  shapeDrawMode = 'rect',
+  setShapeDrawMode,
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -272,6 +286,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   stairsColor = '#ffaa00',
   fuseMode = true,
   inactiveMarkersMode = true,
+  ghost3d = false,
   onAutoRouteStart,
   hideRouteLines = false,
   routeLines1px = false,
@@ -325,6 +340,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const movingWallStartPositions = useRef<[Point, Point] | null>(null);
   const moveWallStartMouse = useRef<Point>({ x: 0, y: 0 });
   const [wallMoveDraft, setWallMoveDraft] = useState<{ idx: number; p1: Point; p2: Point } | null>(null);
+
+  // Vertex-move mode state
+  const [vertexMoveTarget, setVertexMoveTarget] = useState<{ wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
+  const vertexMoveTargetRef = useRef<{ wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
+  const vertexMoveStartMouse = useRef<Point>({ x: 0, y: 0 });
+  const [vertexMoveDraft, setVertexMoveDraft] = useState<{ wallIdx: number; newPos: Point } | null>(null);
+
+  // Shape tool state
+  const [shapePath, setShapePath] = useState<Point[]>([]);
+  const shapePathRef = useRef<Point[]>([]);
+  const [shapeMousePos, setShapeMousePos] = useState<Point | null>(null);
+  const [shapeRectStart, setShapeRectStart] = useState<Point | null>(null);
+  const [shapeRectEnd, setShapeRectEnd] = useState<Point | null>(null);
 
   const runnerDotRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<HeistMarker[]>(markers);
@@ -2286,6 +2314,73 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (toolMode === 'wall' && wallSubMode === 'vertex-move') {
+      if (walls.length === 0) return;
+      const VERTEX_MOVE_THRESHOLD = 12;
+      let bestWallIdx = -1;
+      let bestEndpointIdx = -1;
+      let bestDist = VERTEX_MOVE_THRESHOLD;
+      for (let i = 0; i < walls.length; i++) {
+        for (let j = 0; j < 2; j++) {
+          const ep = walls[i][j];
+          const d = Math.hypot(ep.x - coords.x, ep.y - coords.y);
+          if (d < bestDist) { bestDist = d; bestWallIdx = i; bestEndpointIdx = j; }
+        }
+      }
+      if (bestWallIdx >= 0) {
+        setIsDrawing(true);
+        const startPos = { ...walls[bestWallIdx][bestEndpointIdx] };
+        setVertexMoveTarget({ wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos });
+        vertexMoveTargetRef.current = { wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos };
+        vertexMoveStartMouse.current = { x: coords.x, y: coords.y };
+      }
+      return;
+    }
+
+    if (toolMode === 'wall' && wallSubMode === 'shape') {
+      if (shapeDrawMode === 'rect') {
+        // Rectangle mode: click two corners
+        if (shapeRectStart) {
+          // Second click → execute with rectangle polygon
+          const x1 = Math.min(shapeRectStart.x, coords.x);
+          const y1 = Math.min(shapeRectStart.y, coords.y);
+          const x2 = Math.max(shapeRectStart.x, coords.x);
+          const y2 = Math.max(shapeRectStart.y, coords.y);
+          if (x2 - x1 > 4 && y2 - y1 > 4) {
+            const rectPoly: Point[] = [
+              { x: x1, y: y1 }, { x: x2, y: y1 },
+              { x: x2, y: y2 }, { x: x1, y: y2 }
+            ];
+            executeShapeOperation(rectPoly);
+          } else {
+            setShapeRectStart(null);
+            setShapeRectEnd(null);
+          }
+        } else {
+          // First click
+          setShapeRectStart(coords);
+          setShapeRectEnd(coords);
+          setIsDrawing(true);
+        }
+      } else {
+        // Path mode: click vertices, close by clicking start
+        const current = shapePathRef.current;
+        if (current.length >= 3) {
+          const start = current[0];
+          const dist = Math.hypot(coords.x - start.x, coords.y - start.y);
+          if (dist < 12) {
+            executeShapeOperation(current);
+            return;
+          }
+        }
+        const next = [...current, coords];
+        shapePathRef.current = next;
+        setShapePath(next);
+        setIsDrawing(true);
+      }
+      return;
+    }
+
     if (toolMode === 'toggle-vis') {
       toggledIdsRef.current = new Set();
       toggleVisibilityAtPoint(coords);
@@ -2298,6 +2393,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const coords = getCanvasCoords(e);
 
+    // Panning (middle-click) takes priority over all tool handlers
+    if (isPanning) {
+      const nextPan = {
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      };
+      targetPanRef.current = nextPan;
+      setPan(nextPan);
+      return;
+    }
+
     // Move wall drag handling (not in isDrawing fast-path but needs its own early return)
     if (toolMode === 'wall' && wallSubMode === 'move' && movingWallIndexRef.current !== null && movingWallStartPositions.current) {
       const idx = movingWallIndexRef.current;
@@ -2307,6 +2413,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const newP1: Point = { x: Math.round(startPos[0].x + dx), y: Math.round(startPos[0].y + dy) };
       const newP2: Point = { x: Math.round(startPos[1].x + dx), y: Math.round(startPos[1].y + dy) };
       setWallMoveDraft({ idx, p1: newP1, p2: newP2 });
+      return;
+    }
+
+    // Vertex-move drag handling
+    if (toolMode === 'wall' && wallSubMode === 'vertex-move' && vertexMoveTargetRef.current !== null) {
+      const target = vertexMoveTargetRef.current;
+      const dx = coords.x - vertexMoveStartMouse.current.x;
+      const dy = coords.y - vertexMoveStartMouse.current.y;
+      const newPos: Point = {
+        x: Math.round(target.startPos.x + dx),
+        y: Math.round(target.startPos.y + dy)
+      };
+      setVertexMoveDraft({ wallIdx: target.wallIdx, newPos });
+      return;
+    }
+
+    // Shape tool mouse move
+    if (toolMode === 'wall' && wallSubMode === 'shape') {
+      if (shapeDrawMode === 'rect' && shapeRectStart) {
+        setShapeRectEnd(coords);
+      } else {
+        setShapeMousePos(coords);
+      }
       return;
     }
 
@@ -2374,16 +2503,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         toggleVisibilityAtPoint(coords);
         return;
       }
-      return;
-    }
-
-    if (isPanning) {
-      const nextPan = {
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      };
-      targetPanRef.current = nextPan;
-      setPan(nextPan);
       return;
     }
 
@@ -2576,6 +2695,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
+    if (toolMode === 'wall' && wallSubMode === 'vertex-move') {
+      if (vertexMoveDraft && vertexMoveTargetRef.current) {
+        const nextWalls = [...walls];
+        const target = vertexMoveTargetRef.current;
+        const w = nextWalls[target.wallIdx];
+        const tex = w[2] as string | undefined;
+        const rep = w[3] as number | undefined;
+        if (target.endpointIdx === 0) {
+          nextWalls[target.wallIdx] = tex
+            ? (rep ? [vertexMoveDraft.newPos, w[1], tex, rep] : [vertexMoveDraft.newPos, w[1], tex])
+            : [vertexMoveDraft.newPos, w[1]];
+        } else {
+          nextWalls[target.wallIdx] = tex
+            ? (rep ? [w[0], vertexMoveDraft.newPos, tex, rep] : [w[0], vertexMoveDraft.newPos, tex])
+            : [w[0], vertexMoveDraft.newPos];
+        }
+        onWallsChange?.(nextWalls);
+      }
+      setIsDrawing(false);
+      isDrawingRef.current = false;
+      setVertexMoveDraft(null);
+      vertexMoveTargetRef.current = null;
+      setVertexMoveTarget(null);
+      return;
+    }
+
+    if (toolMode === 'wall' && wallSubMode === 'shape') {
+      setIsDrawing(false);
+      isDrawingRef.current = false;
+      setShapeMousePos(null);
+      // Don't reset shapeRectStart/shapeRectEnd or shapePath here —
+      // rect mode needs shapeRectStart to persist for the second click,
+      // and path mode needs shapePath to accumulate across clicks.
+      // Only executeShapeOperation resets them when the polygon closes.
+      return;
+    }
+
     if (isDrawing) {
       setIsDrawing(false);
       isDrawingRef.current = false;
@@ -2671,6 +2827,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
           const newSeg: LockedWallSegment = { p1, p2, isOpen: false };
           onLockedWallsChange?.([...lockedWalls, newSeg]);
+        }
+      }
+
+      if (toolMode === 'wall' && wallSubMode === 'draw' && wallLockedSubMode === 'partition' && currentPoints.length === 2) {
+        const p1 = currentPoints[0];
+        const p2 = currentPoints[1];
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > 1) {
+          onPartitionWallsChange?.([...partitionWalls, { p1, p2 }]);
         }
       }
 
@@ -3020,6 +3184,135 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (remainingLocked.length !== lockedWalls.length) {
       onLockedWallsChange?.(remainingLocked);
     }
+
+    const remainingPartition = partitionWalls.filter(w => {
+      const d1 = getDistanceToSegment(pt, w.p1, w.p2);
+      return d1 > r;
+    });
+    if (remainingPartition.length !== partitionWalls.length) {
+      onPartitionWallsChange?.(remainingPartition);
+    }
+  };
+
+  // Check if a point is inside a polygon (ray casting)
+  const isPointInPolygon = (pt: Point, polygon: Point[]): boolean => {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x, yi = polygon[i].y;
+      const xj = polygon[j].x, yj = polygon[j].y;
+      const intersect = ((yi > pt.y) !== (yj > pt.y))
+        && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Find intersection point between two line segments (a-b and c-d)
+  const getSegmentIntersection = (a: Point, b: Point, c: Point, d: Point): Point | null => {
+    const denom = (d.x - c.x) * (b.y - a.y) - (d.y - c.y) * (b.x - a.x);
+    if (Math.abs(denom) < 0.001) return null;
+    const t = ((a.x - c.x) * (b.y - a.y) - (a.y - c.y) * (b.x - a.x)) / denom;
+    const u = ((a.x - c.x) * (d.y - c.y) - (a.y - c.y) * (d.x - c.x)) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+      return { x: Math.round(a.x + u * (b.x - a.x)), y: Math.round(a.y + u * (b.y - a.y)) };
+    }
+    return null;
+  };
+
+  // Execute shape operation (redraw-outside or generate)
+  const executeShapeOperation = (polygon: Point[]) => {
+    if (polygon.length < 3) {
+      shapePathRef.current = [];
+      setShapePath([]);
+      return;
+    }
+
+    if (wallShapeSubMode === 'generate') {
+      // Generate walls along polygon edges
+      const newWalls: WallSegment[] = [];
+      for (let i = 0; i < polygon.length; i++) {
+        const j = (i + 1) % polygon.length;
+        if (Math.hypot(polygon[j].x - polygon[i].x, polygon[j].y - polygon[i].y) > 2) {
+          newWalls.push([polygon[i], polygon[j]]);
+        }
+      }
+      onWallsChange?.([...walls, ...newWalls]);
+    } else if (wallShapeSubMode === 'redraw-outside') {
+      // Redraw Outside (indentation): cut walls intersected by polygon edges,
+      // remove interior portions, redraw along polygon boundary at cut points
+      const polygonEdges: [Point, Point][] = [];
+      for (let i = 0; i < polygon.length; i++) {
+        const j = (i + 1) % polygon.length;
+        polygonEdges.push([polygon[i], polygon[j]]);
+      }
+
+      // Find which polygon edges have wall intersections
+      const edgeHasIntersection = new Array(polygonEdges.length).fill(false);
+      const cutWalls: { wall: WallSegment; t: number; pt: Point; edgeIdx: number }[] = [];
+
+      for (let wi = 0; wi < walls.length; wi++) {
+        const w = walls[wi];
+        for (let ei = 0; ei < polygonEdges.length; ei++) {
+          const [pa, pb] = polygonEdges[ei];
+          const ix = getSegmentIntersection(w[0], w[1], pa, pb);
+          if (ix) {
+            // Check intersection is not at endpoint
+            const d1 = Math.hypot(ix.x - w[0].x, ix.y - w[0].y);
+            const d2 = Math.hypot(ix.x - w[1].x, ix.y - w[1].y);
+            const wallLen = Math.hypot(w[1].x - w[0].x, w[1].y - w[0].y);
+            if (d1 > 2 && d2 > 2 && wallLen > 4) {
+              edgeHasIntersection[ei] = true;
+              const t = d1 / wallLen;
+              cutWalls.push({ wall: w, t, pt: ix, edgeIdx: ei });
+            }
+          }
+        }
+      }
+
+      // Split walls at intersection points
+      let modifiedWalls = [...walls];
+      for (const cw of cutWalls) {
+        const idx = modifiedWalls.indexOf(cw.wall);
+        if (idx >= 0) {
+          const w = modifiedWalls[idx];
+          const tex = w[2] as string | undefined;
+          const rep = w[3] as number | undefined;
+          const w1: WallSegment = tex
+            ? (rep ? [w[0], cw.pt, tex, rep] : [w[0], cw.pt, tex])
+            : [w[0], cw.pt];
+          const w2: WallSegment = tex
+            ? (rep ? [cw.pt, w[1], tex, rep] : [cw.pt, w[1], tex])
+            : [cw.pt, w[1]];
+          modifiedWalls.splice(idx, 1, w1, w2);
+        }
+      }
+
+      // Remove wall segments whose midpoints are inside the polygon
+      modifiedWalls = modifiedWalls.filter(w => {
+        const mx = (w[0].x + w[1].x) / 2;
+        const my = (w[0].y + w[1].y) / 2;
+        return !isPointInPolygon({ x: mx, y: my }, polygon);
+      });
+
+      // Add new walls along polygon edges that had intersections
+      for (let ei = 0; ei < polygonEdges.length; ei++) {
+        if (edgeHasIntersection[ei]) {
+          const [pa, pb] = polygonEdges[ei];
+          if (Math.hypot(pb.x - pa.x, pb.y - pa.y) > 2) {
+            modifiedWalls.push([pa, pb]);
+          }
+        }
+      }
+
+      onWallsChange?.(modifiedWalls);
+    }
+
+    // Reset shape state
+    shapePathRef.current = [];
+    setShapePath([]);
+    setShapeRectStart(null);
+    setShapeRectEnd(null);
+    setShapeMousePos(null);
   };
 
   // 指定点でマーカーを削除 (グローバル or 個人ピン)
@@ -3854,7 +4147,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
 
         {/* Walls visualization layer - Rendered on TOP (zIndex: 200) in Neon Orange (#ff5500) - Only visible in Wall editing mode */}
-        {toolMode === 'wall' && (((walls && walls.length > 0) || lockedWalls.length > 0) || (wallSubMode === 'draw' && isDrawing && currentPoints.length === 2) || (wallSubMode === 'texture' && aspectFitCut && isDrawing && currentPoints.length === 2)) && (
+        {toolMode === 'wall' && (((walls && walls.length > 0) || lockedWalls.length > 0 || partitionWalls.length > 0) || (isDrawing && currentPoints.length === 2) || wallSubMode === 'shape' || wallSubMode === 'vertex-move') && (
           <svg
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 200 }}
             viewBox="0 0 1600 4550"
@@ -3902,13 +4195,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 strokeDasharray={w.isOpen ? '4,4' : '2,6'}
               />
             ))}
+            {partitionWalls.map((w, idx) => (
+              <line
+                key={`pwall-${idx}`}
+                x1={w.p1.x}
+                y1={w.p1.y}
+                x2={w.p2.x}
+                y2={w.p2.y}
+                stroke="rgba(180, 60, 255, 0.85)"
+                strokeWidth={5}
+                strokeDasharray="8,3,2,3"
+              />
+            ))}
             {wallSubMode === 'draw' && isDrawing && currentPoints.length === 2 && (
               <line
                 x1={currentPoints[0].x}
                 y1={currentPoints[0].y}
                 x2={currentPoints[1].x}
                 y2={currentPoints[1].y}
-                stroke={wallLockedSubMode === 'locked' ? '#ffcc00' : '#ff5500'}
+                stroke={wallLockedSubMode === 'locked' ? '#ffcc00' : wallLockedSubMode === 'partition' ? '#b43cff' : '#ff5500'}
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
@@ -3992,6 +4297,88 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 opacity={0.7}
               />
             )}
+            {wallSubMode === 'vertex-move' && walls.length > 0 && (() => {
+              const seen = new Set<string>();
+              const pts: Point[] = [];
+              for (const w of walls) {
+                const k1 = `${w[0].x},${w[0].y}`;
+                const k2 = `${w[1].x},${w[1].y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push(w[0]); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push(w[1]); }
+              }
+              const target = vertexMoveTargetRef.current;
+              const targetKey = target ? `${walls[target.wallIdx][target.endpointIdx].x},${walls[target.wallIdx][target.endpointIdx].y}` : null;
+              const draftPos = vertexMoveDraft?.newPos;
+              return pts.map((pt, i) => {
+                const ptKey = `${pt.x},${pt.y}`;
+                const isTarget = targetKey === ptKey;
+                return (
+                  <circle
+                    key={`vm-${i}`}
+                    cx={isTarget && draftPos ? draftPos.x : pt.x}
+                    cy={isTarget && draftPos ? draftPos.y : pt.y}
+                    r={isTarget ? 6 : 5}
+                    fill={isTarget ? '#00ccff' : 'rgba(0, 200, 255, 0.4)'}
+                    stroke={isTarget ? '#fff' : 'rgba(0, 200, 255, 0.7)'}
+                    strokeWidth={isTarget ? 2 : 1.5}
+                  />
+                );
+              });
+            })()}
+            {wallSubMode === 'shape' && shapeDrawMode === 'rect' && shapeRectStart && (
+              <rect
+                x={Math.min(shapeRectStart.x, (shapeRectEnd || shapeRectStart).x)}
+                y={Math.min(shapeRectStart.y, (shapeRectEnd || shapeRectStart).y)}
+                width={Math.abs((shapeRectEnd || shapeRectStart).x - shapeRectStart.x)}
+                height={Math.abs((shapeRectEnd || shapeRectStart).y - shapeRectStart.y)}
+                fill="rgba(0, 200, 255, 0.08)"
+                stroke={wallShapeSubMode === 'redraw-outside' ? '#ffcc00' : '#39ff14'}
+                strokeWidth={2}
+                strokeDasharray="6,4"
+              />
+            )}
+            {wallSubMode === 'shape' && shapeDrawMode === 'path' && shapePath.length > 0 && (() => {
+              const pts = shapePath;
+              const mousePos = shapeMousePos;
+              const strokeColor = wallShapeSubMode === 'redraw-outside' ? '#ffcc00' : '#39ff14';
+              return (
+                <>
+                  {pts.length >= 3 && (
+                    <polygon
+                      points={pts.map(p => `${p.x},${p.y}`).join(' ')}
+                      fill="rgba(0, 200, 255, 0.06)"
+                      stroke="none"
+                    />
+                  )}
+                  {pts.map((p, i) => {
+                    const next = i < pts.length - 1 ? pts[i + 1] : mousePos;
+                    if (!next) return null;
+                    return (
+                      <line key={`sp-${i}`}
+                        x1={p.x} y1={p.y}
+                        x2={next.x} y2={next.y}
+                        stroke={strokeColor}
+                        strokeWidth={2}
+                        strokeDasharray="6,4"
+                      />
+                    );
+                  })}
+                  {pts.length >= 3 && (
+                    <circle cx={pts[0].x} cy={pts[0].y} r={8}
+                      fill="none" stroke="#39ff14" strokeWidth={1.5}
+                      strokeDasharray="3,3" opacity={0.6}
+                    />
+                  )}
+                  {pts.map((p, i) => (
+                    <circle key={`sp-pt-${i}`}
+                      cx={p.x} cy={p.y} r={4}
+                      fill={i === 0 ? '#39ff14' : strokeColor}
+                      stroke="#fff" strokeWidth={1}
+                    />
+                  ))}
+                </>
+              );
+            })()}
           </svg>
         )}
 
@@ -7588,6 +7975,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         autoRouteSegments={autoRouteSegments}
         autoRouteElapsed={autoRouteElapsed}
         autoRouteTiming={autoRouteTiming}
+        ghost3d={ghost3d}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

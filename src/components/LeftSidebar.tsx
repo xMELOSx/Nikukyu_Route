@@ -122,6 +122,12 @@ export interface LeftSidebarProps {
   memoizedStrokes: DrawingStroke[];
   leftSidebarCollapsed: boolean; isMobile: boolean;
   onOpenTextureUsageModal?: () => void;
+  partitionWalls?: any;
+  setPartitionWalls?: (v: any) => void;
+  wallShapeSubMode?: string;
+  setWallShapeSubMode?: (v: string) => void;
+  shapeDrawMode?: string;
+  setShapeDrawMode?: (v: string) => void;
   [key: string]: any;
 }
 
@@ -204,6 +210,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     selectedTexture, setSelectedTexture, texturesList, selectedRepeat, setSelectedRepeat,
     fpsResolutionScale, setFpsResolutionScale, aspectFitCut, setAspectFitCut,
     onOpenTextureUsageModal,
+    partitionWalls, setPartitionWalls,
+    wallShapeSubMode, setWallShapeSubMode,
+    shapeDrawMode, setShapeDrawMode,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1096,8 +1105,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
             {toolMode === 'wall' && (
               <div className="panel-section">
                 <div className="panel-title">{t('壁エディタ設定')}</div>
-                {/* 描く/頂点/移動/テクスチャ/スライス/消す toggle */}
-                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                {/* 1st row: 描く/頂点/移動/頂点移動 */}
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '3px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'draw' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('draw')}
@@ -1119,8 +1128,19 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                     title={t('壁をドラッグして移動')}
                   >
-                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
+                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
                   </button>
+                  <button
+                    className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('vertex-move')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    title={t('頂点をドラッグして移動')}
+                  >
+                    <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
+                  </button>
+                </div>
+                {/* 2nd row: テクスチャ/スライス/消す/仕切り/形状 */}
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'texture' ? 'active' : ''}`}
                     onClick={() => setWallSubMode('texture')}
@@ -1142,6 +1162,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
                   >
                     <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('消す')}</span>
+                  </button>
+                  <button
+                    className={`tool-btn ${wallSubMode === 'shape' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('shape')}
+                    style={{ flex: 1, minWidth: '50px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    title={t('頂点を打って図形を作成')}
+                  >
+                    <span style={{ fontSize: '10px', color: '#00ccff' }}>{t('形状')}</span>
                   </button>
                 </div>
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
@@ -1222,7 +1250,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     )}
                   </>
                 )}
-                {/* 通常壁/鍵付き扉 toggle (描くモード時のみ) */}
+                {/* 壁タイプ toggle: 通常壁/鍵付き扉/仕切り壁 (描くモード時のみ) */}
                 {wallSubMode === 'draw' && (
                   <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                     <button
@@ -1239,6 +1267,59 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     >
                       <span style={{ fontSize: '10px', color: '#ffcc00' }}>{t('鍵付き扉')}</span>
                     </button>
+                    <button
+                      className={`tool-btn ${wallLockedSubMode === 'partition' ? 'active' : ''}`}
+                      onClick={() => setWallLockedSubMode('partition')}
+                      style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(180, 60, 255, 0.4)' }}
+                      title={t('鍵扉の高さより上を塞ぐ仕切り壁')}
+                    >
+                      <span style={{ fontSize: '10px', color: '#b43cff' }}>{t('仕切り壁')}</span>
+                    </button>
+                  </div>
+                )}
+                {/* 形状ツール サブモードセレクタ (形状モード時のみ) */}
+                {wallSubMode === 'shape' && (
+                  <>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                      <button
+                        className={`tool-btn ${wallShapeSubMode === 'redraw-outside' ? 'active' : ''}`}
+                        onClick={() => setWallShapeSubMode('redraw-outside')}
+                        style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 200, 0, 0.4)' }}
+                        title={t('壁を図形で切断し外側に作り直す')}
+                      >
+                        <span style={{ fontSize: '10px', color: '#ffcc00' }}>{t('外側再配置')}</span>
+                      </button>
+                      <button
+                        className={`tool-btn ${wallShapeSubMode === 'generate' ? 'active' : ''}`}
+                        onClick={() => setWallShapeSubMode('generate')}
+                        style={{ flex: 1, fontSize: '10px', padding: '4px', borderColor: 'rgba(57, 255, 20, 0.4)' }}
+                        title={t('図形の形に壁を生成')}
+                      >
+                        <span style={{ fontSize: '10px', color: '#39ff14' }}>{t('壁生成')}</span>
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                      <button
+                        className={`tool-btn ${shapeDrawMode === 'rect' ? 'active' : ''}`}
+                        onClick={() => setShapeDrawMode('rect')}
+                        style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                      >
+                        <span style={{ fontSize: '10px' }}>{t('長方形')}</span>
+                      </button>
+                      <button
+                        className={`tool-btn ${shapeDrawMode === 'path' ? 'active' : ''}`}
+                        onClick={() => setShapeDrawMode('path')}
+                        style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                      >
+                        <span style={{ fontSize: '10px' }}>{t('パス')}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+                {/* 仕切り壁の本数表示 (描く+仕切りモード時) */}
+                {wallSubMode === 'draw' && wallLockedSubMode === 'partition' && partitionWalls && partitionWalls[currentFloor] && partitionWalls[currentFloor].length > 0 && (
+                  <div style={{ marginBottom: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    {t('仕切り壁: {0}本', String(partitionWalls[currentFloor].length))}
                   </div>
                 )}
                 {/* チェックボックス類 */}

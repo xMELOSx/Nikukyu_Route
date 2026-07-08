@@ -123,6 +123,13 @@ export interface HeistMarker {
   shelfSpawns?: ShelfSpawn[];
 }
 
+export interface PartitionWallSegment {
+  p1: Point;
+  p2: Point;
+}
+
+export type GlobalPartitionWalls = { [key: string]: PartitionWallSegment[] };
+
 export type WallSegment = [Point, Point] | [Point, Point, string] | [Point, Point, string, number];
 
 export interface RouteData {

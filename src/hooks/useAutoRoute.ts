@@ -15,6 +15,7 @@ interface AutoRouteSettingsPersisted {
   followCamera: boolean;
   fuseMode: boolean;
   inactiveMarkersMode: boolean;
+  ghost3d: boolean;
 }
 
 function loadAutoRouteSettings(): Partial<AutoRouteSettingsPersisted> {
@@ -84,6 +85,7 @@ export interface AutoRouteSettings {
   manualSpeed: number;
   speedMultiplier: 1 | 2 | 3 | 5 | 10;
   followCamera: boolean;
+  ghost3d: boolean;
 }
 
 /**
@@ -106,11 +108,12 @@ export function useAutoRoute() {
   const [followCamera, setFollowCamera] = useState(savedSettings.followCamera ?? true);
   const [fuseMode, setFuseMode] = useState(savedSettings.fuseMode ?? true);
   const [inactiveMarkersMode, setInactiveMarkersMode] = useState(savedSettings.inactiveMarkersMode ?? true);
+  const [ghost3d, setGhost3d] = useState(savedSettings.ghost3d ?? false);
   const [collapsed, setCollapsed] = useState<boolean>(() => loadAutoRouteCollapsed());
 
   useEffect(() => {
-    saveAutoRouteSettings({ waitEnabled, waitSeconds, startStopSeconds, speedMode, manualSpeed, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode });
-  }, [waitEnabled, waitSeconds, startStopSeconds, speedMode, manualSpeed, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode]);
+    saveAutoRouteSettings({ waitEnabled, waitSeconds, startStopSeconds, speedMode, manualSpeed, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode, ghost3d });
+  }, [waitEnabled, waitSeconds, startStopSeconds, speedMode, manualSpeed, speedMultiplier, followCamera, fuseMode, inactiveMarkersMode, ghost3d]);
 
   const sendCommand = useCallback((action: AutoRouteAction, seekTo?: number) => {
     setCommand({ action, ts: Date.now(), seekTo });
@@ -147,6 +150,8 @@ export function useAutoRoute() {
     setFuseMode,
     inactiveMarkersMode,
     setInactiveMarkersMode,
+    ghost3d,
+    setGhost3d,
     collapsed,
     toggleCollapsed
   } as const;

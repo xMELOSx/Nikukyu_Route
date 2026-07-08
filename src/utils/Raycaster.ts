@@ -1043,3 +1043,64 @@ export function renderTpsView(
   }
   return colHeights;
 }
+
+/**
+ * Renders a semi-transparent ghost billboard at the given world position.
+ * Used by the TPS 3D ghost follow mode.
+ */
+export function renderGhostBillboard(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ghostPos: { x: number; y: number },
+  camPos: { x: number; y: number },
+  camAngle: number,
+  fov: number,
+  colHeights: { top: number; bottom: number; perpDist: number; rawDist: number }[]
+): void {
+  const W = canvas.width;
+  const H = canvas.height;
+  const yOffset = -50 * (H / 240);
+  const halfH = H / 2 + yOffset;
+  const distPlane = (H / 2) / Math.tan(fov / 2);
+  const halfFov = fov / 2;
+
+  const dx = ghostPos.x - camPos.x;
+  const dy = ghostPos.y - camPos.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return;
+
+  const angleToGhost = Math.atan2(dy, dx);
+  let relAngle = normalizeAngle(angleToGhost - camAngle);
+  if (relAngle > Math.PI) relAngle -= TAU;
+  if (Math.abs(relAngle) > halfFov + 0.05) return;
+
+  const pCol = Math.round(((relAngle + halfFov) / fov) * (W - 1));
+  const pPerpDist = dist * Math.cos(relAngle);
+  const ghostHeight = 6;
+  const ghostWidth = 2;
+  const pScreenHeight = Math.round((ghostHeight * distPlane) / pPerpDist);
+  const pHalfWidth = Math.max(1, Math.round((ghostWidth * distPlane) / pPerpDist / 2));
+
+  const camHeight = 30;
+  const pBottom = Math.round(halfH + (camHeight * distPlane) / pPerpDist);
+  const pTop = pBottom - pScreenHeight;
+
+  for (let i = Math.max(0, pCol - pHalfWidth); i <= Math.min(W - 1, pCol + pHalfWidth); i++) {
+    if (colHeights[i] && colHeights[i].rawDist > dist) {
+      const distFromCenter = Math.abs(pCol - i) / pHalfWidth;
+      if (distFromCenter > 1) continue;
+      const thickness = 1 - distFromCenter;
+      const bodyH = pBottom - pTop;
+      const bodyTop = pTop + bodyH * 0.1 * (1 - thickness);
+      const shade = 0.6 + 0.4 * thickness;
+      const alpha = 0.5;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgba(150, 200, 255, ${shade * alpha})`;
+      ctx.fillRect(i, bodyTop, 1, pBottom - bodyTop);
+      const headSize = Math.max(2, Math.round(pScreenHeight * 0.12 * thickness));
+      const headY = bodyTop - headSize * 1.2;
+      ctx.fillRect(i, headY, 1, headSize);
+      ctx.globalAlpha = 1;
+    }
+  }
+}

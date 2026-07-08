@@ -32,6 +32,7 @@ interface FpsTpsControlsProps {
   autoRouteSegments?: RouteSegment[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
+  ghost3d?: boolean;
   fpsResolutionScale?: number;
   tpsPinSize?: number;
   spawnVisible?: boolean;
@@ -67,6 +68,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   strokes = {}, spawnItems = [], mapSnapshotCanvas,
   onFreeCamModeChange, onToggleNearestPhone,
   autoRouteActive, autoRouteSegments, autoRouteElapsed, autoRouteTiming,
+  ghost3d = false,
   fpsResolutionScale = 2.0,
   tpsPinSize = 100,
   spawnVisible = true,
@@ -467,6 +469,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             autoRouteSegments={autoRouteSegments}
             autoRouteElapsed={autoRouteElapsed}
             autoRouteTiming={autoRouteTiming}
+            ghost3d={ghost3d}
             autoRouteNoClip={autoRouteNoClip}
             onAutoRouteNoClipChange={setAutoRouteNoClip}
             imageOverlayCanvasRef={tpsOverlayRef}

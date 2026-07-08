@@ -7,7 +7,8 @@ export type {
   HeistMarker, RouteData, SaveDataMigration, MigrationResult,
   PresetVisibility, PresetData, PresetMeta, SkillCdMode, SkillCdPreset,
   TextColorOption, RegisteredItem, SpawnPointItem, SpawnCategory, SpawnPoint,
-  AppearanceRate, LockedWallSegment, GlobalLockedWalls, WallSegment, ShelfSpawn
+  AppearanceRate, LockedWallSegment, GlobalLockedWalls, WallSegment, ShelfSpawn,
+  PartitionWallSegment, GlobalPartitionWalls
 } from './types'
 
 export {

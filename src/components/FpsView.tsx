@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import type { Point, HeistMarker, LockedWallSegment, WallSegment } from '../utils/DataManager';
 import type { RouteSegment } from '../utils/AutoRoute';
+import { interpolateRoute } from '../utils/AutoRoute';
 import heroImg from '../assets/hero.png';
 import {
   type PlayerState,
@@ -12,6 +13,7 @@ import {
   renderTpsView,
   renderMinimap,
   renderMarkers3D,
+  renderGhostBillboard,
   pointToSegmentDist
 } from '../utils/Raycaster';
 
@@ -36,6 +38,7 @@ interface FpsViewProps {
   autoRouteSegments?: RouteSegment[];
   autoRouteElapsed?: number;
   autoRouteTiming?: { totalTime: number; speed: number };
+  ghost3d?: boolean;
   autoRouteNoClip?: boolean;
   onAutoRouteNoClipChange?: (v: boolean) => void;
   imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
@@ -58,7 +61,7 @@ const PLAYER_COLOR = '#39ff14';
 const FpsView: React.FC<FpsViewProps> = ({
   walls, lockedWalls = [], markers, playerPos, onExit, onPlayerChange, onLockedWallsChange, mode, canvasRef, minimapCanvasRef, bgImage,
   hiddenMarkers = [], hiddenMarkerTypes = [],
-  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, autoRouteNoClip = false, onAutoRouteNoClipChange,
+  autoRouteActive = false, autoRouteSegments = [], autoRouteElapsed = 0, autoRouteTiming, ghost3d = false, autoRouteNoClip = false, onAutoRouteNoClipChange,
   mapSnapshotCanvas, imageOverlayCanvasRef,
   tpsPinSize = 100,
   onToggleNearestPhone,
@@ -247,6 +250,8 @@ const FpsView: React.FC<FpsViewProps> = ({
   autoRouteElapsedRef.current = autoRouteElapsed;
   const autoRouteTimingRef = useRef(autoRouteTiming);
   autoRouteTimingRef.current = autoRouteTiming;
+  const ghost3dRef = useRef(ghost3d);
+  ghost3dRef.current = ghost3d;
 
   const ctrlHeldRef = useRef(false);
 
@@ -688,6 +693,15 @@ const FpsView: React.FC<FpsViewProps> = ({
         }
 
         renderMarkers3D(ctx, canvas, camPos, playerRef.current.angle, FOV, colHeights, routeMarkers);
+      }
+
+      // 3D ghost rendering
+      if (ghost3dRef.current && mode === 'tps' && autoRouteActiveRef.current && autoRouteSegmentsRef.current.length > 0 && autoRouteTimingRef.current) {
+        const ghostElapsed = autoRouteElapsedRef.current;
+        const ghostInterp = interpolateRoute(autoRouteSegmentsRef.current, autoRouteTimingRef.current.speed, autoRouteTimingRef.current.totalTime, ghostElapsed);
+        if (ghostInterp) {
+          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights);
+        }
       }
 
       const minimapCvs = minimapCanvasRef.current;

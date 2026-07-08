@@ -27,6 +27,9 @@ import {
   type SpawnPoint,
   type RegisteredItem,
   type LockedWallSegment,
+  type PartitionWallSegment,
+  type GlobalPartitionWalls,
+  type Point,
   PRESET_VISIBILITY_META,
   MARKER_META,
   normalizeStrokes,
@@ -228,13 +231,33 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
-  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move'>(() => {
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape'>(() => {
     const saved = localStorage.getItem('heist_wall_sub_mode');
     return (saved as any) || 'draw';
   });
   useEffect(() => {
     localStorage.setItem('heist_wall_sub_mode', wallSubMode);
   }, [wallSubMode]);
+
+  const [wallShapeSubMode, setWallShapeSubMode] = useState<'redraw-outside' | 'generate'>('redraw-outside');
+  useEffect(() => {
+    localStorage.setItem('heist_wall_shape_sub_mode', wallShapeSubMode);
+  }, [wallShapeSubMode]);
+
+  const [shapeDrawMode, setShapeDrawMode] = useState<'rect' | 'path'>('rect');
+  useEffect(() => {
+    localStorage.setItem('heist_shape_draw_mode', shapeDrawMode);
+  }, [shapeDrawMode]);
+
+  const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>(() => {
+    try {
+      const saved = localStorage.getItem('heist_partition_walls');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_partition_walls', JSON.stringify(partitionWalls));
+  }, [partitionWalls]);
 
   const [selectedTexture, setSelectedTexture] = useState<string>('');
   const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
@@ -312,7 +335,7 @@ export default function App() {
     localStorage.setItem('heist_hide_markers_during_walls', String(hideMarkersDuringWalls));
   }, [hideMarkersDuringWalls]);
 
-  const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked'>(() => {
+  const [wallLockedSubMode, setWallLockedSubMode] = useState<'normal' | 'locked' | 'partition'>(() => {
     const saved = localStorage.getItem('heist_wall_locked_sub_mode');
     return (saved as any) || 'normal';
   });
@@ -1051,6 +1074,10 @@ export default function App() {
     const next = { ...globalData.lockedWalls, [currentFloor]: newLocked };
     globalData.setLockedWalls(next);
   }, [currentFloor, globalData.lockedWalls, globalData.setLockedWalls]);
+
+  const handlePartitionWallsChange = useCallback((newPartition: PartitionWallSegment[]) => {
+    setPartitionWalls(prev => ({ ...prev, [currentFloor]: newPartition }));
+  }, [currentFloor, setPartitionWalls]);
 
   const historyApiRef = useRef<any>(null);
 
@@ -2121,6 +2148,12 @@ export default function App() {
           setAspectFitCut={setAspectFitCut}
           texturesList={texturesList}
           onOpenTextureUsageModal={() => setShowTextureUsageModal(true)}
+          partitionWalls={partitionWalls}
+          setPartitionWalls={setPartitionWalls}
+          wallShapeSubMode={wallShapeSubMode}
+          setWallShapeSubMode={setWallShapeSubMode}
+          shapeDrawMode={shapeDrawMode}
+          setShapeDrawMode={setShapeDrawMode}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2227,7 +2260,8 @@ export default function App() {
                 speedMode: autoRoute.speedMode,
                 manualSpeed: autoRoute.manualSpeed,
                 speedMultiplier: autoRoute.speedMultiplier,
-                followCamera: autoRoute.followCamera
+                followCamera: autoRoute.followCamera,
+                ghost3d: autoRoute.ghost3d
               }}
               followCamera={autoRoute.followCamera}
               targetDurationSeconds={parseInt(routeApi.route.targetDuration || '0') || undefined}
@@ -2266,6 +2300,12 @@ export default function App() {
               lockedWalls={lockedWalls[currentFloor] || []}
               onLockedWallsChange={handleLockedWallsChange}
               wallLockedSubMode={wallLockedSubMode}
+              partitionWalls={partitionWalls[currentFloor] || []}
+              onPartitionWallsChange={handlePartitionWallsChange}
+              wallShapeSubMode={wallShapeSubMode}
+              setWallShapeSubMode={setWallShapeSubMode}
+              shapeDrawMode={shapeDrawMode}
+              setShapeDrawMode={setShapeDrawMode}
             />
           ), [
             currentFloor,
@@ -2369,7 +2409,10 @@ export default function App() {
             fpsResolutionScale,
             tpsPinSize,
             hideStrokesDuringWalls,
-            hideMarkersDuringWalls
+            hideMarkersDuringWalls,
+            partitionWalls,
+            wallShapeSubMode,
+            shapeDrawMode
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
@@ -2848,6 +2891,10 @@ export default function App() {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
                           <input type="checkbox" checked={autoRoute.followCamera} onChange={(e) => autoRoute.setFollowCamera(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
                           <span>{t('🎥 カメラ追従')}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={autoRoute.ghost3d} onChange={(e) => autoRoute.setGhost3d(e.target.checked)} style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }} />
+                          <span>{t('👻 3Dゴースト (TPS追従)')}</span>
                         </label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
                           <span>{t('倍速:')}</span>

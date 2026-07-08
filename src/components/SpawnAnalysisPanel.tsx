@@ -47,7 +47,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
   const [detailPointId, setDetailPointId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showRecent, setShowRecent] = useState(false);
-  const [selectedItemColors, setSelectedItemColors] = useState<Set<string>>(() => new Set([...TEXTCOLORS]));
+  const [activeItemColor, setActiveItemColor] = useState<string | null>(null);
   const [selectedQualityGroups, setSelectedQualityGroups] = useState<Set<string>>(() => new Set(QUALITY_GROUPS.map(g => g.key)));
 
   const sortedItems = useMemo(() =>
@@ -58,12 +58,12 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
 
   const filteredItems = useMemo(() => {
     return sortedItems.filter(({ item }) => {
-      if (!selectedItemColors.has(item.textColor)) return false;
+      if (activeItemColor && item.textColor !== activeItemColor) return false;
       const itemRates = new Set(points.filter(p => p.items && p.items.some(pi => pi.itemId === item.id)).map(p => p.appearanceRate || '高'));
       const selectedRates = new Set(QUALITY_GROUPS.filter(g => selectedQualityGroups.has(g.key)).flatMap(g => g.rates));
       return [...itemRates].some(r => selectedRates.has(r));
     });
-  }, [sortedItems, selectedItemColors, selectedQualityGroups, points]);
+  }, [sortedItems, activeItemColor, selectedQualityGroups, points]);
 
   const filteredPoints = useMemo(() => {
     if (selectedItemIds.size === 0 && selectedCategories.size === 0) return [];
@@ -233,16 +233,20 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
           該当: {filteredPoints.length} 点
         </div>
 
-        {/* Rarity (color) filter */}
         <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px' }}>
+          <button onClick={() => setActiveItemColor(null)}
+            style={{
+              fontSize: '9px', padding: '2px 6px',
+              border: `1px solid ${activeItemColor === null ? '#39ff14' : 'rgba(255,255,255,0.15)'}`,
+              background: activeItemColor === null ? 'rgba(57,255,20,0.15)' : 'transparent',
+              color: activeItemColor === null ? '#39ff14' : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer',
+              fontWeight: activeItemColor === null ? 600 : 400,
+            }}
+          >全部</button>
           {([...TEXTCOLORS] as const).map(col => {
-            const active = selectedItemColors.has(col);
+            const active = activeItemColor === col;
             return (
-              <button key={col} onClick={() => {
-                const next = new Set(selectedItemColors);
-                if (next.has(col)) next.delete(col); else next.add(col);
-                setSelectedItemColors(next);
-              }}
+              <button key={col} onClick={() => setActiveItemColor(active ? null : col)}
                 style={{
                   fontSize: '9px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '2px',
                   border: `1px solid ${active ? COLOR_HEX[col] : 'rgba(255,255,255,0.15)'}`,
@@ -260,7 +264,7 @@ export const SpawnAnalysisPanel: React.FC<SpawnAnalysisPanelProps> = ({
 
         {/* Quality (appearance rate) filter */}
         <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '6px', alignItems: 'center' }}>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, marginRight: '2px' }}>出現率</span>
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, marginRight: '2px' }}>ポイント出現率</span>
           {QUALITY_GROUPS.map(g => {
             const active = selectedQualityGroups.has(g.key);
             const col = RATE_COLORS[g.key] || '#888';
