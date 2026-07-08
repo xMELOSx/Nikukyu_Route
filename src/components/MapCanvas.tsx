@@ -353,10 +353,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [wallMoveDraft, setWallMoveDraft] = useState<{ idx: number; p1: Point; p2: Point } | null>(null);
 
   // Vertex-move mode state
-  const [vertexMoveTarget, setVertexMoveTarget] = useState<{ wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
-  const vertexMoveTargetRef = useRef<{ wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
+  const [vertexMoveTarget, setVertexMoveTarget] = useState<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
+  const vertexMoveTargetRef = useRef<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; endpointIdx: number; startPos: Point } | null>(null);
   const vertexMoveStartMouse = useRef<Point>({ x: 0, y: 0 });
-  const [vertexMoveDraft, setVertexMoveDraft] = useState<{ wallIdx: number; newPos: Point } | null>(null);
+  const [vertexMoveDraft, setVertexMoveDraft] = useState<{ wallType: 'walls' | 'lockedWalls' | 'partitionWalls'; wallIdx: number; newPos: Point } | null>(null);
 
   // Mask tool state
   const [maskSubMode, setMaskSubMode] = useState<'paint' | 'erase'>(maskSubModeProp as 'paint' | 'erase');
@@ -2413,23 +2413,33 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     if (toolMode === 'wall' && wallSubMode === 'vertex-move') {
-      if (walls.length === 0) return;
       const VERTEX_MOVE_THRESHOLD = 12;
+      let bestWallType: 'walls' | 'lockedWalls' | 'partitionWalls' = 'walls';
       let bestWallIdx = -1;
       let bestEndpointIdx = -1;
       let bestDist = VERTEX_MOVE_THRESHOLD;
-      for (let i = 0; i < walls.length; i++) {
-        for (let j = 0; j < 2; j++) {
-          const ep = walls[i][j];
-          const d = Math.hypot(ep.x - coords.x, ep.y - coords.y);
-          if (d < bestDist) { bestDist = d; bestWallIdx = i; bestEndpointIdx = j; }
+      const checkSegments = (segments: any[], type: 'walls' | 'lockedWalls' | 'partitionWalls') => {
+        for (let i = 0; i < segments.length; i++) {
+          const s = segments[i];
+          const p1 = Array.isArray(s) ? s[0] : s.p1;
+          const p2 = Array.isArray(s) ? s[1] : s.p2;
+          for (let j = 0; j < 2; j++) {
+            const ep = j === 0 ? p1 : p2;
+            const d = Math.hypot(ep.x - coords.x, ep.y - coords.y);
+            if (d < bestDist) { bestDist = d; bestWallType = type; bestWallIdx = i; bestEndpointIdx = j; }
+          }
         }
-      }
+      };
+      checkSegments(walls, 'walls');
+      checkSegments(lockedWalls, 'lockedWalls');
+      checkSegments(partitionWalls, 'partitionWalls');
       if (bestWallIdx >= 0) {
         setIsDrawing(true);
-        const startPos = { ...walls[bestWallIdx][bestEndpointIdx] };
-        setVertexMoveTarget({ wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos });
-        vertexMoveTargetRef.current = { wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos };
+        const arr = bestWallType === 'walls' ? walls : bestWallType === 'lockedWalls' ? lockedWalls : partitionWalls;
+        const seg = arr[bestWallIdx];
+        const startPos = { ...(Array.isArray(seg) ? seg[bestEndpointIdx] : bestEndpointIdx === 0 ? seg.p1 : seg.p2) };
+        setVertexMoveTarget({ wallType: bestWallType, wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos });
+        vertexMoveTargetRef.current = { wallType: bestWallType, wallIdx: bestWallIdx, endpointIdx: bestEndpointIdx, startPos };
         vertexMoveStartMouse.current = { x: coords.x, y: coords.y };
       }
       return;
@@ -2521,7 +2531,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         x: Math.round(target.startPos.x + dx),
         y: Math.round(target.startPos.y + dy)
       };
-      setVertexMoveDraft({ wallIdx: target.wallIdx, newPos });
+      setVertexMoveDraft({ wallType: target.wallType, wallIdx: target.wallIdx, newPos });
       return;
     }
 
@@ -2852,21 +2862,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (toolMode === 'wall' && wallSubMode === 'vertex-move') {
       if (vertexMoveDraft && vertexMoveTargetRef.current) {
-        const nextWalls = [...walls];
         const target = vertexMoveTargetRef.current;
-        const w = nextWalls[target.wallIdx];
-        const tex = w[2] as string | undefined;
-        const rep = w[3] as number | undefined;
-        if (target.endpointIdx === 0) {
-          nextWalls[target.wallIdx] = tex
-            ? (rep ? [vertexMoveDraft.newPos, w[1], tex, rep] : [vertexMoveDraft.newPos, w[1], tex])
-            : [vertexMoveDraft.newPos, w[1]];
+        const copyArray = (arr: any[]) => arr.map((s: any) => Array.isArray(s) ? [...s] : { ...s });
+        if (target.wallType === 'walls') {
+          const nextWalls = copyArray(walls);
+          const w = nextWalls[target.wallIdx];
+          const tex = w[2] as string | undefined;
+          const rep = w[3] as number | undefined;
+          nextWalls[target.wallIdx] = target.endpointIdx === 0
+            ? (tex ? (rep ? [vertexMoveDraft.newPos, w[1], tex, rep] : [vertexMoveDraft.newPos, w[1], tex]) : [vertexMoveDraft.newPos, w[1]])
+            : (tex ? (rep ? [w[0], vertexMoveDraft.newPos, tex, rep] : [w[0], vertexMoveDraft.newPos, tex]) : [w[0], vertexMoveDraft.newPos]);
+          onWallsChange?.(nextWalls);
+        } else if (target.wallType === 'lockedWalls') {
+          const next = lockedWalls.map(s => ({ ...s }));
+          const seg = next[target.wallIdx];
+          if (target.endpointIdx === 0) seg.p1 = vertexMoveDraft.newPos; else seg.p2 = vertexMoveDraft.newPos;
+          onLockedWallsChange?.(next);
         } else {
-          nextWalls[target.wallIdx] = tex
-            ? (rep ? [w[0], vertexMoveDraft.newPos, tex, rep] : [w[0], vertexMoveDraft.newPos, tex])
-            : [w[0], vertexMoveDraft.newPos];
+          const next = partitionWalls.map(s => ({ ...s }));
+          const seg = next[target.wallIdx];
+          if (target.endpointIdx === 0) seg.p1 = vertexMoveDraft.newPos; else seg.p2 = vertexMoveDraft.newPos;
+          onPartitionWallsChange?.(next);
         }
-        onWallsChange?.(nextWalls);
       }
       setIsDrawing(false);
       isDrawingRef.current = false;
@@ -4739,19 +4756,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 opacity={0.7}
               />
             )}
-            {wallSubMode === 'vertex-move' && walls.length > 0 && (() => {
+            {wallSubMode === 'vertex-move' && (walls.length > 0 || lockedWalls.length > 0 || partitionWalls.length > 0) && (() => {
               const seen = new Set<string>();
-              const pts: Point[] = [];
+              const pts: { pt: Point; color: string; stroke: string }[] = [];
               for (const w of walls) {
-                const k1 = `${w[0].x},${w[0].y}`;
-                const k2 = `${w[1].x},${w[1].y}`;
-                if (!seen.has(k1)) { seen.add(k1); pts.push(w[0]); }
-                if (!seen.has(k2)) { seen.add(k2); pts.push(w[1]); }
+                const k1 = `${w[0].x},${w[0].y}`, k2 = `${w[1].x},${w[1].y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w[0], color: 'rgba(0, 200, 255, 0.4)', stroke: 'rgba(0, 200, 255, 0.7)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w[1], color: 'rgba(0, 200, 255, 0.4)', stroke: 'rgba(0, 200, 255, 0.7)' }); }
+              }
+              for (const w of lockedWalls) {
+                const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w.p1, color: 'rgba(255, 204, 0, 0.4)', stroke: 'rgba(255, 204, 0, 0.7)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w.p2, color: 'rgba(255, 204, 0, 0.4)', stroke: 'rgba(255, 204, 0, 0.7)' }); }
+              }
+              for (const w of partitionWalls) {
+                const k1 = `${w.p1.x},${w.p1.y}`, k2 = `${w.p2.x},${w.p2.y}`;
+                if (!seen.has(k1)) { seen.add(k1); pts.push({ pt: w.p1, color: 'rgba(180, 60, 255, 0.4)', stroke: 'rgba(180, 60, 255, 0.7)' }); }
+                if (!seen.has(k2)) { seen.add(k2); pts.push({ pt: w.p2, color: 'rgba(180, 60, 255, 0.4)', stroke: 'rgba(180, 60, 255, 0.7)' }); }
               }
               const target = vertexMoveTargetRef.current;
-              const targetKey = target ? `${walls[target.wallIdx][target.endpointIdx].x},${walls[target.wallIdx][target.endpointIdx].y}` : null;
+              const getPt = (t: typeof target, i: number) => {
+                if (!t) return null;
+                const arr = t.wallType === 'walls' ? walls : t.wallType === 'lockedWalls' ? lockedWalls : partitionWalls;
+                const seg = arr[t.wallIdx];
+                if (!seg) return null;
+                return Array.isArray(seg) ? seg[i] : i === 0 ? seg.p1 : seg.p2;
+              };
+              const targetPt = target ? getPt(target, target.endpointIdx) : null;
+              const targetKey = targetPt ? `${targetPt.x},${targetPt.y}` : null;
               const draftPos = vertexMoveDraft?.newPos;
-              return pts.map((pt, i) => {
+              return pts.map(({ pt, color, stroke }, i) => {
                 const ptKey = `${pt.x},${pt.y}`;
                 const isTarget = targetKey === ptKey;
                 return (
@@ -4760,8 +4794,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     cx={isTarget && draftPos ? draftPos.x : pt.x}
                     cy={isTarget && draftPos ? draftPos.y : pt.y}
                     r={isTarget ? 6 : 5}
-                    fill={isTarget ? '#00ccff' : 'rgba(0, 200, 255, 0.4)'}
-                    stroke={isTarget ? '#fff' : 'rgba(0, 200, 255, 0.7)'}
+                    fill={isTarget ? '#00ccff' : color}
+                    stroke={isTarget ? '#fff' : stroke}
                     strokeWidth={isTarget ? 2 : 1.5}
                   />
                 );

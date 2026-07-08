@@ -36,6 +36,7 @@ export function useGlobalData(options?: UseGlobalDataOptions) {
   const saveMarkers = useCallback((markers: HeistMarker[]) => { svc.saveMarkers(markers); }, []);
   const saveWalls = useCallback((walls: GlobalWalls) => { svc.saveWalls(walls); }, []);
   const saveLockedWalls = useCallback((walls: GlobalLockedWalls) => { svc.saveLockedWalls(walls); }, []);
+  const savePartitionWalls = useCallback((walls: { [key: string]: { p1: Point; p2: Point }[] }) => { svc.savePartitionWalls(walls); }, []);
   const saveSpawns = useCallback((points: SpawnPoint[], items: RegisteredItem[]) => { svc.saveSpawns(points, items); }, []);
   const saveDefaults = useCallback((d: GlobalDefaults, presets: SkillCdPreset[]) => { svc.saveDefaults(d, presets); }, []);
   const savePresets = useCallback((presets: PresetData[]) => { svc.savePresets(presets); }, []);
@@ -74,6 +75,9 @@ export function useGlobalData(options?: UseGlobalDataOptions) {
 
     lockedWalls: svc.getLockedWalls(),
     setLockedWalls: saveLockedWalls,
+
+    partitionWalls: svc.getPartitionWalls(),
+    setPartitionWalls: savePartitionWalls,
 
     spawnPoints: svc.getSpawnPoints(),
     spawnItems: svc.getSpawnItems(),

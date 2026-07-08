@@ -607,6 +607,7 @@ export class GlobalDataService {
 
   saveWalls(walls: GlobalWalls): void {
     this._walls = ensureFloors(walls);
+    this._notify();
     this._save(() => {
       if (this._isLocal) {
         this._postAPI('api/global-walls', this._walls);
@@ -614,12 +615,12 @@ export class GlobalDataService {
       } else {
         this._emit({ operation: 'save', type: 'walls', source: 'memory', success: true, detail: 'session only' });
       }
-      this._notify();
     });
   }
 
   saveLockedWalls(walls: GlobalLockedWalls): void {
     this._lockedWalls = walls;
+    this._notify();
     this._save(() => {
       if (this._isLocal) {
         this._postAPI('api/global-locked-walls', this._lockedWalls);
@@ -627,7 +628,21 @@ export class GlobalDataService {
       } else {
         this._emit({ operation: 'save', type: 'lockedWalls', source: 'memory', success: true, detail: 'session only' });
       }
-      this._notify();
+    });
+  }
+
+  getPartitionWalls(): { [key: string]: { p1: Point; p2: Point }[] } { return this._partitionWalls; }
+
+  savePartitionWalls(walls: { [key: string]: { p1: Point; p2: Point }[] }): void {
+    this._partitionWalls = walls;
+    this._notify();
+    this._save(() => {
+      if (this._isLocal) {
+        this._postAPI('api/partition-walls', this._partitionWalls);
+        this._emit({ operation: 'save', type: 'partitionWalls', source: 'api', success: true });
+      } else {
+        this._emit({ operation: 'save', type: 'partitionWalls', source: 'memory', success: true, detail: 'session only' });
+      }
     });
   }
 

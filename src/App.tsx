@@ -261,28 +261,6 @@ export default function App() {
     localStorage.setItem('heist_vertex_mode', vertexMode);
   }, [vertexMode]);
 
-  const [partitionWalls, setPartitionWalls] = useState<{ [key: string]: PartitionWallSegment[] }>({});
-  useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}api/partition-walls`)
-      .then(r => r.ok ? r.json() : {})
-      .then(data => {
-        if (data && typeof data === 'object') setPartitionWalls(data as any);
-      })
-      .catch(() => {
-        // fallback to localStorage
-        try {
-          const saved = localStorage.getItem('heist_partition_walls');
-          if (saved) setPartitionWalls(JSON.parse(saved));
-        } catch {}
-      });
-  }, []);
-  useEffect(() => {
-    localStorage.setItem('heist_partition_walls', JSON.stringify(partitionWalls));
-    fetch(`${import.meta.env.BASE_URL}api/partition-walls`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(partitionWalls)
-    }).catch(() => {});
-  }, [partitionWalls]);
-
   const [selectedTexture, setSelectedTexture] = useState<string>('');
   const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
   const [fpsResolutionScale, setFpsResolutionScale] = useState<number>(() => {
@@ -795,6 +773,7 @@ export default function App() {
 
   // lockedWalls managed by GlobalDataService
   const lockedWalls = globalData.lockedWalls;
+  const partitionWalls = globalData.partitionWalls;
 
   // Backward compat: globalDefaultsRef for useRoute
   const globalDefaultsRef = useRef<GlobalDefaults>({ hiddenMarkers: [], hiddenMarkerTypes: [] });
@@ -1094,14 +1073,19 @@ export default function App() {
     globalData.setWalls(next);
   };
 
+  const lockedWallsRef = useRef(lockedWalls);
+  lockedWallsRef.current = lockedWalls;
   const handleLockedWallsChange = useCallback((newLocked: LockedWallSegment[]) => {
-    const next = { ...globalData.lockedWalls, [currentFloor]: newLocked };
+    const next = { ...lockedWallsRef.current, [currentFloor]: newLocked };
     globalData.setLockedWalls(next);
-  }, [currentFloor, globalData.lockedWalls, globalData.setLockedWalls]);
+  }, [currentFloor, globalData.setLockedWalls]);
 
+  const partitionWallsRef = useRef(partitionWalls);
+  partitionWallsRef.current = partitionWalls;
   const handlePartitionWallsChange = useCallback((newPartition: PartitionWallSegment[]) => {
-    setPartitionWalls(prev => ({ ...prev, [currentFloor]: newPartition }));
-  }, [currentFloor, setPartitionWalls]);
+    const next = { ...partitionWallsRef.current, [currentFloor]: newPartition };
+    globalData.setPartitionWalls(next);
+  }, [currentFloor, globalData.setPartitionWalls]);
 
   const historyApiRef = useRef<any>(null);
 
@@ -2217,7 +2201,7 @@ export default function App() {
           texturesList={texturesList}
           onOpenTextureUsageModal={() => setShowTextureUsageModal(true)}
           partitionWalls={partitionWalls}
-          setPartitionWalls={setPartitionWalls}
+          setPartitionWalls={globalData.setPartitionWalls}
           wallShapeSubMode={wallShapeSubMode}
           setWallShapeSubMode={setWallShapeSubMode}
           shapeDrawMode={shapeDrawMode}
