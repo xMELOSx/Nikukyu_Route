@@ -312,15 +312,16 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
 
   useEffect(() => {
     if (freeCamMode) {
-      // 自動案内中はマウスキャプチャ不要 (ghost3d 時はプレイヤー操作のため必要)
+      // ghost3d OFF + 自動案内中 → マウスキャプチャ不要 (オートウォーク)
       if (autoRouteActive && !ghost3d) {
         if (document.pointerLockElement) {
           document.exitPointerLock();
         }
         return;
       }
+      // ghost3d ON + 自動案内中、または通常時 → マウスキャプチャ有効 (マウスルック)
       const c = fpsCanvasRef.current;
-      if (c) {
+      if (c && document.pointerLockElement !== c) {
         const tryLock = () => { try { c.requestPointerLock(); } catch {} };
         requestAnimationFrame(() => requestAnimationFrame(tryLock));
       }
@@ -334,7 +335,8 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
     }
     setFreeCamMode(mode);
 
-    if (autoRouteActive && !ghost3d) return; // 自動案内中はマウスキャプチャ不要 (ghost3d時は操作のため必要)
+    // ghost3d OFF + 自動案内中はマウスキャプチャ不要
+    if (autoRouteActive && !ghost3d) return;
 
     const c = fpsCanvasRef.current;
     if (c) {
@@ -443,7 +445,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
               </span>
             </div>
             <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
-              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [Ctrl]解放 [P]再読込 [ESC]終了
+              [WASD]移動 [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [Alt]一時解放 [Ctrl]解放 [P]再読込 [ESC]終了
             </div>
           </div>
         )}

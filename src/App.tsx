@@ -1133,13 +1133,17 @@ export default function App() {
       ...r,
       maskCanvas: { ...(r.maskCanvas || {} as any), [currentFloor]: url } as { [key in FloorType]: string | null }
     }));
-    // immediately persist to localStorage
-    const updatedRoute: RouteData = { ...routeApi.route, maskCanvas: newMaskCanvas };
-    const saved = DataManager.saveToLocalStorage(updatedRoute);
-    if (saved) {
+    // persist to IndexedDB (same as customBg — base64 data URL is too large for localStorage)
+    const { id } = routeApi.route;
+    if (id) {
+      const hasAny = Object.values(newMaskCanvas).some(v => v != null);
+      if (hasAny) {
+        DataManager.saveMaskCanvas(id, newMaskCanvas).catch(() => {});
+      } else {
+        DataManager.saveMaskCanvas(id, null).catch(() => {});
+      }
+      DataManager.setSaveMetaMask(id, hasAny);
       notification.show(t('マスクを保存しました'));
-    } else {
-      notification.show(t('⚠️ マスクの保存に失敗しました（容量超過）'), 5000);
     }
   }, [routeApi, currentFloor, globalMarkersStore.globalMarkers, notification, t]);
 
@@ -2324,6 +2328,7 @@ export default function App() {
               stairsColor={stairsColor}
               fuseMode={autoRoute.fuseMode}
               inactiveMarkersMode={autoRoute.inactiveMarkersMode}
+              ghost3d={autoRoute.ghost3d}
                skillCdPresets={globalData.skillCdPresets}
               onOpenSkillCdSettings={() => { setShowHelpModal(true); setHelpActiveTab('settings'); }}
               onAutoRouteStart={() => {

@@ -254,6 +254,7 @@ const FpsView: React.FC<FpsViewProps> = ({
   ghost3dRef.current = ghost3d;
 
   const ctrlHeldRef = useRef(false);
+  const altHeldRef = useRef(false);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     keysRef.current.add(e.key.toLowerCase());
@@ -262,6 +263,10 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
     if (e.key === 'Control' && !e.repeat) {
       ctrlHeldRef.current = true;
+      document.exitPointerLock();
+    }
+    if (e.key === 'Alt' && !e.repeat) {
+      altHeldRef.current = true;
       document.exitPointerLock();
     }
     if (e.key.toLowerCase() === 'f' && !e.repeat) {
@@ -311,6 +316,13 @@ const FpsView: React.FC<FpsViewProps> = ({
         try { canvas.requestPointerLock(); } catch {}
       }
     }
+    if (e.key === 'Alt') {
+      altHeldRef.current = false;
+      const canvas = canvasRef.current;
+      if (canvas && document.pointerLockElement !== canvas) {
+        try { canvas.requestPointerLock(); } catch {}
+      }
+    }
   }, [canvasRef]);
 
   const hasLockedRef = useRef(false);
@@ -324,12 +336,13 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
 
     if (hasLockedRef.current && !document.pointerLockElement) {
-      // 自動案内中はマウスキャプチャ解除で終了しない (ghost3d時は自由操作のため解除可)
-      if (autoRouteActiveRef.current && !ghost3dRef.current) return;
-      // Ctrl 解放中は終了しない
+      // 自動案内中はマウスキャプチャ解除で終了しない (ghost3d 時も同様)
+      if (autoRouteActiveRef.current) return;
+      // Ctrl/Alt 解放中は終了しない (一時的なキャプチャ解除)
       if (ctrlHeldRef.current) return;
+      if (altHeldRef.current) return;
       requestAnimationFrame(() => {
-        if (!document.pointerLockElement && !ctrlHeldRef.current) {
+        if (!document.pointerLockElement && !ctrlHeldRef.current && !altHeldRef.current) {
           exitRef.current();
         }
       });

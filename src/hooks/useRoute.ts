@@ -294,7 +294,9 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
           renderCache: encoded,
           // customBg (base64 画像) は localStorage 容量を圧迫するため、
           // localStorage には保存しない (= メモリには残るが、再ロード時に BG は消える)
-          customBg: { main: null }
+          customBg: { main: null },
+          // maskCanvas (base64 data URL) も同様に IndexedDB に退避
+          maskCanvas: { main: null } as { [key in FloorType]: string | null }
         };
         const saved = DataManager.saveToLocalStorage(dataToSave);
         if (!saved) {
@@ -396,6 +398,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       // customBg (base64 画像) は localStorage 容量を圧迫するため、
       // localStorage には保存しない (= メモリには残るが、再ロード時に BG は消える)
       customBg: { main: null },
+      // maskCanvas (base64 data URL) も同様に IndexedDB に退避
+      maskCanvas: { main: null } as { [key in FloorType]: string | null },
       mapVersion: 2,
       markerScale: initialMarkerScale
     };
@@ -446,8 +450,8 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
       renderCache: plainCache ?? ''
     };
     // localStorage には暗号文を保存するため、保存直前にもう一度コピーして暗号文を差し込む
-    // customBg は localStorage 容量圧迫のため null に
-    const toPersist: RouteData = { ...copy, renderCache: encoded, customBg: { main: null } };
+    // customBg / maskCanvas は localStorage 容量圧迫のため null に
+    const toPersist: RouteData = { ...copy, renderCache: encoded, customBg: { main: null }, maskCanvas: { main: null } as { [key in FloorType]: string | null } };
     const saved = DataManager.saveToLocalStorage(toPersist);
     if (!saved) {
       showNotificationRef.current('⚠️ localStorage の容量上限を超えました', 5000);
@@ -728,6 +732,18 @@ export function useRoute(options: UseRouteOptions): UseRouteApi {
         // プラン本体に BG が埋まっている (= 他経路で持ち込まれたケース) なら
         // IndexedDB にもミラーして、次回ロードに備える
         DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => { /* noop */ });
+      }
+      // マスクキャンバスも IndexedDB から復元
+      const maskFromDb = await DataManager.loadMaskCanvas(bgKeyForLookup);
+      if (maskFromDb) {
+        if (!data.maskCanvas) data.maskCanvas = { main: null };
+        data.maskCanvas = { ...data.maskCanvas, ...maskFromDb };
+        if (bgKeyForLookup !== data.id) {
+          DataManager.saveMaskCanvas(data.id, maskFromDb).catch(() => { /* noop */ });
+        }
+      } else if (data.maskCanvas) {
+        // ルートデータにマスクが埋まっている場合は IndexedDB にミラー
+        DataManager.saveMaskCanvas(data.id, data.maskCanvas).catch(() => { /* noop */ });
       }
       setRouteWithGlobalDefaults(data);
       localStorage.setItem('heist_last_used_route_id', data.id);

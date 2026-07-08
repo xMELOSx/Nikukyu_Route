@@ -107,6 +107,10 @@ export function useFileIO(options: UseFileIOOptions): UseFileIOApi {
         DataManager.saveCustomBg(data.id, data.customBg.main).catch(() => {});
       }
 
+      if (data.maskCanvas) {
+        DataManager.saveMaskCanvas(data.id, data.maskCanvas).catch(() => {});
+      }
+
       if (anomaly) {
         showNotification('⚠️ renderCache の復号に失敗しました（Anomaly）', 4000);
       }
