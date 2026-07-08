@@ -91,18 +91,6 @@ export class DataManager {
     }
   }
 
-  static setSaveMetaMask(routeId: string, hasMaskCanvas: boolean): void {
-    try {
-      const saves = this.getSavesList();
-      const index = saves.findIndex(s => s.id === routeId);
-      if (index < 0) return;
-      saves[index] = { ...saves[index], hasMaskCanvas };
-      localStorage.setItem('heist_routes_list', JSON.stringify(saves));
-    } catch (e) {
-      console.error('DataManager.setSaveMetaMask failed:', e);
-    }
-  }
-
   private static customBgDbName = 'heist_custom_bg_db';
   private static customBgStoreName = 'customBgs';
   private static customBgDbVersion = 1;
@@ -180,85 +168,7 @@ export class DataManager {
     });
   }
 
-  // ── Mask Canvas (IndexedDB) ──────────────────────────────────────
-  private static maskDbName = 'heist_mask_canvas_db';
-  private static maskStoreName = 'maskCanvases';
-  private static maskDbVersion = 1;
-  private static maskDbPromise: Promise<IDBDatabase | null> | null = null;
-
-  private static openMaskDb(): Promise<IDBDatabase | null> {
-    if (typeof indexedDB === 'undefined') return Promise.resolve(null);
-    if (DataManager.maskDbPromise) return DataManager.maskDbPromise;
-    DataManager.maskDbPromise = new Promise<IDBDatabase | null>((resolve) => {
-      try {
-        const req = indexedDB.open(DataManager.maskDbName, DataManager.maskDbVersion);
-        req.onupgradeneeded = () => {
-          try {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(DataManager.maskStoreName)) {
-              db.createObjectStore(DataManager.maskStoreName, { keyPath: 'routeId' });
-            }
-          } catch (e) { console.error('mask IDB upgrade failed:', e); }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => { console.error('mask IDB open failed:', req.error); resolve(null); };
-        req.onblocked = () => resolve(null);
-      } catch (e) { console.error('mask IDB init failed:', e); resolve(null); }
-    });
-    return DataManager.maskDbPromise;
-  }
-
-  static async saveMaskCanvas(routeId: string, maskCanvas: { [key in FloorType]: string | null } | null): Promise<boolean> {
-    if (!routeId) return false;
-    if (maskCanvas == null) return DataManager.deleteMaskCanvas(routeId);
-    const db = await DataManager.openMaskDb();
-    if (!db) return false;
-    return new Promise<boolean>((resolve) => {
-      try {
-        const tx = db.transaction(DataManager.maskStoreName, 'readwrite');
-        const store = tx.objectStore(DataManager.maskStoreName);
-        const req = store.put({ routeId, maskCanvas, updatedAt: Date.now() });
-        req.onsuccess = () => resolve(true);
-        req.onerror = () => { console.error('mask IDB put failed:', req.error); resolve(false); };
-      } catch (e) { console.error('mask IDB save failed:', e); resolve(false); }
-    });
-  }
-
-  static async loadMaskCanvas(routeId: string): Promise<{ [key in FloorType]: string | null } | null> {
-    if (!routeId) return null;
-    const db = await DataManager.openMaskDb();
-    if (!db) return null;
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(DataManager.maskStoreName, 'readonly');
-        const store = tx.objectStore(DataManager.maskStoreName);
-        const req = store.get(routeId);
-        req.onsuccess = () => {
-          const rec = req.result;
-          if (rec && rec.maskCanvas && typeof rec.maskCanvas === 'object') resolve(rec.maskCanvas);
-          else resolve(null);
-        };
-        req.onerror = () => resolve(null);
-      } catch (e) { console.error('mask IDB load failed:', e); resolve(null); }
-    });
-  }
-
-  static async deleteMaskCanvas(routeId: string): Promise<boolean> {
-    if (!routeId) return false;
-    const db = await DataManager.openMaskDb();
-    if (!db) return false;
-    return new Promise<boolean>((resolve) => {
-      try {
-        const tx = db.transaction(DataManager.maskStoreName, 'readwrite');
-        const store = tx.objectStore(DataManager.maskStoreName);
-        const req = store.delete(routeId);
-        req.onsuccess = () => resolve(true);
-        req.onerror = () => { console.error('mask IDB delete failed:', req.error); resolve(false); };
-      } catch (e) { console.error('mask IDB delete failed:', e); resolve(false); }
-    });
-  }
-
-  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; renderCache: string; createdAt: number; updatedAt: number; hasCustomBg?: boolean; hasMaskCanvas?: boolean }[] {
+  static getSavesList(): { id: string; title: string; targetCash: string; targetCoins: string; description: string; author: string; renderCache: string; createdAt: number; updatedAt: number; hasCustomBg?: boolean }[] {
     try {
       const listStr = localStorage.getItem('heist_routes_list');
       if (!listStr) return [];
@@ -271,7 +181,6 @@ export class DataManager {
             out.renderCache = typeof out.originalAuthor === 'string' ? out.originalAuthor : '';
           }
           if (out.hasCustomBg === undefined) out.hasCustomBg = false;
-          if (out.hasMaskCanvas === undefined) out.hasMaskCanvas = false;
           return out;
         }
         return e;
@@ -361,7 +270,6 @@ export class DataManager {
       walls: route?.walls && typeof route.walls === 'object' ? route.walls : def.walls,
       markers: Array.isArray(route?.markers) ? route.markers.map(DataManager.migrateMarkerMediaFields) : def.markers,
       customBg: route?.customBg && typeof route.customBg === 'object' ? route.customBg : def.customBg,
-      maskCanvas: route?.maskCanvas && typeof route.maskCanvas === 'object' ? route.maskCanvas : def.maskCanvas,
       bgOffset: route?.bgOffset && typeof route.bgOffset === 'object' ? route.bgOffset : def.bgOffset,
       bgScale: route?.bgScale && typeof route.bgScale === 'object' ? route.bgScale : (def.bgScale ?? { x: 1, y: 1 }),
       createdAt: typeof route?.createdAt === 'number' ? route.createdAt : def.createdAt,

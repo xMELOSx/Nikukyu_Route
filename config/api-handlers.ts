@@ -224,6 +224,36 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/mask — per-floor mask PNG (global static file)
+        if (isPathMatch(urlPath, '/api/mask')) {
+          const floor = new URL(req.url!, 'http://localhost').searchParams.get('floor') || 'main'
+          const maskDir = path.resolve(__dirname, '..', 'public', 'masks')
+          const filePath = path.join(maskDir, `${floor}.png`)
+          if (req.method === 'GET') {
+            if (fs.existsSync(filePath)) {
+              res.setHeader('Content-Type', 'image/png')
+              res.end(fs.readFileSync(filePath))
+            } else {
+              res.statusCode = 404
+              res.end('')
+            }
+            return
+          }
+          if (req.method === 'POST') {
+            const chunks: Buffer[] = []
+            req.on('data', (chunk: Buffer) => chunks.push(chunk))
+            req.on('end', () => {
+              const body = Buffer.concat(chunks)
+              if (!fs.existsSync(maskDir)) fs.mkdirSync(maskDir, { recursive: true })
+              fs.writeFileSync(filePath, body)
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ success: true }))
+            })
+            return
+          }
+          return next()
+        }
+
         // /api/upload-media
         if (isPathMatch(urlPath, '/api/upload-media')) {
           if (req.method === 'POST') {
@@ -360,6 +390,17 @@ export function apiMiddleware(): Plugin {
       const texListDest = path.resolve(__dirname, '..', 'dist', 'textures.json')
       if (fs.existsSync(texListSrc)) {
         fs.copyFileSync(texListSrc, texListDest)
+      }
+
+      // public/masks/ → dist/masks/
+      const maskSrcDir = path.resolve(__dirname, '..', 'public', 'masks')
+      const maskDestDir = path.resolve(__dirname, '..', 'dist', 'masks')
+      if (fs.existsSync(maskSrcDir)) {
+        if (!fs.existsSync(maskDestDir)) fs.mkdirSync(maskDestDir, { recursive: true })
+        for (const entry of fs.readdirSync(maskSrcDir, { withFileTypes: true })) {
+          if (!entry.isFile()) continue
+          fs.copyFileSync(path.join(maskSrcDir, entry.name), path.join(maskDestDir, entry.name))
+        }
       }
     }
   }

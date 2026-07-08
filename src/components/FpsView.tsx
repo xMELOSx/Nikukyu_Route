@@ -255,6 +255,7 @@ const FpsView: React.FC<FpsViewProps> = ({
 
   const ctrlHeldRef = useRef(false);
   const altHeldRef = useRef(false);
+  const ghostPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     keysRef.current.add(e.key.toLowerCase());
@@ -336,8 +337,8 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
 
     if (hasLockedRef.current && !document.pointerLockElement) {
-      // 自動案内中はマウスキャプチャ解除で終了しない (ghost3d 時も同様)
-      if (autoRouteActiveRef.current) return;
+      // 自動案内中 + ghost3d OFF (オートウォーク) はキャプチャ解除で終了しない
+      if (autoRouteActiveRef.current && !ghost3dRef.current) return;
       // Ctrl/Alt 解放中は終了しない (一時的なキャプチャ解除)
       if (ctrlHeldRef.current) return;
       if (altHeldRef.current) return;
@@ -513,9 +514,12 @@ const FpsView: React.FC<FpsViewProps> = ({
           playerRef.current.angle = Math.atan2(faceY, faceX);
         }
         playerChangeRef.current({ x: playerRef.current.x, y: playerRef.current.y });
+      }
 
+      // ドア自動解除: ghost3d の有無に関わらずゴースト/オートウォークが通過した鍵を開ける
+      if (aaActive && aaSegs.length > 0 && aaTiming) {
         const prevElapsed = prevAutoElapsedRef.current;
-        if (prevElapsed >= 0 && aaTiming) {
+        if (prevElapsed >= 0) {
           const spd = aaTiming.speed;
           for (const seg of aaSegs) {
             if (seg.stopDuration > 0 && seg.markerId) {
@@ -715,8 +719,13 @@ const FpsView: React.FC<FpsViewProps> = ({
         const ghostElapsed = autoRouteElapsedRef.current;
         const ghostInterp = interpolateRoute(autoRouteSegmentsRef.current, autoRouteTimingRef.current.speed, autoRouteTimingRef.current.totalTime, ghostElapsed);
         if (ghostInterp) {
-          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights, heroImageRef.current);
+          ghostPosRef.current = { x: ghostInterp.position.x, y: ghostInterp.position.y };
+          renderGhostBillboard(ctx, canvas, ghostInterp.position, camPos, playerRef.current.angle, FOV, colHeights);
+        } else {
+          ghostPosRef.current = null;
         }
+      } else {
+        ghostPosRef.current = null;
       }
 
       const minimapCvs = minimapCanvasRef.current;
@@ -725,7 +734,41 @@ const FpsView: React.FC<FpsViewProps> = ({
         if (mctx) {
           mctx.clearRect(0, 0, minimapCvs.width, minimapCvs.height);
           renderMinimap(mctx, playerRef.current, lw, lm, mapSnapshotRef.current || bgImageRef.current);
-
+        }
+      }
+      // Ghost dot on minimap overlay
+      if (ghostPosRef.current && minimapCvs) {
+        const mctx = minimapCvs.getContext('2d');
+        if (mctx) {
+          const margin = 28;
+          const half = 504 / 2;
+          const scale = 504 / 500;
+          const gp = ghostPosRef.current;
+          const dx = (gp.x - playerRef.current.x) * scale;
+          const dy = (gp.y - playerRef.current.y) * scale;
+          const gx = margin + half + dx;
+          const gy = margin + half + dy;
+          if (Math.abs(dx) <= half && Math.abs(dy) <= half) {
+            mctx.fillStyle = 'rgba(150, 200, 255, 0.8)';
+            mctx.beginPath();
+            mctx.arc(gx, gy, 10, 0, Math.PI * 2);
+            mctx.fill();
+            mctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            mctx.lineWidth = 2;
+            mctx.stroke();
+            // direction indicator
+            if (Math.hypot(dx, dy) > 20) {
+              const angle = Math.atan2(gp.y - playerRef.current.y, gp.x - playerRef.current.x);
+              const tipX = gx + Math.cos(angle) * 14;
+              const tipY = gy + Math.sin(angle) * 14;
+              mctx.strokeStyle = 'rgba(150, 200, 255, 0.6)';
+              mctx.lineWidth = 2;
+              mctx.beginPath();
+              mctx.moveTo(gx, gy);
+              mctx.lineTo(tipX, tipY);
+              mctx.stroke();
+            }
+          }
         }
       }
 
@@ -814,6 +857,33 @@ const FpsView: React.FC<FpsViewProps> = ({
         ctx.font = '8px monospace';
         ctx.fillStyle = 'rgba(255,50,50,0.6)';
         ctx.fillText(`${Math.round(nearestPhoneDist)}px`, cx3, cy3 + r + 12);
+      }
+
+      // Ghost direction compass
+      if (ghostPosRef.current && mode === 'tps') {
+        const gp = ghostPosRef.current;
+        const pa = Math.atan2(gp.y - playerRef.current.y, gp.x - playerRef.current.x);
+        const relAngle = normalizeAngle(pa - playerRef.current.angle);
+        const cx3 = canvas.width - 44;
+        const cy3 = 84;
+        const r = 16;
+        ctx.strokeStyle = 'rgba(150, 200, 255, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx3, cy3, r, 0, Math.PI * 2);
+        ctx.stroke();
+        const arrowX = cx3 + Math.sin(relAngle) * r;
+        const arrowY = cy3 - Math.cos(relAngle) * r;
+        ctx.fillStyle = 'rgba(150, 200, 255, 0.9)';
+        ctx.beginPath();
+        ctx.arc(arrowX, arrowY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(150, 200, 255, 0.4)';
+        const gDist = Math.round(Math.hypot(gp.x - playerRef.current.x, gp.y - playerRef.current.y));
+        ctx.fillText(`👻${gDist}px`, cx3, cy3 + r + 12);
       }
 
       // Locked door interaction prompt

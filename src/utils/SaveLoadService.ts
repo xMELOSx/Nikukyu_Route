@@ -109,7 +109,6 @@ export async function saveRoute(route: RouteData): Promise<boolean> {
     ...route,
     renderCache: encoded,
     customBg: { main: null },
-    maskCanvas: { main: null } as { [key in FloorType]: string | null },
     bgOffset: route.bgOffset,
     bgScale: route.bgScale,
     markerScale: route.markerScale,

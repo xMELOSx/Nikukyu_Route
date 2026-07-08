@@ -13,7 +13,6 @@ export interface HistorySnapshot {
   globalMarkers: HeistMarker[];
   walls?: RouteData['walls'];
   lockedWalls?: GlobalLockedWalls;
-  maskCanvas?: { [key in FloorType]: string | null };
 }
 
 export interface UseHistoryOptions {
@@ -46,7 +45,7 @@ export interface UseHistoryApi {
   futureHistory: HistorySnapshot[];
   canUndo: boolean;
   canRedo: boolean;
-  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls'], lockedWalls?: GlobalLockedWalls, maskCanvas?: { [key in FloorType]: string | null }) => void;
+  pushHistory: (strokes: RouteData['strokes'], indiv: HeistMarker[], global: HeistMarker[], walls?: RouteData['walls'], lockedWalls?: GlobalLockedWalls) => void;
   undo: () => void;
   redo: () => void;
   /** Capture a snapshot at the start of a marker drag (no history yet). */
@@ -83,20 +82,18 @@ export function useHistory(options: UseHistoryOptions): UseHistoryApi {
     indiv: HeistMarker[],
     global: HeistMarker[],
     walls?: RouteData['walls'],
-    lockedWalls?: GlobalLockedWalls,
-    maskCanvas?: { [key in FloorType]: string | null }
+    lockedWalls?: GlobalLockedWalls
   ) => {
     const snapshot: HistorySnapshot = {
       strokes: clone(strokes),
       individualMarkers: clone(indiv),
       globalMarkers: clone(global),
       walls: walls ? clone(walls) : clone(getWalls()),
-      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls()),
-      maskCanvas: maskCanvas ? clone(maskCanvas) : clone(getRoute().maskCanvas)
+      lockedWalls: lockedWalls ? clone(lockedWalls) : clone(getLockedWalls())
     };
     setPastHistory(prev => [...prev.slice(-(HISTORY_LIMIT - 1)), snapshot]);
     setFutureHistory([]);
-  }, [getWalls, getLockedWalls, getRoute]);
+  }, [getWalls, getLockedWalls]);
 
   const undo = useCallback(() => {
     if (pastHistory.length === 0) return;
