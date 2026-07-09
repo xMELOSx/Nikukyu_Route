@@ -57,6 +57,8 @@ interface MapCanvasProps {
   maskCanvasUrl?: string | null;
   onMaskCanvasChange?: (url: string | null) => void;
   maskSubMode?: 'paint' | 'erase';
+  showMinimapMask?: boolean;
+  wallColors2d?: { normal: string; locked: string; lockedOpen: string; partition: string; textured: string };
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -227,6 +229,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   maskCanvasUrl,
   onMaskCanvasChange,
   maskSubMode: maskSubModeProp = 'paint',
+  showMinimapMask = true,
+  wallColors2d = { normal: '#ff5500', locked: '#ffcc00', lockedOpen: '#00c8ff', partition: '#b43cff', textured: '#00ff88' },
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -445,9 +449,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.drawImage(canvasRef.current, 0, 0);
       }
 
-      // 3. Walls (dashed orange, matching normal view SVG style)
+      // 3. Walls (matching SVG style with custom colors)
       for (const w of walls) {
-        ctx.strokeStyle = 'rgba(255, 85, 0, 0.85)';
+        ctx.strokeStyle = wallColors2d.normal;
         ctx.lineWidth = 5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
@@ -501,7 +505,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
 
       // 6. Mask canvas overlay (black fills hide minimap margins)
-      if (maskCanvasRef.current) {
+      if (showMinimapMask && maskCanvasRef.current) {
         ctx.drawImage(maskCanvasRef.current, 0, 0);
       }
 
@@ -509,7 +513,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
     img.onerror = () => setMiniMapSource(null);
     img.src = bgUrl;
-  }, [floor, customBg, bgOffset, bgScale, canvasRef, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes, maskCanvasUrl, maskSubMode]);
+  }, [floor, customBg, bgOffset, bgScale, canvasRef, strokes, markers, walls, hiddenMarkers, hiddenMarkerTypes, maskCanvasUrl, maskSubMode, showMinimapMask, wallColors2d]);
 
   // Update minimap source when map data changes
   useEffect(() => {
@@ -4633,7 +4637,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     y1={w[0].y}
                     x2={w[1].x}
                     y2={w[1].y}
-                    stroke={hasTex ? "rgba(0, 255, 136, 0.95)" : "rgba(255, 85, 0, 0.85)"}
+                    stroke={hasTex ? wallColors2d.textured : (wallSubMode === 'draw' && wallLockedSubMode !== 'normal' ? "rgba(100, 100, 100, 0.3)" : wallColors2d.normal)}
                     strokeWidth={5}
                     strokeDasharray={hasTex ? undefined : "6,4"}
                   />
@@ -4660,7 +4664,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={w.p1.y}
                 x2={w.p2.x}
                 y2={w.p2.y}
-                stroke={w.isOpen ? 'rgba(0, 200, 255, 0.85)' : 'rgba(255, 200, 0, 0.9)'}
+                stroke={wallSubMode === 'draw' && wallLockedSubMode !== 'locked' ? "rgba(100, 100, 100, 0.3)" : (w.isOpen ? wallColors2d.lockedOpen : wallColors2d.locked)}
                 strokeWidth={5}
                 strokeDasharray={w.isOpen ? '4,4' : '2,6'}
               />
@@ -4671,7 +4675,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 y1={currentPoints[0].y}
                 x2={currentPoints[1].x}
                 y2={currentPoints[1].y}
-                stroke={wallLockedSubMode === 'locked' ? '#ffcc00' : wallLockedSubMode === 'partition' ? '#b43cff' : '#ff5500'}
+                stroke={wallLockedSubMode === 'locked' ? wallColors2d.locked : wallLockedSubMode === 'partition' ? wallColors2d.partition : wallColors2d.normal}
                 strokeWidth={5}
                 strokeDasharray="6,4"
               />
@@ -4963,7 +4967,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 key={`pwall-layer-${idx}`}
                 x1={w.p1.x} y1={w.p1.y}
                 x2={w.p2.x} y2={w.p2.y}
-                stroke="rgba(180, 60, 255, 0.85)"
+                stroke={wallSubMode === 'draw' && wallLockedSubMode !== 'partition' ? "rgba(100, 100, 100, 0.3)" : wallColors2d.partition}
                 strokeWidth={5}
                 strokeDasharray="8,3,2,3"
               />
@@ -8575,6 +8579,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         autoRouteElapsed={autoRouteElapsed}
         autoRouteTiming={autoRouteTiming}
         ghost3d={ghost3d}
+        isLocal={isLocal}
+        onWallsGenerated={(newWalls) => {
+          onWallsChange?.([...walls, ...newWalls]);
+        }}
+        onWallsChange={onWallsChange}
       />
 
       {/* 電話ボックス状態HUD (左下) — 開閉トグル付きコンパクト版 */}

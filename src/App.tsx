@@ -633,6 +633,25 @@ export default function App() {
     localStorage.setItem('heist_show_settings_expanded', String(showSettingsExpanded));
   }, [showSettingsExpanded]);
 
+  const [showMinimapMask, setShowMinimapMask] = useState<boolean>(() => {
+    const saved = localStorage.getItem('heist_show_minimap_mask');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_show_minimap_mask', String(showMinimapMask));
+  }, [showMinimapMask]);
+
+  const [wallColors2d, setWallColors2d] = useState<{
+    normal: string; locked: string; lockedOpen: string; partition: string; textured: string;
+  }>(() => {
+    const saved = localStorage.getItem('heist_wall_colors_2d');
+    if (saved) { try { return JSON.parse(saved); } catch {} }
+    return { normal: '#ff5500', locked: '#ffcc00', lockedOpen: '#00c8ff', partition: '#b43cff', textured: '#00ff88' };
+  });
+  useEffect(() => {
+    localStorage.setItem('heist_wall_colors_2d', JSON.stringify(wallColors2d));
+  }, [wallColors2d]);
+
   // MARKER VISIBILITYの折りたたみ状態 (default: 展開)
   const [markerVisibilityExpanded, setMarkerVisibilityExpanded] = useState<boolean>(() => {
     const saved = localStorage.getItem('heist_marker_visibility_expanded');
@@ -2030,6 +2049,10 @@ export default function App() {
           showSpawnEditFeature={showSpawnEditFeature}
           showSettingsExpanded={showSettingsExpanded}
           setShowSettingsExpanded={setShowSettingsExpanded}
+          showMinimapMask={showMinimapMask}
+          setShowMinimapMask={setShowMinimapMask}
+          wallColors2d={wallColors2d}
+          setWallColors2d={setWallColors2d}
           markerVisibilityExpanded={markerVisibilityExpanded}
           setMarkerVisibilityExpanded={setMarkerVisibilityExpanded}
           floorNavCollapsed={floorNavCollapsed}
@@ -2380,6 +2403,8 @@ export default function App() {
               maskCanvasUrl={maskCanvasUrl}
               onMaskCanvasChange={handleMaskCanvasChange}
               maskSubMode={maskSubMode}
+              showMinimapMask={showMinimapMask}
+              wallColors2d={wallColors2d}
             />
           ), [
             currentFloor,

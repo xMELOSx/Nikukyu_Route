@@ -39,6 +39,9 @@ interface FpsTpsControlsProps {
   spawnVisible?: boolean;
   hideRouteLines?: boolean;
   hideBranchLines?: boolean;
+  isLocal?: boolean;
+  onWallsGenerated?: (walls: WallSegment[]) => void;
+  onWallsChange?: (walls: WallSegment[]) => void;
 }
 
 function resolveInitialPos(markers: HeistMarker[], startupFocusMarkerId?: string): Point {
@@ -75,7 +78,10 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
   spawnVisible = true,
   hideRouteLines = false,
   hideBranchLines = false,
-  partitionWalls = []
+  partitionWalls = [],
+  isLocal = false,
+  onWallsGenerated,
+  onWallsChange
 }) => {
   const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
   const [freeCamMode, setFreeCamMode] = useState<false | 'fps' | 'tps'>(false);
@@ -447,7 +453,7 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
               </span>
             </div>
             <div style={{ position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)', fontSize: '22px', opacity: 0.7, textAlign: 'center', whiteSpace: 'nowrap' }}>
-              [WASD]移動 [Shift]ﾀﾞｯｼｭ [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [Alt]一時解放 [Ctrl]解放 [P]再読込 [ESC]終了
+               [WASD]移動 [Shift]ﾀﾞｯｼｭ [Q/E]回転 [R]電話 [T]切替 [F]鍵 [H]壁抜け [Alt]一時解放 [Ctrl]解放 [P]再読込{isLocal ? ' [C]撮影' : ''} [ESC]終了
             </div>
           </div>
         )}
@@ -480,6 +486,9 @@ const FpsTpsControls: React.FC<FpsTpsControlsProps> = ({
             imageOverlayCanvasRef={tpsOverlayRef}
             tpsPinSize={tpsPinSize}
             onReload={handleReload}
+            isLocal={isLocal}
+            onWallsGenerated={onWallsGenerated}
+            onWallsChange={onWallsChange}
           />
         )}
         {/* Mobile touch controls */}

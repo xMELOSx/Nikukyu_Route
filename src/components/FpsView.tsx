@@ -14,7 +14,8 @@ import {
   renderMinimap,
   renderMarkers3D,
   renderGhostBillboard,
-  pointToSegmentDist
+  pointToSegmentDist,
+  castRay
 } from '../utils/Raycaster';
 
 interface FpsViewProps {
@@ -45,6 +46,9 @@ interface FpsViewProps {
   imageOverlayCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   tpsPinSize?: number;
   onReload?: () => void;
+  isLocal?: boolean;
+  onWallsGenerated?: (walls: WallSegment[]) => void;
+  onWallsChange?: (walls: WallSegment[]) => void;
 }
 
 const FOV = Math.PI * 0.45;
@@ -68,7 +72,10 @@ const FpsView: React.FC<FpsViewProps> = ({
   onToggleNearestPhone,
   onToggleMode,
   onReload,
-  partitionWalls = []
+  partitionWalls = [],
+  isLocal = false,
+  onWallsGenerated,
+  onWallsChange
 }) => {
   const hMarkers = hiddenMarkers || [];
   const hTypes = hiddenMarkerTypes || [];
@@ -178,6 +185,10 @@ const FpsView: React.FC<FpsViewProps> = ({
 
   const wallsRef = useRef(walls);
   useEffect(() => { wallsRef.current = walls; }, [walls]);
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  const isLocalRef = useRef(isLocal);
+  useEffect(() => { isLocalRef.current = isLocal; }, [isLocal]);
 
   // 壁テクスチャ画像のロード・キャッシュ管理
   const wallTexturesRef = useRef<Record<string, ImageData>>({});
@@ -241,6 +252,10 @@ const FpsView: React.FC<FpsViewProps> = ({
   autoRouteNoClipToggleRef.current = onAutoRouteNoClipChange;
   const reloadRef = useRef(onReload);
   reloadRef.current = onReload;
+  const onWallsGeneratedRef = useRef(onWallsGenerated);
+  onWallsGeneratedRef.current = onWallsGenerated;
+  const onWallsChangeRef = useRef(onWallsChange);
+  onWallsChangeRef.current = onWallsChange;
 
   const autoRouteActiveRef = useRef(autoRouteActive);
   autoRouteActiveRef.current = autoRouteActive;
@@ -307,6 +322,56 @@ const FpsView: React.FC<FpsViewProps> = ({
     }
     if ((e.key === 'p' || e.key === 'P') && !e.repeat) {
       reloadRef.current?.();
+    }
+    if ((e.key === 'c' || e.key === 'C') && !e.repeat && modeRef.current === 'tps' && isLocalRef.current) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const photoCanvas = document.createElement('canvas');
+      photoCanvas.width = 1920;
+      photoCanvas.height = 1080;
+      const pctx = photoCanvas.getContext('2d');
+      if (!pctx) return;
+      pctx.imageSmoothingEnabled = true;
+      pctx.imageSmoothingQuality = 'high';
+      pctx.drawImage(canvas, 0, 0, 1920, 1080);
+      const texCtx = document.createElement('canvas').getContext('2d');
+      if (!texCtx) return;
+      texCtx.canvas.width = 1920;
+      texCtx.canvas.height = 1080;
+      texCtx.drawImage(photoCanvas, 0, 0);
+      const imgData = texCtx.getImageData(0, 0, 1920, 1080);
+      const texName = `_capture_${Date.now()}`;
+      wallTexturesRef.current[texName] = imgData;
+      loadedTextureNamesRef.current.add(texName);
+      const pp = playerRef.current;
+      const lw = wallsRef.current;
+      const fwdX = Math.cos(pp.angle);
+      const fwdY = Math.sin(pp.angle);
+      const perpX = -fwdY;
+      const perpY = fwdX;
+      const cx = pp.x + fwdX * 15;
+      const cy = pp.y + fwdY * 15;
+      const hw = 16;
+      const hd = 9;
+      const corners = [
+        { x: cx + perpX * hw - fwdX * hd, y: cy + perpY * hw - fwdY * hd },
+        { x: cx - perpX * hw - fwdX * hd, y: cy - perpY * hw - fwdY * hd },
+        { x: cx - perpX * hw + fwdX * hd, y: cy - perpY * hw + fwdY * hd },
+        { x: cx + perpX * hw + fwdX * hd, y: cy + perpY * hw + fwdY * hd },
+      ];
+      const newWalls: WallSegment[] = [
+        [corners[0], corners[1], texName],
+        [corners[1], corners[2], texName],
+        [corners[2], corners[3], texName],
+        [corners[3], corners[0], texName],
+      ];
+      onWallsGeneratedRef.current?.(newWalls);
+      const hit = castRay({ x: pp.x, y: pp.y }, pp.angle, lw);
+      if (hit.wallIndex >= 0 && hit.distance < Infinity && hit.distance < 30) {
+        const painted = [...lw];
+        painted[hit.wallIndex] = [lw[hit.wallIndex][0], lw[hit.wallIndex][1], texName] as WallSegment;
+        onWallsChangeRef.current?.(painted);
+      }
     }
   }, []);
 

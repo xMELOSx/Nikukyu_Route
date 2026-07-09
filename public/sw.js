@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heist-route-v2';
+const CACHE_NAME = 'heist-route-v3';
 
 const PRECACHE_ASSETS = [
   './',
@@ -61,7 +61,22 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  if (new URL(event.request.url).pathname.startsWith('/api/')) return;
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/')) return;
+
+  // texture/ と uploads/ はネットワーク優先（新規追加を反映させるため）
+  if (url.pathname.includes('/texture/') || url.pathname.includes('/uploads/')) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

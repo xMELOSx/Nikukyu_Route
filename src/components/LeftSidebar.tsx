@@ -33,6 +33,9 @@ export interface LeftSidebarProps {
   toolMode: string; setToolMode: React.Dispatch<React.SetStateAction<any>>;
   isLocal: boolean; currentFloor: FloorType; showSpawnFeature: boolean; showSpawnEditFeature: boolean;
   showSettingsExpanded: boolean; setShowSettingsExpanded: (v: boolean) => void;
+  showMinimapMask: boolean; setShowMinimapMask: (v: boolean) => void;
+  wallColors2d: { normal: string; locked: string; lockedOpen: string; partition: string; textured: string };
+  setWallColors2d: (v: any) => void;
   markerVisibilityExpanded: boolean; setMarkerVisibilityExpanded: (v: boolean) => void;
   floorNavCollapsed: boolean; setFloorNavCollapsed: (v: any) => void;
   showMarkerLabels: boolean; setShowMarkerLabels: (v: boolean) => void;
@@ -144,6 +147,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     canvasRef, isEditMode, setIsEditMode, toolMode, setToolMode,
     isLocal, currentFloor, showSpawnFeature, showSpawnEditFeature,
     showSettingsExpanded, setShowSettingsExpanded,
+    showMinimapMask, setShowMinimapMask,
+    wallColors2d, setWallColors2d,
     markerVisibilityExpanded, setMarkerVisibilityExpanded,
     floorNavCollapsed, setFloorNavCollapsed,
     showMarkerLabels, setShowMarkerLabels,
@@ -227,6 +232,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
   const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [wallColorSettingsOpen, setWallColorSettingsOpen] = useState(false);
 
   // Item image crop state
   const [cropSource, setCropSource] = useState<string | null>(null);
@@ -607,6 +613,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     />
                     {t('🔍 右下HUD (ズームコントロール) の表示')}
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={showMinimapMask}
+                      onChange={(e) => { setShowMinimapMask(e.target.checked); localStorage.setItem('heist_show_minimap_mask', String(e.target.checked)); }}
+                      style={{ accentColor: 'var(--cyan-neon)', cursor: 'pointer' }}
+                    />
+                    {t('🗺️ ミニマップにマスクを表示')}
+                  </label>
+
                   {showBottomRightHud && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '20px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-primary)' }}>
@@ -1436,6 +1452,32 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     {t('マーカーを非表示')}
                   </label>
                 </div>
+                {/* 壁の色設定 */}
+                <button type="button" onClick={() => setWallColorSettingsOpen(!wallColorSettingsOpen)}
+                  style={{ width: '100%', padding: '3px 6px', fontSize: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '3px', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: wallColorSettingsOpen ? '6px' : '0' }}>
+                  <span>{t('🎨 壁の色設定')}</span>
+                  <span style={{ fontSize: '8px', opacity: 0.5 }}>{wallColorSettingsOpen ? '▲' : '▼'}</span>
+                </button>
+                {wallColorSettingsOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px', padding: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                    {([
+                      ['normal', t('通常壁'), wallColors2d.normal],
+                      ['locked', t('鍵付き扉'), wallColors2d.locked],
+                      ['lockedOpen', t('鍵開扉'), wallColors2d.lockedOpen],
+                      ['partition', t('仕切り壁'), wallColors2d.partition],
+                      ['textured', t('テクスチャ壁'), wallColors2d.textured],
+                    ] as const).map(([key, label, val]) => (
+                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input type="color" value={val}
+                          onChange={(e) => setWallColors2d((prev: any) => ({ ...prev, [key]: e.target.value }))}
+                          style={{ width: '28px', height: '22px', padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
+                        />
+                        <span style={{ fontSize: '10px', color: '#ccc', flex: 1 }}>{label}</span>
+                        <span style={{ fontSize: '8px', color: '#666', fontFamily: 'monospace' }}>{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {/* 自動検出・クリア (下部) */}
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '6px' }}>
                   {t('マップの背景画像をもとに、黒い線を壁として自動検出できます。')}
