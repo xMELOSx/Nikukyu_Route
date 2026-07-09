@@ -11,6 +11,7 @@ interface TextureUsageModalProps {
   selectedTexture: string;
   onSelectTexture: (texName: string) => void;
   onReloadTextures?: () => void;
+  isLocal?: boolean;
 }
 
 const FLOOR_LABELS: Record<string, string> = {
@@ -27,7 +28,8 @@ export const TextureUsageModal: React.FC<TextureUsageModalProps> = ({
   globalWalls,
   selectedTexture,
   onSelectTexture,
-  onReloadTextures
+  onReloadTextures,
+  isLocal = false
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'unused'>('all');
   const [resolutions, setResolutions] = useState<Record<string, { w: number; h: number }>>({});
@@ -127,6 +129,28 @@ export const TextureUsageModal: React.FC<TextureUsageModalProps> = ({
       alert(t('リサイズ処理に失敗しました。'));
     } finally {
       setResizing(prev => ({ ...prev, [fileName]: false }));
+    }
+  };
+
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({});
+
+  const handleDelete = async (fileName: string) => {
+    if (deleting[fileName]) return;
+    if (!confirm(`${fileName} を削除しますか？`)) return;
+    setDeleting(prev => ({ ...prev, [fileName]: true }));
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/delete-texture`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: fileName })
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      onReloadTextures?.();
+    } catch (e) {
+      console.error(e);
+      alert(t('削除に失敗しました。'));
+    } finally {
+      setDeleting(prev => ({ ...prev, [fileName]: false }));
     }
   };
 
@@ -382,6 +406,23 @@ export const TextureUsageModal: React.FC<TextureUsageModalProps> = ({
                       {isSelected ? <Check size={11} /> : null}
                       {isSelected ? t('選択中') : t('テクスチャ選択')}
                     </button>
+
+                    {/* Delete Button */}
+                    {isLocal && (
+                      <button
+                        onClick={() => handleDelete(item.name)}
+                        disabled={deleting[item.name]}
+                        title={t('このテクスチャファイルを削除')}
+                        style={{
+                          width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px',
+                          cursor: 'pointer', border: '1px solid', transition: 'all 0.2s',
+                          background: 'rgba(255, 0, 85, 0.1)', color: '#ff4466',
+                          borderColor: 'rgba(255, 0, 85, 0.3)', fontWeight: 'bold'
+                        }}
+                      >
+                        {deleting[item.name] ? t('削除中...') : t('削除')}
+                      </button>
+                    )}
                   </div>
                 );
               })}

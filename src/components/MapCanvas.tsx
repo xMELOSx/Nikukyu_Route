@@ -61,6 +61,8 @@ interface MapCanvasProps {
   showMinimapMask?: boolean;
   wallColors2d?: { normal: string; locked: string; lockedOpen: string; partition: string; textured: string };
   paintColor?: string;
+  isEyedropper?: boolean;
+  onEyedropperPick?: (color: string) => void;
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -235,6 +237,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   showMinimapMask = true,
   wallColors2d = { normal: '#ff5500', locked: '#ffcc00', lockedOpen: '#00c8ff', partition: '#b43cff', textured: '#00ff88' },
   paintColor = '#ff0055',
+  isEyedropper = false,
+  onEyedropperPick,
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -2228,18 +2232,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (bestIndex !== -1) {
         const target = walls[bestIndex];
         const currentTex = target[2];
+        const paintCol = target[4];
         
         if (selectedTexture === '' || currentTex === selectedTexture) {
           const nextWalls = [...walls];
-          nextWalls[bestIndex] = [target[0], target[1]];
+          nextWalls[bestIndex] = paintCol
+            ? [target[0], target[1], undefined, undefined, paintCol] as WallSegment
+            : [target[0], target[1]] as WallSegment;
           onWallsChange(nextWalls);
           return;
         }
 
         const nextWalls = [...walls];
-        nextWalls[bestIndex] = selectedRepeat > 1
+        const base: any[] = selectedRepeat > 1
           ? [target[0], target[1], selectedTexture, selectedRepeat]
           : [target[0], target[1], selectedTexture];
+        if (paintCol) base.push(paintCol);
+        nextWalls[bestIndex] = base as WallSegment;
         onWallsChange(nextWalls);
       }
     };
@@ -2304,6 +2313,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
         if (bestIndex !== -1) {
           const target = walls[bestIndex];
+          if (isEyedropper) {
+            const picked = target[4];
+            if (picked && onEyedropperPick) {
+              onEyedropperPick(picked);
+            }
+            return;
+          }
           const nextWalls = [...walls];
           const tex = target[2];
           const rep = target[3];
@@ -2370,7 +2386,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 ? { x: start.x, y: start.y } : w[0];
               const p2 = (Math.hypot(w[1].x - clickedPt.x, w[1].y - clickedPt.y) < 1)
                 ? { x: start.x, y: start.y } : w[1];
-              return [p1, p2] as WallSegment;
+              const rest = w.slice(2) as any[];
+              return [p1, p2, ...rest] as WallSegment;
             }));
             onLockedWallsChange?.(lockedWalls.map(w => {
               const p1 = (Math.hypot(w.p1.x - clickedPt.x, w.p1.y - clickedPt.y) < 1)
@@ -2892,15 +2909,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (wallMoveDraft) {
         if (wallMoveDraft.wallType === 'walls') {
           const nextWalls = [...walls];
-          const tex = nextWalls[wallMoveDraft.idx]?.[2];
-          const rep = nextWalls[wallMoveDraft.idx]?.[3];
-          if (tex) {
-            nextWalls[wallMoveDraft.idx] = rep
-              ? [wallMoveDraft.p1, wallMoveDraft.p2, tex as string, rep as number]
-              : [wallMoveDraft.p1, wallMoveDraft.p2, tex as string];
-          } else {
-            nextWalls[wallMoveDraft.idx] = [wallMoveDraft.p1, wallMoveDraft.p2];
-          }
+          const orig = nextWalls[wallMoveDraft.idx];
+          const tex = orig?.[2];
+          const rep = orig?.[3];
+          const paint = orig?.[4];
+          const base: any[] = tex
+            ? rep
+              ? [wallMoveDraft.p1, wallMoveDraft.p2, tex, rep]
+              : [wallMoveDraft.p1, wallMoveDraft.p2, tex]
+            : [wallMoveDraft.p1, wallMoveDraft.p2];
+          if (paint) base.push(paint);
+          nextWalls[wallMoveDraft.idx] = base as WallSegment;
           onWallsChange?.(nextWalls);
         } else if (wallMoveDraft.wallType === 'lockedWalls') {
           const next = lockedWalls.map(s => ({ ...s }));
@@ -2928,11 +2947,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (target.wallType === 'walls') {
           const nextWalls = copyArray(walls);
           const w = nextWalls[target.wallIdx];
-          const tex = w[2] as string | undefined;
-          const rep = w[3] as number | undefined;
-          nextWalls[target.wallIdx] = target.endpointIdx === 0
-            ? (tex ? (rep ? [vertexMoveDraft.newPos, w[1], tex, rep] : [vertexMoveDraft.newPos, w[1], tex]) : [vertexMoveDraft.newPos, w[1]])
-            : (tex ? (rep ? [w[0], vertexMoveDraft.newPos, tex, rep] : [w[0], vertexMoveDraft.newPos, tex]) : [w[0], vertexMoveDraft.newPos]);
+          const rest = w.slice(2) as any[];
+          const p1 = target.endpointIdx === 0 ? vertexMoveDraft.newPos : w[0];
+          const p2 = target.endpointIdx === 1 ? vertexMoveDraft.newPos : w[1];
+          nextWalls[target.wallIdx] = [p1, p2, ...rest] as WallSegment;
           onWallsChange?.(nextWalls);
         } else if (target.wallType === 'lockedWalls') {
           const next = lockedWalls.map(s => ({ ...s }));

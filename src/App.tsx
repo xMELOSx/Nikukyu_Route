@@ -262,6 +262,7 @@ export default function App() {
   const [selectedTexture, setSelectedTexture] = useState<string>('');
   const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
   const [paintColor, setPaintColor] = useState<string>('#ff0055');
+  const [isEyedropper, setIsEyedropper] = useState(false);
   const [fpsResolutionScale, setFpsResolutionScale] = useState<number>(() => {
     const saved = localStorage.getItem('heist_fps_resolution_scale');
     return saved !== null ? parseFloat(saved) : 2.0;
@@ -2290,6 +2291,8 @@ export default function App() {
           onReloadMask={handleReloadMask}
           maskSubMode={maskSubMode}
           setMaskSubMode={(v: string) => setMaskSubMode(v as 'paint' | 'erase')}
+          isEyedropper={isEyedropper}
+          setIsEyedropper={setIsEyedropper}
         />
         {/* Map area */}
         <section style={{ position: 'relative', minWidth: 0, minHeight: 0, gridColumn: 2 }}>
@@ -2447,6 +2450,8 @@ export default function App() {
               vertexMode={vertexMode}
               maskCanvasUrl={maskCanvasUrl}
               paintColor={paintColor}
+              isEyedropper={isEyedropper}
+              onEyedropperPick={(color) => { setPaintColor(color); setIsEyedropper(false); }}
               onMaskCanvasChange={handleMaskCanvasChange}
               onPushMaskHistory={pushMaskHistory}
               maskSubMode={maskSubMode}
@@ -3759,6 +3764,7 @@ export default function App() {
         selectedTexture={selectedTexture}
         onSelectTexture={setSelectedTexture}
         onReloadTextures={handleReloadTextures}
+        isLocal={isLocal}
       />
     </div>
   );

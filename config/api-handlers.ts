@@ -95,6 +95,36 @@ export function apiMiddleware(): Plugin {
           return next()
         }
 
+        // /api/delete-texture
+        if (isPathMatch(urlPath, '/api/delete-texture')) {
+          if (req.method === 'POST') {
+            let body = ''
+            req.on('data', (chunk: string) => { body += chunk })
+            req.on('end', () => {
+              try {
+                const { name } = JSON.parse(body)
+                if (!name) {
+                  res.statusCode = 400
+                  res.end(JSON.stringify({ error: 'Missing name' }))
+                  return
+                }
+                const safeName = path.basename(name)
+                const publicPath = path.resolve(__dirname, '../public/texture', safeName)
+                if (fs.existsSync(publicPath)) fs.unlinkSync(publicPath)
+                const distPath = path.resolve(__dirname, '../dist/texture', safeName)
+                if (fs.existsSync(distPath)) fs.unlinkSync(distPath)
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ success: true }))
+              } catch (e) {
+                res.statusCode = 500
+                res.end(JSON.stringify({ error: 'Delete failed' }))
+              }
+            })
+            return
+          }
+          return next()
+        }
+
         // /api/resize-texture
         if (isPathMatch(urlPath, '/api/resize-texture')) {
           if (req.method === 'POST') {

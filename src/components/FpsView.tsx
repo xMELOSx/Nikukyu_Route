@@ -350,12 +350,16 @@ const FpsView: React.FC<FpsViewProps> = ({
             [corners[2], corners[3], texName, 1],
             [corners[3], corners[0], texName, 1],
           ];
-          onWallsGeneratedRef.current?.(newWalls);
           const hit = castRay({ x: pp.x, y: pp.y }, pp.angle, lw);
           if (hit.wallIndex >= 0 && hit.distance < Infinity && hit.distance < 30) {
-            const painted = [...lw];
-            painted[hit.wallIndex] = [lw[hit.wallIndex][0], lw[hit.wallIndex][1], texName, 1] as WallSegment;
-            onWallsChangeRef.current?.(painted);
+            const result = [...lw, ...newWalls];
+            const orig = lw[hit.wallIndex];
+            const base: any[] = [orig[0], orig[1], texName, 1];
+            if (orig[4]) base.push(orig[4]);
+            result[hit.wallIndex] = base as WallSegment;
+            onWallsChangeRef.current?.(result);
+          } else {
+            onWallsGeneratedRef.current?.(newWalls);
           }
         };
         const processAndSave = (canvas: HTMLCanvasElement) => {

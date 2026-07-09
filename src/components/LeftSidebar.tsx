@@ -231,11 +231,22 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     vertexMode, setVertexMode,
     maskSubMode, setMaskSubMode,
     paintColor, setPaintColor,
+    isEyedropper, setIsEyedropper,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
   const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [wallColorSettingsOpen, setWallColorSettingsOpen] = useState(false);
+  const RECENT_COLORS_KEY = 'heist_recent_paint_colors';
+  const [recentColors, setRecentColors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(RECENT_COLORS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recentColors));
+  }, [recentColors]);
 
   // Item image crop state
   const [cropSource, setCropSource] = useState<string | null>(null);
@@ -1295,28 +1306,66 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   </>
                   )}
                 {wallSubMode === 'paint' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', padding: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
-                    <input type="color" value={paintColor}
-                      onChange={(e) => setPaintColor(e.target.value)}
-                      style={{ width: '32px', height: '28px', padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
-                    />
-                    <span style={{ fontSize: '10px', color: '#ccc', flex: 1 }}>{t('壁をクリックして色付け')}</span>
-                    <button
-                      onClick={() => {
-                        if (!globalWalls || !globalWalls[currentFloor]) return;
-                        const next = globalWalls[currentFloor].map((w: any) => {
-                          const tex = w[2];
-                          const rep = w[3];
-                          if (tex !== undefined && rep !== undefined) return [w[0], w[1], tex, rep] as any;
-                          if (tex !== undefined) return [w[0], w[1], tex] as any;
-                          return [w[0], w[1]] as any;
-                        });
-                        updateGlobalWalls?.({ ...globalWalls, [currentFloor]: next });
-                      }}
-                      style={{ fontSize: '9px', padding: '2px 6px', background: 'rgba(255,0,85,0.2)', border: '1px solid rgba(255,0,85,0.4)', borderRadius: '3px', color: '#ff5577', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                    >
-                      {t('全解除')}
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '6px', padding: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input type="color" value={paintColor}
+                        onChange={(e) => {
+                          setPaintColor(e.target.value);
+                          setRecentColors(prev => {
+                            const next = [e.target.value, ...prev.filter(c => c !== e.target.value)].slice(0, 8);
+                            return next;
+                          });
+                        }}
+                        style={{ width: '32px', height: '28px', padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
+                      />
+                      <span style={{ fontSize: '10px', color: '#ccc', flex: 1 }}>{t('壁をクリックして色付け')}</span>
+                      <button
+                        onClick={() => setIsEyedropper?.(v => !v)}
+                        style={{
+                          fontSize: '10px', padding: '2px 6px', borderRadius: '3px',
+                          background: isEyedropper ? 'rgba(0,200,255,0.3)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${isEyedropper ? 'var(--cyan-neon)' : 'rgba(255,255,255,0.2)'}`,
+                          color: isEyedropper ? '#fff' : '#888', cursor: 'pointer'
+                        }}
+                        title={t('スポイト: 壁の色をピック')}
+                      >
+                        💉 {t('スポイト')}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!globalWalls || !globalWalls[currentFloor]) return;
+                          const next = globalWalls[currentFloor].map((w: any) => {
+                            const tex = w[2];
+                            const rep = w[3];
+                            if (tex !== undefined && rep !== undefined) return [w[0], w[1], tex, rep] as any;
+                            if (tex !== undefined) return [w[0], w[1], tex] as any;
+                            return [w[0], w[1]] as any;
+                          });
+                          updateGlobalWalls?.({ ...globalWalls, [currentFloor]: next });
+                        }}
+                        style={{ fontSize: '9px', padding: '2px 6px', background: 'rgba(255,0,85,0.2)', border: '1px solid rgba(255,0,85,0.4)', borderRadius: '3px', color: '#ff5577', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {t('全解除')}
+                      </button>
+                    </div>
+                    {recentColors.length > 0 && (
+                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: '8px', color: '#666', marginRight: '2px' }}>{t('履歴')}:</span>
+                        {recentColors.map((c, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setPaintColor(c)}
+                            style={{
+                              width: '18px', height: '18px', borderRadius: '3px',
+                              background: c, border: c === paintColor ? '2px solid #fff' : '1px solid rgba(255,255,255,0.2)',
+                              cursor: 'pointer', padding: 0,
+                              boxShadow: c === paintColor ? '0 0 6px rgba(255,255,255,0.4)' : 'none'
+                            }}
+                            title={c}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* 壁タイプ toggle: 通常壁/鍵付き扉/仕切り壁 (描くモード時のみ) */}
