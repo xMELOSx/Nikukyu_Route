@@ -431,6 +431,9 @@ export default function App() {
         if (historyApiRef.current?.canUndo) {
           e.preventDefault();
           historyApiRef.current.undo();
+        } else if (maskUndoRef.current.length > 0) {
+          e.preventDefault();
+          undoMask();
         } else if (spawnUndoRef.current.length > 0) {
           e.preventDefault();
           undoPoints();
@@ -446,6 +449,9 @@ export default function App() {
         if (historyApiRef.current?.canRedo) {
           e.preventDefault();
           historyApiRef.current.redo();
+        } else if (maskRedoRef.current.length > 0) {
+          e.preventDefault();
+          redoMask();
         } else if (spawnRedoRef.current.length > 0) {
           e.preventDefault();
           redoPoints();
@@ -1156,18 +1162,7 @@ export default function App() {
 
   const handleMaskCanvasChange = useCallback((dataUrl: string | null) => {
     setMaskCanvasUrl(dataUrl);
-    // auto-save to server (silent)
-    if (dataUrl) {
-      const byteString = atob(dataUrl.split(',')[1]);
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-      const blob = new Blob([ab], { type: 'image/png' });
-      fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: blob });
-    } else {
-      fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: '' });
-    }
-  }, [currentFloor]);
+  }, []);
 
   const handleSaveMask = useCallback(() => {
     if (!maskCanvasUrl) return;
@@ -1179,6 +1174,40 @@ export default function App() {
     fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: blob });
     notification.show(t('マスクを保存しました'));
   }, [maskCanvasUrl, currentFloor, notification, t]);
+
+  const handleReloadMask = useCallback(() => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = 1600; c.height = 4550;
+      c.getContext('2d')!.drawImage(img, 0, 0);
+      setMaskCanvasUrl(c.toDataURL('image/png'));
+    };
+    img.onerror = () => setMaskCanvasUrl(null);
+    img.src = `${import.meta.env.BASE_URL}masks/${currentFloor}.png`;
+  }, [currentFloor]);
+
+  // マスク undo/redo
+  const maskUndoRef = useRef<(string | null)[]>([]);
+  const maskRedoRef = useRef<(string | null)[]>([]);
+  const pushMaskHistory = useCallback(() => {
+    maskUndoRef.current.push(maskCanvasUrl);
+    if (maskUndoRef.current.length > 20) maskUndoRef.current.shift();
+    maskRedoRef.current = [];
+  }, [maskCanvasUrl]);
+  const undoMask = useCallback(() => {
+    const prev = maskUndoRef.current.pop();
+    if (prev === undefined) return;
+    maskRedoRef.current.push(maskCanvasUrl);
+    setMaskCanvasUrl(prev);
+  }, [maskCanvasUrl]);
+  const redoMask = useCallback(() => {
+    const next = maskRedoRef.current.pop();
+    if (next === undefined) return;
+    maskUndoRef.current.push(maskCanvasUrl);
+    setMaskCanvasUrl(next);
+  }, [maskCanvasUrl]);
 
   const handleClearMask = useCallback(() => {
     setMaskCanvasUrl(null);
@@ -2258,6 +2287,7 @@ export default function App() {
           setVertexMode={(v: string) => setVertexMode(v as 'connect' | 'snap')}
           onClearMask={handleClearMask}
           onSaveMask={handleSaveMask}
+          onReloadMask={handleReloadMask}
           maskSubMode={maskSubMode}
           setMaskSubMode={(v: string) => setMaskSubMode(v as 'paint' | 'erase')}
         />
@@ -2418,6 +2448,7 @@ export default function App() {
               maskCanvasUrl={maskCanvasUrl}
               paintColor={paintColor}
               onMaskCanvasChange={handleMaskCanvasChange}
+              onPushMaskHistory={pushMaskHistory}
               maskSubMode={maskSubMode}
               showMinimapMask={showMinimapMask}
               wallColors2d={wallColors2d}

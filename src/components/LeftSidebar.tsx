@@ -137,6 +137,7 @@ export interface LeftSidebarProps {
   setVertexMode?: (v: string) => void;
   onClearMask?: () => void;
   onSaveMask?: () => void;
+  onReloadMask?: () => void;
   maskSubMode?: 'paint' | 'erase';
   setMaskSubMode?: (v: string) => void;
   [key: string]: any;
@@ -1442,6 +1443,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                             style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 150, 255, 0.4)' }}
                           >
                             <span style={{ fontSize: '10px', color: '#0096ff' }}>{t('マスク保存')}</span>
+                          </button>
+                          <button
+                            className="tool-btn"
+                            onClick={() => props.onReloadMask?.()}
+                            style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 180, 0, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#ffb400' }}>{t('再読み込み')}</span>
                           </button>
                         </div>
                         <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>

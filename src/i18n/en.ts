@@ -365,6 +365,7 @@ export const en: Locale = {
     '吸着': 'Snap',
     'マスク': 'Mask',
     'マスク保存': 'Save Mask',
+    '再読み込み': 'Reload',
     'マスク全消し': 'Clear Mask',
     '塗り': 'Paint',
     '塗りつぶし': 'Fill',

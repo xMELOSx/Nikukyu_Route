@@ -56,6 +56,7 @@ interface MapCanvasProps {
   vertexMode?: 'connect' | 'snap';
   maskCanvasUrl?: string | null;
   onMaskCanvasChange?: (url: string | null) => void;
+  onPushMaskHistory?: () => void;
   maskSubMode?: 'paint' | 'erase';
   showMinimapMask?: boolean;
   wallColors2d?: { normal: string; locked: string; lockedOpen: string; partition: string; textured: string };
@@ -229,6 +230,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   vertexMode = 'connect',
   maskCanvasUrl,
   onMaskCanvasChange,
+  onPushMaskHistory,
   maskSubMode: maskSubModeProp = 'paint',
   showMinimapMask = true,
   wallColors2d = { normal: '#ff5500', locked: '#ffcc00', lockedOpen: '#00c8ff', partition: '#b43cff', textured: '#00ff88' },
@@ -1893,7 +1895,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (e.button !== 0) return;
 
     // スポーンビューワークリック: スポーンツール以外では最優先 (パンより先)
-    if (onSpawnPointView && toolMode !== 'add-spawn') {
+    if (onSpawnPointView && toolMode !== 'add-spawn' && (spawnVisible || (spawnHighlightItemIds && spawnHighlightItemIds.length > 0) || (spawnHighlightCategories && spawnHighlightCategories.length > 0))) {
       const c = getCanvasCoords(e);
       let bestId: string | null = null;
       let bestDist = spawnPointSize + 5;
@@ -2157,7 +2159,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (toolMode === 'add-spawn' && isEditMode && isLocal) {
+    if (toolMode === 'add-spawn' && isEditMode && isLocal && (spawnVisible || (spawnHighlightItemIds && spawnHighlightItemIds.length > 0) || (spawnHighlightCategories && spawnHighlightCategories.length > 0))) {
       // Alt押下で設置⇔編集を一時的にシフト
       const effectiveMode = e.altKey
         ? (spawnToolMode === 'place' ? 'edit' :
@@ -3578,6 +3580,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Flood fill mask from a point, bounded by walls
   const floodFillMask = (start: Point) => {
+    onPushMaskHistory?.();
     const maskCtx = getMaskCanvas().getContext('2d')!;
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = 1600;
@@ -3588,7 +3591,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     tCtx.fillStyle = '#fff';
     tCtx.fillRect(0, 0, 1600, 4550);
     tCtx.strokeStyle = '#000';
-    tCtx.lineWidth = 5;
+    tCtx.lineWidth = 8;
     tCtx.lineCap = 'square';
     tCtx.lineJoin = 'miter';
     for (const w of walls) {
@@ -3598,6 +3601,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       tCtx.stroke();
     }
     for (const w of lockedWalls) {
+      tCtx.beginPath();
+      tCtx.moveTo(w.p1.x, w.p1.y);
+      tCtx.lineTo(w.p2.x, w.p2.y);
+      tCtx.stroke();
+    }
+    for (const w of partitionWalls) {
       tCtx.beginPath();
       tCtx.moveTo(w.p1.x, w.p1.y);
       tCtx.lineTo(w.p2.x, w.p2.y);
@@ -3680,6 +3689,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       onWallsChange?.([...walls, ...newWalls]);
     } else if (wallShapeSubMode === 'mask') {
+      onPushMaskHistory?.();
       const ctx = getMaskCanvas().getContext('2d')!;
       ctx.beginPath();
       ctx.moveTo(polygon[0].x, polygon[0].y);
@@ -3707,6 +3717,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const paintMaskPath = (points: Point[]) => {
     if (points.length < 2) return;
+    onPushMaskHistory?.();
     const ctx = getMaskCanvas().getContext('2d')!;
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
