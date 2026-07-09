@@ -1188,7 +1188,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   </button>
                   <button
                     className={`tool-btn ${wallSubMode === 'move' || wallSubMode === 'vertex-move' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode('move')}
+                    onClick={() => {
+                      const last = localStorage.getItem('heist_last_wall_move_mode');
+                      setWallSubMode(last === 'vertex-move' ? 'vertex-move' : 'move');
+                    }}
                     style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                   >
                     <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
@@ -1213,14 +1216,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap', paddingLeft: '8px' }}>
                     <button
                       className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
-                      onClick={() => setWallSubMode('move')}
+                      onClick={() => { setWallSubMode('move'); localStorage.setItem('heist_last_wall_move_mode', 'move'); }}
                       style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                     >
                       <span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
                     </button>
                     <button
                       className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
-                      onClick={() => setWallSubMode('vertex-move')}
+                      onClick={() => { setWallSubMode('vertex-move'); localStorage.setItem('heist_last_wall_move_mode', 'vertex-move'); }}
                       style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
                     >
                       <span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>

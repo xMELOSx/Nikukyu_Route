@@ -1358,6 +1358,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           );
           return;
         }
+        if (vertexWallStartRef.current) {
+          setVertexWallStart(null);
+          vertexWallStartRef.current = null;
+          return;
+        }
       }
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
@@ -2593,10 +2598,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const target = vertexMoveTargetRef.current;
       const dx = coords.x - vertexMoveStartMouse.current.x;
       const dy = coords.y - vertexMoveStartMouse.current.y;
-      const newPos: Point = {
+      let newPos: Point = {
         x: Math.round(target.startPos.x + dx),
         y: Math.round(target.startPos.y + dy)
       };
+      if (e.altKey) {
+        const ddx = newPos.x - target.startPos.x;
+        const ddy = newPos.y - target.startPos.y;
+        const dist = Math.hypot(ddx, ddy);
+        if (dist > 1) {
+          const snapAngle = Math.round(Math.atan2(ddy, ddx) / (Math.PI / 4)) * (Math.PI / 4);
+          newPos = {
+            x: Math.round(target.startPos.x + dist * Math.cos(snapAngle)),
+            y: Math.round(target.startPos.y + dist * Math.sin(snapAngle))
+          };
+        }
+      }
+      if (e.ctrlKey) {
+        const allPts: Point[] = [];
+        for (const w of walls) { allPts.push(w[0], w[1]); }
+        for (const w of lockedWalls) { allPts.push(w.p1, w.p2); }
+        for (const w of partitionWalls) { allPts.push(w.p1, w.p2); }
+        let bestDist = 12;
+        let bestPt: Point | null = null;
+        for (const p of allPts) {
+          if (p.x === target.startPos.x && p.y === target.startPos.y) continue;
+          const d = Math.hypot(p.x - newPos.x, p.y - newPos.y);
+          if (d < bestDist) { bestDist = d; bestPt = p; }
+        }
+        if (bestPt) newPos = bestPt;
+      }
       setVertexMoveDraft({ wallType: target.wallType, wallIdx: target.wallIdx, newPos });
       return;
     }
@@ -2913,12 +2944,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const tex = orig?.[2];
           const rep = orig?.[3];
           const paint = orig?.[4];
-          const base: any[] = tex
-            ? rep
-              ? [wallMoveDraft.p1, wallMoveDraft.p2, tex, rep]
-              : [wallMoveDraft.p1, wallMoveDraft.p2, tex]
-            : [wallMoveDraft.p1, wallMoveDraft.p2];
-          if (paint) base.push(paint);
+          const base: any[] = [wallMoveDraft.p1, wallMoveDraft.p2];
+          base[2] = tex;
+          base[3] = rep;
+          if (paint) base[4] = paint;
           nextWalls[wallMoveDraft.idx] = base as WallSegment;
           onWallsChange?.(nextWalls);
         } else if (wallMoveDraft.wallType === 'lockedWalls') {
@@ -3180,9 +3209,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             if (d1 > 2 && d2 > 2) {
               const tex = w[2] as string | undefined;
               const rep = w[3] as number | undefined;
+              const paint = w[4] as string | undefined;
               const push = (p1: Point, p2: Point) => {
-                if (tex) splitWalls.push(rep ? [p1, p2, tex, rep] : [p1, p2, tex]);
-                else splitWalls.push([p1, p2]);
+                const base: any[] = [p1, p2];
+                base[2] = tex;
+                base[3] = rep;
+                if (paint) base[4] = paint;
+                splitWalls.push(base as WallSegment);
               };
               push(c, { x: ix, y: iy });
               push({ x: ix, y: iy }, d);
@@ -3304,9 +3337,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const mergeWalls = (rawWalls: WallSegment[], newestWall?: WallSegment): WallSegment[] => {
     if (rawWalls.length < 2) return rawWalls;
     const list: WallSegment[] = rawWalls.map(w => {
-      return typeof w[2] === 'string'
-        ? [{ ...w[0] }, { ...w[1] }, w[2]]
-        : [{ ...w[0] }, { ...w[1] }];
+      const base: any[] = [{ ...w[0] }, { ...w[1] }];
+      base[2] = w[2];
+      base[3] = w[3];
+      if (w[4]) base[4] = w[4];
+      return base as WallSegment;
     });
     const priorityPoints: Point[] = newestWall ? [newestWall[0], newestWall[1]] : [];
     let merged = true;
@@ -3358,11 +3393,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               };
               const finalStart = snapToPriority(pStart);
               const finalEnd = snapToPriority(pEnd);
-              if (w1[2]) {
-                list[i] = [finalStart, finalEnd, w1[2]];
-              } else {
-                list[i] = [finalStart, finalEnd];
-              }
+              const newSeg: any[] = [finalStart, finalEnd];
+              newSeg[2] = w1[2];
+              newSeg[3] = w1[3];
+              if (w1[4]) newSeg[4] = w1[4];
+              list[i] = newSeg as WallSegment;
               list.splice(j, 1);
               merged = true;
               break;
@@ -3398,9 +3433,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const t1 = Math.min(1, t + halfArc);
             const tex = w[2] as string | undefined;
             const repeat = w[3] as number | undefined;
+            const paintCol = w[4] as string | undefined;
             const pushSeg = (a: Point, b: Point) => {
-              if (tex) nextWalls.push(repeat ? [a, b, tex, repeat] : [a, b, tex]);
-              else nextWalls.push([a, b]);
+              const base: any[] = [a, b];
+              base[2] = tex;
+              base[3] = repeat;
+              if (paintCol) base[4] = paintCol;
+              nextWalls.push(base as WallSegment);
             };
             if (t0 > 0 && t1 < 1) {
               // Both ends remain → two separate walls
@@ -3496,6 +3535,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     for (const w of srcWalls) {
       const wTex = w[2] as string | undefined;
       const wRep = w[3] as number | undefined;
+      const wPaint = w[4] as string | undefined;
 
       const hits: { pt: Point; edgeIdx: number; edgeT: number; t: number }[] = [];
       for (let ei = 0; ei < n; ei++) {
@@ -3527,8 +3567,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       const pushSeg = (a: Point, b: Point) => {
         if (Math.hypot(b.x - a.x, b.y - a.y) > 2) {
-          if (wTex) connWalls.push(wRep ? [a, b, wTex, wRep] : [a, b, wTex]);
-          else connWalls.push([a, b]);
+          const base: any[] = [a, b];
+          base[2] = wTex;
+          base[3] = wRep;
+          if (wPaint) base[4] = wPaint;
+          connWalls.push(base as WallSegment);
         }
       };
 
@@ -4881,21 +4924,39 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               const targetPt = target ? getPt(target, target.endpointIdx) : null;
               const targetKey = targetPt ? `${targetPt.x},${targetPt.y}` : null;
               const draftPos = vertexMoveDraft?.newPos;
-              return pts.map(({ pt, color, stroke }, i) => {
-                const ptKey = `${pt.x},${pt.y}`;
-                const isTarget = targetKey === ptKey;
-                return (
-                  <circle
-                    key={`vm-${i}`}
-                    cx={isTarget && draftPos ? draftPos.x : pt.x}
-                    cy={isTarget && draftPos ? draftPos.y : pt.y}
-                    r={isTarget ? 6 : 5}
-                    fill={isTarget ? '#00ccff' : color}
-                    stroke={isTarget ? '#fff' : stroke}
-                    strokeWidth={isTarget ? 2 : 1.5}
-                  />
-                );
-              });
+              const otherPt = target && targetPt ? getPt(target, 1 - target.endpointIdx) : null;
+              const wallColor = target && targetPt && target.wallType === 'walls' ? (() => {
+                const seg = (target.wallType === 'walls' ? walls : target.wallType === 'lockedWalls' ? lockedWalls : partitionWalls)[target.wallIdx];
+                return Array.isArray(seg) && seg[4] ? seg[4] : '#00ccff';
+              })() : '#00ccff';
+              return (
+                <>
+                  {targetPt && draftPos && otherPt && (
+                    <line
+                      x1={otherPt.x} y1={otherPt.y}
+                      x2={draftPos.x} y2={draftPos.y}
+                      stroke={wallColor} strokeWidth={3}
+                      strokeDasharray="8,4" opacity={0.6}
+                    />
+                  )}
+                  {pts.map(({ pt, color, stroke }, i) => {
+                    const ptKey = `${pt.x},${pt.y}`;
+                    const isTarget = targetKey === ptKey;
+                    return (
+                      <circle
+                        key={`vm-${i}`}
+                        cx={isTarget && draftPos ? draftPos.x : pt.x}
+                        cy={isTarget && draftPos ? draftPos.y : pt.y}
+                        r={isTarget ? 6 : 5}
+                        fill={isTarget ? '#00ccff' : color}
+                        stroke={isTarget ? '#fff' : stroke}
+                        strokeWidth={isTarget ? 2 : 1.5}
+                        opacity={isTarget && draftPos ? 0.5 : undefined}
+                      />
+                    );
+                  })}
+                </>
+              );
             })()}
             {wallSubMode === 'shape' && shapeDrawMode === 'rect' && shapeRectStart && (
               <rect
