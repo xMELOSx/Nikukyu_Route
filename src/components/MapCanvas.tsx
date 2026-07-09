@@ -37,7 +37,7 @@ interface MapCanvasProps {
   toolMode: 'select' | 'draw' | 'erase' | 'move' | 'measure' | 'add-marker' | 'toggle-vis' | 'edit-stroke' | 'wall' | 'add-spawn';
   walls?: WallSegment[];
   onWallsChange?: (walls: WallSegment[]) => void;
-  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape';
+  wallSubMode?: 'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape' | 'paint';
   wallAutoSnap?: boolean;
   selectedTexture?: string;
   selectedRepeat?: number;
@@ -59,6 +59,7 @@ interface MapCanvasProps {
   maskSubMode?: 'paint' | 'erase';
   showMinimapMask?: boolean;
   wallColors2d?: { normal: string; locked: string; lockedOpen: string; partition: string; textured: string };
+  paintColor?: string;
   hideStrokesDuringWalls?: boolean;
   hideMarkersDuringWalls?: boolean;
   activeMarkerType: MarkerType | null;
@@ -231,6 +232,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   maskSubMode: maskSubModeProp = 'paint',
   showMinimapMask = true,
   wallColors2d = { normal: '#ff5500', locked: '#ffcc00', lockedOpen: '#00c8ff', partition: '#b43cff', textured: '#00ff88' },
+  paintColor = '#ff0055',
   hideStrokesDuringWalls = false,
   hideMarkersDuringWalls = false,
   eraseTarget = 'all',
@@ -379,6 +381,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [miniMapSource, setMiniMapSource] = useState<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const [maskOverlayUrl, setMaskOverlayUrl] = useState<string | null>(null);
+
   const getMaskCanvas = () => {
     if (!maskCanvasRef.current) {
       maskCanvasRef.current = document.createElement('canvas');
@@ -388,11 +392,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return maskCanvasRef.current;
   };
 
-  // Sync mask canvas from data URL
+  // Sync mask canvas from data URL and update overlay URL after image loads
   useEffect(() => {
     if (!maskCanvasUrl) {
       const mc = getMaskCanvas();
       mc.getContext('2d')?.clearRect(0, 0, 1600, 4550);
+      setMaskOverlayUrl(null);
       return;
     }
     const img = new Image();
@@ -400,7 +405,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const ctx = getMaskCanvas().getContext('2d')!;
       ctx.clearRect(0, 0, 1600, 4550);
       ctx.drawImage(img, 0, 0);
+      setMaskOverlayUrl(getMaskCanvas().toDataURL('image/png'));
     };
+    img.onerror = () => setMaskOverlayUrl(null);
     img.src = maskCanvasUrl;
   }, [maskCanvasUrl]);
 
@@ -519,16 +526,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   useEffect(() => {
     updateMiniMapSource();
   }, [updateMiniMapSource]);
-
-  // Mask overlay for main canvas view
-  const [maskOverlayUrl, setMaskOverlayUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (maskCanvasRef.current) {
-      setMaskOverlayUrl(maskCanvasRef.current.toDataURL('image/png'));
-    } else {
-      setMaskOverlayUrl(null);
-    }
-  }, [maskCanvasUrl]);
 
   // Preload texture aspect ratio for summon mode preview
   useEffect(() => {
@@ -2257,11 +2254,41 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return;
     }
 
-    if (toolMode === 'wall' && wallSubMode === 'texture') {
-      if (aspectFitCut && selectedTexture !== '') {
-        let hitWall = false;
-        for (const w of walls) {
-          const [p1, p2] = w;
+      if (toolMode === 'wall' && wallSubMode === 'texture') {
+        if (aspectFitCut && selectedTexture !== '') {
+          let hitWall = false;
+          for (const w of walls) {
+            const [p1, p2] = w;
+            const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+            let t = 0;
+            if (l2 > 0) {
+              t = ((coords.x - p1.x) * (p2.x - p1.x) + (coords.y - p1.y) * (p2.y - p1.y)) / l2;
+              t = Math.max(0, Math.min(1, t));
+            }
+            const projX = p1.x + t * (p2.x - p1.x);
+            const projY = p1.y + t * (p2.y - p1.y);
+            const dist = Math.hypot(coords.x - projX, coords.y - projY);
+            if (dist < 12) { hitWall = true; break; }
+          }
+          if (hitWall) {
+            applyTextureToWallAtPoint(coords);
+          } else {
+            setIsDrawing(true);
+            isDrawingRef.current = true;
+            setCurrentPoints([coords]);
+          }
+        } else {
+          applyTextureToWallAtPoint(coords);
+        }
+        return;
+      }
+
+      if (toolMode === 'wall' && wallSubMode === 'paint') {
+        if (!onWallsChange || !walls) return;
+        let bestDist = 12;
+        let bestIndex = -1;
+        for (let i = 0; i < walls.length; i++) {
+          const [p1, p2] = walls[i];
           const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
           let t = 0;
           if (l2 > 0) {
@@ -2271,20 +2298,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const projX = p1.x + t * (p2.x - p1.x);
           const projY = p1.y + t * (p2.y - p1.y);
           const dist = Math.hypot(coords.x - projX, coords.y - projY);
-          if (dist < 12) { hitWall = true; break; }
+          if (dist < bestDist) { bestDist = dist; bestIndex = i; }
         }
-        if (hitWall) {
-          applyTextureToWallAtPoint(coords);
-        } else {
-          setIsDrawing(true);
-          isDrawingRef.current = true;
-          setCurrentPoints([coords]);
+        if (bestIndex !== -1) {
+          const target = walls[bestIndex];
+          const nextWalls = [...walls];
+          const tex = target[2];
+          const rep = target[3];
+          nextWalls[bestIndex] = tex !== undefined && rep !== undefined
+            ? ([target[0], target[1], tex, rep, paintColor] as WallSegment)
+            : tex !== undefined
+              ? ([target[0], target[1], tex, undefined, paintColor] as WallSegment)
+              : ([target[0], target[1], undefined, undefined, paintColor] as WallSegment);
+          onWallsChange(nextWalls);
         }
-      } else {
-        applyTextureToWallAtPoint(coords);
+        return;
       }
-      return;
-    }
 
     if (toolMode === 'wall' && wallSubMode === 'erase') {
       setIsDrawing(true);
@@ -4637,7 +4666,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     y1={w[0].y}
                     x2={w[1].x}
                     y2={w[1].y}
-                    stroke={hasTex ? wallColors2d.textured : (wallSubMode === 'draw' && wallLockedSubMode !== 'normal' ? "rgba(100, 100, 100, 0.3)" : wallColors2d.normal)}
+                    stroke={wallSubMode === 'paint' && w[4] ? w[4] : (hasTex ? wallColors2d.textured : (wallSubMode === 'draw' && wallLockedSubMode !== 'normal' ? "rgba(100, 100, 100, 0.3)" : wallColors2d.normal))}
                     strokeWidth={5}
                     strokeDasharray={hasTex ? undefined : "6,4"}
                   />

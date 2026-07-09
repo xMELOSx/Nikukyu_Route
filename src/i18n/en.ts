@@ -364,6 +364,7 @@ export const en: Locale = {
     '接続': 'Connect',
     '吸着': 'Snap',
     'マスク': 'Mask',
+    'マスク保存': 'Save Mask',
     'マスク全消し': 'Clear Mask',
     '塗り': 'Paint',
     '塗りつぶし': 'Fill',

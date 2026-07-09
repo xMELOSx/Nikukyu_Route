@@ -175,6 +175,7 @@ interface WallRenderArgs {
   playerPos?: { x: number; y: number };
   wallFadeRadius?: number;
   wallTexturesData?: Record<string, ImageData>;
+  wallColors?: (string | undefined)[];
 }
 
 function sampleBilinear(texData: ImageData, u: number, v: number): { r: number; g: number; b: number } {
@@ -433,9 +434,13 @@ function renderWalls(
     if (isLocked && bgDist < Infinity && bgWallTop < wallTop) {
       // 鍵壁の上に通常壁/奥の鍵壁が見える部分を描画
       const bgShade = Math.min(1, 4 / bgPerpDist);
-      const bgR = Math.round(bgIsLocked ? (lDarkR + (lr - lDarkR) * bgShade) : (darkR + (r - darkR) * bgShade));
-      const bgG = Math.round(bgIsLocked ? (lDarkG + (lg - lDarkG) * bgShade) : (darkG + (g - darkG) * bgShade));
-      const bgB = Math.round(bgIsLocked ? (lDarkB + (lb - lDarkB) * bgShade) : (darkB + (b - darkB) * bgShade));
+      const bgPaintHex = !bgIsLocked && args.wallColors && hit.wallIndex >= 0 && hit.wallIndex < args.wallColors.length ? args.wallColors[hit.wallIndex] : undefined;
+      const bgWallR = bgPaintHex ? parseInt(bgPaintHex.slice(1, 3), 16) : r;
+      const bgWallG = bgPaintHex ? parseInt(bgPaintHex.slice(3, 5), 16) : g;
+      const bgWallB = bgPaintHex ? parseInt(bgPaintHex.slice(5, 7), 16) : b;
+      const bgR = Math.round(bgIsLocked ? (lDarkR + (lr - lDarkR) * bgShade) : (darkR + (bgWallR - darkR) * bgShade));
+      const bgG = Math.round(bgIsLocked ? (lDarkG + (lg - lDarkG) * bgShade) : (darkG + (bgWallG - darkG) * bgShade));
+      const bgB = Math.round(bgIsLocked ? (lDarkB + (lb - lDarkB) * bgShade) : (darkB + (bgWallB - darkB) * bgShade));
       // 奥の壁も鍵付き扉なら高さ制限: 見える範囲は底部 lhf のみ
       const bgCutoffTop = bgIsLocked
         ? Math.max(bgWallTop, Math.floor(bgWallBottom - (bgWallBottom - bgWallTop) * lhf))
@@ -483,9 +488,21 @@ function renderWalls(
     // 2. Render Wall to buffer (with player proximity fade)
     const shade = Math.min(1, 10 / perpDist);
     const lightShade = 0.45 + 0.55 * shade;
-    let colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (darkR + (r - darkR) * lightShade));
-    let colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (darkG + (g - darkG) * lightShade));
-    let colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (darkB + (b - darkB) * lightShade));
+    // Per-wall painted color override
+    let wallR = r, wallG = g, wallB = b;
+    let wallDarkR = darkR, wallDarkG = darkG, wallDarkB = darkB;
+    const paintHex = !isLocked && args.wallColors && hit.wallIndex >= 0 && hit.wallIndex < args.wallColors.length ? args.wallColors[hit.wallIndex] : undefined;
+    if (paintHex) {
+      wallR = parseInt(paintHex.slice(1, 3), 16);
+      wallG = parseInt(paintHex.slice(3, 5), 16);
+      wallB = parseInt(paintHex.slice(5, 7), 16);
+      wallDarkR = Math.round(wallR * 0.4);
+      wallDarkG = Math.round(wallG * 0.4);
+      wallDarkB = Math.round(wallB * 0.4);
+    }
+    let colR = Math.round(isLocked ? (lDarkR + (lr - lDarkR) * shade) : (wallDarkR + (wallR - wallDarkR) * lightShade));
+    let colG = Math.round(isLocked ? (lDarkG + (lg - lDarkG) * shade) : (wallDarkG + (wallG - wallDarkG) * lightShade));
+    let colB = Math.round(isLocked ? (lDarkB + (lb - lDarkB) * shade) : (wallDarkB + (wallB - wallDarkB) * lightShade));
 
     // プレイヤー近距離フェード: 壁がプレイヤーに近いほど背景色に近づける
     let wallFade = 1.0;
@@ -677,7 +694,8 @@ export function renderFpsView(
   partitionWalls?: WallSegment[],
   partitionWallColor?: string,
   partitionWallColorDark?: string,
-  partitionWallHeightStart?: number
+  partitionWallHeightStart?: number,
+  wallColors?: (string | undefined)[]
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   return renderWalls({
     ctx, canvas,
@@ -690,7 +708,8 @@ export function renderFpsView(
     bgImageData,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
     playerPos, wallFadeRadius, wallTexturesData,
-    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart
+    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart,
+    wallColors
   }).colHeights;
 }
 
@@ -1038,7 +1057,8 @@ export function renderTpsView(
   partitionWalls?: WallSegment[],
   partitionWallColor?: string,
   partitionWallColorDark?: string,
-  partitionWallHeightStart?: number
+  partitionWallHeightStart?: number,
+  wallColors?: (string | undefined)[]
 ): { top: number; bottom: number; perpDist: number; rawDist: number }[] {
   const actualCamDistance = camDistance;
 
@@ -1057,7 +1077,8 @@ export function renderTpsView(
     playerDist: actualCamDistance,
     lockedWalls, lockedWallColor, lockedWallColorDark, lockedWallHeightFrac,
     playerPos, wallFadeRadius, wallTexturesData,
-    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart
+    partitionWalls, partitionWallColor, partitionWallColorDark, partitionWallHeightStart,
+    wallColors
   });
 
   // Render player billboard

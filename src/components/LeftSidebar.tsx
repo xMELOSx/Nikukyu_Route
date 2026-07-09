@@ -136,6 +136,7 @@ export interface LeftSidebarProps {
   vertexMode?: string;
   setVertexMode?: (v: string) => void;
   onClearMask?: () => void;
+  onSaveMask?: () => void;
   maskSubMode?: 'paint' | 'erase';
   setMaskSubMode?: (v: string) => void;
   [key: string]: any;
@@ -228,6 +229,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
     indentDir, setIndentDir,
     vertexMode, setVertexMode,
     maskSubMode, setMaskSubMode,
+    paintColor, setPaintColor,
   } = props;
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const [previewAspect, setPreviewAspect] = useState<number>(1.0);
@@ -1162,7 +1164,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                     <Eraser size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('削除')}</span>
                   </button>
                 </div>
-                {/* Row 2: 頂点/移動/テクスチャ */}
+                {/* Row 2: 頂点/移動/テクスチャ/ペイント */}
                 <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
                   <button
                     className={`tool-btn ${wallSubMode === 'vertex' ? 'active' : ''}`}
@@ -1174,9 +1176,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   </button>
                   <button
                     className={`tool-btn ${wallSubMode === 'move' || wallSubMode === 'vertex-move' ? 'active' : ''}`}
-                    onClick={() => setWallSubMode(wallSubMode === 'vertex-move' ? 'move' : (wallSubMode === 'move' ? 'vertex-move' : 'move'))}
+                    onClick={() => setWallSubMode('move')}
                     style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
-                    title={t('壁/頂点をドラッグして移動')}
                   >
                     <Move size={14} style={{ color: '#00ccff' }} /><span style={{ fontSize: '10px' }}>{t('移動')}</span>
                   </button>
@@ -1187,7 +1188,33 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                   >
                     <Image size={14} style={{ color: '#ff0055' }} /><span style={{ fontSize: '10px' }}>{t('テクスチャ')}</span>
                   </button>
+                  <button
+                    className={`tool-btn ${wallSubMode === 'paint' ? 'active' : ''}`}
+                    onClick={() => setWallSubMode('paint')}
+                    style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '4px', borderColor: 'rgba(255, 0, 85, 0.3)' }}
+                  >
+                    <span style={{ fontSize: '10px', color: paintColor }}>{t('ペイント')}</span>
+                  </button>
                 </div>
+                {/* 移動サブオプション: 壁移動/頂点移動 */}
+                {(wallSubMode === 'move' || wallSubMode === 'vertex-move') && (
+                  <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap', paddingLeft: '8px' }}>
+                    <button
+                      className={`tool-btn ${wallSubMode === 'move' ? 'active' : ''}`}
+                      onClick={() => setWallSubMode('move')}
+                      style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('壁移動')}</span>
+                    </button>
+                    <button
+                      className={`tool-btn ${wallSubMode === 'vertex-move' ? 'active' : ''}`}
+                      onClick={() => setWallSubMode('vertex-move')}
+                      style={{ flex: 1, minWidth: '44px', fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 200, 255, 0.3)' }}
+                    >
+                      <span style={{ fontSize: '10px' }}>{t('頂点移動')}</span>
+                    </button>
+                  </div>
+                )}
                 {/* テクスチャ一覧選択 (テクスチャモード時のみ) */}
                 {wallSubMode === 'texture' && (
                   <>
@@ -1265,6 +1292,31 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                       </>
                     )}
                   </>
+                  )}
+                {wallSubMode === 'paint' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', padding: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                    <input type="color" value={paintColor}
+                      onChange={(e) => setPaintColor(e.target.value)}
+                      style={{ width: '32px', height: '28px', padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
+                    />
+                    <span style={{ fontSize: '10px', color: '#ccc', flex: 1 }}>{t('壁をクリックして色付け')}</span>
+                    <button
+                      onClick={() => {
+                        if (!globalWalls || !globalWalls[currentFloor]) return;
+                        const next = globalWalls[currentFloor].map((w: any) => {
+                          const tex = w[2];
+                          const rep = w[3];
+                          if (tex !== undefined && rep !== undefined) return [w[0], w[1], tex, rep] as any;
+                          if (tex !== undefined) return [w[0], w[1], tex] as any;
+                          return [w[0], w[1]] as any;
+                        });
+                        updateGlobalWalls?.({ ...globalWalls, [currentFloor]: next });
+                      }}
+                      style={{ fontSize: '9px', padding: '2px 6px', background: 'rgba(255,0,85,0.2)', border: '1px solid rgba(255,0,85,0.4)', borderRadius: '3px', color: '#ff5577', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {t('全解除')}
+                    </button>
+                  </div>
                 )}
                 {/* 壁タイプ toggle: 通常壁/鍵付き扉/仕切り壁 (描くモード時のみ) */}
                 {wallSubMode === 'draw' && (
@@ -1381,6 +1433,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = (props) => {
                             style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(255, 50, 50, 0.4)' }}
                           >
                             <span style={{ fontSize: '10px', color: '#ff3333' }}>{t('削除')}</span>
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                          <button
+                            className="tool-btn"
+                            onClick={() => props.onSaveMask?.()}
+                            style={{ flex: 1, fontSize: '10px', padding: '3px', borderColor: 'rgba(0, 150, 255, 0.4)' }}
+                          >
+                            <span style={{ fontSize: '10px', color: '#0096ff' }}>{t('マスク保存')}</span>
                           </button>
                         </div>
                         <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>

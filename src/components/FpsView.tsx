@@ -324,54 +324,103 @@ const FpsView: React.FC<FpsViewProps> = ({
       reloadRef.current?.();
     }
     if ((e.key === 'c' || e.key === 'C') && !e.repeat && modeRef.current === 'tps' && isLocalRef.current) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const photoCanvas = document.createElement('canvas');
-      photoCanvas.width = 1920;
-      photoCanvas.height = 1080;
-      const pctx = photoCanvas.getContext('2d');
-      if (!pctx) return;
-      pctx.imageSmoothingEnabled = true;
-      pctx.imageSmoothingQuality = 'high';
-      pctx.drawImage(canvas, 0, 0, 1920, 1080);
-      const texCtx = document.createElement('canvas').getContext('2d');
-      if (!texCtx) return;
-      texCtx.canvas.width = 1920;
-      texCtx.canvas.height = 1080;
-      texCtx.drawImage(photoCanvas, 0, 0);
-      const imgData = texCtx.getImageData(0, 0, 1920, 1080);
-      const texName = `_capture_${Date.now()}`;
-      wallTexturesRef.current[texName] = imgData;
-      loadedTextureNamesRef.current.add(texName);
-      const pp = playerRef.current;
-      const lw = wallsRef.current;
-      const fwdX = Math.cos(pp.angle);
-      const fwdY = Math.sin(pp.angle);
-      const perpX = -fwdY;
-      const perpY = fwdX;
-      const cx = pp.x + fwdX * 15;
-      const cy = pp.y + fwdY * 15;
-      const hw = 16;
-      const hd = 9;
-      const corners = [
-        { x: cx + perpX * hw - fwdX * hd, y: cy + perpY * hw - fwdY * hd },
-        { x: cx - perpX * hw - fwdX * hd, y: cy - perpY * hw - fwdY * hd },
-        { x: cx - perpX * hw + fwdX * hd, y: cy - perpY * hw + fwdY * hd },
-        { x: cx + perpX * hw + fwdX * hd, y: cy + perpY * hw + fwdY * hd },
-      ];
-      const newWalls: WallSegment[] = [
-        [corners[0], corners[1], texName],
-        [corners[1], corners[2], texName],
-        [corners[2], corners[3], texName],
-        [corners[3], corners[0], texName],
-      ];
-      onWallsGeneratedRef.current?.(newWalls);
-      const hit = castRay({ x: pp.x, y: pp.y }, pp.angle, lw);
-      if (hit.wallIndex >= 0 && hit.distance < Infinity && hit.distance < 30) {
-        const painted = [...lw];
-        painted[hit.wallIndex] = [lw[hit.wallIndex][0], lw[hit.wallIndex][1], texName] as WallSegment;
-        onWallsChangeRef.current?.(painted);
-      }
+      (async () => {
+        const paintTexture = (texName: string, imgData: ImageData) => {
+          wallTexturesRef.current[texName] = imgData;
+          loadedTextureNamesRef.current.add(texName);
+          const pp = playerRef.current;
+          const lw = wallsRef.current;
+          const fwdX = Math.cos(pp.angle);
+          const fwdY = Math.sin(pp.angle);
+          const perpX = -fwdY;
+          const perpY = fwdX;
+          const cx = pp.x + fwdX * 15;
+          const cy = pp.y + fwdY * 15;
+          const hw = 16;
+          const hd = 9;
+          const corners = [
+            { x: cx + perpX * hw - fwdX * hd, y: cy + perpY * hw - fwdY * hd },
+            { x: cx - perpX * hw - fwdX * hd, y: cy - perpY * hw - fwdY * hd },
+            { x: cx - perpX * hw + fwdX * hd, y: cy - perpY * hw + fwdY * hd },
+            { x: cx + perpX * hw + fwdX * hd, y: cy + perpY * hw + fwdY * hd },
+          ];
+          const newWalls: WallSegment[] = [
+            [corners[0], corners[1], texName, 1],
+            [corners[1], corners[2], texName, 1],
+            [corners[2], corners[3], texName, 1],
+            [corners[3], corners[0], texName, 1],
+          ];
+          onWallsGeneratedRef.current?.(newWalls);
+          const hit = castRay({ x: pp.x, y: pp.y }, pp.angle, lw);
+          if (hit.wallIndex >= 0 && hit.distance < Infinity && hit.distance < 30) {
+            const painted = [...lw];
+            painted[hit.wallIndex] = [lw[hit.wallIndex][0], lw[hit.wallIndex][1], texName, 1] as WallSegment;
+            onWallsChangeRef.current?.(painted);
+          }
+        };
+        const processAndSave = (canvas: HTMLCanvasElement) => {
+          const texName = `paste_${Date.now()}.png`;
+          const imgData = canvas.getContext('2d')!.getImageData(0, 0, 1920, 1080);
+          paintTexture(texName, imgData);
+          canvas.toBlob(blob => {
+            if (!blob) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              fetch(`${import.meta.env.BASE_URL}api/resize-texture`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: texName, dataUrl: reader.result })
+              });
+            };
+            reader.readAsDataURL(blob);
+          }, 'image/png');
+        };
+        try {
+          const items = await navigator.clipboard.read();
+          let imgBlob: Blob | null = null;
+          for (const item of items) {
+            const imgType = item.types.find(t => t.startsWith('image/'));
+            if (imgType) {
+              imgBlob = await item.getType(imgType);
+              break;
+            }
+          }
+          if (!imgBlob) return;
+          const img = new Image();
+          img.src = URL.createObjectURL(imgBlob);
+          await img.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = 1920;
+          canvas.height = 1080;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          const sx = img.width / img.height > 1920 / 1080
+            ? (img.width - img.height * 1920 / 1080) / 2 : 0;
+          const sy = img.width / img.height > 1920 / 1080
+            ? 0 : (img.height - img.width * 1080 / 1920) / 2;
+          const sw = img.width / img.height > 1920 / 1080
+            ? img.height * 1920 / 1080 : img.width;
+          const sh = img.width / img.height > 1920 / 1080
+            ? img.height : img.width * 1080 / 1920;
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 1920, 1080);
+          URL.revokeObjectURL(img.src);
+          processAndSave(canvas);
+        } catch {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const temp = document.createElement('canvas');
+          temp.width = 1920;
+          temp.height = 1080;
+          const tc = temp.getContext('2d');
+          if (!tc) return;
+          tc.imageSmoothingEnabled = true;
+          tc.imageSmoothingQuality = 'high';
+          tc.drawImage(canvas, 0, 0, 1920, 1080);
+          processAndSave(temp);
+        }
+      })();
     }
   }, []);
 
@@ -698,6 +747,7 @@ const FpsView: React.FC<FpsViewProps> = ({
       const PARTITION_WALL_COLOR_DARK = '#6a1fb3';
       const closedLockedForRender = llw.filter(s => !s.isOpen).map(s => [s.p1, s.p2] as [Point, Point]);
       const partitionForRender = partitionWalls.map(s => [s.p1, s.p2] as [Point, Point]);
+      const wallColorsForRender = lw.map(w => w[4]);
       if (mode === 'tps') {
         colHeights = renderTpsView(
           ctx, canvas,
@@ -719,7 +769,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           wallTexturesRef.current,
           partitionForRender,
           PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
-          0.6
+          0.6,
+          wallColorsForRender
         );
       } else {
         colHeights = renderFpsView(
@@ -739,7 +790,8 @@ const FpsView: React.FC<FpsViewProps> = ({
           wallTexturesRef.current,
           partitionForRender,
           PARTITION_WALL_COLOR, PARTITION_WALL_COLOR_DARK,
-          0.6
+          0.6,
+          wallColorsForRender
         );
       }
 

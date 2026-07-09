@@ -229,7 +229,7 @@ export default function App() {
     prevToolModeRef.current = toolMode;
   }, [toolMode]);
 
-  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape'>(() => {
+  const [wallSubMode, setWallSubMode] = useState<'draw' | 'erase' | 'texture' | 'slice' | 'vertex' | 'move' | 'vertex-move' | 'shape' | 'paint'>(() => {
     const saved = localStorage.getItem('heist_wall_sub_mode');
     return (saved as any) || 'draw';
   });
@@ -261,6 +261,7 @@ export default function App() {
 
   const [selectedTexture, setSelectedTexture] = useState<string>('');
   const [selectedRepeat, setSelectedRepeat] = useState<number>(1);
+  const [paintColor, setPaintColor] = useState<string>('#ff0055');
   const [fpsResolutionScale, setFpsResolutionScale] = useState<number>(() => {
     const saved = localStorage.getItem('heist_fps_resolution_scale');
     return saved !== null ? parseFloat(saved) : 2.0;
@@ -1155,6 +1156,7 @@ export default function App() {
 
   const handleMaskCanvasChange = useCallback((dataUrl: string | null) => {
     setMaskCanvasUrl(dataUrl);
+    // auto-save to server (silent)
     if (dataUrl) {
       const byteString = atob(dataUrl.split(',')[1]);
       const ab = new ArrayBuffer(byteString.length);
@@ -1162,11 +1164,21 @@ export default function App() {
       for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
       const blob = new Blob([ab], { type: 'image/png' });
       fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: blob });
-      notification.show(t('マスクを保存しました'));
     } else {
       fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: '' });
     }
-  }, [currentFloor, notification, t]);
+  }, [currentFloor]);
+
+  const handleSaveMask = useCallback(() => {
+    if (!maskCanvasUrl) return;
+    const byteString = atob(maskCanvasUrl.split(',')[1]);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+    const blob = new Blob([ab], { type: 'image/png' });
+    fetch(`${import.meta.env.BASE_URL}api/mask?floor=${currentFloor}`, { method: 'POST', body: blob });
+    notification.show(t('マスクを保存しました'));
+  }, [maskCanvasUrl, currentFloor, notification, t]);
 
   const handleClearMask = useCallback(() => {
     setMaskCanvasUrl(null);
@@ -2234,6 +2246,8 @@ export default function App() {
           onOpenTextureUsageModal={() => setShowTextureUsageModal(true)}
           partitionWalls={partitionWalls}
           setPartitionWalls={globalData.setPartitionWalls}
+          paintColor={paintColor}
+          setPaintColor={setPaintColor}
           wallShapeSubMode={wallShapeSubMode}
           setWallShapeSubMode={(v: string) => setWallShapeSubMode(v as 'indent' | 'generate' | 'mask')}
           shapeDrawMode={shapeDrawMode}
@@ -2243,6 +2257,7 @@ export default function App() {
           vertexMode={vertexMode}
           setVertexMode={(v: string) => setVertexMode(v as 'connect' | 'snap')}
           onClearMask={handleClearMask}
+          onSaveMask={handleSaveMask}
           maskSubMode={maskSubMode}
           setMaskSubMode={(v: string) => setMaskSubMode(v as 'paint' | 'erase')}
         />
@@ -2401,6 +2416,7 @@ export default function App() {
               indentDir={indentDir}
               vertexMode={vertexMode}
               maskCanvasUrl={maskCanvasUrl}
+              paintColor={paintColor}
               onMaskCanvasChange={handleMaskCanvasChange}
               maskSubMode={maskSubMode}
               showMinimapMask={showMinimapMask}
@@ -2517,7 +2533,8 @@ export default function App() {
             maskCanvasUrl,
             maskSubMode,
             lockedWalls,
-            partitionWalls
+            partitionWalls,
+            paintColor
           ])}
           <button
             onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}

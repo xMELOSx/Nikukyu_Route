@@ -130,7 +130,7 @@ export interface PartitionWallSegment {
 
 export type GlobalPartitionWalls = { [key: string]: PartitionWallSegment[] };
 
-export type WallSegment = [Point, Point] | [Point, Point, string] | [Point, Point, string, number];
+export type WallSegment = [Point, Point, string?, number?, string?];
 
 export interface RouteData {
   id: string;

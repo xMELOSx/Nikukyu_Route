@@ -115,9 +115,19 @@ function sanitizeWalls(raw: unknown): GlobalWalls {
       if (!a || !b || typeof a.x !== 'number' || typeof a.y !== 'number' || typeof b.x !== 'number' || typeof b.y !== 'number') continue;
       const tex = typeof seg[2] === 'string' ? seg[2] : undefined;
       const rep = typeof seg[3] === 'number' ? seg[3] : undefined;
-      if (tex && rep !== undefined) cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex, rep]);
-      else if (tex) cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex]);
-      else cleaned.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+      const col = typeof seg[4] === 'string' ? seg[4] : undefined;
+      const item: WallSegment = col
+        ? (tex && rep !== undefined
+          ? [{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex, rep, col]
+          : tex
+            ? [{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex, undefined, col]
+            : [{ x: a.x, y: a.y }, { x: b.x, y: b.y }, undefined, undefined, col])
+        : (tex && rep !== undefined
+          ? [{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex, rep]
+          : tex
+            ? [{ x: a.x, y: a.y }, { x: b.x, y: b.y }, tex]
+            : [{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+      cleaned.push(item);
     }
     out[floor] = cleaned;
   }
@@ -143,11 +153,18 @@ function mergeWalls(base: GlobalWalls, incoming: GlobalWalls): GlobalWalls {
     for (const w of segs) {
       const sig = wallSig(w);
       if (!sigs.has(sig)) {
-        const copy: WallSegment = w[2] !== undefined
-          ? (w[3] !== undefined
-            ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], w[3]]
-            : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2]])
-          : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }];
+        const col = w[4];
+        const copy: WallSegment = col
+          ? (w[2] !== undefined
+            ? (w[3] !== undefined
+              ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], w[3], col]
+              : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], undefined, col])
+            : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, undefined, undefined, col])
+          : (w[2] !== undefined
+            ? (w[3] !== undefined
+              ? [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2], w[3]]
+              : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }, w[2]])
+            : [{ x: w[0].x, y: w[0].y }, { x: w[1].x, y: w[1].y }]);
         existing.push(copy);
         sigs.add(sig);
       }
